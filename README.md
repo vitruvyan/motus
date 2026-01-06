@@ -14,6 +14,9 @@ Axis is a foundation for building systems that maintain an explicit, immutable c
 - **Node**: Pure transformation protocol `(GraphState) -> GraphState`
 - **Runner**: Sequential execution with policy enforcement
 - **Policy**: Execution constraints (STRICT, EXPLORATION)
+- **Synaptic Bus**: Passive observational substrate (Phase 2.1)
+- **Epistemic Types**: Foundational structures for knowledge organization (Phase 2.2)
+- **Epistemic Protocols**: Interfaces for interpretation, validation, memory (Phase 2.2)
 
 ## What Axis IS NOT
 
@@ -183,9 +186,16 @@ Axis is not a framework to be extended. It is a kernel to be composed.
 - ✅ Documentation: Complete
 - 📖 See [docs/synaptic_bus.md](docs/synaptic_bus.md)
 
-### Phase 2.2+: In Development
-- 🔄 Orders contract and dual memory
-- 🔄 Concrete Orders (Pattern Weaver, Orthodoxy, Vault Keeper, Explainer)
+### Phase 2.2: Epistemic Types (Complete)
+- ✅ Foundational types: Category, Relation, Intent, Implication, Pattern, Constraint, Violation
+- ✅ Protocols: OntologyProvider, SemanticInterpreter, PatternDetector, ConstraintChecker, EpistemicMemory
+- ✅ Distilled from Vitruvyan Sacred Orders (8 months production experience)
+- 📖 See [axis/epistemic_types.py](axis/epistemic_types.py) and [axis/epistemic_protocols.py](axis/epistemic_protocols.py)
+
+### Phase 2.3+: In Design
+- 🔄 Concrete Order implementations (reference examples)
+- 🔄 Dual Memory Model integration
+- 🔄 MiFID II compliance patterns
 
 ---
 
