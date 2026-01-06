@@ -107,12 +107,37 @@ python3 poc/demo_openai.py
 
 ---
 
+## Phase 2.1: Synaptic Bus
+
+See [docs/synaptic_bus.md](docs/synaptic_bus.md) for complete documentation.
+
+The **Axis Synaptic Bus** is a passive observational substrate that:
+- Observes completed Axis executions
+- Derives semantic signals from GraphState (1:1 mapping)
+- Notifies static observers (Orders)
+- **Never** influences execution or mutates Axis
+
+**Unidirectional:** `AXIS → BUS → ORDERS`
+
+**Run the demo:**
+
+```bash
+# Demonstrate Bus observation with example Orders
+python3 demo_synaptic_bus.py
+
+# Run test suite
+python3 tests/test_synaptic_bus.py
+```
+
+---
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — Core concepts and design
 - [API Reference](docs/api.md) — Complete API documentation
 - [Examples](docs/examples.md) — Usage patterns
 - [Design Principles](docs/principles.md) — Architectural constraints
+- [Synaptic Bus](docs/synaptic_bus.md) — Phase 2.1 observational substrate
 - [PoC README](poc/README.md) — Orchestrator demonstration
 
 ---
@@ -145,12 +170,22 @@ Axis is not a framework to be extended. It is a kernel to be composed.
 
 ## Project Status
 
-- ✅ Core kernel: Complete
-- ✅ Test suite: Complete
+### Phase 1: Axis Core (Complete)
+- ✅ Core kernel: Complete (~200 lines)
+- ✅ Test suite: Complete (7 tests)
 - ✅ Documentation: Complete
-- ✅ Proof of concept: Complete
+- ✅ Proof of concept: Complete (~550 lines)
 
-Axis is **not** in active development. It is feature-complete by definition.
+### Phase 2.1: Synaptic Bus (Complete)
+- ✅ Passive observational substrate (~200 lines)
+- ✅ 1:1 event derivation from GraphState
+- ✅ Test suite: Complete (8 tests)
+- ✅ Documentation: Complete
+- 📖 See [docs/synaptic_bus.md](docs/synaptic_bus.md)
+
+### Phase 2.2+: In Development
+- 🔄 Orders contract and dual memory
+- 🔄 Concrete Orders (Pattern Weaver, Orthodoxy, Vault Keeper, Explainer)
 
 ---
 
