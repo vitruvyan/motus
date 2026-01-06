@@ -1,10 +1,31 @@
 # Vitruvyan Axis
 
-**A minimal cognitive graph kernel.**
+**Epistemic orchestrator for auditable AI systems.**
 
-Axis is a foundation for building systems that maintain an explicit, immutable cognitive trace of execution.
+Axis is a minimal kernel architected for regulated domains where audit trails are legally mandated. Unlike existing orchestrators (LangGraph), Axis provides immutability, non-intervening observation, and compliance readiness **by design**, not instrumentation.
+
+**Target domains:** Financial services (MiFID II), Healthcare AI (FDA 21 CFR Part 11), Legal reasoning (GDPR Article 22), Safety-critical systems.
+
+📄 **[Read the White Paper](docs/AXIS_WHITEPAPER.md)** — Complete technical overview, compliance mapping, and Vitruvyan integration strategy.
 
 [![License](https://img.shields.io/badge/license-TBD-blue.svg)](LICENSE)
+
+---
+
+## Why Axis?
+
+**Problem:** Existing orchestrators (LangGraph, LangChain) are built for rapid prototyping, not regulatory compliance. State mutability prevents guaranteed auditability. Mixed execution/interpretation layers obscure decision ownership. Audit trails require external instrumentation.
+
+**Solution:** Axis provides structural guarantees:
+- ✅ **Immutability:** Frozen dataclasses, append-only trace (no state corruption)
+- ✅ **Non-intervening observation:** Synaptic Bus is passive (observer cannot alter execution)
+- ✅ **Dual Memory Model:** Primary (execution truth) vs. Secondary (interpretation)
+- ✅ **Epistemic types:** Built-in structures for categories, patterns, constraints, violations
+- ✅ **MiFID II / EU AI Act ready:** Compliance is architectural, not added
+
+**Use Axis when:** Audit trails are legally required, immutability is non-negotiable, explainability must be built-in.
+
+**Use LangGraph when:** Rapid prototyping matters more than compliance.
 
 ---
 
@@ -136,11 +157,12 @@ python3 tests/test_synaptic_bus.py
 
 ## Documentation
 
+- **[White Paper](docs/AXIS_WHITEPAPER.md)** — Complete technical overview and business case
 - [Architecture](docs/architecture.md) — Core concepts and design
+- [Synaptic Bus](docs/synaptic_bus.md) — Phase 2.1 observational substrate
+- [Epistemic Types](docs/epistemic_types.md) — Phase 2.2 knowledge organization
 - [API Reference](docs/api.md) — Complete API documentation
 - [Examples](docs/examples.md) — Usage patterns
-- [Design Principles](docs/principles.md) — Architectural constraints
-- [Synaptic Bus](docs/synaptic_bus.md) — Phase 2.1 observational substrate
 - [PoC README](poc/README.md) — Orchestrator demonstration
 
 ---

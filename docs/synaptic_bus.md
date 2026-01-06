@@ -2,6 +2,8 @@
 
 **Phase 2.1 Implementation**
 
+**For complete context and compliance mapping, see [White Paper](AXIS_WHITEPAPER.md).**
+
 ---
 
 ## Conceptual Role

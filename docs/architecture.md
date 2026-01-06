@@ -1,5 +1,7 @@
 # Architecture
 
+**For complete technical overview and business case, see [White Paper](AXIS_WHITEPAPER.md).**
+
 ## Overview
 
 Vitruvyan Axis implements a cognitive graph kernel where:
