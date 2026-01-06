@@ -71,6 +71,18 @@ print(f"Facts: {len(final.facts)}")  # Facts: 1
 - [Examples](examples.md) — Usage patterns
 - [Design Principles](principles.md) — Architectural constraints
 
+## Proof of Concept
+
+See [poc/](../poc/) for a working demonstration of an orchestrator built on Axis.
+
+The PoC shows:
+- Routing decisions written to trace
+- Explicit rejection recording
+- Automatic explainability
+- Complete auditability
+
+Run: `python3 poc/demo.py`
+
 ## Installation
 
 ```bash

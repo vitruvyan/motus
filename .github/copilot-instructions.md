@@ -112,10 +112,16 @@ axis/
 ├── state.py     # GraphState and cognitive trace types
 ├── node.py      # Node protocol
 ├── runner.py    # Graph execution
-└── policy.py    # Execution policies
+├── policy.py    # Execution policies
+├── tests/       # Test suite
+├── docs/        # Documentation
+└── poc/         # Proof of concept orchestrator (NOT part of core)
 ```
 
-Each file is self-contained and minimal.
+Each core file is self-contained and minimal.
+
+**The `poc/` directory demonstrates orchestration built ON TOP of Axis.**
+It is NOT part of the kernel and should remain separate.
 
 ---
 
@@ -151,6 +157,50 @@ Each file is self-contained and minimal.
 5. Is this readable by someone unfamiliar with the codebase?
 
 If you cannot answer these confidently, **STOP and ask for clarification**.
+
+---
+
+---
+
+## Building ON TOP of Axis
+
+### Pattern: Orchestrator Layer
+
+Orchestration logic should be built **above** Axis, not inside it.
+
+**Correct architecture:**
+```
+Orchestration Layer (routing, LLM calls, tool integration)
+    ↓
+Axis Kernel (immutable trace)
+```
+
+**Example (see poc/ directory):**
+- Nodes inspect GraphState to make routing decisions
+- All decisions are written to Axis (no silent routing)
+- Rejections are explicit (record what was NOT done and why)
+- Trace is complete and auditable
+
+**Key principle:**
+Every behavior decision must be recorded in the trace.
+No "silent" routing or decision-making.
+
+### What Lives Where
+
+**In Axis (core):**
+- GraphState definition
+- Immutability guarantees
+- Append-only extension
+- Trace types (Fact, Decision, Rejection, Event)
+
+**Above Axis (orchestration):**
+- LLM integration
+- Tool calling
+- Routing logic
+- Error recovery
+- Domain-specific nodes
+
+**NEVER mix these layers.**
 
 ---
 
