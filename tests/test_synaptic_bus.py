@@ -11,18 +11,17 @@ Validates:
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import datetime
-from synaptic_bus import (
-    AxisSynapticBus,
+from axis.synaptic_bus import (
+    SynapticBus,
     BusEvent,
     BusEventType,
     BusObserver
 )
-from state import GraphState, Fact, Decision, Rejection
-from runner import GraphRunner, Policy
-from node import Node
+from axis.state import GraphState, Fact, Decision, Rejection
+from axis.runner import Runner, Policy
+from axis.node import Node
 
 
 # Test observer implementation
@@ -44,6 +43,7 @@ class RecordFactNode:
         fact = Fact(
             key="test_key",
             value="test_value",
+            source="test_node",
             timestamp=datetime.utcnow()
         )
         return state.with_fact(fact)
@@ -55,13 +55,13 @@ def test_bus_observes_simple_execution():
     
     # Create observer
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     # Run simple Axis execution
     ts = datetime.utcnow()
     state = GraphState.empty("test-trace-1")
     state = state.with_intent("Test intent")
-    state = state.with_fact(Fact("key1", "value1", ts))
+    state = state.with_fact(Fact("key1", "value1", "test", ts))
     state = state.with_decision(Decision("test_reasoning", ts))
     
     # Bus observes completed execution
@@ -89,11 +89,11 @@ def test_timestamp_distinction():
     print("\n🧪 Test: Timestamp distinction")
     
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     exec_time = datetime(2026, 1, 1, 12, 0, 0)
     state = GraphState.empty("test-trace-2")
-    state = state.with_fact(Fact("key1", "value1", exec_time))
+    state = state.with_fact(Fact("key1", "value1", "test", exec_time))
     
     # Observe at different time
     bus.observe(state)
@@ -115,12 +115,12 @@ def test_event_traceability():
     print("\n🧪 Test: Event traceability")
     
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     ts = datetime.utcnow()
     state = GraphState.empty("test-trace-3")
-    state = state.with_fact(Fact("fact1", "value1", ts))
-    state = state.with_fact(Fact("fact2", "value2", ts))
+    state = state.with_fact(Fact("fact1", "value1", "test", ts))
+    state = state.with_fact(Fact("fact2", "value2", "test", ts))
     state = state.with_decision(Decision("reason1", ts))
     
     bus.observe(state)
@@ -145,7 +145,7 @@ def test_rejection_derivation():
     print("\n🧪 Test: Rejection derivation")
     
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     ts = datetime.utcnow()
     state = GraphState.empty("test-trace-4")
@@ -172,10 +172,10 @@ def test_bus_immutability():
     """Bus history is append-only and immutable."""
     print("\n🧪 Test: Bus immutability")
     
-    bus = AxisSynapticBus()
+    bus = SynapticBus()
     
     state1 = GraphState.empty("trace-1")
-    state1 = state1.with_fact(Fact("key1", "value1", datetime.utcnow()))
+    state1 = state1.with_fact(Fact("key1", "value1", "test", datetime.utcnow()))
     
     bus.observe(state1)
     history1 = bus.history
@@ -183,7 +183,7 @@ def test_bus_immutability():
     
     # Observe another execution
     state2 = GraphState.empty("trace-2")
-    state2 = state2.with_fact(Fact("key2", "value2", datetime.utcnow()))
+    state2 = state2.with_fact(Fact("key2", "value2", "test", datetime.utcnow()))
     
     bus.observe(state2)
     history2 = bus.history
@@ -203,10 +203,10 @@ def test_multiple_observers():
     
     observer1 = TestObserver()
     observer2 = TestObserver()
-    bus = AxisSynapticBus(observers=(observer1, observer2))
+    bus = SynapticBus(observers=(observer1, observer2))
     
     state = GraphState.empty("test-trace-5")
-    state = state.with_fact(Fact("key1", "value1", datetime.utcnow()))
+    state = state.with_fact(Fact("key1", "value1", "test", datetime.utcnow()))
     
     bus.observe(state)
     
@@ -223,14 +223,14 @@ def test_multiple_observers():
 
 
 def test_integration_with_runner():
-    """Bus observes GraphRunner execution."""
-    print("\n🧪 Test: Integration with GraphRunner")
+    """Bus observes Runner execution."""
+    print("\n🧪 Test: Integration with Runner")
     
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     # Run Axis execution
-    runner = GraphRunner([RecordFactNode()], Policy.STRICT)
+    runner = Runner([RecordFactNode()], Policy.STRICT)
     initial_state = GraphState.empty("test-trace-6")
     initial_state = initial_state.with_intent("Record a fact")
     final_state = runner.run(initial_state)
@@ -247,7 +247,7 @@ def test_integration_with_runner():
     # Verify fact recorded
     assert BusEventType.FACT_RECORDED in event_types
     
-    print("✅ Integration with GraphRunner working")
+    print("✅ Integration with Runner working")
 
 
 def test_no_axis_mutation():
@@ -255,10 +255,10 @@ def test_no_axis_mutation():
     print("\n🧪 Test: No Axis mutation")
     
     observer = TestObserver()
-    bus = AxisSynapticBus(observers=(observer,))
+    bus = SynapticBus(observers=(observer,))
     
     original_state = GraphState.empty("test-trace-7")
-    original_state = original_state.with_fact(Fact("key1", "value1", datetime.utcnow()))
+    original_state = original_state.with_fact(Fact("key1", "value1", "test", datetime.utcnow()))
     
     # Capture original state
     original_fact_count = len(original_state.facts)

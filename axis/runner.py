@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Iterable, List
 
-from state import GraphState, Event, EventType
-from node import Node
-from policy import Policy
+from axis.state import GraphState, Event, EventType
+from axis.node import Node
+from axis.policy import Policy
 
 
-class GraphRunner:
+class Runner:
     """
     Executes a predefined sequence of Nodes against a GraphState.
 

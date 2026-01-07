@@ -6,17 +6,16 @@ while implementations provide INTELLIGENCE (algorithms).
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import datetime
-from state import Fact
+from axis.state import Fact
 from axis.epistemic_types import Category, Relation, Intent, EpistemicState
 
 
 def test_category_immutability():
     """Category is frozen - no mutation allowed."""
-    fact1 = Fact(key="price", value=100.0, timestamp=datetime.utcnow())
-    fact2 = Fact(key="volume", value=1000, timestamp=datetime.utcnow())
+    fact1 = Fact(key="price", value=100.0, source="test", timestamp=datetime.utcnow())
+    fact2 = Fact(key="volume", value=1000, source="test", timestamp=datetime.utcnow())
     
     category = Category(
         name="market-data",
@@ -35,8 +34,8 @@ def test_category_immutability():
 
 def test_relation_structure():
     """Relation links two facts semantically."""
-    fact1 = Fact(key="interest_rate", value=5.0, timestamp=datetime.utcnow())
-    fact2 = Fact(key="bond_price", value=95.0, timestamp=datetime.utcnow())
+    fact1 = Fact(key="interest_rate", value=5.0, source="test", timestamp=datetime.utcnow())
+    fact2 = Fact(key="bond_price", value=95.0, source="test", timestamp=datetime.utcnow())
     
     relation = Relation(
         source=fact1,
@@ -69,8 +68,8 @@ def test_intent_inference():
 
 def test_epistemic_state_aggregation():
     """EpistemicState aggregates all epistemic knowledge."""
-    fact1 = Fact(key="price", value=150.0, timestamp=datetime.utcnow())
-    fact2 = Fact(key="sector", value="tech", timestamp=datetime.utcnow())
+    fact1 = Fact(key="price", value=150.0, source="test", timestamp=datetime.utcnow())
+    fact2 = Fact(key="sector", value="tech", source="test", timestamp=datetime.utcnow())
     
     category = Category(
         name="technology-stocks",

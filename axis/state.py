@@ -19,13 +19,44 @@ class EventType(str, Enum):
 class Fact:
     key: str
     value: Union[str, int, float, bool]
+    source: str
     timestamp: datetime
+
+    def to_dict(self) -> dict:
+        return {
+            "key": self.key,
+            "value": self.value,
+            "source": self.source,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Fact":
+        return cls(
+            key=data["key"],
+            value=data["value"],
+            source=data["source"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+        )
 
 
 @dataclass(frozen=True)
 class Decision:
     description: str
     timestamp: datetime
+
+    def to_dict(self) -> dict:
+        return {
+            "description": self.description,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Decision":
+        return cls(
+            description=data["description"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -34,12 +65,42 @@ class Rejection:
     reason: str
     timestamp: datetime
 
+    def to_dict(self) -> dict:
+        return {
+            "description": self.description,
+            "reason": self.reason,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Rejection":
+        return cls(
+            description=data["description"],
+            reason=data["reason"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+        )
+
 
 @dataclass(frozen=True)
 class Event:
     type: EventType
     description: str
     timestamp: datetime
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.type.value,
+            "description": self.description,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Event":
+        return cls(
+            type=EventType(data["type"]),
+            description=data["description"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -50,6 +111,27 @@ class GraphState:
     decisions: tuple[Decision, ...]
     rejections: tuple[Rejection, ...]
     events: tuple[Event, ...]
+
+    def to_dict(self) -> dict:
+        return {
+            "trace_id": self.trace_id,
+            "intent": self.intent,
+            "facts": [f.to_dict() for f in self.facts],
+            "decisions": [d.to_dict() for d in self.decisions],
+            "rejections": [r.to_dict() for r in self.rejections],
+            "events": [e.to_dict() for e in self.events],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GraphState":
+        return cls(
+            trace_id=data["trace_id"],
+            intent=data.get("intent"),
+            facts=tuple(Fact.from_dict(f) for f in data.get("facts", [])),
+            decisions=tuple(Decision.from_dict(d) for d in data.get("decisions", [])),
+            rejections=tuple(Rejection.from_dict(r) for r in data.get("rejections", [])),
+            events=tuple(Event.from_dict(e) for e in data.get("events", [])),
+        )
 
     def with_intent(self, intent: str) -> "GraphState":
         return GraphState(

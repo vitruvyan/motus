@@ -12,13 +12,12 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import datetime
-from state import GraphState, Fact, Decision, Rejection, Event, EventType
-from node import Node
-from runner import GraphRunner
-from policy import Policy
+from axis.state import GraphState, Fact, Decision, Rejection, Event, EventType
+from axis.node import Node
+from axis.runner import Runner
+from axis.policy import Policy
 
 
 # Test Nodes (simple callables)
@@ -32,6 +31,7 @@ def node_add_fact(state: GraphState) -> GraphState:
     fact = Fact(
         key="test_key",
         value="test_value",
+        source="test_node",
         timestamp=datetime.utcnow()
     )
     return state.with_fact(fact)
@@ -99,7 +99,7 @@ def test_runner_strict_success():
         node_record_rejection,
     ]
     
-    runner = GraphRunner(nodes, policy=Policy.STRICT)
+    runner = Runner(nodes, policy=Policy.STRICT)
     initial_state = GraphState.empty("trace_003")
     final_state = runner.run(initial_state)
     
@@ -130,7 +130,7 @@ def test_runner_strict_failure():
         node_add_fact,  # Should never execute
     ]
     
-    runner = GraphRunner(nodes, policy=Policy.STRICT)
+    runner = Runner(nodes, policy=Policy.STRICT)
     initial_state = GraphState.empty("trace_004")
     
     try:
@@ -150,7 +150,7 @@ def test_runner_exploration_skip():
         node_add_fact,  # Should execute despite previous failure
     ]
     
-    runner = GraphRunner(nodes, policy=Policy.EXPLORATION)
+    runner = Runner(nodes, policy=Policy.EXPLORATION)
     initial_state = GraphState.empty("trace_005")
     final_state = runner.run(initial_state)
     
@@ -177,7 +177,7 @@ class NodeAsClass:
 def test_node_protocol_class():
     """Test that Protocol allows class-based nodes."""
     node = NodeAsClass()
-    runner = GraphRunner([node], policy=Policy.STRICT)
+    runner = Runner([node], policy=Policy.STRICT)
     initial_state = GraphState.empty("trace_006")
     final_state = runner.run(initial_state)
     
@@ -193,10 +193,10 @@ def test_fact_value_types():
     now = datetime.utcnow()
     
     # Valid types
-    fact_str = Fact(key="k1", value="string", timestamp=now)
-    fact_int = Fact(key="k2", value=42, timestamp=now)
-    fact_float = Fact(key="k3", value=3.14, timestamp=now)
-    fact_bool = Fact(key="k4", value=True, timestamp=now)
+    fact_str = Fact(key="k1", value="string", source="test", timestamp=now)
+    fact_int = Fact(key="k2", value=42, source="test", timestamp=now)
+    fact_float = Fact(key="k3", value=3.14, source="test", timestamp=now)
+    fact_bool = Fact(key="k4", value=True, source="test", timestamp=now)
     
     state = state.with_fact(fact_str)
     state = state.with_fact(fact_int)

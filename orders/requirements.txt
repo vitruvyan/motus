@@ -1,0 +1,11 @@
+# Axis Orders - Premium Capabilities
+# Phase 2.4+ - Separate from core kernel
+#
+# These are optional premium features that build on top of Axis.
+# Each Order is independently installable and monetizable.
+
+# PostgreSQL persistence adapter dependency
+# Required for axis-persistence-postgresql package
+psycopg2-binary>=2.9.0
+
+# Future dependencies for other Orders will be added here

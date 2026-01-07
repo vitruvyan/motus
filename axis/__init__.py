@@ -1,15 +1,32 @@
-"""Axis epistemic types and protocols.
+"""Axis - Minimal cognitive graph kernel.
 
-This submodule provides foundational types and interfaces for epistemic reasoning.
-These are SUBSTRATE ONLY - no implementations.
+Provides:
+    - Immutable GraphState (Primary Memory)
+    - Node protocol (pure functions)
+    - Runner (execution engine)
+    - SynapticBus (Dual Memory observer)
+    - Policy (STRICT, EXPLORATION)
+    - Epistemic types and protocols
 
-Types (immutable structures):
-    Category, Relation, Intent, Implication, Pattern, Constraint, Violation, EpistemicState
-
-Protocols (empty interfaces):
-    OntologyProvider, SemanticInterpreter, PatternDetector, ConstraintChecker, EpistemicMemory
+Phase status:
+    Phase 1: Core kernel (FROZEN)
+    Phase 2.1: Synaptic Bus (FROZEN)
+    Phase 2.2: Epistemic types (COMPLETE)
+    Phase 2.3: Production features (IN PROGRESS)
 """
 
+__version__ = "0.3.0-dev"
+
+# Core kernel
+from axis.state import GraphState, Fact, Decision, Rejection, Event
+from axis.node import Node
+from axis.runner import Runner
+from axis.policy import Policy
+
+# Synaptic Bus (Phase 2.1)
+from axis.synaptic_bus import SynapticBus
+
+# Epistemic types (Phase 2.2)
 from axis.epistemic_types import (
     Category,
     Relation,
@@ -21,6 +38,7 @@ from axis.epistemic_types import (
     EpistemicState,
 )
 
+# Epistemic protocols (Phase 2.2)
 from axis.epistemic_protocols import (
     OntologyProvider,
     SemanticInterpreter,
@@ -30,7 +48,18 @@ from axis.epistemic_protocols import (
 )
 
 __all__ = [
-    # Types
+    # Core
+    "GraphState",
+    "Fact",
+    "Decision",
+    "Rejection",
+    "Event",
+    "Node",
+    "Runner",
+    "Policy",
+    # Synaptic Bus
+    "SynapticBus",
+    # Epistemic types
     "Category",
     "Relation",
     "Intent",
@@ -39,7 +68,7 @@ __all__ = [
     "Constraint",
     "Violation",
     "EpistemicState",
-    # Protocols
+    # Epistemic protocols
     "OntologyProvider",
     "SemanticInterpreter",
     "PatternDetector",

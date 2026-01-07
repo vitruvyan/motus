@@ -105,23 +105,118 @@ It is a **foundation**: rigid, explicit, and deliberate in what it excludes.
 
 ---
 
-## File Structure
+## File Structure (Official Tree)
 
 ```
-axis/
-├── state.py     # GraphState and cognitive trace types
-├── node.py      # Node protocol
-├── runner.py    # Graph execution
-├── policy.py    # Execution policies
-├── tests/       # Test suite
-├── docs/        # Documentation
-└── poc/         # Proof of concept orchestrator (NOT part of core)
+axis/                           # Repository root
+├── axis/                       # Python package (pip install axis)
+│   ├── __init__.py            # Public API exports
+│   ├── state.py               # Core: GraphState + trace types
+│   ├── node.py                # Core: Node protocol
+│   ├── runner.py              # Core: Runner execution engine
+│   ├── policy.py              # Core: Policy enum (STRICT, EXPLORATION)
+│   ├── synaptic_bus.py        # Phase 2.1: Dual Memory observer
+│   ├── events.py              # Phase 2.1: Event types
+│   ├── epistemic_types.py     # Phase 2.2: Epistemic types
+│   ├── epistemic_protocols.py # Phase 2.2: Epistemic protocols
+│   │
+│   ├── persistence/           # Phase 2.3: GraphState storage
+│   │   ├── __init__.py
+│   │   ├── protocol.py        # PersistenceProvider protocol
+│   │   ├── json_adapter.py    # JSON file backend
+│   │   ├── sqlite_adapter.py  # SQLite backend
+│   │   └── postgresql_adapter.py  # PostgreSQL backend
+│   │
+│   ├── recovery/              # Phase 2.3: Error resilience
+│   │   ├── __init__.py
+│   │   ├── retry.py           # Exponential backoff retry
+│   │   ├── circuit_breaker.py # Circuit breaker pattern
+│   │   └── timeout.py         # Timeout wrapper
+│   │
+│   ├── observability/         # Phase 2.3: Monitoring
+│   │   ├── __init__.py
+│   │   ├── metrics.py         # Prometheus metrics
+│   │   ├── logging.py         # Structured JSON logs
+│   │   └── tracing.py         # OpenTelemetry spans
+│   │
+│   └── streaming/             # Phase 2.3: Real-time execution
+│       ├── __init__.py
+│       ├── async_runner.py    # Async Runner
+│       ├── event_stream.py    # Server-Sent Events
+│       └── websocket.py       # WebSocket support
+│
+├── orders/                     # Phase 2.4+: Premium Orders (SEPARATE)
+│   ├── __init__.py
+│   ├── pattern_weaver/        # Semantic pattern detection
+│   │   ├── __init__.py
+│   │   ├── nodes.py
+│   │   ├── graph.py
+│   │   ├── config.py
+│   │   ├── tests.py
+│   │   ├── README.md
+│   │   └── requirements.txt
+│   ├── orthodoxy_warden/      # Constraint validation
+│   ├── codex_hunter/          # Multi-source data fetching
+│   └── babel_garden/          # Intent inference
+│
+├── poc/                        # Orchestrator demo (NOT part of kernel)
+│   ├── nodes/                 # Example Node implementations
+│   ├── orchestrator.py        # Orchestration layer ON TOP of Axis
+│   ├── demo.py
+│   └── requirements.txt
+│
+├── tests/                      # Test suite (root level)
+│   ├── test_e2e.py            # Core kernel tests
+│   ├── test_synaptic_bus.py   # Synaptic Bus tests
+│   ├── test_epistemic_types.py # Epistemic types tests
+│   ├── test_persistence.py    # Phase 2.3 (future)
+│   ├── test_recovery.py       # Phase 2.3 (future)
+│   └── test_streaming.py      # Phase 2.3 (future)
+│
+├── examples/                   # Usage examples (root level)
+│   ├── vitruvyan_mock.py      # Protocol implementation example
+│   └── demo_synaptic_bus.py   # Synaptic Bus demo
+│
+├── docs/                       # Documentation (root level)
+│   ├── AXIS_WHITEPAPER.md
+│   ├── BUSINESS_PLAN.md
+│   ├── architecture.md
+│   ├── roadmap_production.md
+│   └── ...
+│
+├── setup.py                    # pip install axis
+├── pyproject.toml              # Modern Python packaging
+├── README.md
+├── LICENSE
+└── .gitignore
 ```
 
-Each core file is self-contained and minimal.
+### Key Architectural Decisions
 
-**The `poc/` directory demonstrates orchestration built ON TOP of Axis.**
-It is NOT part of the kernel and should remain separate.
+1. **`axis/` package = Complete kernel**
+   - All core functionality (state, node, runner, policy, bus)
+   - All epistemic types and protocols
+   - All production features (persistence, recovery, observability, streaming)
+   - Installable: `pip install axis`
+   - Zero external dependencies (stdlib only)
+
+2. **`orders/` = Premium capabilities (SEPARATE)**
+   - Each Order is independent with own dependencies
+   - Installable separately: `pip install axis-pattern-weaver`
+   - NOT mixed with kernel (clean separation)
+   - Can be monetized independently
+
+3. **`poc/` = Example orchestrator (NOT kernel)**
+   - Demonstrates how to BUILD ON TOP of Axis
+   - Shows orchestration layer above immutable substrate
+   - NOT part of Axis package
+   - Has its own dependencies (OpenAI, etc.)
+
+4. **`tests/`, `docs/`, `examples/` = Root level**
+   - Standard Python project convention
+   - `tests/` include tests for axis/ and orders/
+   - `docs/` contains all documentation
+   - `examples/` demonstrates Axis usage patterns
 
 ---
 

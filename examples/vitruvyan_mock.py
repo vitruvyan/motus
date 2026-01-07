@@ -10,11 +10,10 @@ Real Vitruvyan uses actual infrastructure.
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import datetime
 from typing import Optional
-from state import GraphState, Fact, Decision
+from axis.state import GraphState, Fact, Decision
 from axis.epistemic_types import Category, Relation, Intent, Implication
 from axis.epistemic_protocols import OntologyProvider, SemanticInterpreter
 

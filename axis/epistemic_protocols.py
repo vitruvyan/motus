@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Add parent directory to path to import core modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from state import GraphState, Fact, Decision
+from axis.state import GraphState, Fact, Decision
 from axis.epistemic_types import (
     Category,
     Relation,

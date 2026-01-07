@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from state import GraphState
+from axis.state import GraphState
 
 
 class Node(Protocol):

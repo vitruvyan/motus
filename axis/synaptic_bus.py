@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Protocol
 from enum import Enum, auto
 
-from state import GraphState, Fact, Decision, Rejection, Event, EventType
+from axis.state import GraphState, Fact, Decision, Rejection, Event, EventType
 
 
 class BusEventType(Enum):
@@ -67,7 +67,7 @@ class BusObserver(Protocol):
         ...
 
 
-class AxisSynapticBus:
+class SynapticBus:
     """
     Passive observational substrate for Axis executions.
     

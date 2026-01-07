@@ -10,12 +10,11 @@ Shows:
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
 
-from synaptic_bus import AxisSynapticBus, BusEvent, BusEventType, BusObserver
-from state import GraphState, Fact, Decision, Rejection
-from runner import GraphRunner, Policy
-from node import Node
+from axis.synaptic_bus import SynapticBus, BusEvent, BusEventType, BusObserver
+from axis.state import GraphState, Fact, Decision, Rejection
+from axis.runner import GraphRunner, Policy
+from axis.node import Node
 from datetime import datetime
 
 
@@ -133,7 +132,7 @@ def demo_simple_observation():
     metrics = MetricsCollector()
     
     # Create Bus with Orders as observers
-    bus = AxisSynapticBus(observers=(audit, metrics))
+    bus = SynapticBus(observers=(audit, metrics))
     
     # Run Axis execution (simple)
     state = GraphState.empty("demo-trace-1")
@@ -158,7 +157,7 @@ def demo_complex_observation():
     # Reuse Orders from previous demo
     audit = AuditLogger()
     metrics = MetricsCollector()
-    bus = AxisSynapticBus(observers=(audit, metrics))
+    bus = SynapticBus(observers=(audit, metrics))
     
     # Run Axis execution (complex)
     complex_intent = (
@@ -194,7 +193,7 @@ def demo_directionality():
     
     print("\n2️⃣ BUS observes completed execution")
     audit = AuditLogger()
-    bus = AxisSynapticBus(observers=(audit,))
+    bus = SynapticBus(observers=(audit,))
     bus.observe(final_state)
     print(f"   Bus history: {len(bus.history)} events")
     
@@ -229,7 +228,7 @@ def demo_timestamp_semantics():
                 print(f"   ✓ Execution time: when fact was recorded in Axis")
                 print(f"   ✓ Observation time: when Bus derived the event")
     
-    bus = AxisSynapticBus(observers=(TimestampInspector(),))
+    bus = SynapticBus(observers=(TimestampInspector(),))
     bus.observe(state)
 
 
