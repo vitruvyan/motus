@@ -53,6 +53,15 @@ from axis.streaming import (
     ConcurrentRunner,
 )
 
+# Audit Layer (Phase 1 Step 2)
+from axis.audit import (
+    SentinelAgent,
+    AuditConfig,
+    BackupMode,
+    VaultStatus,
+    AuditEvent,
+)
+
 __all__ = [
     # Core
     "GraphState",
@@ -83,4 +92,10 @@ __all__ = [
     # Streaming
     "AsyncRunner",
     "ConcurrentRunner",
+    # Audit Layer
+    "SentinelAgent",
+    "AuditConfig",
+    "BackupMode",
+    "VaultStatus",
+    "AuditEvent",
 ]
