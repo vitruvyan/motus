@@ -1,16 +1,54 @@
-"""Observability layer for monitoring and debugging.
+"""
+Axis Observability Layer - Production monitoring.
 
-Phase 2.3 - Week 5-6
-Provides Prometheus metrics, structured logging, and OpenTelemetry tracing.
+Provides:
+- PrometheusMetrics: Metrics collection via SynapticBus
+- StructuredLogger: JSON logging for trace correlation
+- SpanTracer: Distributed tracing spans
+
+Example:
+    from axis.observability import PrometheusMetrics, StructuredLogger, SpanTracer
+    from axis.synaptic_bus import SynapticBus
+    
+    bus = SynapticBus()
+    
+    # Attach observers
+    bus.attach(PrometheusMetrics())
+    bus.attach(StructuredLogger())
+    bus.attach(SpanTracer())
+    
+    # Execute with observability
+    runner = Runner(nodes=[...], bus=bus)
+    result = runner.run(state)
 """
 
-# Public API exports (to be implemented)
-# from .metrics import MetricsCollector
-# from .logging import configure_logging
-# from .tracing import TracingObserver
+from axis.observability.metrics import (
+    PrometheusMetrics,
+    start_metrics_server,
+)
+
+from axis.observability.logging import (
+    StructuredLogger,
+    FileLogger,
+    parse_log_file,
+    filter_logs,
+)
+
+from axis.observability.tracing import (
+    SpanTracer,
+    Span,
+)
 
 __all__ = [
-    # "MetricsCollector",
-    # "configure_logging",
-    # "TracingObserver",
+    # Metrics
+    "PrometheusMetrics",
+    "start_metrics_server",
+    # Logging
+    "StructuredLogger",
+    "FileLogger",
+    "parse_log_file",
+    "filter_logs",
+    # Tracing
+    "SpanTracer",
+    "Span",
 ]

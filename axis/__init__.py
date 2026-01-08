@@ -47,6 +47,12 @@ from axis.epistemic_protocols import (
     EpistemicMemory,
 )
 
+# Streaming (Phase 2.3)
+from axis.streaming import (
+    AsyncRunner,
+    ConcurrentRunner,
+)
+
 __all__ = [
     # Core
     "GraphState",
@@ -74,4 +80,7 @@ __all__ = [
     "PatternDetector",
     "ConstraintChecker",
     "EpistemicMemory",
+    # Streaming
+    "AsyncRunner",
+    "ConcurrentRunner",
 ]

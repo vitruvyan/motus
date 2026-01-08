@@ -112,8 +112,8 @@ def test_runner_strict_success():
     # Verify events (4 nodes * 2 events = 8 events)
     assert len(final_state.events) == 8
     
-    started_events = [e for e in final_state.events if e.type == EventType.NODE_STARTED]
-    completed_events = [e for e in final_state.events if e.type == EventType.NODE_COMPLETED]
+    started_events = [e for e in final_state.events if e.event_type == EventType.NODE_STARTED]
+    completed_events = [e for e in final_state.events if e.event_type == EventType.NODE_COMPLETED]
     
     assert len(started_events) == 4
     assert len(completed_events) == 4
@@ -159,7 +159,7 @@ def test_runner_exploration_skip():
     assert len(final_state.facts) == 1
     
     # Verify events include NODE_SKIPPED
-    skipped_events = [e for e in final_state.events if e.type == EventType.NODE_SKIPPED]
+    skipped_events = [e for e in final_state.events if e.event_type == EventType.NODE_SKIPPED]
     assert len(skipped_events) == 1
     assert "error" in skipped_events[0].description.lower()
     

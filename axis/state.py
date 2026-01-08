@@ -83,23 +83,29 @@ class Rejection:
 
 @dataclass(frozen=True)
 class Event:
-    type: EventType
+    event_type: EventType
     description: str
     timestamp: datetime
+    metadata: Optional[dict] = None
+    node_name: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
-            "type": self.type.value,
+            "event_type": self.event_type.value,
             "description": self.description,
             "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata,
+            "node_name": self.node_name,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Event":
         return cls(
-            type=EventType(data["type"]),
+            event_type=EventType(data["event_type"]),
             description=data["description"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
+            metadata=data.get("metadata"),
+            node_name=data.get("node_name"),
         )
 
 

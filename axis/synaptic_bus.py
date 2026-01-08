@@ -90,31 +90,53 @@ class SynapticBus:
         self._observers = observers
         self._history: list[BusEvent] = []
     
+    def attach(self, observer) -> None:
+        """
+        Attach an observer (for observability layer).
+        
+        Args:
+            observer: Observer with observe(event_type, state, **kwargs) method
+        """
+        self._observers = self._observers + (observer,)
+    
     @property
     def history(self) -> tuple[BusEvent, ...]:
         """Return immutable view of all observed events."""
         return tuple(self._history)
     
-    def observe(self, state: GraphState) -> None:
+    def observe(self, event_or_state, state=None, **kwargs):
         """
-        Observe a completed Axis execution.
+        Observe an event or a completed Axis execution.
         
-        Derives events from GraphState and notifies all observers.
-        This is the ONLY entry point for Bus activity.
+        Supports two modes:
+        1. Observability mode: observe(event_type: str, state: GraphState, **kwargs)
+        2. Orders mode: observe(state: GraphState)
         
         Args:
-            state: Completed GraphState from Axis execution
+            event_or_state: Event type string or GraphState
+            state: GraphState (for observability mode)
+            **kwargs: Additional data for observability mode
         """
-        observation_time = datetime.utcnow()
-        events = self._derive_events(state, observation_time)
-        
-        # Append to history
-        self._history.extend(events)
-        
-        # Notify all observers (sequential, deterministic)
-        for event in events:
+        if isinstance(event_or_state, str):
+            # Observability mode: event_type, state, **kwargs
+            event_type = event_or_state
             for observer in self._observers:
-                observer.on_event(event)
+                if hasattr(observer, 'observe'):
+                    observer.observe(event_type, state, **kwargs)
+        else:
+            # Orders mode: state
+            state = event_or_state
+            observation_time = datetime.utcnow()
+            events = self._derive_events(state, observation_time)
+            
+            # Append to history
+            self._history.extend(events)
+            
+            # Notify all observers (sequential, deterministic)
+            for event in events:
+                for observer in self._observers:
+                    if hasattr(observer, 'on_event'):
+                        observer.on_event(event)
     
     def _derive_events(
         self, 
@@ -175,7 +197,7 @@ class SynapticBus:
         
         # Execution lifecycle events
         for idx, exec_event in enumerate(state.events):
-            if exec_event.type == EventType.NODE_STARTED:
+            if exec_event.event_type == EventType.NODE_STARTED:
                 events.append(BusEvent(
                     event_type=BusEventType.NODE_STARTED,
                     trace_id=state.trace_id,
@@ -184,7 +206,7 @@ class SynapticBus:
                     source_index=idx,
                     content=exec_event.description
                 ))
-            elif exec_event.type == EventType.NODE_COMPLETED:
+            elif exec_event.event_type == EventType.NODE_COMPLETED:
                 events.append(BusEvent(
                     event_type=BusEventType.NODE_COMPLETED,
                     trace_id=state.trace_id,
