@@ -1,16 +1,62 @@
-"""Error recovery mechanisms for production resilience.
+"""
+Axis Recovery Layer - Error resilience patterns.
 
-Phase 2.3 - Week 3-4
-Provides retry, circuit breaker, and timeout decorators.
+Provides:
+- retry: Exponential backoff retry decorator
+- CircuitBreaker: Circuit breaker pattern for fault tolerance
+- timeout: Timeout decorator for long-running operations
+
+Example:
+    from axis.recovery import retry, CircuitBreaker, timeout_threading
+    
+    @retry(max_attempts=3)
+    @timeout_threading(5.0)
+    def my_node(state: GraphState) -> GraphState:
+        # Node implementation
+        return state
+    
+    breaker = CircuitBreaker(failure_threshold=5)
+    
+    @breaker
+    def another_node(state: GraphState) -> GraphState:
+        return state
 """
 
-# Public API exports (to be implemented)
-# from .retry import retry
-# from .circuit_breaker import CircuitBreaker
-# from .timeout import timeout
+from axis.recovery.retry import (
+    retry,
+    retry_on_http_error,
+    retry_on_io_error,
+    retry_with_jitter,
+)
+
+from axis.recovery.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    CircuitState,
+    circuit_breaker,
+)
+
+from axis.recovery.timeout import (
+    timeout,
+    timeout_threading,
+    time_limit,
+    TimeoutError,
+)
 
 __all__ = [
-    # "retry",
-    # "CircuitBreaker",
-    # "timeout",
+    # Retry
+    "retry",
+    "retry_on_http_error",
+    "retry_on_io_error",
+    "retry_with_jitter",
+    # Circuit Breaker
+    "CircuitBreaker",
+    "CircuitBreakerOpenError",
+    "CircuitState",
+    "circuit_breaker",
+    # Timeout
+    "timeout",
+    "timeout_threading",
+    "time_limit",
+    "TimeoutError",
 ]
