@@ -128,12 +128,54 @@
 - [x] Zero regressions (all existing tests pass)
 - [x] SynapticBus integration validated
 - [x] Production upgrade paths documented
-- **Decision: PROCEED to Phase 2.4 (Orders Integration)**
+- **Decision: PROCEED to Phase 2.4 (Orders Integration) via Phase 1 (Kernel Extensions)**
+
+---
+
+### Phase 1: Kernel Extensions (~1,200 lines, Week 9-10) 🔄 IN PROGRESS
+**Status:** ✅ 50% COMPLETE (Step 1 done)  
+**Purpose:** Prepare kernel for Orders integration  
+**Timeline:** 8-10 hours total
+
+#### Step 1: QdrantAdapter ✅ COMPLETE — January 8, 2026
+**Delivered:**
+- ✅ `axis/persistence/qdrant_adapter.py` (300 lines): Vector storage via Qdrant REST API
+- ✅ `tests/test_qdrant_adapter.py` (150 lines): 8 tests covering all operations
+
+**Features:**
+- ✅ PersistenceProvider protocol compliance
+- ✅ Core methods: save/load/delete/query/list GraphStates
+- ✅ Vector operations: save_embedding, search_similar_traces
+- ✅ Collection management: ensure_collection, health_check
+- ✅ HTTP client (httpx, stdlib-compatible)
+- ✅ Zero external dependencies
+
+**Commit:** `ac238aa` — QdrantAdapter implementation (+450 lines, +8 tests)
+
+#### Step 2: AuditLayer 🔄 NEXT (~2,400 lines, 12-15 hours)
+**Source:** Vitruvyan Vault Keepers (6,659 lines) → Refactor to Axis patterns  
+**Strategy:** Full agent port (preserve async architecture, 90% reuse)
+
+**Files to create:**
+- `axis/audit/agents.py` (~1,500 lines): 4 async agents (Sentinel, Archivist, Courier, Chamberlain)
+- `axis/audit/orchestrator.py` (~300 lines): Event-driven coordination
+- `axis/audit/config.py` (~150 lines): AuditConfig, BackupMode
+- `axis/audit/events.py` (~100 lines): Event types
+- `axis/audit/__init__.py` (~50 lines): Public exports
+- `tests/test_audit.py` (~300 lines): Async tests (pytest-asyncio)
+
+**Acceptance Criteria:**
+- [ ] 4 async agents operational (change detection, archiving, upload, verification)
+- [ ] Event-driven orchestration via AuditOrchestrator
+- [ ] SynapticBus integration for audit trail
+- [ ] S3 + Google Drive + local upload support
+- [ ] SHA256 integrity verification
+- [ ] 15 tests passing (12 unit + 3 integration)
 
 ---
 
 ### Phase 2.4: Orders Integration (~15,000 lines, 8-10 weeks)
-**Status:** ✅ READY TO START (Week 9)  
+**Status:** PENDING (after Phase 1 complete)  
 **Effort:** 70% reuse from Vitruvyan, 30% new  
 **Critical Path:** NO (can overlap with other work)
 
