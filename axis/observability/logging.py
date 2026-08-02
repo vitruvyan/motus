@@ -73,7 +73,7 @@ class StructuredLogger:
         level = "INFO"
         if event_type == "error":
             level = "ERROR"
-        elif event_type == "REJECTION":
+        elif event_type in ("node_skipped", "node_retried"):
             level = "WARNING"
         
         # Base log entry
@@ -132,10 +132,12 @@ class StructuredLogger:
             node_name = kwargs.get("node_name", "unknown")
             error = kwargs.get("error", "unknown error")
             return f"Node failed: {node_name} - {error}"
-        elif event_type == "DECISION":
-            return "Decision recorded"
-        elif event_type == "REJECTION":
-            return "Rejection recorded"
+        elif event_type == "node_skipped":
+            node_name = kwargs.get("node_name", "unknown")
+            return f"Node skipped: {node_name}"
+        elif event_type == "node_retried":
+            node_name = kwargs.get("node_name", "unknown")
+            return f"Node retrying: {node_name}"
         else:
             return f"Event: {event_type}"
     

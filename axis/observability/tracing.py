@@ -89,15 +89,19 @@ class SpanTracer:
         self.spans: list[Span] = []
         self._active_spans: Dict[str, Span] = {}
         self._graph_span: Optional[Span] = None
-    
+        self.skipped_count: int = 0
+
     def observe(self, event_type: str, state, **kwargs):
         """
         SynapticBus observer callback.
-        
+
         Creates spans for (axis.events.EventType values):
         - graph_start → graph span
         - node_started → node span (child of graph)
         - node_completed → end node span
+        - node_skipped → tally (the span was already closed by ERROR,
+          which EXPLORATION always emits before NODE_SKIPPED)
+        - node_retried → bump a retry count on the still-open node span
         - error → mark span as error
         """
         if event_type == "graph_start":
@@ -108,6 +112,10 @@ class SpanTracer:
             self._on_pre_node(state, **kwargs)
         elif event_type == "node_completed":
             self._on_post_node(state, **kwargs)
+        elif event_type == "node_skipped":
+            self._on_node_skipped(state, **kwargs)
+        elif event_type == "node_retried":
+            self._on_node_retried(state, **kwargs)
         elif event_type == "error":
             self._on_error(state, **kwargs)
     
@@ -160,7 +168,19 @@ class SpanTracer:
             span.end()
             self.spans.append(span)
             del self._active_spans[node_name]
-    
+
+    def _on_node_skipped(self, state, node_name: Optional[str] = None, **kwargs):
+        """EXPLORATION always emits ERROR before NODE_SKIPPED, so the span
+        is already closed and appended by _on_error by the time this
+        fires — nothing left to close, just count it."""
+        self.skipped_count += 1
+
+    def _on_node_retried(self, state, node_name: Optional[str] = None, **kwargs):
+        """Bump a retry counter on the node's still-open span, if any."""
+        if node_name and node_name in self._active_spans:
+            span = self._active_spans[node_name]
+            span.attributes["retries"] = span.attributes.get("retries", 0) + 1
+
     def get_spans(self) -> list[Span]:
         """Get all completed spans."""
         return self.spans
@@ -174,3 +194,4 @@ class SpanTracer:
         self.spans.clear()
         self._active_spans.clear()
         self._graph_span = None
+        self.skipped_count = 0

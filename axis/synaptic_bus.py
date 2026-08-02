@@ -21,6 +21,7 @@ from typing import Protocol
 from enum import Enum, auto
 
 from axis.state import GraphState, Fact, Decision, Rejection, Event, EventType
+from axis.events import now
 
 
 class BusEventType(Enum):
@@ -126,7 +127,7 @@ class SynapticBus:
         else:
             # Orders mode: state
             state = event_or_state
-            observation_time = datetime.utcnow()
+            observation_time = now()
             events = self._derive_events(state, observation_time)
             
             # Append to history
