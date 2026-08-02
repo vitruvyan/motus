@@ -1,17 +1,19 @@
 """
 Tests for the orderable contract (axis/orders.py) — Issue 8.
 
-An order is nodes plus observers, nothing else. These tests pin exactly
-that: OrderSpec is a frozen, flat description a Runner can consume
-directly; Order is a one-method structural Protocol; and an order with
-no nodes at all (an observer-only order) is legal.
+An order is what it contributes to a run plus what it says on the wire,
+nothing else. These tests pin exactly that: OrderSpec is a frozen, flat
+description a Runner can consume directly; Order is a one-method
+structural Protocol; an order with no nodes at all (observer-only, or a
+bus-driven package whose whole contract is its channels) is legal; and
+the channel vocabulary is owned by the spec, not scattered in constants.
 """
 
 import dataclasses
 
 import pytest
 
-from axis.orders import Order, OrderSpec
+from axis.orders import Channels, Order, OrderSpec
 from axis.runner import Runner
 from axis.state import GraphState, Fact
 from axis.events import now
@@ -38,6 +40,7 @@ def test_order_spec_construction_and_frozen():
     assert spec.requires_axis == ">=0.4,<0.5"
     assert spec.nodes == (sample_node,)
     assert spec.observers == ()  # default
+    assert spec.channels == Channels()  # default: nothing on the wire
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         spec.name = "renamed"
@@ -117,20 +120,42 @@ def test_order_spec_observers_attach_and_observe():
 
 
 def test_order_spec_with_empty_nodes_is_legal():
-    """An observer-only order (a future audit package watching a graph
-    it contributes no nodes to) is a legal OrderSpec — nodes defaults to
-    nothing, not a required non-empty tuple."""
+    """An order with no nodes — an observer-only audit package, or a
+    bus-driven order of pure decision functions the graph reaches over
+    the wire — is a legal OrderSpec. nodes genuinely defaults."""
     spec = OrderSpec(
         name="axis-order-audit",
         version="0.1.0",
         requires_axis=">=0.4,<0.5",
-        nodes=(),
-        observers=(),
     )
 
     assert spec.nodes == ()
+    assert spec.observers == ()
 
     # A Runner built from it is a legal (if trivial) no-op graph.
     runner = Runner(spec.nodes, policy=Policy.STRICT)
     result = runner.run(GraphState.new("empty-order"))
     assert result.trace_id.startswith("empty-order-")
+
+
+def test_channels_are_the_specs_own_wire_vocabulary():
+    """A bus-driven order carries its channel names in the spec itself
+    — one owner, frozen, so a loader can check that every `consumes`
+    has a producer instead of the names drifting in per-package
+    constant files."""
+    channels = Channels(
+        produces=("codex.restoration.completed",),
+        consumes=("codex.restoration.requested",),
+    )
+    spec = OrderSpec(
+        name="axis-order-codex-hunters",
+        version="0.1.0",
+        requires_axis=">=0.4,<0.5",
+        channels=channels,
+    )
+
+    assert spec.channels.produces == ("codex.restoration.completed",)
+    assert spec.channels.consumes == ("codex.restoration.requested",)
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        spec.channels.produces = ()
