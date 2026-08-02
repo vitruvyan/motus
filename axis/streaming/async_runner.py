@@ -1,37 +1,41 @@
-from typing import Sequence, Optional, Callable, AsyncIterator
-from axis.state import GraphState
-from axis.events import Event, EventType
-from axis.node import Node
-from axis.policy import Policy
-from datetime import datetime
 import asyncio
 import logging
+import time
+from typing import AsyncIterator, Callable, List, Optional, Sequence
+
+from axis.state import GraphState
+from axis.events import Event, EventType, now
+from axis.node import Node
+from axis.policy import Policy
+from axis.runner import NodeFailed, RunnerObserver
 
 logger = logging.getLogger(__name__)
+
 
 class AsyncRunner:
     """
     Async runner for concurrent Node execution.
-    
-    Similar to Runner but supports:
+
+    Twin of Runner: same event shape (NODE_STARTED/COMPLETED/SKIPPED,
+    ERROR, GRAPH_START/END), same clock, same trace-on-failure and
+    observer-isolation guarantees — just async. Adds:
     - Async nodes (async def)
-    - Concurrent execution (asyncio.gather)
+    - Concurrent execution (asyncio.gather, via ConcurrentRunner)
     - Streaming updates (async generator)
-    - Event notifications
-    
+
     Example:
         async def async_node(state: GraphState) -> GraphState:
             await asyncio.sleep(0.1)  # Async I/O
             return state.with_fact(...)
-        
+
         runner = AsyncRunner(nodes=[async_node])
         async for state in runner.stream(initial_state):
             print(f"Progress: {len(state.events)} events")
-        
+
         # Or just get final result:
         result = await runner.run(initial_state)
     """
-    
+
     def __init__(
         self,
         nodes: Sequence[Callable],
@@ -42,200 +46,328 @@ class AsyncRunner:
         Args:
             nodes: Sequence of async or sync Node callables
             policy: Execution policy (STRICT or EXPLORATION)
-            bus: Optional SynapticBus for event notification
+            bus: Optional observer (e.g. SynapticBus) for event notification
         """
-        self.nodes = nodes
+        self.nodes = list(nodes)
         self.policy = policy
         self.bus = bus
-    
+        self._observers: List[RunnerObserver] = []
+        if bus is not None:
+            self._observers.append(bus)
+
+    def attach(self, observer: RunnerObserver) -> None:
+        """Attach an observer to the runner."""
+        self._observers.append(observer)
+
+    def _notify(self, event_type: EventType, state: GraphState, **kwargs) -> None:
+        """Same isolation guarantee as Runner._notify: called outside any
+        node's try block, each observer wrapped so one broken observer
+        can't take down the run or silence the others."""
+        for observer in self._observers:
+            try:
+                observer.observe(event_type.value, state, **kwargs)
+            except Exception:
+                logger.exception(
+                    "Observer %r raised handling %s", observer, event_type.value
+                )
+
     async def run(self, state: GraphState) -> GraphState:
         """
         Execute all nodes asynchronously and return final state.
-        
+
         Args:
             state: Initial GraphState
-        
+
         Returns:
             Final GraphState after all nodes
         """
-        if self.bus:
-            self.bus.observe("GRAPH_START", state)
-        
-        current_state = state
-        
+        current_state = state.with_event(
+            Event(
+                event_type=EventType.GRAPH_START,
+                description=f"Graph started under policy {self.policy.value}",
+                timestamp=now(),
+                metadata={"policy": self.policy.value},
+            )
+        )
+        self._notify(EventType.GRAPH_START, current_state)
+
+        nodes_run = nodes_skipped = nodes_failed = 0
+
         for node in self.nodes:
+            name = getattr(node, "__name__", type(node).__name__)
+
+            current_state = current_state.with_event(
+                Event(
+                    event_type=EventType.NODE_STARTED,
+                    description=f"Node {name} started",
+                    timestamp=now(),
+                    node_name=name,
+                )
+            )
+            self._notify(EventType.NODE_STARTED, current_state, node_name=name)
+
+            t0 = time.monotonic()
             try:
-                node_name = node.__name__
-                
-                if self.bus:
-                    self.bus.observe("PRE_NODE", current_state, node_name=node_name)
-                
-                # Execute node (async or sync)
                 if asyncio.iscoroutinefunction(node):
                     next_state = await node(current_state)
                 else:
                     next_state = node(current_state)
-                
-                # Record execution event
-                event = Event(
-                    event_type=EventType.NODE_EXECUTED,
-                    description=f"Node {node_name} executed",
-                    timestamp=datetime.now(),
-                    node_name=node_name,
+            except Exception as exc:
+                nodes_failed += 1
+                duration_ms = round((time.monotonic() - t0) * 1000)
+                current_state = current_state.with_event(
+                    Event(
+                        event_type=EventType.ERROR,
+                        description=f"Node {name} failed: {exc}",
+                        timestamp=now(),
+                        node_name=name,
+                        metadata={
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "duration_ms": duration_ms,
+                        },
+                    )
                 )
-                current_state = next_state.with_event(event)
-                
-                if self.bus:
-                    self.bus.observe("POST_NODE", current_state, node_name=node_name)
-            
-            except Exception as e:
-                logger.error(f"Node {node_name} failed: {e}")
-                
-                if self.bus:
-                    self.bus.observe("ERROR", current_state, node_name=node_name, error=e)
-                
+                self._notify(EventType.ERROR, current_state, node_name=name, error=exc)
+
                 if self.policy == Policy.STRICT:
-                    raise
-                
-                # Record error event in EXPLORATION mode
-                event = Event(
-                    event_type=EventType.ERROR,
-                    description=f"Node {node_name} failed: {e}",
-                    timestamp=datetime.now(),
-                    metadata={"ERROR": str(e)},
-                    node_name=node_name,
+                    failure = NodeFailed(exc)
+                    failure.state = current_state
+                    raise failure from exc
+
+                current_state = current_state.with_event(
+                    Event(
+                        event_type=EventType.NODE_SKIPPED,
+                        description=f"Node {name} skipped due to error: {exc}",
+                        timestamp=now(),
+                        node_name=name,
+                        metadata={"duration_ms": duration_ms},
+                    )
                 )
-                current_state = current_state.with_event(event)
-        
-        if self.bus:
-            self.bus.observe("GRAPH_END", current_state)
-        
+                nodes_skipped += 1
+                continue
+
+            duration_ms = round((time.monotonic() - t0) * 1000)
+            current_state = next_state.with_event(
+                Event(
+                    event_type=EventType.NODE_COMPLETED,
+                    description=f"Node {name} completed",
+                    timestamp=now(),
+                    node_name=name,
+                    metadata={"duration_ms": duration_ms},
+                )
+            )
+            self._notify(EventType.NODE_COMPLETED, current_state, node_name=name)
+            nodes_run += 1
+
+        current_state = current_state.with_event(
+            Event(
+                event_type=EventType.GRAPH_END,
+                description=(
+                    f"Graph ended: {nodes_run} run, {nodes_skipped} skipped, "
+                    f"{nodes_failed} failed"
+                ),
+                timestamp=now(),
+                metadata={
+                    "policy": self.policy.value,
+                    "nodes_run": nodes_run,
+                    "nodes_skipped": nodes_skipped,
+                    "nodes_failed": nodes_failed,
+                },
+            )
+        )
+        self._notify(EventType.GRAPH_END, current_state)
+
         return current_state
-    
+
     async def stream(self, state: GraphState) -> AsyncIterator[GraphState]:
         """
         Stream GraphState updates during execution.
-        
-        Yields GraphState after each node execution.
-        
+
+        Yields GraphState after GRAPH_START, after each node, and after
+        GRAPH_END.
+
         Args:
             state: Initial GraphState
-        
+
         Yields:
-            GraphState after each node
-        
+            GraphState after each lifecycle event
+
         Example:
             async for current_state in runner.stream(initial_state):
                 print(f"Events: {len(current_state.events)}")
         """
-        if self.bus:
-            self.bus.observe("GRAPH_START", state)
-        
-        current_state = state
-        yield current_state  # Yield initial state
-        
+        current_state = state.with_event(
+            Event(
+                event_type=EventType.GRAPH_START,
+                description=f"Graph started under policy {self.policy.value}",
+                timestamp=now(),
+                metadata={"policy": self.policy.value},
+            )
+        )
+        self._notify(EventType.GRAPH_START, current_state)
+        yield current_state
+
+        nodes_run = nodes_skipped = nodes_failed = 0
+
         for node in self.nodes:
+            name = getattr(node, "__name__", type(node).__name__)
+
+            current_state = current_state.with_event(
+                Event(
+                    event_type=EventType.NODE_STARTED,
+                    description=f"Node {name} started",
+                    timestamp=now(),
+                    node_name=name,
+                )
+            )
+            self._notify(EventType.NODE_STARTED, current_state, node_name=name)
+
+            t0 = time.monotonic()
             try:
-                node_name = node.__name__
-                
-                if self.bus:
-                    self.bus.observe("PRE_NODE", current_state, node_name=node_name)
-                
-                # Execute node
                 if asyncio.iscoroutinefunction(node):
                     next_state = await node(current_state)
                 else:
                     next_state = node(current_state)
-                
-                # Record execution event
-                event = Event(
-                    event_type=EventType.NODE_EXECUTED,
-                    description=f"Node {node_name} executed",
-                    timestamp=datetime.now(),
+            except Exception as exc:
+                nodes_failed += 1
+                duration_ms = round((time.monotonic() - t0) * 1000)
+                current_state = current_state.with_event(
+                    Event(
+                        event_type=EventType.ERROR,
+                        description=f"Node {name} failed: {exc}",
+                        timestamp=now(),
+                        node_name=name,
+                        metadata={
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "duration_ms": duration_ms,
+                        },
+                    )
                 )
-                current_state = next_state.with_event(event)
-                
-                if self.bus:
-                    self.bus.observe("POST_NODE", current_state, node_name=node_name)
-                
-                yield current_state  # Yield after each node
-            
-            except Exception as e:
-                logger.error(f"Node {node_name} failed: {e}")
-                
-                if self.bus:
-                    self.bus.observe("ERROR", current_state, node_name=node_name, error=e)
-                
+                self._notify(EventType.ERROR, current_state, node_name=name, error=exc)
+
                 if self.policy == Policy.STRICT:
-                    raise
-                
-                # Record error and continue
-                event = Event(
-                    event_type=EventType.ERROR,
-                    description=f"Node {node_name} failed: {e}",
-                    timestamp=datetime.now(),
-                    metadata={"ERROR": str(e)},
-                    node_name=node_name,
+                    failure = NodeFailed(exc)
+                    failure.state = current_state
+                    raise failure from exc
+
+                current_state = current_state.with_event(
+                    Event(
+                        event_type=EventType.NODE_SKIPPED,
+                        description=f"Node {name} skipped due to error: {exc}",
+                        timestamp=now(),
+                        node_name=name,
+                        metadata={"duration_ms": duration_ms},
+                    )
                 )
-                current_state = current_state.with_event(event)
+                nodes_skipped += 1
                 yield current_state
-        
-        if self.bus:
-            self.bus.observe("GRAPH_END", current_state)
+                continue
+
+            duration_ms = round((time.monotonic() - t0) * 1000)
+            current_state = next_state.with_event(
+                Event(
+                    event_type=EventType.NODE_COMPLETED,
+                    description=f"Node {name} completed",
+                    timestamp=now(),
+                    node_name=name,
+                    metadata={"duration_ms": duration_ms},
+                )
+            )
+            self._notify(EventType.NODE_COMPLETED, current_state, node_name=name)
+            nodes_run += 1
+            yield current_state
+
+        current_state = current_state.with_event(
+            Event(
+                event_type=EventType.GRAPH_END,
+                description=(
+                    f"Graph ended: {nodes_run} run, {nodes_skipped} skipped, "
+                    f"{nodes_failed} failed"
+                ),
+                timestamp=now(),
+                metadata={
+                    "policy": self.policy.value,
+                    "nodes_run": nodes_run,
+                    "nodes_skipped": nodes_skipped,
+                    "nodes_failed": nodes_failed,
+                },
+            )
+        )
+        self._notify(EventType.GRAPH_END, current_state)
+        yield current_state
 
 
 class ConcurrentRunner(AsyncRunner):
     """
     Runner that executes multiple nodes concurrently.
-    
+
     Example:
         # Execute 3 independent nodes in parallel
         runner = ConcurrentRunner(nodes=[node1, node2, node3])
         result = await runner.run(state)
     """
-    
+
     async def run(self, state: GraphState) -> GraphState:
         """Execute all nodes concurrently using asyncio.gather."""
-        if self.bus:
-            self.bus.observe("GRAPH_START", state)
-        
-        # Execute all nodes concurrently
+        current_state = state.with_event(
+            Event(
+                event_type=EventType.GRAPH_START,
+                description=f"Graph started under policy {self.policy.value} (concurrent)",
+                timestamp=now(),
+                metadata={"policy": self.policy.value},
+            )
+        )
+        self._notify(EventType.GRAPH_START, current_state)
+
         tasks = []
         for node in self.nodes:
             if asyncio.iscoroutinefunction(node):
-                tasks.append(node(state))
+                tasks.append(node(current_state))
             else:
                 # Wrap sync function in async
-                tasks.append(asyncio.to_thread(node, state))
-        
-        try:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Merge results (simple merge: take first non-error)
-            current_state = state
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    if self.policy == Policy.STRICT:
-                        raise result
-                    logger.warning(f"Node {i} failed: {result}")
-                else:
-                    # Merge state (combine facts, decisions, etc.)
-                    current_state = self._merge_states(current_state, result)
-            
-            if self.bus:
-                self.bus.observe("GRAPH_END", current_state)
-            
-            return current_state
-        
-        except Exception as e:
-            if self.bus:
-                self.bus.observe("ERROR", state, error=e)
-            raise
-    
+                tasks.append(asyncio.to_thread(node, current_state))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        nodes_run = nodes_failed = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                nodes_failed += 1
+                if self.policy == Policy.STRICT:
+                    failure = NodeFailed(result)
+                    failure.state = current_state
+                    raise failure from result
+                logger.warning(f"Node {i} failed: {result}")
+            else:
+                # Merge state (combine facts, decisions, etc.)
+                current_state = self._merge_states(current_state, result)
+                nodes_run += 1
+
+        current_state = current_state.with_event(
+            Event(
+                event_type=EventType.GRAPH_END,
+                description=(
+                    f"Graph ended (concurrent): {nodes_run} run, {nodes_failed} failed"
+                ),
+                timestamp=now(),
+                metadata={
+                    "policy": self.policy.value,
+                    "nodes_run": nodes_run,
+                    "nodes_skipped": 0,
+                    "nodes_failed": nodes_failed,
+                },
+            )
+        )
+        self._notify(EventType.GRAPH_END, current_state)
+
+        return current_state
+
     def _merge_states(self, state1: GraphState, state2: GraphState) -> GraphState:
         """
         Merge two GraphStates (simple union of collections).
-        
+
         Note: This is a naive merge. Production may need conflict resolution.
         """
         return GraphState(

@@ -94,21 +94,21 @@ class SpanTracer:
         """
         SynapticBus observer callback.
         
-        Creates spans for:
-        - GRAPH_START → graph span
-        - PRE_NODE → node span (child of graph)
-        - POST_NODE → end node span
-        - ERROR → mark span as error
+        Creates spans for (axis.events.EventType values):
+        - graph_start → graph span
+        - node_started → node span (child of graph)
+        - node_completed → end node span
+        - error → mark span as error
         """
-        if event_type == "GRAPH_START":
+        if event_type == "graph_start":
             self._on_graph_start(state)
-        elif event_type == "GRAPH_END":
+        elif event_type == "graph_end":
             self._on_graph_end(state)
-        elif event_type == "PRE_NODE":
+        elif event_type == "node_started":
             self._on_pre_node(state, **kwargs)
-        elif event_type == "POST_NODE":
+        elif event_type == "node_completed":
             self._on_post_node(state, **kwargs)
-        elif event_type == "ERROR":
+        elif event_type == "error":
             self._on_error(state, **kwargs)
     
     def _on_graph_start(self, state):

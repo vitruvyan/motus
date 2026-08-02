@@ -109,36 +109,52 @@ def test_runner_strict_success():
     assert len(final_state.decisions) == 1
     assert len(final_state.rejections) == 1
     
-    # Verify events (4 nodes * 2 events = 8 events)
-    assert len(final_state.events) == 8
-    
+    # Verify events (4 nodes * 2 events + GRAPH_START + GRAPH_END = 10 events)
+    assert len(final_state.events) == 10
+
     started_events = [e for e in final_state.events if e.event_type == EventType.NODE_STARTED]
     completed_events = [e for e in final_state.events if e.event_type == EventType.NODE_COMPLETED]
-    
+    graph_events = [e for e in final_state.events if e.event_type in (EventType.GRAPH_START, EventType.GRAPH_END)]
+
     assert len(started_events) == 4
     assert len(completed_events) == 4
+    assert len(graph_events) == 2
+    # Every completed event carries its node's duration.
+    assert all(e.node_name for e in started_events + completed_events)
+    assert all(e.metadata and "duration_ms" in e.metadata for e in completed_events)
     
     print("✓ Runner STRICT policy (success) test passed")
 
 
 # Test: Runner with STRICT policy (failure case)
 def test_runner_strict_failure():
-    """Test that STRICT policy stops execution on error."""
+    """Test that STRICT policy stops execution but preserves the trace."""
+    from axis.runner import NodeFailed
+
     nodes = [
         node_set_intent,
         node_that_fails,
         node_add_fact,  # Should never execute
     ]
-    
+
     runner = Runner(nodes, policy=Policy.STRICT)
     initial_state = GraphState.empty("trace_004")
-    
+
     try:
         runner.run(initial_state)
-        assert False, "Expected ValueError to be raised"
-    except ValueError as e:
-        assert str(e) == "Intentional failure"
-        print("✓ Runner STRICT policy (failure) test passed")
+        assert False, "Expected NodeFailed to be raised"
+    except NodeFailed as e:
+        # The original exception is chained, not swallowed.
+        assert isinstance(e.__cause__, ValueError)
+        assert str(e.__cause__) == "Intentional failure"
+
+        # The trace up to and including the failure survives on .state.
+        assert e.state is not None
+        assert e.state.intent == "test_intent"
+        error_events = [ev for ev in e.state.events if ev.event_type == EventType.ERROR]
+        assert len(error_events) == 1
+        assert error_events[0].node_name == "node_that_fails"
+        print("✓ Runner STRICT policy (failure) test passed — trace preserved")
 
 
 # Test: Runner with EXPLORATION policy (skip on error)

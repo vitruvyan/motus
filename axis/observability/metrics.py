@@ -45,18 +45,21 @@ class PrometheusMetrics:
         SynapticBus observer callback.
         
         Called on:
-        - PRE_NODE: Record start time
-        - POST_NODE: Record duration
-        - ERROR: Record failure
-        - GRAPH_START: Increment execution counter
+        - node_started: Record start time
+        - node_completed: Record duration
+        - error: Record failure
+        - graph_start: Increment execution counter
+
+        event_type is an axis.events.EventType value (e.g. "node_started"),
+        not an ad-hoc string — one vocabulary for the whole lifecycle.
         """
-        if event_type == "PRE_NODE":
+        if event_type == "node_started":
             self._on_pre_node(state, **kwargs)
-        elif event_type == "POST_NODE":
+        elif event_type == "node_completed":
             self._on_post_node(state, **kwargs)
-        elif event_type == "ERROR":
+        elif event_type == "error":
             self._on_error(state, **kwargs)
-        elif event_type == "GRAPH_START":
+        elif event_type == "graph_start":
             self._on_graph_start(state, **kwargs)
     
     def _on_pre_node(self, state, node_name: Optional[str] = None, **kwargs):
