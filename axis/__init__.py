@@ -15,7 +15,7 @@ Phase status:
     Phase 2.3: Production features (IN PROGRESS)
 """
 
-__version__ = "0.3.0-dev"
+__version__ = "0.4.0"
 
 # Core kernel
 from axis.state import GraphState, Fact, Decision, Rejection, Event

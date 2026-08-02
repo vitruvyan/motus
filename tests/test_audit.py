@@ -3,6 +3,15 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+# These tests MOCK the adapters, but patching axis.persistence.<Adapter>
+# walks the lazy __getattr__, which imports the real driver. On a bare
+# `pip install vitruvyan-axis` that driver is absent by design — so the
+# tests gate on the extras, like the live-service tests already do:
+#   pip install vitruvyan-axis[postgres,qdrant]
+pytest.importorskip("psycopg2", reason="audit tests need the [postgres] extra")
+pytest.importorskip("httpx", reason="audit tests need the [qdrant] extra")
+
 from axis.audit import (
     SentinelAgent,
     ArchivistAgent,
