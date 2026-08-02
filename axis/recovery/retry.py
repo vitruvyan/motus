@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Callable, Type, Tuple, Optional
 from axis.state import GraphState
 from axis.events import Event, EventType, now
-from axis.node import Node
+from axis.node import Node, node_name
 import time
 import logging
 import random
@@ -54,7 +54,7 @@ def retry(
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
 
     def decorator(node: Node) -> Node:
-        name = getattr(node, "__name__", type(node).__name__)
+        name = node_name(node)
 
         @wraps(node)
         def wrapper(state: GraphState) -> GraphState:
@@ -69,6 +69,13 @@ def retry(
                         logger.error(
                             f"Node {name} failed after {max_attempts} attempts: {e}"
                         )
+                        # Carry the retry trace on the exception itself —
+                        # current_state already holds every NODE_RETRIED
+                        # event from the attempts that came before this
+                        # one. Without this, the last `raise` discards it
+                        # and the Runner's ERROR event is all that's left
+                        # of 3x the latency the retries paid for.
+                        e.__axis_state__ = current_state
                         raise
 
                     actual_delay = delay
