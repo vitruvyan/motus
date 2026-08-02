@@ -10,6 +10,7 @@ from .json_adapter import JSONAdapter
 from .sqlite_adapter import SQLiteAdapter
 from .postgresql_adapter import PostgreSQLAdapter
 from .qdrant_adapter import QdrantAdapter
+from .file_trace_observer import FileTraceObserver
 
 __all__ = [
     "PersistenceProvider",
@@ -17,4 +18,5 @@ __all__ = [
     "SQLiteAdapter",
     "PostgreSQLAdapter",
     "QdrantAdapter",
+    "FileTraceObserver",
 ]
