@@ -15,12 +15,13 @@ Phase status:
     Phase 2.3: Production features (IN PROGRESS)
 """
 
-__version__ = "0.3.0-dev"
+__version__ = "0.4.0"
 
 # Core kernel
 from axis.state import GraphState, Fact, Decision, Rejection, Event
+from axis.events import EventType, now
 from axis.node import Node
-from axis.runner import Runner
+from axis.runner import Runner, NodeFailed
 from axis.policy import Policy
 
 # Synaptic Bus (Phase 2.1)
@@ -69,8 +70,11 @@ __all__ = [
     "Decision",
     "Rejection",
     "Event",
+    "EventType",
+    "now",
     "Node",
     "Runner",
+    "NodeFailed",
     "Policy",
     # Synaptic Bus
     "SynapticBus",

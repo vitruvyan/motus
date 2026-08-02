@@ -61,12 +61,24 @@ async def stream_graph_execution(
     """
     Stream graph execution as Server-Sent Events.
 
+    One SSE frame per GraphState runner.stream() yields, labeled with the
+    ACTUAL event that produced it (event.event_type.value: "graph_start",
+    "node_started", "node_completed", "node_skipped", "error",
+    "graph_end") — runner.stream() already yields once after GRAPH_START
+    and once after GRAPH_END, so a synthetic wrapper frame around the
+    loop would double them. A 2-node run produces exactly 4 frames:
+    graph_start, node_completed, node_completed, graph_end.
+
+    Under Policy.STRICT, a node failure raises NodeFailed out of the
+    async generator instead of yielding an "error" frame — catch it at
+    the call site and read `.state` for the trace if you need it.
+
     Args:
         runner: AsyncRunner instance
         state: Initial GraphState
 
     Yields:
-        ServerSentEvent for each node completion
+        ServerSentEvent per lifecycle event
 
     Example:
         from axis.streaming import AsyncRunner, stream_graph_execution
@@ -79,43 +91,20 @@ async def stream_graph_execution(
     """
     event_id = 0
 
-    # Start event
-    yield ServerSentEvent(
-        event="graph_start",
-        data={
-            "trace_id": state.trace_id,
-            "intent": state.intent,
-        },
-        id=str(event_id),
-    )
-    event_id += 1
-
-    # Stream node executions
     async for current_state in runner.stream(state):
-        # Extract last event (most recent node execution)
-        if current_state.events:
-            last_event = current_state.events[-1]
+        if not current_state.events:
+            continue
+        last_event = current_state.events[-1]
 
-            yield ServerSentEvent(
-                event="node_completed",
-                data={
-                    "trace_id": current_state.trace_id,
-                    "node_name": last_event.node_name,
-                    "event_type": last_event.event_type.value,
-                    "facts_count": len(current_state.facts),
-                    "decisions_count": len(current_state.decisions),
-                },
-                id=str(event_id),
-            )
-            event_id += 1
-
-    # End event
-    yield ServerSentEvent(
-        event="graph_end",
-        data={
-            "trace_id": state.trace_id,
-            "facts_count": len(current_state.facts),
-            "decisions_count": len(current_state.decisions),
-        },
-        id=str(event_id),
-    )
+        yield ServerSentEvent(
+            event=last_event.event_type.value,
+            data={
+                "trace_id": current_state.trace_id,
+                "node_name": last_event.node_name,
+                "event_type": last_event.event_type.value,
+                "facts_count": len(current_state.facts),
+                "decisions_count": len(current_state.decisions),
+            },
+            id=str(event_id),
+        )
+        event_id += 1

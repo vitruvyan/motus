@@ -8,15 +8,15 @@ Provides:
 
 Example:
     from axis.recovery import retry, CircuitBreaker, timeout_threading
-    
-    @retry(max_attempts=3)
+
+    @retry(max_attempts=3, jitter=True)
     @timeout_threading(5.0)
     def my_node(state: GraphState) -> GraphState:
         # Node implementation
         return state
-    
+
     breaker = CircuitBreaker(failure_threshold=5)
-    
+
     @breaker
     def another_node(state: GraphState) -> GraphState:
         return state
@@ -26,7 +26,6 @@ from axis.recovery.retry import (
     retry,
     retry_on_http_error,
     retry_on_io_error,
-    retry_with_jitter,
 )
 
 from axis.recovery.circuit_breaker import (
@@ -48,7 +47,6 @@ __all__ = [
     "retry",
     "retry_on_http_error",
     "retry_on_io_error",
-    "retry_with_jitter",
     # Circuit Breaker
     "CircuitBreaker",
     "CircuitBreakerOpenError",

@@ -68,11 +68,12 @@ class StructuredLogger:
         **kwargs
     ) -> Dict[str, Any]:
         """Create structured log entry."""
-        # Determine log level based on event type
+        # Determine log level based on event type (an axis.events.EventType
+        # value, e.g. "error" — not an ad-hoc string).
         level = "INFO"
-        if event_type == "ERROR":
+        if event_type == "error":
             level = "ERROR"
-        elif event_type == "REJECTION":
+        elif event_type in ("node_skipped", "node_retried"):
             level = "WARNING"
         
         # Base log entry
@@ -117,24 +118,26 @@ class StructuredLogger:
     
     def _create_message(self, event_type: str, **kwargs) -> str:
         """Create human-readable message."""
-        if event_type == "GRAPH_START":
+        if event_type == "graph_start":
             return "Graph execution started"
-        elif event_type == "GRAPH_END":
+        elif event_type == "graph_end":
             return "Graph execution completed"
-        elif event_type == "PRE_NODE":
+        elif event_type == "node_started":
             node_name = kwargs.get("node_name", "unknown")
             return f"Executing node: {node_name}"
-        elif event_type == "POST_NODE":
+        elif event_type == "node_completed":
             node_name = kwargs.get("node_name", "unknown")
             return f"Node completed: {node_name}"
-        elif event_type == "ERROR":
+        elif event_type == "error":
             node_name = kwargs.get("node_name", "unknown")
             error = kwargs.get("error", "unknown error")
             return f"Node failed: {node_name} - {error}"
-        elif event_type == "DECISION":
-            return "Decision recorded"
-        elif event_type == "REJECTION":
-            return "Rejection recorded"
+        elif event_type == "node_skipped":
+            node_name = kwargs.get("node_name", "unknown")
+            return f"Node skipped: {node_name}"
+        elif event_type == "node_retried":
+            node_name = kwargs.get("node_name", "unknown")
+            return f"Node retrying: {node_name}"
         else:
             return f"Event: {event_type}"
     
