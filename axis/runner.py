@@ -64,6 +64,18 @@ def _state_from_exception(exc: Exception, fallback: GraphState) -> GraphState:
     return getattr(exc, "__axis_state__", None) or fallback
 
 
+def _graph_start_metadata(policy: Policy, state: GraphState) -> dict:
+    """GRAPH_START's own event metadata: policy, always — plus the run's
+    metadata (actor, causation_id, ...) under "run", but only when
+    state.metadata is non-empty. A run that doesn't use run metadata
+    produces the exact same GRAPH_START shape as before this field
+    existed — old-shape traces stay byte-stable."""
+    meta = {"policy": policy.value}
+    if state.metadata:
+        meta["run"] = dict(state.metadata)
+    return meta
+
+
 class Runner:
     """
     Executes a predefined sequence of Nodes against a GraphState.
@@ -113,7 +125,7 @@ class Runner:
                 event_type=EventType.GRAPH_START,
                 description=f"Graph started under policy {self._policy.value}",
                 timestamp=now(),
-                metadata={"policy": self._policy.value},
+                metadata=_graph_start_metadata(self._policy, state),
             )
         )
         self._notify(EventType.GRAPH_START, current_state)

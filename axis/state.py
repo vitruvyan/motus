@@ -1,7 +1,8 @@
 import json
 import uuid
 from dataclasses import dataclass, replace
-from typing import Optional
+from types import MappingProxyType
+from typing import Mapping, Optional
 
 from datetime import datetime
 
@@ -23,6 +24,20 @@ def _probe_json(value: Json, where: str) -> None:
         json.dumps(value)
     except TypeError as exc:
         raise TypeError(f"{where} is not JSON-serializable: {exc}") from exc
+
+
+def _freeze_metadata(metadata: Optional[Mapping[str, Json]]) -> Mapping[str, Json]:
+    """Wrap run metadata in a read-only view, not a plain dict.
+
+    Every other GraphState field is a tuple — genuinely immutable. A
+    plain dict would be the one field `dataclasses.replace` carries
+    through every with_*-derived sibling by sharing the same object, so
+    a single accidental `state.metadata["x"] = 1` on any one of them
+    would corrupt the metadata every other sibling — past and future —
+    sees too. MappingProxyType raises TypeError on that assignment
+    instead, for one stdlib import and no kernel bloat.
+    """
+    return MappingProxyType(dict(metadata) if metadata else {})
 
 
 @dataclass(frozen=True)
@@ -100,6 +115,18 @@ class GraphState:
     rejections: tuple[Rejection, ...]
     events: tuple[Event, ...]
 
+    # Per-run metadata: who ran this, why, under which authority. Set at
+    # creation (GraphState.new/empty) and never touched by with_* — it
+    # describes the run, not the work a node does. No keys are enforced,
+    # but the dispatcher contract this exists for seeds:
+    #   actor          — whose authority the run acts under
+    #   causation_id   — the event that woke this run
+    #   correlation_id — the broader request/trace this run belongs to
+    #   carta_version  — which rules were in force
+    # A stored trace from before this field existed has no "metadata"
+    # key; from_dict defaults it to {} so old traces still load.
+    metadata: Mapping[str, Json] = MappingProxyType({})
+
     def to_dict(self) -> dict:
         # Field probes give a precise message for the common case (a bad
         # Fact.value or Event.metadata).
@@ -118,6 +145,7 @@ class GraphState:
             "decisions": [d.to_dict() for d in self.decisions],
             "rejections": [r.to_dict() for r in self.rejections],
             "events": [e.to_dict() for e in self.events],
+            "metadata": dict(self.metadata),
         }
 
         # Whole-result probe as a catch-all: Decision/Rejection fields are
@@ -144,6 +172,7 @@ class GraphState:
             decisions=tuple(Decision.from_dict(d) for d in data.get("decisions", [])),
             rejections=tuple(Rejection.from_dict(r) for r in data.get("rejections", [])),
             events=tuple(Event.from_dict(e) for e in data.get("events", [])),
+            metadata=_freeze_metadata(data.get("metadata")),
         )
 
     def to_json(self) -> str:
@@ -185,7 +214,7 @@ class GraphState:
         return default
 
     @staticmethod
-    def empty(trace_id: str) -> "GraphState":
+    def empty(trace_id: str, metadata: Optional[Mapping[str, Json]] = None) -> "GraphState":
         return GraphState(
             trace_id=trace_id,
             intent=None,
@@ -193,14 +222,17 @@ class GraphState:
             decisions=(),
             rejections=(),
             events=(),
+            metadata=_freeze_metadata(metadata),
         )
 
     @classmethod
-    def new(cls, prefix: str = "") -> "GraphState":
+    def new(cls, prefix: str = "", metadata: Optional[Mapping[str, Json]] = None) -> "GraphState":
         """Mint a fresh run identity: `{prefix}-{uuid4().hex[:12]}`, or a
         bare hex id if no prefix is given. Replaces the three hand-rolled,
         second-resolution trace_id formats this kernel's consumers invented
-        (and which collide on a same-second rerun)."""
+        (and which collide on a same-second rerun). `metadata` is this
+        run's provenance (actor, causation_id, ...) — see GraphState's
+        field docstring."""
         suffix = uuid.uuid4().hex[:12]
         trace_id = f"{prefix}-{suffix}" if prefix else suffix
-        return cls.empty(trace_id)
+        return cls.empty(trace_id, metadata=metadata)
