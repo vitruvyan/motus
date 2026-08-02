@@ -897,3 +897,99 @@ def test_parse_timestamp_preserves_aware_and_normalizes_naive():
     aware = parse_timestamp("2024-06-01T12:00:00+02:00")
     assert aware.tzinfo is not None
     assert aware.utcoffset().total_seconds() == 2 * 3600
+
+
+# ===========================================================================
+# ROUND 3 — Issue 1: run metadata (actor, causation, authority)
+# ===========================================================================
+
+def test_graph_state_metadata_via_new_and_empty():
+    """new()/empty() accept metadata; default is {} either way."""
+    bare = GraphState.new("bare")
+    assert dict(bare.metadata) == {}
+
+    seeded = GraphState.new(
+        "seeded", metadata={"actor": "curator", "causation_id": "evt-1"}
+    )
+    assert dict(seeded.metadata) == {"actor": "curator", "causation_id": "evt-1"}
+
+    via_empty = GraphState.empty("direct", metadata={"actor": "dispatcher"})
+    assert dict(via_empty.metadata) == {"actor": "dispatcher"}
+
+    # It's a read-only view, not a plain dict — mutation is a TypeError,
+    # not a silent corruption of every sibling derived from this state.
+    with pytest.raises(TypeError):
+        seeded.metadata["actor"] = "someone-else"
+
+
+def test_graph_state_with_star_preserves_metadata():
+    """metadata describes the run, not the work — no with_* method
+    touches it, and dataclasses.replace carries it through unchanged."""
+    seed = GraphState.new("preserve", metadata={"actor": "curator", "carta_version": "1.2"})
+
+    derived = (
+        seed.with_intent("do work")
+        .with_fact(Fact("k", "v", "node", now()))
+        .with_decision(Decision("chose x", now()))
+        .with_rejection(Rejection("rejected y", "bad input", now()))
+        .with_event(Event(EventType.NODE_STARTED, "started", now()))
+    )
+
+    assert dict(derived.metadata) == dict(seed.metadata)
+
+
+def test_graph_state_metadata_round_trip_equality():
+    state = GraphState.new("roundtrip", metadata={"actor": "curator", "correlation_id": "req-9"})
+    reloaded = GraphState.from_dict(state.to_dict())
+
+    assert reloaded == state
+    assert dict(reloaded.metadata) == dict(state.metadata)
+
+
+def test_old_format_trace_loads_with_empty_metadata():
+    """A trace stored before this field existed has no "metadata" key —
+    from_dict must default it to {}, not KeyError."""
+    old_format = {
+        "trace_id": "pre-metadata-trace",
+        "intent": None,
+        "facts": [],
+        "decisions": [],
+        "rejections": [],
+        "events": [],
+        # no "metadata" key at all
+    }
+
+    loaded = GraphState.from_dict(old_format)
+    assert dict(loaded.metadata) == {}
+    assert loaded.to_dict()["metadata"] == {}  # round-trips forward cleanly
+
+
+def test_graph_start_carries_run_metadata():
+    """The Runner records state.metadata under GRAPH_START's "run" key —
+    the trace alone answers who/why/under-what-authority. A run with no
+    metadata produces the exact old GRAPH_START shape (no "run" key at
+    all), so old-shape traces stay byte-stable when the field is unused."""
+    runner = Runner([lambda s: s], policy=Policy.STRICT)
+
+    plain = runner.run(GraphState.new("no-metadata"))
+    graph_start_plain = next(e for e in plain.events if e.event_type == EventType.GRAPH_START)
+    assert "run" not in graph_start_plain.metadata
+
+    seeded_state = GraphState.new(
+        "with-metadata", metadata={"actor": "curator", "causation_id": "evt-42"}
+    )
+    result = runner.run(seeded_state)
+    graph_start = next(e for e in result.events if e.event_type == EventType.GRAPH_START)
+    assert graph_start.metadata["run"] == {"actor": "curator", "causation_id": "evt-42"}
+    assert graph_start.metadata["policy"] == "strict"
+
+
+def test_json_probe_rejects_unserializable_metadata_value():
+    """The whole-dict JSON probe (already in to_dict()) covers
+    GraphState.metadata too — no dedicated field probe needed."""
+    state = GraphState.new("bad-run-metadata", metadata={"started_at": datetime.now()})
+
+    with pytest.raises(TypeError) as excinfo:
+        state.to_dict()
+
+    assert "GraphState" in str(excinfo.value)
