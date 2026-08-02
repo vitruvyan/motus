@@ -7,7 +7,8 @@ Comprehensive test suite for retry, circuit breaker, and timeout patterns.
 
 import pytest
 from axis.state import GraphState
-from axis.recovery.retry import retry, retry_with_jitter
+from axis.events import EventType
+from axis.recovery.retry import retry
 from axis.recovery.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from axis.recovery.timeout import timeout_threading
 import time
@@ -86,9 +87,10 @@ def test_retry_with_custom_exceptions(sample_state):
 
 
 def test_retry_with_jitter(sample_state):
-    """Test retry with jitter prevents thundering herd."""
+    """Test retry(jitter=True) prevents thundering herd. jitter/max_delay
+    are now parameters of retry() itself — retry_with_jitter is gone."""
     node = FailingNode(fail_count=2)
-    decorated = retry_with_jitter(max_attempts=3, initial_delay=0.1)(node)
+    decorated = retry(max_attempts=3, initial_delay=0.1, jitter=True)(node)
 
     start_time = time.time()
     result = decorated(sample_state)
@@ -98,6 +100,46 @@ def test_retry_with_jitter(sample_state):
     assert node.attempts == 3
     # Should take at least 0.1 seconds with backoff (jitter may reduce it slightly)
     assert elapsed >= 0.05
+
+
+def test_retry_max_delay_caps_backoff(sample_state):
+    """Test max_delay caps exponential backoff."""
+    node = FailingNode(fail_count=2)
+    decorated = retry(
+        max_attempts=3, initial_delay=0.05, backoff_factor=10.0, max_delay=0.1
+    )(node)
+
+    start_time = time.time()
+    result = decorated(sample_state)
+    elapsed = time.time() - start_time
+
+    assert result.trace_id == "test-recovery"
+    # Uncapped backoff would be 0.05 + 0.5 = 0.55s; capped it's 0.05 + 0.1.
+    assert elapsed < 0.4
+
+
+def test_retry_rejects_max_attempts_below_one():
+    """Test retry(max_attempts=0) raises at decoration time, not with the
+    old baffling 'exceptions must derive from BaseException'."""
+    with pytest.raises(ValueError):
+        retry(max_attempts=0)
+
+
+def test_retry_records_node_retried_events(sample_state):
+    """Test each retry appends a NODE_RETRIED event to the state passed
+    into the next attempt, so retries are visible in the trace — not just
+    to on_retry. FailingNode hands back whatever state it was called with,
+    so a successful final attempt carries the two prior retries with it."""
+    node = FailingNode(fail_count=2)
+    decorated = retry(max_attempts=3, initial_delay=0.01)(node)
+
+    result = decorated(sample_state)
+
+    retried = [e for e in result.events if e.event_type == EventType.NODE_RETRIED]
+    assert len(retried) == 2
+    assert all(e.node_name == "FailingNode" for e in retried)
+    assert [e.metadata["attempt"] for e in retried] == [1, 2]
+    assert all(e.metadata["error_type"] == "ValueError" for e in retried)
 
 
 # Circuit breaker tests
