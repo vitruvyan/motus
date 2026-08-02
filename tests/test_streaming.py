@@ -111,6 +111,28 @@ async def test_sse_stream_yields_events(sample_state):
     assert events[-1].event == "graph_end"
 
 @pytest.mark.asyncio
+async def test_sse_stream_frames_pinned_for_two_nodes(sample_state):
+    """A 2-node run must produce exactly 4 frames, each labeled with the
+    REAL event that produced it — not a synthetic wrapper around the
+    loop double-counting GRAPH_START/GRAPH_END (which runner.stream()
+    already yields) plus a hardcoded "node_completed" for every frame
+    regardless of what actually happened."""
+    runner = AsyncRunner(nodes=[async_node_1, async_node_2])
+
+    events = [e async for e in stream_graph_execution(runner, sample_state)]
+
+    assert [e.event for e in events] == [
+        "graph_start",
+        "node_completed",
+        "node_completed",
+        "graph_end",
+    ]
+    assert events[0].data["node_name"] is None
+    assert events[1].data["node_name"] == "async_node_1"
+    assert events[2].data["node_name"] == "async_node_2"
+    assert events[3].data["node_name"] is None
+
+@pytest.mark.asyncio
 async def test_sse_event_encoding():
     """Test ServerSentEvent encodes correctly."""
     event = ServerSentEvent(
@@ -140,6 +162,25 @@ async def test_websocket_stream_yields_messages(sample_state):
     assert len(messages) >= 2
     assert messages[0].type == "graph_start"
     assert messages[-1].type == "graph_end"
+
+@pytest.mark.asyncio
+async def test_websocket_stream_frames_pinned_for_two_nodes(sample_state):
+    """Same pin as the SSE case: a 2-node run produces exactly 4
+    messages, `type`d with the real event, not a hardcoded
+    "state_update" plus a doubled synthetic graph_start/graph_end."""
+    runner = AsyncRunner(nodes=[async_node_1, async_node_2])
+    handler = WebSocketStreamHandler()
+
+    messages = [m async for m in handler.stream(runner, sample_state)]
+
+    assert [m.type for m in messages] == [
+        "graph_start",
+        "node_completed",
+        "node_completed",
+        "graph_end",
+    ]
+    assert messages[1].data["node_name"] == "async_node_1"
+    assert messages[2].data["node_name"] == "async_node_2"
 
 @pytest.mark.asyncio
 async def test_websocket_pause_resume(sample_state):

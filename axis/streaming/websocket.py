@@ -10,13 +10,11 @@ logger = logging.getLogger(__name__)
 class WebSocketMessage:
     """
     WebSocket message structure.
-    
-    Types:
-    - state_update: GraphState update
-    - node_start: Node execution starting
-    - node_end: Node execution completed
-    - error: Execution error
-    - control: Control message (pause, resume, cancel)
+
+    `type` is the actual axis.events.EventType value that produced the
+    message — graph_start, node_started, node_completed, node_skipped,
+    error, graph_end — plus two control types this handler adds:
+    graph_cancelled and control (pause/resume/cancel from the client).
     """
     
     type: str
@@ -73,28 +71,29 @@ class WebSocketStreamHandler:
     ) -> AsyncIterator[WebSocketMessage]:
         """
         Stream graph execution as WebSocket messages.
-        
+
+        One message per GraphState runner.stream() yields, `type`d with
+        the ACTUAL event that produced it (event.event_type.value) —
+        runner.stream() already yields once after GRAPH_START and once
+        after GRAPH_END, so a synthetic wrapper message around the loop
+        would double them.
+
+        Under Policy.STRICT, a node failure raises NodeFailed out of
+        this async generator instead of yielding an "error" message —
+        catch it at the call site and read `.state` if you need the
+        trace.
+
         Args:
             runner: AsyncRunner instance
             state: Initial GraphState
-        
+
         Yields:
-            WebSocketMessage for each event
+            WebSocketMessage per lifecycle event
         """
-        # Start message
-        yield WebSocketMessage(
-            type="graph_start",
-            data={
-                "trace_id": state.trace_id,
-                "intent": state.intent,
-            },
-        )
-        
-        # Stream execution
         async for current_state in runner.stream(state):
             # Check for pause
             await self._pause_event.wait()
-            
+
             # Check for cancellation
             if self.cancelled:
                 yield WebSocketMessage(
@@ -102,30 +101,20 @@ class WebSocketStreamHandler:
                     data={"trace_id": state.trace_id},
                 )
                 break
-            
-            # State update
-            if current_state.events:
-                last_event = current_state.events[-1]
-                
-                yield WebSocketMessage(
-                    type="state_update",
-                    data={
-                        "trace_id": current_state.trace_id,
-                        "node_name": last_event.node_name,
-                        "event_type": last_event.event_type.value,
-                        "facts_count": len(current_state.facts),
-                        "decisions_count": len(current_state.decisions),
-                        "rejections_count": len(current_state.rejections),
-                    },
-                )
-        
-        # End message
-        if not self.cancelled:
+
+            if not current_state.events:
+                continue
+            last_event = current_state.events[-1]
+
             yield WebSocketMessage(
-                type="graph_end",
+                type=last_event.event_type.value,
                 data={
-                    "trace_id": state.trace_id,
-                    "total_events": len(current_state.events),
+                    "trace_id": current_state.trace_id,
+                    "node_name": last_event.node_name,
+                    "event_type": last_event.event_type.value,
+                    "facts_count": len(current_state.facts),
+                    "decisions_count": len(current_state.decisions),
+                    "rejections_count": len(current_state.rejections),
                 },
             )
     
