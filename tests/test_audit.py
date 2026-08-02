@@ -30,7 +30,7 @@ def audit_config(tmp_path):
     )
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
 async def test_sentinel_detect_db_changes(mock_postgres_adapter, audit_config):
     """Test database change detection"""
     mock_postgres = Mock()
@@ -45,7 +45,7 @@ async def test_sentinel_detect_db_changes(mock_postgres_adapter, audit_config):
     assert isinstance(changes, list)
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
 async def test_sentinel_detect_file_changes(mock_postgres_adapter, audit_config):
     """Test filesystem change detection"""
     mock_postgres = Mock()
@@ -70,7 +70,7 @@ async def test_sentinel_detect_file_changes(mock_postgres_adapter, audit_config)
     assert len(new_changes) >= len(changes)
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
 async def test_sentinel_event_publishing(mock_postgres_adapter, audit_config):
     """Test event publishing to queue"""
     mock_postgres = Mock()
@@ -87,8 +87,8 @@ async def test_sentinel_event_publishing(mock_postgres_adapter, audit_config):
     assert event.payload["data"] == "test"
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
-@patch('axis.audit.agents.QdrantAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
+@patch('axis.persistence.QdrantAdapter')
 async def test_archivist_incremental_backup(mock_qdrant_adapter, mock_postgres_adapter, audit_config):
     """Test incremental backup creation"""
     mock_postgres = Mock()
@@ -113,8 +113,8 @@ async def test_archivist_incremental_backup(mock_qdrant_adapter, mock_postgres_a
     assert result.timestamp
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
-@patch('axis.audit.agents.QdrantAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
+@patch('axis.persistence.QdrantAdapter')
 async def test_archivist_full_backup(mock_qdrant_adapter, mock_postgres_adapter, audit_config):
     """Test full system backup creation"""
     mock_postgres = Mock()
@@ -136,7 +136,7 @@ async def test_archivist_full_backup(mock_qdrant_adapter, mock_postgres_adapter,
     assert result.size_bytes > 0
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
 async def test_archivist_checksum_calculation(mock_postgres_adapter, audit_config):
     """Test SHA256 checksum calculation"""
     mock_postgres = Mock()
@@ -298,8 +298,8 @@ async def test_chamberlain_checksum_mismatch(audit_config):
 # AuditOrchestrator Integration Tests
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
-@patch('axis.audit.agents.QdrantAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
+@patch('axis.persistence.QdrantAdapter')
 async def test_orchestrator_full_pipeline(mock_qdrant_adapter, mock_postgres_adapter, audit_config):
     """Test full audit pipeline end-to-end"""
     mock_postgres = Mock()
@@ -335,8 +335,8 @@ async def test_orchestrator_full_pipeline(mock_qdrant_adapter, mock_postgres_ada
     assert any(f.source == "archivist_agent" for f in state.facts)
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
-@patch('axis.audit.agents.QdrantAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
+@patch('axis.persistence.QdrantAdapter')
 async def test_orchestrator_graphstate_recording(mock_qdrant_adapter, mock_postgres_adapter, audit_config):
     """Test GraphState audit trail recording"""
     mock_postgres = Mock()
@@ -367,8 +367,8 @@ async def test_orchestrator_graphstate_recording(mock_qdrant_adapter, mock_postg
     assert state.trace_id.startswith("audit_")
 
 @pytest.mark.asyncio
-@patch('axis.audit.agents.PostgreSQLAdapter')
-@patch('axis.audit.agents.QdrantAdapter')
+@patch('axis.persistence.PostgreSQLAdapter')
+@patch('axis.persistence.QdrantAdapter')
 async def test_orchestrator_synaptic_bus_integration(mock_qdrant_adapter, mock_postgres_adapter, audit_config):
     """Test SynapticBus event publishing"""
     mock_postgres = Mock()

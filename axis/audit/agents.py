@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
 from urllib.parse import urlparse
 
-from axis.persistence import PostgreSQLAdapter, QdrantAdapter
 from .config import AuditConfig, BackupMode
 from .events import AuditEvent, BackupResult, UploadResult, VerificationResult
 
@@ -23,6 +22,11 @@ class SentinelAgent:
     """
 
     def __init__(self, config: AuditConfig):
+        # Imported here, not at module level: PostgreSQLAdapter/QdrantAdapter
+        # pull in psycopg2/httpx, and not every consumer of this package
+        # has those installed just because they imported `axis`.
+        from axis.persistence import PostgreSQLAdapter, QdrantAdapter
+
         self.config = config
         try:
             # Parse PostgreSQL connection string
@@ -32,7 +36,7 @@ class SentinelAgent:
             database = parsed.path.lstrip("/") or "axis"
             user = parsed.username or "axis"
             password = parsed.password or ""
-            
+
             self.postgres = PostgreSQLAdapter(
                 host=host,
                 port=port,
@@ -43,7 +47,7 @@ class SentinelAgent:
         except Exception:
             # Handle connection failures gracefully
             self.postgres = None
-        
+
         self.qdrant = QdrantAdapter(url=config.qdrant_url)
         self.watching = False
         self.last_check = datetime.utcnow()
@@ -208,6 +212,8 @@ class ArchivistAgent:
     """
     
     def __init__(self, config: AuditConfig):
+        from axis.persistence import PostgreSQLAdapter, QdrantAdapter
+
         self.config = config
         try:
             # Parse PostgreSQL connection string
@@ -217,7 +223,7 @@ class ArchivistAgent:
             database = parsed.path.lstrip("/") or "axis"
             user = parsed.username or "axis"
             password = parsed.password or ""
-            
+
             self.postgres = PostgreSQLAdapter(
                 host=host,
                 port=port,
@@ -228,7 +234,7 @@ class ArchivistAgent:
         except Exception:
             # Handle connection failures gracefully
             self.postgres = None
-        
+
         self.qdrant = QdrantAdapter(url=config.qdrant_url)
         self.archive_base = Path(config.backup_storage_path)
         self.archive_base.mkdir(parents=True, exist_ok=True)
