@@ -4,14 +4,26 @@ from typing import Iterable, List, Optional, Protocol
 
 from axis.state import GraphState
 from axis.events import Event, EventType, now
-from axis.node import Node
+from axis.node import Node, node_name
 from axis.policy import Policy
 
 logger = logging.getLogger(__name__)
 
 
 class RunnerObserver(Protocol):
-    """Protocol for observing runner execution."""
+    """Protocol for observing runner execution.
+
+    Set `critical = True` on an observer (a class attribute or instance
+    attribute) to have a failure in it propagate out of run()/stream()
+    instead of being logged and swallowed. Use this for observers that
+    ARE the audit evidence (FileTraceObserver) — a persistence observer
+    that fails silently makes "the trace survives failure" unverifiable
+    at runtime. Leave it unset (the default) for observers whose job is
+    telemetry, not evidence (metrics, logging, tracing) — one broken
+    dashboard sink should never abort a run.
+    """
+
+    critical: bool = False
 
     def observe(self, event_type: str, state: GraphState, **kwargs) -> None:
         """Observe a runner event."""
@@ -27,12 +39,29 @@ class NodeFailed(Exception):
     failing node — so a caller can still persist the trace of the run that
     failed. A caller that only does `except Exception` keeps working
     unchanged; one that wants the trace reads `.state`.
+
+    Asymmetry to know about: `.state` has no GRAPH_END event. The run was
+    aborted, not completed, so there is no "ended" moment to record — the
+    terminal ERROR event and the absence of GRAPH_END together say that.
+    A degraded-but-completed EXPLORATION run is machine-detectable via
+    GRAPH_END.metadata; an aborted STRICT run is detected by its absence.
+    FileTraceObserver accounts for this by writing on ERROR too (an
+    intermediate snapshot, in case GRAPH_END never comes) as well as on
+    GRAPH_END (the final trace) — same filename, atomic replace either way.
     """
 
     def __init__(self, original: Exception):
         super().__init__(str(original))
         self.original = original
         self.state: Optional[GraphState] = None
+
+
+def _state_from_exception(exc: Exception, fallback: GraphState) -> GraphState:
+    """A retry-exhausted exception may carry the accumulated retry trace
+    on __axis_state__ (see axis.recovery.retry) — use it if present so
+    retries survive exhaustion instead of vanishing with the final raise.
+    """
+    return getattr(exc, "__axis_state__", None) or fallback
 
 
 class Runner:
@@ -64,11 +93,16 @@ class Runner:
     def _notify(self, event_type: EventType, state: GraphState, **kwargs) -> None:
         """Tell observers what happened. Called outside the node's try
         block, always — a broken observer must never be mistaken for a
-        broken node, and must never stop other observers from hearing."""
+        broken node, and must never stop other observers from hearing.
+
+        Exception: an observer marked `critical` re-raises instead of
+        being logged and swallowed — see RunnerObserver."""
         for observer in self._observers:
             try:
                 observer.observe(event_type.value, state, **kwargs)
             except Exception:
+                if getattr(observer, "critical", False):
+                    raise
                 logger.exception(
                     "Observer %r raised handling %s", observer, event_type.value
                 )
@@ -87,7 +121,7 @@ class Runner:
         nodes_run = nodes_skipped = nodes_failed = 0
 
         for node in self._nodes:
-            name = getattr(node, "__name__", type(node).__name__)
+            name = node_name(node)
 
             current_state = current_state.with_event(
                 Event(
@@ -105,6 +139,7 @@ class Runner:
             except Exception as exc:
                 nodes_failed += 1
                 duration_ms = round((time.monotonic() - t0) * 1000)
+                current_state = _state_from_exception(exc, current_state)
                 current_state = current_state.with_event(
                     Event(
                         event_type=EventType.ERROR,

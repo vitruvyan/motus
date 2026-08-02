@@ -4,7 +4,7 @@ Test suite for JSON, SQLite, and PostgreSQL adapters.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import shutil
@@ -38,7 +38,7 @@ def _postgresql_available() -> bool:
 @pytest.fixture
 def sample_state():
     """Create a sample GraphState for testing."""
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     return GraphState(
         trace_id="test-trace-123",
         intent="Test workflow execution",
@@ -176,9 +176,12 @@ def test_json_adapter_query_by_timestamp(sample_state, temp_dir):
     
     # Save state with events
     adapter.save(sample_state)
-    
-    # Query by timestamp (should find it)
-    now = datetime.now()
+
+    # Query by timestamp (should find it). The adapter reloads via
+    # GraphState.from_dict, which normalizes naive timestamps to UTC
+    # (axis.events.parse_timestamp) — query bounds must be tz-aware too,
+    # or the comparison inside query_by_timestamp raises TypeError.
+    now = datetime.now(timezone.utc)
     results = adapter.query_by_timestamp(
         start=now - timedelta(hours=1),
         end=now + timedelta(hours=1)

@@ -13,10 +13,32 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def parse_timestamp(value: str) -> datetime:
+    """Parse an ISO timestamp, normalizing a naive one to UTC.
+
+    Traces written before this kernel had a single clock — or by any
+    consumer that stamped datetime.utcnow() directly — are naive. Loading
+    one and comparing it against a fresh now() timestamp must not raise
+    "can't compare offset-naive and offset-aware datetimes"; a naive
+    timestamp from this kernel was always meant as UTC, so that's what it
+    becomes on load.
+    """
+    ts = datetime.fromisoformat(value)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
 # A value placed in Fact.value or Event.metadata must survive json.dumps()
 # unchanged — the trace is persisted as JSON. GraphState.to_dict() checks
 # this at write time so a bad value fails with a pointed error, not a
 # mystery TypeError three layers away at persist time.
+#
+# "Survives json.dumps() unchanged" is the actual contract — not merely
+# "doesn't raise". A tuple dumps fine but loads back as a list; a dict
+# with an int key dumps fine but loads back with a string key. Both pass
+# the write-time probe and both break `state == GraphState.from_dict(state.to_dict())`.
+# Use lists and str-keyed dicts if round-trip equality matters to you.
 Json = Union[str, int, float, bool, None, list, dict]
 
 
@@ -58,7 +80,7 @@ class Event:
         return cls(
             event_type=EventType(data["event_type"]),
             description=data["description"],
-            timestamp=datetime.fromisoformat(data["timestamp"]),
+            timestamp=parse_timestamp(data["timestamp"]),
             metadata=data.get("metadata"),
             node_name=data.get("node_name"),
         )
