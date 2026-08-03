@@ -20,16 +20,18 @@ MIN_RUNS = 5  # normative floor, guarantees.md §3
 HERE = Path(__file__).resolve().parent
 BENCH = HERE / "bench_kernel.py"
 
-# (label, path into a run document) — the metrics guarantees.md §3 asserts on.
+# (label, path into a run document, scale) — the metrics guarantees.md §3
+# asserts on.  The no-op row is overhead versus the bare loop, so its existing
+# per-node microsecond field is converted back to total milliseconds.
 TRACKED = [
-    ("noop_100_overhead_ms", ("2_runner_noop", "100", "min_ms")),
-    ("noop_100_overhead_median_ms", ("2_runner_noop", "100", "median_ms")),
-    ("realistic_1000_us_per_node_min", ("3_runner_realistic", "1000", "us_per_node_min")),
-    ("realistic_1000_us_per_node_median", ("3_runner_realistic", "1000", "us_per_node_median")),
-    ("to_dict_min_ms_realistic", ("6_serialization", "realistic_1000", "to_dict_min_ms")),
-    ("json_dumps_min_ms_realistic", ("6_serialization", "realistic_1000", "json_dumps_min_ms")),
-    ("superlinearity_t1000_over_10x_t100", ("4_scaling", "t1000_vs_10x_t100_realistic")),
-    ("window_growth_ratio_last_over_first", ("4_scaling", "growth_ratio_w10_over_w1")),
+    ("noop_100_overhead_ms", ("2_runner_noop", "100", "overhead_us_per_node_min"), 0.1),
+    ("noop_100_overhead_median_ms", ("2_runner_noop", "100", "overhead_us_per_node_median"), 0.1),
+    ("realistic_1000_us_per_node_min", ("3_runner_realistic", "1000", "us_per_node_min"), 1.0),
+    ("realistic_1000_us_per_node_median", ("3_runner_realistic", "1000", "us_per_node_median"), 1.0),
+    ("to_dict_min_ms_realistic", ("6_serialization", "realistic_1000", "to_dict_min_ms"), 1.0),
+    ("json_dumps_min_ms_realistic", ("6_serialization", "realistic_1000", "json_dumps_min_ms"), 1.0),
+    ("superlinearity_t1000_over_10x_t100", ("4_scaling", "t1000_vs_10x_t100_realistic"), 1.0),
+    ("window_growth_ratio_last_over_first", ("4_scaling", "growth_ratio_w10_over_w1"), 1.0),
 ]
 
 
@@ -63,8 +65,12 @@ def main() -> int:
         runs.append(json.loads(proc.stdout))
 
     summary = {}
-    for label, path in TRACKED:
-        values = [v for v in (dig(r, path) for r in runs) if isinstance(v, (int, float))]
+    for label, path, scale in TRACKED:
+        values = [
+            v * scale
+            for v in (dig(r, path) for r in runs)
+            if isinstance(v, (int, float))
+        ]
         if not values:
             continue
         lo, hi = min(values), max(values)

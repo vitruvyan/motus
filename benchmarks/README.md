@@ -20,7 +20,16 @@ then ≥7 measured samples with `gc.collect()` before each; ≥5 independent run
 per baseline; ±25% tolerance; raw JSON committed; cProfile never quoted as
 wall time.
 
-The CI job that asserts the §3 SLO table against this baseline is one of
-the three gates listed in contract/README.md ("Gates required before
-implementation") — it lands with the CI foundation, before Motus 0.5
-implementation begins.
+`check_slo_baseline.py` is the executable gate. It reconstructs every stored
+aggregate from the raw runs, checks the numbers published in guarantees.md §3,
+and makes the two measured debts explicit rather than passing them off as
+achievements. Run it with:
+
+```console
+python benchmarks/check_slo_baseline.py
+```
+
+The optional `--candidate FILE` mode enforces every target-plus-tolerance
+ceiling and 100% trace completeness against a separately characterized Motus
+profile. It must not be pointed at timings from an uncharacterized runner
+class; guarantees.md §3 requires five published runs for each profile first.

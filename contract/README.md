@@ -1,6 +1,6 @@
 # The Motus Contract
 
-**Status: DRAFT v1 — for three-party convergence (founder, Codex, Claude). Nothing here binds until ADR-001 is approved.**
+**Status: v1 — accepted by ADR-001 on 2026-08-03.**
 
 This directory is the founding, binding basis of Vitruvyan Motus. The runtime
 is implemented *inside* this contract, never the other way around: a change of
@@ -81,16 +81,14 @@ by definition.
 
 ## Gates required before implementation — status
 
-Surface 4's full enforcement names three further gates. Two are now in the
-tree; one remains outstanding, and until it lands that row of guarantees.md §3
-is bound by the contract's text and by review rather than by a gate — saying
-otherwise would be documentation that lies, which this README forbids.
+Surface 4's full enforcement names three further gates. All three are now in
+the tree and executable; implementation remains subordinate to them.
 
 | Gate | Status |
 |---|---|
 | `tests/contract/` — the inherited Axis 0.4.0 conformance corpus (guarantees.md §5), ported without weakening | **present** |
 | `tests/compat/terraveler/` — the frozen Terraveler corpus (guarantees.md §4), golden included | **present** |
-| the CI job asserting guarantees.md §3 against the baseline in `benchmarks/` | **outstanding** — lands with the CI foundation |
+| the CI job asserting guarantees.md §3 against the baseline in `benchmarks/` | **present** — `.github/workflows/ci.yml`, job `slo-baseline` |
 
 ### The frozen corpora, and the one file that may move
 
@@ -109,8 +107,11 @@ The golden in `tests/compat/terraveler/golden/` is a real row lifted out of
 `ingestion_runs` — six top-level keys, no `metadata`, naive timestamps inside
 its events. It is evidence precisely because nobody wrote it for a test.
 
-Mechanical protection of these paths (CODEOWNERS or a protected-path check)
-belongs to the CI foundation.
+Mechanical protection is provided by `.github/workflows/frozen-contract.yml`
+and `tools/check_frozen_paths.py`. The workflow runs the checker from the
+trusted base revision under `pull_request_target`: code in a pull request
+cannot weaken the check that judges that same pull request. The sole exception
+is `tests/contract/kernel.py`, exactly as described above.
 
 ## What lives where
 

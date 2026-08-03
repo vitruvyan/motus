@@ -1,6 +1,6 @@
 # Guarantees (normative)
 
-**Status: DRAFT v1.** Counterparty: operators and auditors. Enforcement:
+**Status: v1 — accepted by ADR-001.** Counterparty: operators and auditors. Enforcement:
 `tests/contract/` (the conformance suite) and the CI benchmark gate — a
 release that violates either does not ship.
 
@@ -28,7 +28,7 @@ the profile bought is a contract violation.
 LLM, no Vitruvyan OS, no LangChain, no Orders, no epistemic categories.
 Deterministic explanations only; semantic meaning belongs to the consumer.
 Enforced by an import-boundary test in the conformance suite.
-*Vocabulary note (cross-review MF-17, pending founder ratification):*
+*Vocabulary note (cross-review MF-17):*
 `Fact`, `Decision` and `Rejection` are hereby defined as **neutral workflow
 primitives** — a Fact is a *recorded assertion*, never verified truth; a
 Decision is a keyed routable value; a Rejection is a recorded not-taken.
@@ -91,7 +91,7 @@ it may gate anything.
 | SLO (asserted statistic: min-of-samples, median across ≥5 runs) | Target | v0.4.0 measured | run-to-run spread |
 |---|---|---|---|
 | Per-node overhead, full trace, n ≤ 1000 | ≤ 15 µs | 11.9 µs | 9 % |
-| 100-node no-op run overhead vs bare loop | ≤ 1 ms | 0.65 ms | 11 % |
+| 100-node no-op run overhead vs bare loop | ≤ 1 ms | 0.64 ms | 11 % |
 | Trace serialization (persist path) | ≤ 1.5 × pure `json.dumps` | 4.7 × | 8 % / 22 % |
 | Superlinear accumulation term at n = 1000 | < 10 % of total | 25 % | 7 % |
 | Trace completeness at the above numbers | 100 % — no sampling, ever | 100 % | — |
@@ -100,9 +100,10 @@ Published alongside, not asserted: the in-run median per-node cost, 12.5 µs
 (spread 27 %).
 
 A regression beyond target-plus-tolerance fails CI; improving a target
-requires an ADR, not a lucky run. The last three rows are the debts Motus 0.5
-is expected to pay down — they are recorded as measured reality, not as
-achievements.
+requires an ADR, not a lucky run. The two rows that miss their targets are
+debts Motus 0.5 is expected to pay down — they are recorded as measured
+reality, not as achievements. Trace completeness is an invariant, never a
+debt and never a tunable sampling rate.
 
 ## 4. Terraveler compatibility surface (frozen)
 
