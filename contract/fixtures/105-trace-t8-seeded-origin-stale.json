@@ -2,29 +2,40 @@
   "artifact": "trace",
   "expect": "invalid",
   "layer": "semantic",
-  "rule": "T4",
-  "reason_contains": "scan",
+  "rule": "T8",
+  "reason_contains": "STALE",
   "spec": {
     "schema_version": "1.0.0",
-    "name": "linear",
+    "name": "routed",
     "version": "1.0.0",
-    "entry": "alpha",
+    "entry": "decide",
     "nodes": [
       {
-        "name": "alpha",
+        "name": "decide",
         "effect_class": "pure"
       },
       {
-        "name": "beta",
-        "effect_class": "recorded_effect"
+        "name": "store",
+        "effect_class": "external_effect"
+      },
+      {
+        "name": "escalate",
+        "effect_class": "external_effect"
       }
     ],
     "transitions": {
-      "alpha": {
-        "kind": "next",
-        "to": "beta"
+      "decide": {
+        "kind": "route",
+        "on": "verdict",
+        "map": {
+          "approve": "store",
+          "reject": "escalate"
+        }
       },
-      "beta": {
+      "store": {
+        "kind": "terminal"
+      },
+      "escalate": {
         "kind": "terminal"
       }
     }
@@ -32,15 +43,15 @@
   "instance": {
     "schema_version": "1.0.0",
     "run": {
-      "run_id": "run-t4b",
+      "run_id": "run-round6",
       "graph": {
-        "name": "linear",
+        "name": "routed",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:3174b4f373a3ab48d038d2a7e260a522d65e5e282744aae5b5cf23b25e5a3291",
+        "graph_fingerprint": "graph:sha256:d1cb0e73f6aa42e6bebc6b1783a172ff636a933ffe9ab2c43003edd3d5362c27",
         "code_fingerprint": "code:sha256:7777777777777777777777777777777777777777777777777777777777777777",
         "spec_schema_version": "1.0.0"
       },
-      "policy": "strict",
+      "policy": "exploration",
       "durability_profile": "in-memory",
       "replay": {
         "capability": "none",
@@ -62,11 +73,17 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "intent": "run me",
+        "intent": "route me",
         "initial_state": {
           "facts": [],
-          "decisions": [],
-          "rejections": []
+          "rejections": [],
+          "decisions": [
+            {
+              "key": "verdict",
+              "value": "approve",
+              "ts": "2026-08-03T11:00:01Z"
+            }
+          ]
         }
       },
       {
@@ -77,7 +94,7 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "node": "alpha",
+        "node": "decide",
         "attempt": 1
       },
       {
@@ -88,24 +105,22 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "node": "alpha",
+        "node": "decide",
         "attempt": 1,
         "outcome": "returned",
         "disposition": "commit",
         "effect_class": "pure",
-        "reads": [
-          {
-            "key": "decisions",
-            "origin": {
-              "kind": "scan",
-              "collection": "facts"
-            }
-          }
-        ],
+        "reads": [],
         "writes": {
           "facts": [],
-          "decisions": [],
-          "rejections": []
+          "rejections": [],
+          "decisions": [
+            {
+              "key": "verdict",
+              "value": "reject",
+              "ts": "2026-08-03T11:00:03Z"
+            }
+          ]
         },
         "effects": [],
         "context_draws": [],
@@ -120,21 +135,33 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "after": "alpha",
-        "on": null,
-        "value": null,
-        "outcome": "static",
-        "selected": "beta",
+        "after": "decide",
+        "on": "verdict",
+        "value": "approve",
+        "outcome": "matched",
+        "selected": "store",
         "candidates": [
           {
             "condition": {
-              "kind": "static"
+              "kind": "map",
+              "key": "approve"
             },
-            "target": "beta",
+            "target": "store",
             "taken": true
+          },
+          {
+            "condition": {
+              "kind": "map",
+              "key": "reject"
+            },
+            "target": "escalate",
+            "taken": false
           }
         ],
-        "origin": null
+        "origin": {
+          "kind": "initial",
+          "index": 0
+        }
       },
       {
         "seq": 5,
@@ -144,7 +171,7 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "node": "beta",
+        "node": "store",
         "attempt": 1
       },
       {
@@ -155,11 +182,11 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "node": "beta",
+        "node": "store",
         "attempt": 1,
         "outcome": "returned",
         "disposition": "commit",
-        "effect_class": "recorded_effect",
+        "effect_class": "external_effect",
         "reads": [],
         "writes": {
           "facts": [],
@@ -179,9 +206,10 @@
           "payload_hash": null,
           "prev_hash": null
         },
-        "after": "beta",
+        "after": "store",
         "on": null,
         "value": null,
+        "origin": null,
         "outcome": "static",
         "selected": "END",
         "candidates": [
@@ -192,8 +220,7 @@
             "target": "END",
             "taken": true
           }
-        ],
-        "origin": null
+        ]
       },
       {
         "seq": 8,

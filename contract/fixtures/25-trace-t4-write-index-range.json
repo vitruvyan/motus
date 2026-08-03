@@ -120,7 +120,6 @@
         "after": "fetch",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "store",
         "candidates": [
@@ -131,7 +130,8 @@
             "target": "store",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 5,
@@ -189,7 +189,6 @@
         "after": "store",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "END",
         "candidates": [
@@ -200,7 +199,8 @@
             "target": "END",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 8,

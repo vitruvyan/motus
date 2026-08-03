@@ -119,7 +119,6 @@
         "after": "work",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "cleanup",
         "candidates": [
@@ -130,7 +129,8 @@
             "target": "cleanup",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 5,

@@ -96,7 +96,6 @@
         "after": "solo",
         "on": "path",
         "value": 42,
-        "written_at": 3,
         "outcome": "matched",
         "selected": "END",
         "candidates": [
@@ -108,7 +107,12 @@
             "target": "END",
             "taken": true
           }
-        ]
+        ],
+        "origin": {
+          "kind": "transition",
+          "seq": 3,
+          "index": 0
+        }
       },
       {
         "seq": 5,

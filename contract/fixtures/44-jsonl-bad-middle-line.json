@@ -10,7 +10,7 @@
     "{\"seq\": 1, \"ts\": \"2026-08-03T10:00:01Z\", \"kind\": \"run_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"intent\": null, \"initial_state\": {\"facts\": [], \"decisions\": [], \"rejections\": []}}",
     "{\"seq\": 2, \"ts\": \"2026-08-03T10:00:02Z\", \"kind\": \"attempt_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"solo\", \"attempt\": 1}",
     "{\"seq\": 3, \"kind\": \"transition\"",
-    "{\"seq\": 4, \"ts\": \"2026-08-03T10:00:04Z\", \"kind\": \"routing\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"after\": \"solo\", \"on\": null, \"value\": null, \"written_at\": null, \"outcome\": \"static\", \"selected\": \"END\", \"candidates\": [{\"condition\": {\"kind\": \"static\"}, \"target\": \"END\", \"taken\": true}]}",
+    "{\"seq\": 4, \"ts\": \"2026-08-03T10:00:04Z\", \"kind\": \"routing\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"after\": \"solo\", \"on\": null, \"value\": null, \"outcome\": \"static\", \"selected\": \"END\", \"candidates\": [{\"condition\": {\"kind\": \"static\"}, \"target\": \"END\", \"taken\": true}], \"origin\": null}",
     "{\"seq\": 5, \"ts\": \"2026-08-03T10:00:05Z\", \"kind\": \"run_completed\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"replay\": {\"capability\": \"full\", \"constraints\": []}}"
   ]
 }

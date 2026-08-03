@@ -96,7 +96,6 @@
         "after": "solo",
         "on": "path",
         "value": null,
-        "written_at": null,
         "outcome": "miss",
         "selected": "solo",
         "candidates": [
@@ -108,7 +107,10 @@
             "target": "solo",
             "taken": false
           }
-        ]
+        ],
+        "origin": {
+          "kind": "absent"
+        }
       },
       {
         "seq": 5,

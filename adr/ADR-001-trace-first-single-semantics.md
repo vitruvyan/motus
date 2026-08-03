@@ -171,6 +171,31 @@ The evidence that shaped this decision:
   state: 95 fixtures (13 positive, 82 negative), 40 rules all covered, 108
   contract tests, full suite in the pinned environment, 7/7 fresh probes and
   22/22 v2 attacks rejected, `axis/` and `orders/` still untouched.
+- 2026-08-03, round 6 (Codex cross-review v4 on `0dbd85f`, verdict REQUEST
+  CHANGES): three probes on routing provenance, plus one enforcement gap.
+  Two were bugs — the causal value comparison ran only for strings, so two
+  different numbers could sit at the ends of one causal edge; and the
+  "a default exists, so a miss is impossible" rule ignored value type,
+  leaving a non-string value with **no legal outcome at all** against
+  normative R9. The third was a design hole: a null causal edge proved only
+  that nothing had written the key, so a routing could report a value that
+  appears nowhere in the run. Codex offered a minimal patch or the cleaner
+  model; **the cleaner model was taken**, because the minimal one leaves two
+  provenance mechanisms in one schema and walls off a legitimate case: the
+  scalar `written_at` could not name a SEEDED decision, so a resumed run
+  could never say where its routing value came from. `written_at` is
+  therefore replaced by a structured `origin` — `{transition, seq, index}`,
+  `{initial, index}` or `{absent}` — symmetric with the read origins adopted
+  in round 4, addressing the exact Decision rather than the record holding
+  it. Value equality is now JSON-typed (the boolean `true` is not the number
+  `1`, whatever Python says), `absent` must be true of the whole run and
+  admits only a null value, R10 staleness covers seeded origins, and R9's
+  never-coerced rule is honored: a non-string is a miss with or without a
+  declared default. `collect_baseline.py` now refuses fewer than five runs
+  before executing. Delivered state: 105 fixtures (16 positive, 89
+  negative), 108 contract tests, suite 239 passed / 14 skipped / 0 failed in
+  the pinned environment, 3/3 v4 probes, 7/7 v3 probes and 22/22 v2 attacks
+  correct, `axis/` and `orders/` untouched.
   ADR-001 moves to ACCEPTED only after Codex independently reproduces the
   new SHA and the founder signs.
 

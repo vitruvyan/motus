@@ -37,7 +37,9 @@ RunContext beyond the call. What a node wants remembered, it writes as a fact.
 
 1.4. A node has no knowledge of the runner, the spec, other nodes, or its own
 position in the graph. A node that needs to influence routing writes a
-**decision**; the spec's route table dispatches on it. Control flow never
+**decision**; the spec's route table dispatches on it, and the run records
+which decision it dispatched on — addressed to the exact entry, the same way a
+read names the exact value it consumed. Control flow never
 lives inside node code as a side channel (no environment reads that change
 topology, no callable swapping).
 

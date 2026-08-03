@@ -112,7 +112,6 @@
         "after": "solo",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "END",
         "candidates": [
@@ -123,7 +122,8 @@
             "target": "END",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 5,

@@ -35,7 +35,8 @@ Rules this validator deliberately does NOT check, and why:
     observed values are strings) is schema-enforced.
 *   R10 — "most recent recorded value" is an execution-time resolution rule;
     statically there is no observed value to resolve.  The trace records its
-    outcome in ``routing.written_at``.
+    outcome in ``routing.origin`` — a structured edge naming the exact
+    Decision observed, not merely the record that held it.
 *   T-rules that name runtime duties (clock source, capture-not-declare) are
     likewise out of scope: this module checks recorded evidence, not behavior.
 
@@ -696,6 +697,25 @@ def validate_graphspec(spec: dict) -> list[Violation]:
 # --------------------------------------------------------------------------- #
 # Trace semantics — the T-rules and H-rules                                   #
 # --------------------------------------------------------------------------- #
+
+
+def _json_equal(a, b) -> bool:
+    """JSON equality, not Python equality.
+
+    Python says ``True == 1`` and ``1 == 1.0``; JSON does not consider a boolean
+    and a number the same value.  A causal edge compared with raw ``==`` would
+    accept a decision holding ``true`` as proof of a routing that observed ``1``
+    (cross-review v4).  Types are compared first, then structure.
+    """
+    if isinstance(a, bool) != isinstance(b, bool):
+        return False
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_json_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_json_equal(x, y) for x, y in zip(a, b))
+    if isinstance(a, (list, dict)) or isinstance(b, (list, dict)):
+        return False
+    return a == b
 
 
 def _calendar_valid_utc(value: str) -> bool:
@@ -1943,144 +1963,119 @@ def _trace_semantics(
                             f"to selected '{selected}'",
                         )
                     )
-        # written_at is the routing record's own causal edge, and it is
-        # required of EVERY routed outcome — including a miss.  A miss is a
-        # routing decision like any other: the value that missed still came
-        # from somewhere, and saying where is the point of the record.
-        # (Cross-review v3 found these checks applied to matched/default
-        # only, so a miss could name run_started as its cause.)
-        if outcome in ("matched", "default", "miss") and record.get("written_at") is not None:
-            # written_at is the routing record's own causal edge: it must
-            # reference an existing EARLIER transition whose committed
-            # writes.decisions contain the routed key, and the R10-most-recent
-            # such value in that transition must equal the routed value.
-            written_at = record.get("written_at")
+        # `origin` is the routing record's own causal edge, and every routed
+        # outcome — matched, default AND miss — owes it.  It addresses the exact
+        # Decision observed, not merely the record that held it: a scalar seq
+        # never identified a value (round 4 fixed that for reads and left
+        # routing behind), and it could not name a SEEDED decision at all, which
+        # resume would have walked straight into.
+        if outcome != "static":
+            origin = record.get("origin")
+            opath = f"$.records[{i}].origin"
             on = record.get("on")
-            wpath = f"$.records[{i}].written_at"
-            target = by_seq.get(written_at)
-            if target is None:
-                v.append(
-                    Violation(
-                        "T8",
-                        wpath,
-                        f"written_at references seq {written_at}, which does "
-                        "not exist in this trace",
-                    )
-                )
-            elif not (
-                isinstance(written_at, int)
-                and isinstance(record.get("seq"), int)
-                and written_at < record["seq"]
-            ):
-                v.append(
-                    Violation(
-                        "T8",
-                        wpath,
-                        f"written_at references seq {written_at}, which is "
-                        "not earlier than the routing record "
-                        f"(seq {record.get('seq')})",
-                    )
-                )
-            elif target.get("kind") != "transition":
-                v.append(
-                    Violation(
-                        "T8",
-                        wpath,
-                        f"written_at references seq {written_at}, which is a "
-                        f"'{target.get('kind')}' record, not a transition "
-                        "with committed writes",
-                    )
-                )
-            else:
-                decided = [
-                    entry
-                    for entry in (target.get("writes") or {}).get("decisions") or []
-                    if isinstance(entry, dict) and entry.get("key") == on
-                ]
-                if not decided:
-                    v.append(
-                        Violation(
-                            "T8",
-                            wpath,
-                            f"written_at references seq {written_at}, whose "
-                            "committed writes.decisions contain no entry with "
-                            f"key {on!r}",
-                        )
-                    )
-                elif isinstance(value, str) and decided[-1].get("value") != value:
-                    # R10: last-in-array is the most recent value within a
-                    # transition; matched/default values are strings (schema).
-                    v.append(
-                        Violation(
-                            "T8",
-                            wpath,
-                            f"the R10-most-recent decision {on!r} in seq "
-                            f"{written_at} has value "
-                            f"{decided[-1].get('value')!r}, not the routed "
-                            f"value {value!r}",
-                        )
-                    )
+            kind = (origin or {}).get("kind")
+            decision = None
+
+            if kind == "transition":
+                oseq, idx = origin.get("seq"), origin.get("index")
+                target = by_seq.get(oseq)
+                if target is None:
+                    v.append(Violation("T8", opath,
+                        f"origin names seq {oseq}, which does not exist in this trace"))
+                elif not (isinstance(oseq, int) and isinstance(record.get("seq"), int)
+                          and oseq < record["seq"]):
+                    v.append(Violation("T8", opath,
+                        f"origin names seq {oseq}, which is not earlier than the "
+                        f"routing record (seq {record.get('seq')})"))
+                elif target.get("kind") != "transition":
+                    v.append(Violation("T8", opath,
+                        f"origin names seq {oseq}, which is a "
+                        f"'{target.get('kind')}' record, not a transition — only a "
+                        "committed transition writes a decision"))
+                elif target.get("disposition") != "commit":
+                    v.append(Violation("T8", opath,
+                        f"origin names seq {oseq}, whose disposition is "
+                        f"'{target.get('disposition')}' — an attempt that did not "
+                        "commit handed nothing to the run"))
                 else:
-                    # R10 staleness: written_at must be the MOST RECENT
-                    # committed write of the routed key — no transition
-                    # strictly between it and this routing may contain a
-                    # committed writes.decisions entry with that key.
-                    stale = [
-                        other.get("seq")
-                        for other in records
-                        if other.get("kind") == "transition"
-                        and other.get("disposition") == "commit"
-                        and isinstance(other.get("seq"), int)
-                        and written_at < other["seq"] < record["seq"]
-                        and any(
-                            isinstance(entry, dict) and entry.get("key") == on
-                            for entry in (other.get("writes") or {}).get(
-                                "decisions"
-                            )
-                            or []
-                        )
-                    ]
-                    if stale:
-                        v.append(
-                            Violation(
-                                "T8",
-                                wpath,
-                                f"written_at {written_at} is STALE: "
-                                f"transition seq {stale[0]} committed a later "
-                                f"decision {on!r} before this routing "
-                                f"(seq {record['seq']}) — R10 routes on the "
-                                "most recent recorded value",
-                            )
-                        )
-        elif outcome == "miss" and record.get("written_at") is None:
-            # A null written_at on a miss is legitimate ONLY when the key was
-            # never decided: nothing committed it, so there is no cause to
-            # name.  Otherwise the record hides its own causality.
-            on = record.get("on")
-            prior = [
-                r["seq"]
-                for r in records
-                if r.get("kind") == "transition"
-                and r.get("disposition") == "commit"
-                and isinstance(r.get("seq"), int)
-                and isinstance(record.get("seq"), int)
-                and r["seq"] < record["seq"]
-                and any(
+                    decisions = (target.get("writes") or {}).get("decisions") or []
+                    if not isinstance(idx, int) or not 0 <= idx < len(decisions):
+                        v.append(Violation("T8", opath,
+                            f"origin index {idx} is out of range for the "
+                            f"{len(decisions)} decision(s) committed by seq {oseq}"))
+                    else:
+                        decision = decisions[idx]
+
+            elif kind == "initial":
+                idx = origin.get("index")
+                seeded = (
+                    ((records[0] or {}).get("initial_state") or {}).get("decisions") or []
+                    if records and records[0].get("kind") == "run_started" else []
+                )
+                if not isinstance(idx, int) or not 0 <= idx < len(seeded):
+                    v.append(Violation("T8", opath,
+                        f"origin index {idx} is out of range for the {len(seeded)} "
+                        "seeded decision(s) in run_started.initial_state"))
+                else:
+                    decision = seeded[idx]
+
+            elif kind == "absent":
+                if outcome != "miss":
+                    v.append(Violation("T8", opath,
+                        f"origin kind 'absent' on outcome '{outcome}' — a value "
+                        "that was never decided cannot be matched or defaulted"))
+                if record.get("value") is not None:
+                    v.append(Violation("T8", f"$.records[{i}].value",
+                        f"origin kind 'absent' but value is {record.get('value')!r}; "
+                        "nothing was observed, so nothing may be reported — an "
+                        "absent origin admits only a null value"))
+                anywhere = [
+                    r["seq"] for r in records
+                    if r.get("kind") == "transition" and r.get("disposition") == "commit"
+                    and any(isinstance(e, dict) and e.get("key") == on
+                            for e in (r.get("writes") or {}).get("decisions") or [])
+                ] + ([0] if any(
                     isinstance(e, dict) and e.get("key") == on
-                    for e in (r.get("writes") or {}).get("decisions") or []
-                )
-            ]
-            if prior:
-                v.append(
-                    Violation(
-                        "T8",
-                        f"$.records[{i}].written_at",
-                        "written_at is null on a miss, but transition seq "
-                        f"{prior[-1]} committed a decision {on!r} before this "
-                        "routing — a null cause is admissible only when the key "
-                        "was never decided",
-                    )
-                )
+                    for e in (((records[0] or {}).get("initial_state") or {}).get("decisions") or [])
+                ) and records and records[0].get("kind") == "run_started" else [])
+                if anywhere:
+                    where = "the initial state" if anywhere == [0] else f"seq {anywhere[0]}"
+                    v.append(Violation("T8", opath,
+                        f"origin claims no decision {on!r} exists, but {where} "
+                        "carries one — 'absent' is a claim about the whole run"))
+
+            # The addressed decision must be the one this routing says it saw.
+            if decision is not None:
+                if decision.get("key") != on:
+                    v.append(Violation("T8", opath,
+                        f"origin addresses a decision keyed "
+                        f"{decision.get('key')!r} but this routing dispatches on "
+                        f"{on!r}"))
+                elif not _json_equal(decision.get("value"), record.get("value")):
+                    v.append(Violation("T8", f"$.records[{i}].value",
+                        f"routing reports value {record.get('value')!r} but the "
+                        f"decision its origin addresses holds "
+                        f"{decision.get('value')!r} — the causal edge must lead to "
+                        "the value actually routed on"))
+
+                # R10 staleness: the addressed decision must be the most recent
+                # one for its key.  A later committed write, or ANY committed
+                # write when the origin is the seed, supersedes it.
+                oseq = origin.get("seq") if kind == "transition" else 0
+                stale = [
+                    r["seq"] for r in records
+                    if r.get("kind") == "transition" and r.get("disposition") == "commit"
+                    and isinstance(r.get("seq"), int) and isinstance(record.get("seq"), int)
+                    and oseq < r["seq"] < record["seq"]
+                    and any(isinstance(e, dict) and e.get("key") == on
+                            for e in (r.get("writes") or {}).get("decisions") or [])
+                ]
+                if stale:
+                    v.append(Violation("T8", opath,
+                        f"origin is STALE: transition seq {stale[0]} committed a "
+                        f"later decision {on!r} before this routing "
+                        f"(seq {record.get('seq')}) — R10 routes on the most "
+                        "recent recorded value"))
 
         if spec is not None:
             step = transitions.get(record.get("after"))
@@ -2146,7 +2141,13 @@ def _trace_semantics(
                                 "matched, never missed",
                             )
                         )
-                    elif "default" in step:
+                    elif isinstance(value, str) and "default" in step:
+                        # ONLY a string can be defaulted.  R9 is normative: a
+                        # non-string value is never coerced, so it is a miss
+                        # whether or not the route declares a default — and the
+                        # schema forbids a non-string 'default' outcome, so
+                        # rejecting it here left such a value with no legal
+                        # outcome at all (cross-review v4).
                         v.append(
                             Violation(
                                 "T8",
@@ -2154,8 +2155,9 @@ def _trace_semantics(
                                 f"outcome 'miss' but the route step for "
                                 f"'{record.get('after')}' declares a default "
                                 f"target {step.get('default')!r} — an unmapped "
-                                "value is defaulted there, never missed; a miss "
-                                "belongs to a strict route (R7)",
+                                "STRING is defaulted there, never missed; a miss "
+                                "belongs to a strict route, or to a non-string "
+                                "value, which R9 never coerces",
                             )
                         )
             # An undeclared 'after' is T5's finding; nothing to compare against.

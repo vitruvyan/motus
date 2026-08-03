@@ -205,8 +205,8 @@ def test_every_advertised_rule_has_a_negative_fixture():
 
 
 def test_corpus_minimums_and_wrapper_shape():
-    assert len(POSITIVE) >= 13, f"corpus needs >= 13 positives, has {len(POSITIVE)}"
-    assert len(NEGATIVE) >= 82, f"corpus needs >= 82 negatives, has {len(NEGATIVE)}"
+    assert len(POSITIVE) >= 16, f"corpus needs >= 16 positives, has {len(POSITIVE)}"
+    assert len(NEGATIVE) >= 89, f"corpus needs >= 89 negatives, has {len(NEGATIVE)}"
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {"graphspec", "trace", "jsonl"}, path.name
         if wrapper["artifact"] == "jsonl":

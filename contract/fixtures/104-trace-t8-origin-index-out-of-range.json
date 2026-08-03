@@ -3,7 +3,7 @@
   "expect": "invalid",
   "layer": "semantic",
   "rule": "T8",
-  "reason_contains": "null",
+  "reason_contains": "out of range",
   "spec": {
     "schema_version": "1.0.0",
     "name": "routed",
@@ -43,7 +43,7 @@
   "instance": {
     "schema_version": "1.0.0",
     "run": {
-      "run_id": "run-miss-null",
+      "run_id": "run-round6",
       "graph": {
         "name": "routed",
         "version": "1.0.0",
@@ -76,8 +76,8 @@
         "intent": "route me",
         "initial_state": {
           "facts": [],
-          "decisions": [],
-          "rejections": []
+          "rejections": [],
+          "decisions": []
         }
       },
       {
@@ -111,7 +111,7 @@
           "decisions": [
             {
               "key": "verdict",
-              "value": "abstain",
+              "value": "approve",
               "ts": "2026-08-03T11:00:03Z"
             }
           ]
@@ -131,10 +131,9 @@
         },
         "after": "decide",
         "on": "verdict",
-        "value": "abstain",
-        "written_at": null,
-        "outcome": "miss",
-        "selected": "END",
+        "value": "approve",
+        "outcome": "matched",
+        "selected": "store",
         "candidates": [
           {
             "condition": {
@@ -142,7 +141,7 @@
               "key": "approve"
             },
             "target": "store",
-            "taken": false
+            "taken": true
           },
           {
             "condition": {
@@ -152,11 +151,75 @@
             "target": "escalate",
             "taken": false
           }
-        ]
+        ],
+        "origin": {
+          "kind": "transition",
+          "seq": 3,
+          "index": 5
+        }
       },
       {
         "seq": 5,
         "ts": "2026-08-03T11:00:05Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "store",
+        "attempt": 1
+      },
+      {
+        "seq": 6,
+        "ts": "2026-08-03T11:00:06Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "store",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 7,
+        "ts": "2026-08-03T11:00:07Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "store",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 8,
+        "ts": "2026-08-03T11:00:08Z",
         "kind": "run_completed",
         "integrity": {
           "payload_hash": null,

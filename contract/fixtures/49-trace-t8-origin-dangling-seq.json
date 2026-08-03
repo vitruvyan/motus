@@ -3,7 +3,7 @@
   "expect": "invalid",
   "layer": "semantic",
   "rule": "T8",
-  "reason_contains": "written_at references seq 999, which does not exist",
+  "reason_contains": "origin names seq 999, which does not exist",
   "spec": {
     "schema_version": "1.0.0",
     "name": "pipeline",
@@ -211,7 +211,6 @@
         "after": "fetch",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "classify",
         "candidates": [
@@ -222,7 +221,8 @@
             "target": "classify",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 5,
@@ -307,7 +307,6 @@
         "after": "classify",
         "on": "verdict",
         "value": "approve",
-        "written_at": 999,
         "outcome": "matched",
         "selected": "store",
         "candidates": [
@@ -334,7 +333,12 @@
             "target": "escalate",
             "taken": false
           }
-        ]
+        ],
+        "origin": {
+          "kind": "transition",
+          "seq": 999,
+          "index": 0
+        }
       },
       {
         "seq": 8,
@@ -415,7 +419,6 @@
         "after": "store",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "END",
         "candidates": [
@@ -426,7 +429,8 @@
             "target": "END",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 11,

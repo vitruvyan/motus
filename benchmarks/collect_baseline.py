@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+MIN_RUNS = 5  # normative floor, guarantees.md §3
+
 HERE = Path(__file__).resolve().parent
 BENCH = HERE / "bench_kernel.py"
 
@@ -41,6 +43,14 @@ def dig(doc, path):
 
 def main() -> int:
     runs_wanted = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    if runs_wanted < MIN_RUNS:
+        sys.stderr.write(
+            f"refusing to collect {runs_wanted} run(s): guarantees.md §3 makes "
+            f"{MIN_RUNS} independent runs the minimum for a baseline, and a "
+            "document that calls itself a baseline on fewer would be exactly "
+            "the single-run anecdote the method exists to prevent.\n"
+        )
+        return 2
     runs = []
     for _ in range(runs_wanted):
         proc = subprocess.run(

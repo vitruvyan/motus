@@ -132,7 +132,6 @@
         "after": "decide",
         "on": "verdict",
         "value": "approve",
-        "written_at": 3,
         "outcome": "matched",
         "selected": "store",
         "candidates": [
@@ -152,7 +151,12 @@
             "target": "escalate",
             "taken": false
           }
-        ]
+        ],
+        "origin": {
+          "kind": "transition",
+          "seq": 3,
+          "index": 0
+        }
       },
       {
         "seq": 5,
@@ -200,7 +204,6 @@
         "after": "escalate",
         "on": null,
         "value": null,
-        "written_at": null,
         "outcome": "static",
         "selected": "END",
         "candidates": [
@@ -211,7 +214,8 @@
             "target": "END",
             "taken": true
           }
-        ]
+        ],
+        "origin": null
       },
       {
         "seq": 8,

@@ -132,7 +132,6 @@
         "after": "decide",
         "on": "verdict",
         "value": "abstain",
-        "written_at": 3,
         "outcome": "miss",
         "selected": "END",
         "candidates": [
@@ -152,7 +151,12 @@
             "target": "escalate",
             "taken": false
           }
-        ]
+        ],
+        "origin": {
+          "kind": "transition",
+          "seq": 3,
+          "index": 0
+        }
       },
       {
         "seq": 5,
