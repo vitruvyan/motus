@@ -79,23 +79,38 @@ executable and versioned in this repository:
 A contract change that does not update fixtures alongside it is incomplete
 by definition.
 
-## Gates required before implementation — status honest at this SHA
+## Gates required before implementation — status
 
-Surface 4's full enforcement names three further gates that are **not yet
-present in this tree** and are REQUIRED BEFORE the Motus 0.5 implementation
-begins (ADR-001 first-commit conditions):
+Surface 4's full enforcement names three further gates. Two are now in the
+tree; one remains outstanding, and until it lands that row of guarantees.md §3
+is bound by the contract's text and by review rather than by a gate — saying
+otherwise would be documentation that lies, which this README forbids.
 
-- `tests/contract/` — the inherited Axis 0.4.0 conformance corpus
-  (guarantees.md §5), ported without weakening;
-- `tests/compat/terraveler/` — the frozen Terraveler golden corpus
-  (guarantees.md §4);
-- the CI benchmark gate asserting guarantees.md §3 against the baseline in
-  `benchmarks/` (the measured baseline and method ship there now; the CI
-  assertion job lands with the CI foundation).
+| Gate | Status |
+|---|---|
+| `tests/contract/` — the inherited Axis 0.4.0 conformance corpus (guarantees.md §5), ported without weakening | **present** |
+| `tests/compat/terraveler/` — the frozen Terraveler corpus (guarantees.md §4), golden included | **present** |
+| the CI job asserting guarantees.md §3 against the baseline in `benchmarks/` | **outstanding** — lands with the CI foundation |
 
-Until they exist, those surfaces are bound by this contract's text and by
-review — not yet by a gate. Saying otherwise would be documentation that
-lies, which this README forbids.
+### The frozen corpora, and the one file that may move
+
+`tests/contract/` and `tests/compat/` state what the runtime must do. The
+implementing agent may not edit them: a runtime that cannot satisfy them is
+wrong, and a corpus that bends to the implementation proves nothing.
+
+They do have to name a package, and that name changes exactly once — when the
+runtime moves from `axis` to `vitruvyan_motus`. That rename touches
+`tests/contract/kernel.py` and nothing else; it is the single editable file in
+either directory, and it resolves to the **compatibility view**, not the
+Motus-native surface. If a name it exports cannot be provided, that is an
+amendment with its own ADR.
+
+The golden in `tests/compat/terraveler/golden/` is a real row lifted out of
+`ingestion_runs` — six top-level keys, no `metadata`, naive timestamps inside
+its events. It is evidence precisely because nobody wrote it for a test.
+
+Mechanical protection of these paths (CODEOWNERS or a protected-path check)
+belongs to the CI foundation.
 
 ## What lives where
 

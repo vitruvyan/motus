@@ -110,9 +110,8 @@ The following surface, used in production by Terraveler against Axis v0.4.0,
 is preserved by the compatibility view or explicitly migrated with a
 deprecation path. The golden tests in `tests/compat/terraveler/` are frozen
 before implementation and are not editable by the implementing agent.
-*Status at this SHA:* that directory does not exist yet — it is a gate
-REQUIRED BEFORE IMPLEMENTATION (contract/README.md, gates section), not one
-already installed.
+*Status:* installed. The corpus lives in `tests/compat/terraveler/`, with a
+golden lifted from production rather than authored for the occasion.
 
 - `GraphState.empty(trace_id)`; `.with_intent`; `GraphState.new(prefix)`
   (present in v0.4.0, preserved defensively — the audited Terraveler surface
@@ -152,9 +151,9 @@ silent alias: its migration changes import paths explicitly.
 
 These behaviors were earned through adversarial review and become Motus
 contract tests, ported without retroactively weakening their expectations.
-*Status at this SHA:* the corpus still lives as the Axis test suite; its
-port into `tests/contract/` is a gate REQUIRED BEFORE IMPLEMENTATION, not
-one already installed:
+*Status:* installed in `tests/contract/`, stated at contract level rather
+than copied from the implementation's unit tests — which keep their own,
+finer-grained coverage:
 
 1. State and trace survive node failure per contract (`NodeFailed.state`).
 2. Retry exhaustion loses no collected trace; every attempt is recorded.
