@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/graphspec.v1.schema.json",
+  "title": "Vitruvyan Motus GraphSpec, v1",
+  "description": "DRAFT v1. Topology as data: named nodes, one entry point, per-node transitions (linear, routed, or terminal). A GraphSpec is validated statically at construction — an invalid spec refuses to exist. Routing is dispatch on recorded decision values: branching stays data; this schema makes the data declared instead of ambient. There are no edge objects, no ports, and no compilation step. Structural rules that JSON Schema cannot express are normative here and enforced by the validator: (R1) entry names a declared node; (R2) every transition target names a declared node or END; (R3) every declared node is reachable from entry; (R4) every declared node has exactly one transition entry; (R5) node names are unique; (R6) a route map has at least one entry — duplicate keys are undetectable after JSON parsing, so producers MUST NOT emit them and validators cannot be blamed for not catching them; (R7) a route without default is a strict route — an observed value outside the map emits a routing record with outcome 'miss' and selected END, after which the run fails under policy strict and ends with the miss on record under exploration; (R8) 'END' is not a legal node name; (R9) only string decision values are routable — a non-string observed value is a miss (R7), never coerced; (R10) 'most recent recorded value' of a decision key means: the Decision with that key inside the transition record with the highest seq, and last-in-array within that transition.",
+  "type": "object",
+  "required": ["schema_version", "name", "version", "entry", "nodes", "transitions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "version": { "type": "string", "minLength": 1, "description": "The graph's own version, chosen by its author. Part of the graph fingerprint." },
+    "requires_motus": { "type": "string", "description": "PEP 440 specifier for the runtime versions this spec was built against. Recorded; checked by the loader once one exists." },
+    "entry": { "type": "string", "description": "Name of the first node (R1)." },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/NodeDecl" },
+      "description": "Declaration order is significant only for deterministic iteration and fingerprinting; execution order is defined by entry + transitions."
+    },
+    "transitions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Transition" },
+      "description": "One entry per declared node, keyed by node name (R4)."
+    }
+  },
+  "$defs": {
+    "NodeDecl": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+          "description": "Unique within the spec (R5). 'END' is reserved and may not be a node name."
+        },
+        "effect_class": {
+          "enum": ["pure", "recorded_effect", "external_effect"],
+          "default": "external_effect",
+          "description": "Per node-protocol.md §4. Undeclared means external_effect — the conservative reading. A 'pure' claim becomes falsifiable under verify-replay (0.6)."
+        },
+        "reads_declared": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OPTIONAL declared read set. The runtime captures actual reads regardless; when declared, captured reality is checked against the declaration and a mismatch is recorded (record-and-compare, node-protocol.md §3). Declarations are documentation that is tested — never a substitute for capture."
+        },
+        "writes_declared": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OPTIONAL declared write set. Same record-and-compare semantics as reads_declared."
+        }
+      }
+    },
+    "Transition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "next" },
+            "to": { "type": "string", "description": "A declared node name or END (R2)." }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "on", "map"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "route" },
+            "on": { "type": "string", "description": "The decision key whose most recent recorded value is dispatched on. The value must have been written as a Decision by this or an upstream node — routing reads the trace-visible state, never ambient configuration." },
+            "map": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "type": "string" },
+              "description": "String decision value to target node or END (R2, R6, R9 — no coercion of non-string values; R10 defines 'most recent'). Every map entry — taken or not — is emitted as a candidate in the run's routing record."
+            },
+            "default": { "type": "string", "description": "Optional target when the observed value matches no key. Absent means strict route (R7)." }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "terminal" }
+          },
+          "description": "The run completes after this node. Equivalent to {kind: next, to: END}; provided so terminality is visible in the spec at a glance."
+        }
+      ]
+    }
+  }
+}

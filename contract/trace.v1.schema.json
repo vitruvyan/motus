@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/trace.v1.schema.json",
+  "title": "Vitruvyan Motus trace document, v1",
+  "description": "DRAFT v1. A trace is a run header plus an ordered append-only sequence of records: the causal, replayable account of one run — what was read, decided, rejected, and caused, including time, randomness and generated identifiers. Canonical persisted forms: (a) a single JSON document matching this schema; (b) JSONL, where line 1 is `{\"schema_version\": ..., \"run\": <RunHeader>}` (this document minus `records`) and every further line is one Record validated against #/$defs/Record — so both forms name the schema version that produced them. Cross-record rules a conformant validator MUST enforce beyond this schema: (T1) `seq` is monotonic and gapless, starting at 1; (T2) the first record is kind=run_started; (T3) the last record of a finished run is run_completed | run_failed | run_cancelled — anything else is an in-flight or crash-truncated trace and MUST be treated as incomplete (guarantees.md invariant II); (T4) every `written_at` references the `seq` of an EARLIER transition record (or is null for initial-state keys, whose values are in run_started.initial_state); (T5) `node`, `after`, `selected` and `candidates[].target` name nodes declared in the fingerprinted GraphSpec, or the literal END where permitted; (T6) a transition aborted mid-flight by cancellation produces no transition record — run_cancelled is the next and last record, and the absence of the transition is itself the evidence. Integrity fields (payload/prev hashing) are RESERVED in v1.0: producers MUST emit `integrity` with null members; activation is a v1.x additive change. Conformant validators run with JSON Schema format assertion enabled (see contract/README.md).",
+  "type": "object",
+  "required": ["schema_version", "run", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Version of THIS trace schema. Single-sourced in the package; a contract test asserts equality."
+    },
+    "run": { "$ref": "#/$defs/RunHeader" },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Record" },
+      "description": "Append-only, ordered per T1–T3."
+    }
+  },
+  "$defs": {
+    "RunHeader": {
+      "type": "object",
+      "required": ["run_id", "graph", "policy", "durability_profile", "replay", "metadata", "created_ts"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Exposed as `.trace_id` on the legacy compatibility view (guarantees.md §4)." },
+        "graph": {
+          "type": "object",
+          "required": ["name", "version", "graph_fingerprint", "code_fingerprint", "spec_schema_version"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "graph_fingerprint": { "$ref": "#/$defs/Fingerprint" },
+            "code_fingerprint": { "$ref": "#/$defs/Fingerprint" },
+            "spec_schema_version": { "type": "string", "description": "The graphspec schema version the spec was validated against." }
+          }
+        },
+        "policy": { "enum": ["strict", "exploration"] },
+        "durability_profile": {
+          "enum": ["in-memory", "buffered", "synchronous"],
+          "description": "Which crash guarantee this run bought. See guarantees.md invariant II."
+        },
+        "sink": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "flush_interval_ms": { "type": "integer", "minimum": 0 },
+            "chunk_records": { "type": "integer", "minimum": 1 }
+          },
+          "description": "Sink configuration disclosing the loss window. REQUIRED (validator rule) when durability_profile is `buffered`; optional otherwise."
+        },
+        "replay": {
+          "$ref": "#/$defs/ReplayStatus",
+          "description": "The capability DECLARED at run start. The FINAL capability — after any mid-run downgrade (node-protocol.md §6.2) — is on the terminal record; when both exist, the terminal record is authoritative."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Run provenance. Open map; these keys are documented and expected by tooling. Absorbs the run-metadata design merged post-0.4.0 (ADR-001 §dispositions).",
+          "properties": {
+            "actor": { "type": "string", "description": "Whose authority the run acts under." },
+            "causation_id": { "type": "string", "description": "The event that woke this run." },
+            "correlation_id": { "type": "string", "description": "The broader request this run belongs to." },
+            "carta_version": { "type": "string", "description": "Which rules were in force (consumer-defined constitution version)." }
+          },
+          "additionalProperties": { "$ref": "#/$defs/Json" }
+        },
+        "created_ts": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "ReplayStatus": {
+      "type": "object",
+      "required": ["capability", "constraints"],
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "enum": ["full", "partial", "none"],
+          "description": "Explicit, recorded property. Absence of a declaration never implies reproducibility; a run that did not declare it is `none`. A node drawing ambient nondeterminism outside RunContext downgrades this to partial or none (invariant IV)."
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Machine-readable reasons for a non-full capability, e.g. 'node:fetch_page:ambient_time'."
+        }
+      }
+    },
+    "Record": {
+      "oneOf": [
+        { "$ref": "#/$defs/RunStarted" },
+        { "$ref": "#/$defs/Transition" },
+        { "$ref": "#/$defs/Routing" },
+        { "$ref": "#/$defs/RunCompleted" },
+        { "$ref": "#/$defs/RunFailed" },
+        { "$ref": "#/$defs/RunCancelled" }
+      ]
+    },
+    "RecordBase": {
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1, "description": "Monotonic, gapless, starts at 1 (T1)." },
+        "ts": { "$ref": "#/$defs/Timestamp", "description": "From the run clock — never from ambient wall time (invariant IV.1)." },
+        "kind": { "type": "string" },
+        "integrity": {
+          "type": "object",
+          "required": ["payload_hash", "prev_hash"],
+          "additionalProperties": false,
+          "properties": {
+            "payload_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Fingerprint" }], "description": "RESERVED in v1.0: emit null." },
+            "prev_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Fingerprint" }], "description": "RESERVED in v1.0: emit null." }
+          }
+        }
+      }
+    },
+    "RunStarted": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "intent", "initial_state"],
+      "properties": {
+        "kind": { "const": "run_started" },
+        "intent": { "oneOf": [{ "type": "string" }, { "type": "null" }], "description": "The run's declared intent, if any." },
+        "initial_state": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Fact" },
+          "description": "Snapshot of every fact present before the first transition (may be empty). Reads with written_at: null resolve here — without this, a seeded run is unreplayable and why-value-unanswerable for its seed keys."
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "Transition": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "node", "attempt", "status", "effect_class", "reads", "writes", "effects", "context_draws", "violations", "error"],
+      "properties": {
+        "kind": { "const": "transition" },
+        "node": { "type": "string", "description": "Node name as declared in the GraphSpec (T5)." },
+        "attempt": { "type": "integer", "minimum": 1, "description": "1 for the first execution; retries increment. Every attempt gets its own transition record — retries are never hidden." },
+        "status": {
+          "enum": ["completed", "failed", "skipped"],
+          "description": "completed: the node returned. failed: the node raised and policy strict ends the run (a run_failed record follows, possibly after retries). skipped: the node raised under policy exploration — `error` is non-null and captured reads plus any writes that survive per the exploration contract are preserved; execution continues. A node that never started produces no record at all (T6)."
+        },
+        "effect_class": {
+          "enum": ["pure", "recorded_effect", "external_effect"],
+          "description": "The node's resolved class (declared in the GraphSpec or defaulted to external_effect). Recorded here so the trace document is self-sufficient for replay-mode selection without resolving the spec."
+        },
+        "duration_us": { "type": "integer", "minimum": 0 },
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "written_at"],
+            "additionalProperties": false,
+            "properties": {
+              "key": { "type": "string", "description": "The state key actually read (captured, not declared)." },
+              "written_at": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }], "description": "seq of the earlier transition that wrote the value read (T4), or null for initial-state keys (resolved in run_started.initial_state). This is the causal edge: why-value and first-divergence resolve through it." }
+            }
+          }
+        },
+        "writes": {
+          "type": "object",
+          "required": ["facts", "decisions", "rejections"],
+          "additionalProperties": false,
+          "properties": {
+            "facts": { "type": "array", "items": { "$ref": "#/$defs/Fact" } },
+            "decisions": { "type": "array", "items": { "$ref": "#/$defs/Decision" } },
+            "rejections": { "type": "array", "items": { "$ref": "#/$defs/Rejection" } }
+          },
+          "description": "Everything this transition appended. A value is born inside the transition that wrote it — per-value provenance is structural, not reconstructed."
+        },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EffectDescriptor" },
+          "description": "Per-effect descriptions (node-protocol.md §4). v1.0 records description only; receipts and reuse-on-replay are a v1.x additive extension (0.6)."
+        },
+        "context_draws": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "source": { "enum": ["now", "rand", "uuid"] },
+              "value": { "$ref": "#/$defs/Value" }
+            }
+          },
+          "description": "Every RunContext draw this node made, in draw order. Empty for nodes that drew nothing. This is what makes invariant IV auditable and replay possible."
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "key"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "enum": ["undeclared_read", "undeclared_write"] },
+              "key": { "type": "string" }
+            }
+          },
+          "description": "Declared-vs-captured mismatches (node-protocol.md §3.2). Recorded in v1.0; enforcement is version-gated."
+        },
+        "error": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["type", "message"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "Routing": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "after", "on", "value", "written_at", "outcome", "selected", "candidates"],
+      "properties": {
+        "kind": { "const": "routing" },
+        "after": { "type": "string", "description": "The node whose completion triggered this routing (T5)." },
+        "on": { "oneOf": [{ "type": "string" }, { "type": "null" }], "description": "The decision key routed on; null for a static next/terminal step." },
+        "value": { "oneOf": [{ "$ref": "#/$defs/Value" }, { "type": "null" }], "description": "The decision value observed; null for a static step." },
+        "written_at": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }], "description": "seq of the transition that wrote the decision routed on (the routing record's own causal edge); null for a static step." },
+        "outcome": {
+          "enum": ["matched", "default", "miss", "static"],
+          "description": "matched: value hit a map key. default: value missed and the route's default was taken. miss: value missed a strict route (graphspec R7) — selected is END, and the run then fails under policy strict or ends with the miss on record under exploration. static: a next/terminal step, no dispatch."
+        },
+        "selected": { "type": "string", "minLength": 1, "description": "A declared node name, or the literal string END." },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["target", "taken"],
+            "additionalProperties": false,
+            "properties": {
+              "target": { "type": "string", "minLength": 1, "description": "A declared node name, or the literal string END." },
+              "taken": { "type": "boolean" }
+            }
+          },
+          "description": "Every route that was possible at this point, taken and not taken. The not-taken alternatives are first-class trace content — this is what why-not answers are made of."
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "RunCompleted": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "replay"],
+      "properties": {
+        "kind": { "const": "run_completed" },
+        "replay": { "$ref": "#/$defs/ReplayStatus", "description": "FINAL replay capability after any mid-run downgrade. Authoritative over the header's declared value." }
+      },
+      "unevaluatedProperties": false
+    },
+    "RunFailed": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "failed_node", "replay"],
+      "properties": {
+        "kind": { "const": "run_failed" },
+        "failed_node": { "oneOf": [{ "type": "string" }, { "type": "null" }], "description": "The node whose failure ended the run, when attributable. The accumulated trace up to and including this record survives — failure preservation is invariant-level (guarantees.md, inherited corpus)." },
+        "replay": { "$ref": "#/$defs/ReplayStatus", "description": "FINAL replay capability. Authoritative over the header's declared value." }
+      },
+      "unevaluatedProperties": false
+    },
+    "RunCancelled": {
+      "allOf": [{ "$ref": "#/$defs/RecordBase" }],
+      "type": "object",
+      "required": ["seq", "ts", "kind", "integrity", "reason", "replay"],
+      "properties": {
+        "kind": { "const": "run_cancelled" },
+        "reason": { "type": "string", "description": "Cancellation is a first-class, trace-recorded runner outcome — never a silently abandoned generator. A node in flight at cancellation produces no transition record (T6)." },
+        "replay": { "$ref": "#/$defs/ReplayStatus", "description": "FINAL replay capability. Authoritative over the header's declared value." }
+      },
+      "unevaluatedProperties": false
+    },
+    "Fact": {
+      "type": "object",
+      "required": ["key", "value", "source", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "$ref": "#/$defs/Value" },
+        "source": { "type": "string", "description": "Free-form provenance label supplied by the node. The kernel records it and never interprets it." },
+        "ts": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "Decision": {
+      "type": "object",
+      "required": ["key", "value", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "$ref": "#/$defs/Value" },
+        "reason": { "type": "string" },
+        "ts": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "Rejection": {
+      "type": "object",
+      "required": ["what", "reason", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "what": { "type": "string" },
+        "reason": { "type": "string" },
+        "evidence": { "oneOf": [{ "$ref": "#/$defs/Value" }, { "type": "null" }] },
+        "ts": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "EffectDescriptor": {
+      "type": "object",
+      "required": ["class", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "enum": ["recorded_effect", "external_effect"],
+          "description": "The class of THIS effect. `pure` is a node-level classification (see Transition.effect_class), not an effect — a pure effect is an oxymoron and does not validate."
+        },
+        "description": { "type": "string" },
+        "idempotency_key": { "oneOf": [{ "type": "string" }, { "type": "null" }], "description": "Required for external_effect once effect enforcement lands (0.7); optional and recorded-only in v1.0." }
+      }
+    },
+    "Value": {
+      "oneOf": [
+        { "$ref": "#/$defs/Json" },
+        { "$ref": "#/$defs/RedactedValue" }
+      ]
+    },
+    "RedactedValue": {
+      "type": "object",
+      "required": ["kind", "hash", "policy_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "redacted" },
+        "hash": { "$ref": "#/$defs/Fingerprint" },
+        "policy_ref": { "type": "string" }
+      },
+      "description": "Invariant V: structural completeness without content exposure. The hash and policy reference are evidence; the secret is not. NOTE: a plain-JSON object value whose own 'kind' field equals 'redacted' would be ambiguous; node-protocol.md §5 therefore forbids nodes from writing objects with a top-level 'kind': 'redacted' except through the redaction API."
+    },
+    "Json": {
+      "description": "Any JSON value. Nodes may only write what can be written down — a value that cannot serialize is a contract violation at the boundary, not a silent pass-through.",
+      "type": ["object", "array", "string", "number", "boolean", "null"]
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, UTC, from the run clock (invariant IV.1)."
+    },
+    "Fingerprint": {
+      "type": "string",
+      "pattern": "^[a-z_]+:sha256:[0-9a-f]{64}$",
+      "description": "Kind-prefixed SHA-256 over canonical form. See contract/README.md."
+    }
+  }
+}
