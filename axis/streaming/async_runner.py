@@ -8,7 +8,12 @@ from axis.state import GraphState
 from axis.events import Event, EventType, now
 from axis.node import Node, node_name
 from axis.policy import Policy
-from axis.runner import NodeFailed, RunnerObserver, _state_from_exception
+from axis.runner import (
+    NodeFailed,
+    RunnerObserver,
+    _graph_start_metadata,
+    _state_from_exception,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +100,7 @@ class AsyncRunner:
                 event_type=EventType.GRAPH_START,
                 description=f"Graph started under policy {self.policy.value}",
                 timestamp=now(),
-                metadata={"policy": self.policy.value},
+                metadata=_graph_start_metadata(self.policy, state),
             )
         )
         self._notify(EventType.GRAPH_START, current_state)
@@ -218,7 +223,7 @@ class AsyncRunner:
                 event_type=EventType.GRAPH_START,
                 description=f"Graph started under policy {self.policy.value}",
                 timestamp=now(),
-                metadata={"policy": self.policy.value},
+                metadata=_graph_start_metadata(self.policy, state),
             )
         )
         self._notify(EventType.GRAPH_START, current_state)
@@ -395,7 +400,7 @@ class ConcurrentRunner(AsyncRunner):
                 event_type=EventType.GRAPH_START,
                 description=f"Graph started under policy {self.policy.value} (concurrent)",
                 timestamp=now(),
-                metadata={"policy": self.policy.value},
+                metadata=_graph_start_metadata(self.policy, state),
             )
         )
         self._notify(EventType.GRAPH_START, current_state)
