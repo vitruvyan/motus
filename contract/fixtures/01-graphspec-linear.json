@@ -1,0 +1,40 @@
+{
+  "artifact": "graphspec",
+  "expect": "valid",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "ingest-linear",
+    "version": "1.0.0",
+    "entry": "fetch",
+    "nodes": [
+      {
+        "name": "fetch",
+        "effect_class": "recorded_effect",
+        "reads_declared": [
+          "source_url"
+        ],
+        "writes_declared": [
+          "payload"
+        ]
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect",
+        "writes_declared": [
+          "stored_id"
+        ]
+      }
+    ],
+    "transitions": {
+      "fetch": {
+        "kind": "next",
+        "to": "store"
+      },
+      "store": {
+        "kind": "terminal"
+      }
+    },
+    "requires_motus": ">=0.5,<1.0"
+  }
+}

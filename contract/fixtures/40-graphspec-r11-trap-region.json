@@ -1,0 +1,50 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R11",
+  "reason_contains": "inescapable trap region",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "trap",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      },
+      {
+        "name": "c"
+      },
+      {
+        "name": "d"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "route",
+        "on": "dir",
+        "map": {
+          "work": "b",
+          "exit": "d"
+        }
+      },
+      "b": {
+        "kind": "next",
+        "to": "c"
+      },
+      "c": {
+        "kind": "next",
+        "to": "b"
+      },
+      "d": {
+        "kind": "terminal"
+      }
+    },
+    "max_transitions": 50
+  }
+}

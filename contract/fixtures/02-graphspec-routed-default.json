@@ -1,0 +1,51 @@
+{
+  "artifact": "graphspec",
+  "expect": "valid",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "pipeline",
+    "version": "1.2.0",
+    "entry": "fetch",
+    "nodes": [
+      {
+        "name": "fetch",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "classify",
+        "effect_class": "pure"
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect"
+      },
+      {
+        "name": "escalate",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "fetch": {
+        "kind": "next",
+        "to": "classify"
+      },
+      "classify": {
+        "kind": "route",
+        "on": "verdict",
+        "map": {
+          "approve": "store",
+          "reject": "escalate"
+        },
+        "default": "escalate"
+      },
+      "store": {
+        "kind": "terminal"
+      },
+      "escalate": {
+        "kind": "terminal"
+      }
+    },
+    "requires_motus": ">=0.5,<1.0"
+  }
+}

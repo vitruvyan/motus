@@ -1,0 +1,65 @@
+{
+  "artifact": "jsonl",
+  "expect": "valid",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "pipeline",
+    "version": "1.2.0",
+    "entry": "fetch",
+    "nodes": [
+      {
+        "name": "fetch",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "classify",
+        "effect_class": "pure"
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect"
+      },
+      {
+        "name": "escalate",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "fetch": {
+        "kind": "next",
+        "to": "classify"
+      },
+      "classify": {
+        "kind": "route",
+        "on": "verdict",
+        "map": {
+          "approve": "store",
+          "reject": "escalate"
+        },
+        "default": "escalate"
+      },
+      "store": {
+        "kind": "terminal"
+      },
+      "escalate": {
+        "kind": "terminal"
+      }
+    },
+    "requires_motus": ">=0.5,<1.0"
+  },
+  "equivalent_to": "04-trace-happy-path.json",
+  "lines": [
+    "{\"schema_version\": \"1.0.0\", \"run\": {\"run_id\": \"run-happy-0001\", \"graph\": {\"name\": \"pipeline\", \"version\": \"1.2.0\", \"graph_fingerprint\": \"graph:sha256:1bb5ad0843c416542cb2894005b4ec53a90fd90dbfebab7228e861b83f44ff7c\", \"code_fingerprint\": \"code:sha256:1bb5ad0843c416542cb2894005b4ec53a90fd90dbfebab7228e861b83f44ff7c\", \"spec_schema_version\": \"1.0.0\"}, \"policy\": \"strict\", \"durability_profile\": \"synchronous\", \"replay\": {\"capability\": \"full\", \"constraints\": []}, \"metadata\": {\"actor\": \"terraveler/ingest\", \"causation_id\": \"evt-0451\", \"correlation_id\": \"req-9021\", \"ruleset_version\": \"carta-0.7\", \"batch\": {\"day\": \"2026-08-03\", \"size\": 3}}, \"created_ts\": \"2026-08-03T10:00:00Z\"}}",
+    "{\"seq\": 1, \"ts\": \"2026-08-03T10:00:01Z\", \"kind\": \"run_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"intent\": \"ingest the daily batch\", \"initial_state\": {\"facts\": [{\"key\": \"source_url\", \"value\": \"https://example.com/batch.json\", \"source\": \"seed\", \"ts\": \"2026-08-03T10:00:01Z\"}], \"decisions\": [], \"rejections\": []}}",
+    "{\"seq\": 2, \"ts\": \"2026-08-03T10:00:02Z\", \"kind\": \"attempt_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"fetch\", \"attempt\": 1}",
+    "{\"seq\": 3, \"ts\": \"2026-08-03T10:00:03.250000Z\", \"kind\": \"transition\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"fetch\", \"attempt\": 1, \"outcome\": \"returned\", \"disposition\": \"commit\", \"effect_class\": \"recorded_effect\", \"reads\": [{\"key\": \"source_url\", \"origin\": {\"kind\": \"initial\", \"collection\": \"facts\", \"index\": 0}}, {\"key\": \"intent\", \"origin\": {\"kind\": \"header\", \"field\": \"intent\"}}, {\"key\": \"retry_budget\", \"origin\": {\"kind\": \"absent\"}}], \"writes\": {\"facts\": [{\"key\": \"payload\", \"value\": {\"rows\": [1, 2, 3], \"ok\": true}, \"source\": \"node:fetch\", \"ts\": \"2026-08-03T10:00:03Z\"}, {\"key\": \"api_token_used\", \"value\": {\"kind\": \"redacted\", \"hash\": \"value:sha256:b9f514ee4d6bfa30e318de33333b511d66d601d5abd8e8a2f75f709e69787486\", \"policy_ref\": \"policy/secrets@1\"}, \"source\": \"node:fetch\", \"ts\": \"2026-08-03T10:00:03Z\"}], \"decisions\": [], \"rejections\": []}, \"effects\": [{\"class\": \"recorded_effect\", \"description\": \"GET https://example.com/batch.json\", \"idempotency_key\": null}], \"context_draws\": [{\"source\": \"now\", \"value\": \"2026-08-03T10:00:03.100000Z\"}, {\"source\": \"uuid\", \"value\": \"8f14e45f-ceea-4673-9df6-2f7a0c6e2f0d\"}], \"violations\": [], \"error\": null, \"duration_us\": 4172}",
+    "{\"seq\": 4, \"ts\": \"2026-08-03T10:00:04Z\", \"kind\": \"routing\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"after\": \"fetch\", \"on\": null, \"value\": null, \"written_at\": null, \"outcome\": \"static\", \"selected\": \"classify\", \"candidates\": [{\"condition\": {\"kind\": \"static\"}, \"target\": \"classify\", \"taken\": true}]}",
+    "{\"seq\": 5, \"ts\": \"2026-08-03T10:00:05Z\", \"kind\": \"attempt_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"classify\", \"attempt\": 1}",
+    "{\"seq\": 6, \"ts\": \"2026-08-03T10:00:06Z\", \"kind\": \"transition\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"classify\", \"attempt\": 1, \"outcome\": \"returned\", \"disposition\": \"commit\", \"effect_class\": \"pure\", \"reads\": [{\"key\": \"payload\", \"origin\": {\"kind\": \"transition\", \"seq\": 3, \"collection\": \"facts\", \"index\": 0}}, {\"key\": \"facts\", \"origin\": {\"kind\": \"scan\", \"collection\": \"facts\"}}, {\"key\": \"ruleset_version\", \"origin\": {\"kind\": \"header\", \"field\": \"metadata\"}}], \"writes\": {\"facts\": [], \"decisions\": [{\"key\": \"verdict\", \"value\": \"approve\", \"ts\": \"2026-08-03T10:00:06Z\", \"reason\": \"payload well-formed\"}], \"rejections\": []}, \"effects\": [], \"context_draws\": [{\"source\": \"rand\", \"value\": 0.4213}], \"violations\": [], \"error\": null, \"duration_us\": 302}",
+    "{\"seq\": 7, \"ts\": \"2026-08-03T10:00:07Z\", \"kind\": \"routing\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"after\": \"classify\", \"on\": \"verdict\", \"value\": \"approve\", \"written_at\": 6, \"outcome\": \"matched\", \"selected\": \"store\", \"candidates\": [{\"condition\": {\"kind\": \"map\", \"key\": \"approve\"}, \"target\": \"store\", \"taken\": true}, {\"condition\": {\"kind\": \"map\", \"key\": \"reject\"}, \"target\": \"escalate\", \"taken\": false}, {\"condition\": {\"kind\": \"default\"}, \"target\": \"escalate\", \"taken\": false}]}",
+    "{\"seq\": 8, \"ts\": \"2026-08-03T10:00:08Z\", \"kind\": \"attempt_started\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"store\", \"attempt\": 1}",
+    "{\"seq\": 9, \"ts\": \"2026-08-03T10:00:09Z\", \"kind\": \"transition\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"node\": \"store\", \"attempt\": 1, \"outcome\": \"returned\", \"disposition\": \"commit\", \"effect_class\": \"external_effect\", \"reads\": [{\"key\": \"payload\", \"origin\": {\"kind\": \"transition\", \"seq\": 3, \"collection\": \"facts\", \"index\": 0}}, {\"key\": \"verdict\", \"origin\": {\"kind\": \"transition\", \"seq\": 6, \"collection\": \"decisions\", \"index\": 0}}], \"writes\": {\"facts\": [{\"key\": \"stored_id\", \"value\": \"row-7741\", \"source\": \"node:store\", \"ts\": \"2026-08-03T10:00:09Z\"}], \"decisions\": [], \"rejections\": []}, \"effects\": [{\"class\": \"external_effect\", \"description\": \"INSERT batch row into ingest.batches\", \"idempotency_key\": \"batch-2026-08-03\"}], \"context_draws\": [], \"violations\": [], \"error\": null, \"duration_us\": 8814}",
+    "{\"seq\": 10, \"ts\": \"2026-08-03T10:00:10Z\", \"kind\": \"routing\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"after\": \"store\", \"on\": null, \"value\": null, \"written_at\": null, \"outcome\": \"static\", \"selected\": \"END\", \"candidates\": [{\"condition\": {\"kind\": \"static\"}, \"target\": \"END\", \"taken\": true}]}",
+    "{\"seq\": 11, \"ts\": \"2026-08-03T10:00:11Z\", \"kind\": \"run_completed\", \"integrity\": {\"payload_hash\": null, \"prev_hash\": null}, \"replay\": {\"capability\": \"partial\", \"constraints\": [\"node:store:ambient_time\"]}}"
+  ]
+}

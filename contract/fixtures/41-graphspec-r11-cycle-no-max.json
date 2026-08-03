@@ -1,0 +1,42 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R11",
+  "reason_contains": "does not declare max_transitions",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "loop-no-limit",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      },
+      {
+        "name": "c"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "next",
+        "to": "b"
+      },
+      "b": {
+        "kind": "route",
+        "on": "more",
+        "map": {
+          "yes": "a",
+          "no": "c"
+        }
+      },
+      "c": {
+        "kind": "terminal"
+      }
+    }
+  }
+}

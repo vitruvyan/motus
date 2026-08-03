@@ -1,0 +1,37 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R3",
+  "reason_contains": "not reachable from entry",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "unreachable",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      },
+      {
+        "name": "c"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "next",
+        "to": "b"
+      },
+      "b": {
+        "kind": "terminal"
+      },
+      "c": {
+        "kind": "terminal"
+      }
+    }
+  }
+}

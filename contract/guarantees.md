@@ -18,7 +18,7 @@ accepted the trace. Crash guarantees depend on the declared profile:
 | Profile | Guarantee after process loss |
 |---|---|
 | `in-memory` | None. The trace exists only as the returned object. |
-| `buffered` | Everything up to the last confirmed flush; the loss window is declared in the run header's `sink` object (flush_interval_ms / chunk_records — required for this profile). Transition records with `status: failed` and the terminal records (`run_failed`, `run_cancelled`) flush immediately — failure evidence is never in the loss window. |
+| `buffered` | Everything up to the last confirmed flush; the loss window is declared in the run header's `sink` object (flush_interval_ms / chunk_records — required for this profile). Transition records with outcome `raised` or `cancelled`, and the terminal records (`run_failed`, `run_cancelled`), flush immediately — failure evidence is never in the loss window. |
 | `synchronous` | A transition is committable only after sink ack, within the declared limits of the persistent medium (fsync semantics, replication if any). |
 
 The profile is recorded in the run header. Claiming a stronger guarantee than
@@ -28,6 +28,14 @@ the profile bought is a contract violation.
 LLM, no Vitruvyan OS, no LangChain, no Orders, no epistemic categories.
 Deterministic explanations only; semantic meaning belongs to the consumer.
 Enforced by an import-boundary test in the conformance suite.
+*Vocabulary note (cross-review MF-17, pending founder ratification):*
+`Fact`, `Decision` and `Rejection` are hereby defined as **neutral workflow
+primitives** — a Fact is a *recorded assertion*, never verified truth; a
+Decision is a keyed routable value; a Rejection is a recorded not-taken.
+No epistemic weight is attached by the kernel. Accordingly the standard
+metadata key is the domain-neutral `ruleset_version`; a consumer's own
+vocabulary (Terraveler's `carta_version`) maps onto it or rides as a
+consumer-defined key.
 
 **IV. Nondeterminism is declared and observable.**
 (1) Kernel-generated timestamps, sequences and identifiers always come from
@@ -41,16 +49,21 @@ absence of a declaration never implies reproducibility.
 complete when content cannot be persisted: redacted values carry hash and
 policy reference. Hash, reference and policy are evidence; the secret is not.
 
-## 2. Replay semantics, stated honestly
+## 2. Replay and delivery semantics, stated honestly
 
-Motus promises **at-least-once execution with idempotent effects** — never
-exactly-once. In v1.0 there is no replay at all: the schema records what
-replay will need (reads with causal references, context draws, effect
-classes); the replay modes themselves are 0.6+. When they land: playback
-never executes code; verify re-executes only `pure` nodes; effect replay
-reuses recorded results only when a valid receipt exists and the replay
-policy permits; resume continues from the last committed point per the
-durability profile.
+**In 0.5 Motus makes NO general delivery guarantee for external effects** —
+the only promise is the explicitly configured retry policy of an attempt.
+There is no replay, no resume, no receipt, and therefore no
+at-least-once-across-crashes claim: after a process loss, what happened to an
+in-flight external effect is recorded as *unknown* (the unclosed
+`attempt_started`), never guessed. The schema records what replay will need
+(per-value read origins, context draws, effect classes); the replay modes
+are 0.6+. When they land: playback never executes code; verify re-executes
+only `pure` nodes; effect replay reuses recorded results only when a valid
+receipt exists and the replay policy permits; resume continues from the last
+committed point per the durability profile — and only then does
+**at-least-once execution with idempotent effects** become a stated
+guarantee. Exactly-once is promised in no version, ever.
 
 ## 3. Performance SLOs (CI gate)
 
@@ -66,9 +79,13 @@ guest, Python 3.10), min-of-7 methodology, raw JSON published per run.
 | Trace completeness at the above numbers | 100 % — no sampling, ever | 100 % |
 
 Reference hardware profiles: (a) the VPS class above; (b) one GitHub-runner
-class, pinned in `benchmarks/`. cProfile numbers are never quoted as wall
-time. A regression beyond target fails CI; improving a target requires an
-ADR, not a lucky run.
+class, pinned in `benchmarks/`. Method, fixed for CI (cross-review NICE-2):
+per measurement ≥ 7 samples after ≥ 2 warmup runs, `gc.collect()` before
+each sample, report min AND median; **SLO targets are asserted on the
+median, with min published alongside**; tolerance band ±20% before a
+regression fails CI; raw JSON per run committed as the comparison baseline.
+cProfile numbers are never quoted as wall time. A regression beyond target
+fails CI; improving a target requires an ADR, not a lucky run.
 
 ## 4. Terraveler compatibility surface (frozen)
 
@@ -96,6 +113,21 @@ before implementation and are not editable by the implementing agent.
 - `NodeFailed` carrying `.state` — relied on at three production sites
   (ingest/run.py, ingest/extract.py, rag/app/main.py)
 
+**Legacy `Decision` strategy (cross-review MF-10, strategy 1 — two types, no
+cross-mapping):** the compatibility view is a *legacy-format producer, not a
+translator*. Legacy runs (the `Runner(nodes, policy=)` path) record legacy
+shapes, including v0.4.0's `Decision(description, timestamp)`; GraphSpec
+runs record trace v1 shapes with the Motus-native `Decision(key, value,
+reason?, ts)`. A legacy Decision never enters a v1 trace and no deterministic
+mapping between the two is defined or promised. Routing requires native
+decisions, which only GraphSpec runs produce — the legacy path has no route
+table, so nothing is lost. The golden tests pin the legacy side; the contract
+fixtures pin the native side. **Public names are unambiguous by decision**:
+`from vitruvyan_motus import Decision` is the native type;
+`from vitruvyan_motus.compat import LegacyDecision` is the Axis type — no
+import path ever exposes both under one name, and Terraveler receives no
+silent alias: its migration changes import paths explicitly.
+
 ## 5. Inherited conformance corpus (Axis 0.4.0)
 
 These behaviors were earned through adversarial review and become Motus
@@ -117,7 +149,54 @@ contract tests, ported without retroactively weakening their expectations:
 7. Old traces load: a persisted state without newer optional fields
    deserializes with documented defaults.
 
-## 6. Versioning
+## 6. The three observation surfaces (normative — cross-review MF-11)
+
+The dissolution of `SynapticBus` produces three protocols. Their semantics
+are contract, not implementation detail; the implementer invents none of
+this.
+
+**TraceSink** — the durable surface.
+- Delivery unit: trace records, in `seq` order, at the flush boundaries the
+  durability profile defines (`synchronous`: every record; `buffered`: per
+  chunk/interval, with failed-transition and terminal records flushed
+  immediately; `in-memory`: retained, no persistence promise).
+- The stream a sink receives IS the persisted account — same records, same
+  order, no sampling.
+- Failure: a required sink's rejection prevents the run's logical success
+  (invariant II). Sink-level retry, if any, is sink configuration; the
+  runner does not silently drop and continue. **Persistence limitation
+  (OPEN-08, explicit by decision):** when the failing component IS the
+  required sink, the `run_failed` record with cause `sink_failure` is
+  best-effort — the logical failure toward the caller is guaranteed, the
+  persisted trace may end crash-truncated per its declared profile.
+- A sink MUST NOT mutate records (delivered values are isolated per
+  node-protocol §1.2's guarantee) and MUST NOT feed anything back into
+  execution.
+
+**Listener** — the live, non-intervening surface.
+- Delivery unit: each record, after it is committed to the run's log,
+  in `seq` order per listener.
+- Structurally non-intervening: per-listener isolation in the dispatch
+  layer; a listener's exception is recorded (counted, logged) and swallowed;
+  there is NO critical flag on this surface — nothing a listener does can
+  affect execution, by construction rather than by convention.
+- Read-only: delivered records are isolated; mutation attempts affect
+  copies.
+- Ordering across listeners is unspecified; within one listener it is `seq`
+  order. Delivery is synchronous on the runner thread in 0.5 (the runner is
+  single-threaded; async delivery is a later, explicitly-versioned change).
+
+**StreamDriver** — the execution-coupled surface.
+- The one surface honestly allowed to gate execution: it drives the run
+  (consumer-paced iteration; pause/cancel through the runner's API).
+- Cancellation through a StreamDriver lands as the trace-recorded
+  `run_cancelled` (with `active_attempt`), never as an abandoned generator.
+- Backpressure semantics: the runner does not start the next attempt while
+  the driver has not consumed the previous yield. That coupling is the
+  feature; documentation MUST present StreamDriver as execution-gating,
+  never as "just another listener".
+
+## 7. Versioning
 
 Semantic versioning on the distribution. Any breaking change to a contract
 surface is a major version. `schema_version` is single-sourced in the package

@@ -1,0 +1,27 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R5",
+  "reason_contains": "declared 2 times",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "dupes",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "a"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "terminal"
+      }
+    }
+  }
+}

@@ -46,10 +46,31 @@ enforcement point.
 
 Where a schema references a fingerprint, it means: SHA-256 over the canonical
 JSON encoding of the object — UTF-8, keys sorted lexicographically, no
-insignificant whitespace, floats forbidden in fingerprinted positions —
-prefixed with the fingerprint kind, e.g. `graph:sha256:<hex>`.
-`code_fingerprint` is computed over the ordered tuple of the nodes' qualified
-names and source hashes; its exact recipe is fixed in `node-protocol.md` §6.
+insignificant whitespace, strict RFC 8259 (string keys only, no NaN/Infinity),
+integers only in fingerprinted numeric positions (floats forbidden there
+precisely because their canonical representation is not settled until the
+integrity schema 1.1 fixes it) — prefixed with the fingerprint kind, e.g.
+`graph:sha256:<hex>`. Hashes are computed over the canonical object form,
+never over the bytes of a particular encoding (JSON vs JSONL).
+`code_fingerprint` is computed over the ordered node identity list —
+declared name, qualified name, source hash, config fingerprint — per the
+exact recipe in `node-protocol.md` §6.3.
+
+## Executable fence
+
+The schemas alone cannot enforce the R-rules and T-rules. The fence is
+executable and versioned in this repository:
+
+- `contract/validate.py` — the semantic validator: GraphSpec R1–R12, trace
+  T1–T8, JSON and JSONL forms, correlation checks.
+- `contract/fixtures/` — versioned positive and negative instances; every
+  negative declares the rule it violates, and the contract tests assert it
+  fails for that reason and no other.
+- `tests/test_contract_fixtures.py` — runs metaschema, schema, and semantic
+  validation over all fixtures.
+
+A contract change that does not update fixtures alongside it is incomplete
+by definition.
 
 ## What lives where
 

@@ -1,0 +1,20 @@
+# Resolved test environment — the reproducible counterpart of the [test] extra.
+# Ranges in pyproject declare intent; THIS file records the versions actually
+# resolved (pip freeze) on the reference profile: Python 3.10.12, AMD EPYC
+# vCPU guest, 2026-08-03. CI installs with:
+#   pip install -e .[test] -c constraints/test.txt
+# Regenerating it is a deliberate act recorded in a commit, never a side effect.
+attrs==26.1.0
+exceptiongroup==1.3.1
+iniconfig==2.3.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+packaging==26.2
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==8.4.2
+pytest-asyncio==0.24.0
+referencing==0.37.0
+rpds-py==0.30.0
+tomli==2.4.1
+typing_extensions==4.16.0

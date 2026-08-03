@@ -43,10 +43,21 @@ The evidence that shaped this decision:
    `vitruvyan/motus`. No greenfield repository. Commits, tags, branches,
    issues and PRs stay in one history. The old name is never reused for a
    new repository. The layout migrates to the approved flat form
-   (`src/vitruvyan_motus/` — nine files, one responsibility each) **without a
-   semantic greenfield rewrite**: earned v0.4.0 behaviors enter
-   `tests/contract/` as the inherited conformance corpus (guarantees.md §5)
-   before the runtime moves.
+   (`src/vitruvyan_motus/` — **ten files**, one responsibility each: the
+   prototype's nine plus `compat.py`, approved by the cross-review on the
+   condition that it contains exclusively legacy adapters and types — the
+   compatibility view, `LegacyDecision`, the legacy `to_dict` shape — and
+   no new runtime semantics) **without a semantic greenfield rewrite**:
+   earned v0.4.0 behaviors enter `tests/contract/` as the inherited
+   conformance corpus (guarantees.md §5) before the runtime moves. The
+   public import paths are unambiguous by design and Terraveler receives no
+   silent alias — its migration off the Axis 0.4.0 wheel changes import
+   paths explicitly:
+
+   ```python
+   from vitruvyan_motus import Decision              # Motus-native type
+   from vitruvyan_motus.compat import LegacyDecision # Axis compatibility
+   ```
 3. **The contract precedes the code.** The four surfaces in `contract/`
    (trace, node, graph, guarantees) plus this ADR are approved before any
    runtime change. Contract tests and Terraveler golden tests are frozen and
@@ -79,29 +90,103 @@ The evidence that shaped this decision:
   plan are approved.
 - Local remotes, CI references and documentation URLs are updated explicitly
   after the GitHub rename; no consumer is left depending on the redirect.
+- The test environment is declared and pinned twice over: the `[test]`
+  extra in pyproject declares intent (ranges), and `constraints/test.txt`
+  records the versions actually resolved on the reference profile — CI
+  installs with `pip install -e .[test] -c constraints/test.txt`.
+  Rationale: a bare environment shows 29 async-plugin failures that are
+  pure noise; in the pinned environment the suite is 0-failure, so "the
+  suite passes" finally means something. Regenerating the constraints file
+  is a deliberate, committed act.
 
-## Open choices this draft makes (approve or amend)
+## Review round record
 
-1. **Trace document forms**: single JSON document *and* JSONL (header line +
-   record lines) are both canonical. (Chosen for streaming sinks; reject if
-   one canonical form is preferred.)
-2. **Routing records are separate from transition records** (`kind: routing`),
-   carrying taken *and* not-taken candidates. (Chosen so why-not is
-   structural; the alternative — routing embedded in transitions — was
-   rejected as conflating node work with runner dispatch.)
-3. **Reads carry `written_at` seq references** (per-value causal edges) rather
-   than bare key lists. (This is the why-value/first-divergence enabler;
-   it is the single most important schema choice in v1.)
-4. **`skipped` is a transition status**, defined as the exploration-policy
-   outcome of a raising node — `error` non-null, captured reads and
-   surviving writes preserved (matching inherited corpus item 6, the
-   STRICT/EXPLORATION divergence).
-5. **Redacted values are unforgeable within the API** (node-protocol §5.2's
-   reservation of top-level `kind: "redacted"`).
-6. **Effect receipts, hash-chain activation and replay fields are additive
-   v1.x extensions**, not v2 — the v1 schema reserves their places
-   (`integrity`, `EffectDescriptor.idempotency_key`) so 0.6 does not break
-   the format.
+- 2026-08-03, round 1 (Claude adversarial pass, pre-commit): 13 must-fix,
+  applied in `6e95eac`.
+- 2026-08-03, round 2 (Codex cross-review `MOTUS_FOUNDATION_CONTRACT_
+  CROSS_REVIEW_V1.md`, verdict REQUEST CHANGES): MF-01…MF-18 applied, six
+  open choices dispositioned as above, OPEN-07/OPEN-08 drafted for the
+  founder, executable fence (validate.py + fixtures + tests) added to the
+  branch.
+- 2026-08-03, round 3 (independent adversarial attack on the executable
+  fence, verdict FIX-THEN-GREEN): 7 must-fix — T6 converse arm for
+  `active_attempt`; lifecycle exclusivity (single run_started, nothing
+  after a terminal record); `routing.written_at` causally validated; T8
+  outcome↔condition↔value correlation; H1 requires both sink disclosure
+  keys; T9 calendar-valid timestamps (FormatChecker alone was vacuous);
+  J1 RFC 8259 non-finite refusal in validator and CLI — plus 5 nice
+  (failed_node in T5, R12 `===` relaxation, fixture rule-purity asserted,
+  stale `status` vocabulary, JSONL blank-line tolerance documented). All
+  applied. Codex's three ratifications (OPEN-07 SCC form, OPEN-08 sink
+  limitation, MF-17 naming) folded in the same pass. ADR-001 moves to
+  ACCEPTED only after Codex independently reproduces the final SHA and the
+  founder signs.
+
+## Open choices — amended per the Codex cross-review (2026-08-03)
+
+Each choice now carries Codex's disposition and the amendment applied.
+
+1. **Trace document forms** — *AMENDED as approved*: JSON document and JSONL
+   are two encodings of ONE logical model. `TraceHeader` is now a published
+   `$defs` schema (JSONL line 1); UTF-8/LF/no-BOM and the equivalence rule
+   are normative; T-rules run streaming to EOF, with truncation = incomplete;
+   integrity hashes (when active) are over canonical object form, never
+   encoding bytes; fixtures pin JSON ↔ JSONL equivalence.
+2. **Routing records separate from transitions** — *APPROVED with amendment,
+   applied*: candidates now carry their condition (map key / default /
+   static), and T8 fixes the correlations (matched/default: exactly one
+   taken candidate equal to selected; miss: zero taken, selected END; the
+   candidate list is the complete route step, each entry once).
+3. **Per-value causal edges** — *AMENDED as approved*: the scalar
+   `written_at` is replaced by a structured `origin`
+   (initial/transition/header/scan/absent, with collection + index), which
+   actually identifies the value read — including read-misses and the
+   closed, enumerated readable surface (node-protocol §3.1a).
+4. **Attempt model** — *Codex REJECTED `skipped`-as-status; accepted and
+   applied*: the trace now separates attempt `outcome`
+   (returned/raised/cancelled) from runner `disposition`
+   (commit/retry/abort/continue), with the transactional rule for writes
+   (raised/cancelled attempts commit nothing — schema-enforced) and
+   `attempt_started` records making every attempt's lifecycle — including
+   hard cancellation — evidence instead of absence (replaces the old T6).
+5. **Redacted values** — *intent approved, wording amended*: now "reserved
+   and runtime-produced", not "unforgeable"; the schema makes `Json` and
+   `RedactedValue` disjoint (the reserved discriminator cannot be
+   hand-forged into a valid plain value).
+6. **Additive v1.x extensions** — *approved with version gate, applied*:
+   schema 1.0 accepts ONLY null in the integrity fields (`const: null`);
+   1.1 activates hashes together with the algorithm, chain validator and an
+   unambiguous activation indicator. No future semantics are silently
+   accepted by 1.0.
+
+## Decisions for the founder (from the cross-review)
+
+- **OPEN-07 — cycles and termination.** APPROVED by the cross-review
+  (2026-08-03) with amendments, all applied to graphspec R11: the
+  reachability requirement is stated in SCC form (every strongly connected
+  component terminal-reachable); `max_transitions` is explicitly part of
+  the graph fingerprint (changing the limit changes the graph); the cause
+  kind is `transition_limit_exceeded`. Cycles legal, static termination not
+  guaranteed, safety valve not scheduler. **Founder signature pending
+  independent reproduction of the final SHA.**
+- **OPEN-08 — non-node failure causes.** APPROVED by the cross-review
+  (2026-08-03) with one amendment, applied: `run_failed.cause` is structured
+  (`node_failure | route_miss | sink_failure | validation_failure |
+  transition_limit_exceeded | runner_internal`, message, record_seq), with
+  `failed_node` correlated by T7 — and the **sink-failure persistence
+  limitation is explicit** (schema cause description + guarantees §6): when
+  the failing component is the required sink itself, the `run_failed` record
+  is best-effort; the logical failure toward the caller stays guaranteed.
+  **Founder signature pending independent reproduction.**
+- **MF-17 — vocabulary neutrality.** APPROVED by the cross-review
+  (2026-08-03), applied: `Fact`/`Decision`/`Rejection` are neutral workflow
+  primitives — a Fact is a *recorded assertion, never verified truth*;
+  `ruleset_version` is the neutral standard key and `carta_version` is
+  consumer metadata; and legacy/native decisions have **no implicit mapping
+  and no ambiguous public names** (`vitruvyan_motus.Decision` native,
+  `vitruvyan_motus.compat.LegacyDecision` legacy — Terraveler migrates by
+  explicit import change, never by silent alias). **Founder signature
+  pending independent reproduction.**
 
 ## Consequences
 

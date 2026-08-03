@@ -1,0 +1,220 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "T4",
+  "reason_contains": "index out of range",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "two-step",
+    "version": "1.0.0",
+    "entry": "fetch",
+    "nodes": [
+      {
+        "name": "fetch",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "fetch": {
+        "kind": "next",
+        "to": "store"
+      },
+      "store": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "run-t4-idx",
+      "graph": {
+        "name": "two-step",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:bfe1b7d98e52cc11851e3b69b651ae65c6a5ee8a9abba2335ff196077bac06d2",
+        "code_fingerprint": "code:sha256:bfe1b7d98e52cc11851e3b69b651ae65c6a5ee8a9abba2335ff196077bac06d2",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "full",
+        "constraints": []
+      },
+      "metadata": {
+        "actor": "fixtures"
+      },
+      "created_ts": "2026-08-03T10:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-03T10:00:01Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": null,
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-03T10:00:02Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "fetch",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-03T10:00:03Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "fetch",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "recorded_effect",
+        "reads": [],
+        "writes": {
+          "facts": [
+            {
+              "key": "payload",
+              "value": "x",
+              "source": "node:fetch",
+              "ts": "2026-08-03T10:00:03Z"
+            }
+          ],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-03T10:00:04Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "fetch",
+        "on": null,
+        "value": null,
+        "written_at": null,
+        "outcome": "static",
+        "selected": "store",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "store",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-03T10:00:05Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "store",
+        "attempt": 1
+      },
+      {
+        "seq": 6,
+        "ts": "2026-08-03T10:00:06Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "store",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [
+          {
+            "key": "payload",
+            "origin": {
+              "kind": "transition",
+              "seq": 3,
+              "collection": "facts",
+              "index": 4
+            }
+          }
+        ],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 7,
+        "ts": "2026-08-03T10:00:07Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "store",
+        "on": null,
+        "value": null,
+        "written_at": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 8,
+        "ts": "2026-08-03T10:00:08Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "full",
+          "constraints": []
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R4",
+  "reason_contains": "has no transition entry",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "missing-step",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "next",
+        "to": "b"
+      }
+    }
+  }
+}
