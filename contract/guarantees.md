@@ -67,25 +67,42 @@ guarantee. Exactly-once is promised in no version, ever.
 
 ## 3. Performance SLOs (CI gate)
 
-Measured baseline: Axis v0.4.0 on the reference VPS profile (AMD EPYC vCPU
-guest, Python 3.10), min-of-7 methodology, raw JSON published per run.
+Baseline: Axis v0.4.0 on the reference VPS profile (AMD EPYC vCPU guest,
+Python 3.10.12), collected by `benchmarks/collect_baseline.py`, raw document
+in `benchmarks/`.
 
-| SLO | Target | v0.4.0 measured |
-|---|---|---|
-| Per-node overhead, full trace, n ≤ 1000 | ≤ 15 µs median | 11.8 µs |
-| 100-node no-op run overhead vs bare loop | ≤ 1 ms | 0.80 ms |
-| Trace serialization (persist path) | ≤ 1.5 × pure `json.dumps` | 4.1 × |
-| Superlinear accumulation term at n = 1000 | < 10 % of total | 23 % |
-| Trace completeness at the above numbers | 100 % — no sampling, ever | 100 % |
+**Method, normative.** Per measurement: 2 warmup calls discarded, then ≥ 7
+measured samples with `gc.collect()` before each. Per baseline: **≥ 5
+independent runs** of the whole benchmark, aggregated as the median across
+runs. Raw JSON committed. cProfile is never quoted as wall time.
 
-Reference hardware profiles: (a) the VPS class above; (b) one GitHub-runner
-class, pinned in `benchmarks/`. Method, fixed for CI (cross-review NICE-2):
-per measurement ≥ 7 samples after ≥ 2 warmup runs, `gc.collect()` before
-each sample, report min AND median; **SLO targets are asserted on the
-median, with min published alongside**; tolerance band ±20% before a
-regression fails CI; raw JSON per run committed as the comparison baseline.
-cProfile numbers are never quoted as wall time. A regression beyond target
-fails CI; improving a target requires an ADR, not a lucky run.
+**What the SLOs assert on, and why it changed.** Measurement on this profile
+showed the in-run *median* varying **27% run to run** with the guest's own
+load average flat — the contention is at the hypervisor and is invisible from
+inside the VM. A gate on that statistic would fail on noise and pass on
+regressions. So the asserted statistic is the **min-of-samples, taken as the
+median across runs** (measured spread ≤ 11%), with the in-run median published
+beside it as an observation, never as a gate. Tolerance band: **±25%**, set
+above the measured spread of the asserted statistic and below the size of any
+regression worth catching. The second reference profile (a GitHub-runner
+class) must be characterized the same way — 5 runs, published spread — before
+it may gate anything.
+
+| SLO (asserted statistic: min-of-samples, median across ≥5 runs) | Target | v0.4.0 measured | run-to-run spread |
+|---|---|---|---|
+| Per-node overhead, full trace, n ≤ 1000 | ≤ 15 µs | 11.9 µs | 9 % |
+| 100-node no-op run overhead vs bare loop | ≤ 1 ms | 0.65 ms | 11 % |
+| Trace serialization (persist path) | ≤ 1.5 × pure `json.dumps` | 4.7 × | 8 % / 22 % |
+| Superlinear accumulation term at n = 1000 | < 10 % of total | 25 % | 7 % |
+| Trace completeness at the above numbers | 100 % — no sampling, ever | 100 % | — |
+
+Published alongside, not asserted: the in-run median per-node cost, 12.5 µs
+(spread 27 %).
+
+A regression beyond target-plus-tolerance fails CI; improving a target
+requires an ADR, not a lucky run. The last three rows are the debts Motus 0.5
+is expected to pay down — they are recorded as measured reality, not as
+achievements.
 
 ## 4. Terraveler compatibility surface (frozen)
 

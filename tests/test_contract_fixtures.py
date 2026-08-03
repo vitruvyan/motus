@@ -184,7 +184,7 @@ ADVERTISED_RULES = {
     # GraphSpec structure (R6/R7/R9/R10 are runtime semantics, not static)
     "R1", "R2", "R3", "R4", "R5", "R8", "R11", "R12",
     # Trace record coherence
-    "T1", "T2", "T3", "T3/INCOMPLETE", "T4", "T5", "T6", "T7", "T8", "T9",
+    "T1", "T2", "T3", "T3/INCOMPLETE", "T4", "T5", "T6", "T7", "T8", "T9", "T10",
     # Execution state machine
     "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11",
     # Spec binding
@@ -205,8 +205,8 @@ def test_every_advertised_rule_has_a_negative_fixture():
 
 
 def test_corpus_minimums_and_wrapper_shape():
-    assert len(POSITIVE) >= 11, f"corpus needs >= 11 positives, has {len(POSITIVE)}"
-    assert len(NEGATIVE) >= 73, f"corpus needs >= 73 negatives, has {len(NEGATIVE)}"
+    assert len(POSITIVE) >= 13, f"corpus needs >= 13 positives, has {len(POSITIVE)}"
+    assert len(NEGATIVE) >= 82, f"corpus needs >= 82 negatives, has {len(NEGATIVE)}"
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {"graphspec", "trace", "jsonl"}, path.name
         if wrapper["artifact"] == "jsonl":
@@ -324,3 +324,32 @@ def test_cli_smoke(tmp_path):
     ko = subprocess.run([*cli, "graphspec", str(bad)], capture_output=True, text=True)
     assert ko.returncode == 1, f"stdout={ko.stdout!r} stderr={ko.stderr!r}"
     assert "R1" in ko.stdout
+
+
+def test_cli_rejects_a_physical_crlf_jsonl_file(tmp_path):
+    """JSONL3 must survive the trip through a real file.
+
+    validate_jsonl() rejected CR bytes from the start, but the CLI read its
+    input with universal newlines, so a CRLF file was silently converted to LF
+    before the rule could see it: the API refused what the command line
+    accepted.  This test exercises the bytes on disk, which is what the
+    contract actually judges.
+    """
+    wrapper = next(
+        w for _, w in POSITIVE
+        if w["artifact"] == "jsonl" and w.get("equivalent_to")
+    )
+    stream = tmp_path / "trace.jsonl"
+    stream.write_bytes(("\r\n".join(wrapper["lines"]) + "\r\n").encode("utf-8"))
+    lf_stream = tmp_path / "trace-lf.jsonl"
+    lf_stream.write_bytes(("\n".join(wrapper["lines"]) + "\n").encode("utf-8"))
+
+    cli = [sys.executable, str(CONTRACT_DIR / "validate.py"), "jsonl"]
+    crlf = subprocess.run([*cli, str(stream)], capture_output=True, text=True)
+    assert crlf.returncode == 1, f"stdout={crlf.stdout!r} stderr={crlf.stderr!r}"
+    assert "JSONL3" in crlf.stdout
+
+    # ...and the same content with LF endings still passes, so the rule is
+    # rejecting the encoding, not the document.
+    lf = subprocess.run([*cli, str(lf_stream)], capture_output=True, text=True)
+    assert lf.returncode == 0, f"stdout={lf.stdout!r} stderr={lf.stderr!r}"

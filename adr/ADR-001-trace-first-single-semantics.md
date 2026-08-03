@@ -14,11 +14,13 @@ consumers (Terraveler ingest and RAG chat) and a measured performance profile.
 The evidence that shaped this decision:
 
 - **Speed is not the problem.** Runner overhead for a 100-node graph is
-  0.65–0.80 ms — the once-proposed 5 ms target is already beaten 6–8× by the
-  interpreter. Where time actually goes: ~60% immutable-state derivation
-  machinery, an O(n²) events-tuple accumulation (23% of total at n=1000),
-  and a serialization path (`to_dict`) costing 75% of the run it describes
-  at 4.1× pure `json.dumps`.
+  0.65 ms (median across 5 runs) — the once-proposed 5 ms target is already
+  beaten ~8× by the interpreter. Where time actually goes: ~60%
+  immutable-state derivation machinery, an O(n²) events-tuple accumulation
+  (25% of total at n=1000), and a serialization path (`to_dict`) costing
+  most of the run it describes, at 4.7× pure `json.dumps`. Numbers are the
+  multi-run baseline in `benchmarks/`; see guarantees.md §3 for why the
+  asserted statistic is the min-of-samples across runs.
 - **The differentiated ground is causal.** Primary-doc verification of the
   landscape: LangGraph's caching is keyed memoization, not an effect log,
   and its time-travel re-fires LLM calls on replay; Temporal, DBOS and
@@ -144,9 +146,33 @@ The evidence that shaped this decision:
   carries a negative fixture, pinned by a coverage test — 96 contract
   tests, full suite 217 passed / 14 skipped / 0 failed in the pinned
   environment, all 22 reproduced cross-review attacks caught, zero changes
-  under `axis/` or `orders/` against `origin/main`. ADR-001 moves to
-  ACCEPTED only after Codex independently reproduces the new SHA and the
-  founder signs.
+  under `axis/` or `orders/` against `origin/main`.
+- 2026-08-03, round 5 (Codex cross-review v3 on `6a2dc4d`, verdict REQUEST
+  CHANGES): seven fresh probes still passed. All closed. **T8 miss legality**
+  — a miss must have been *possible*: a value that is a declared map key was
+  matched, an unmapped value on a route declaring a default was defaulted,
+  and every routed outcome (miss included) owes the same causal duty for
+  `written_at`, with a null cause admissible only when no earlier committed
+  transition ever decided the key. **T10, new rule** — replay capability only
+  degrades: the terminal record may be equal to or weaker than the header's
+  declaration, never stronger, and a constraint that justified a limitation
+  cannot vanish. **SB4 now covers every captured read** — absent, scan and
+  header origins are no longer exempt, since a declaration covering three
+  quarters of the reads is not a declaration. **The effect lattice** —
+  a descriptor may not exceed its node's class (schema-enforced). **The CLI
+  reads bytes** — universal-newline decoding laundered CRLF into LF, so the
+  API refused what the command line accepted. **The benchmark gained its
+  normative warmups**, and collecting it honestly produced a finding of its
+  own: on the reference profile the in-run *median* varies 27% run to run
+  with the guest's load flat, so the SLO statistic is now the min-of-samples
+  taken as the median across ≥5 runs (measured spread ≤ 11%), tolerance
+  ±25%, with the noisy median published beside it — a method rule changed by
+  measurement rather than by preference, and flagged as such. Delivered
+  state: 95 fixtures (13 positive, 82 negative), 40 rules all covered, 108
+  contract tests, full suite in the pinned environment, 7/7 fresh probes and
+  22/22 v2 attacks rejected, `axis/` and `orders/` still untouched.
+  ADR-001 moves to ACCEPTED only after Codex independently reproduces the
+  new SHA and the founder signs.
 
 ## Open choices — amended per the Codex cross-review (2026-08-03)
 

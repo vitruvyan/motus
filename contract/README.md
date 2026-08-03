@@ -65,9 +65,11 @@ The schemas alone cannot enforce the R-rules and T-rules. The fence is
 executable and versioned in this repository:
 
 - `contract/validate.py` — the semantic validator: GraphSpec R1–R12; trace
-  T1–T9 (record coherence), E1–E11 (the execution state machine), SB1–SB4
-  (spec binding, including recomputed graph fingerprints), H1, J1, JSONL1–3;
-  JSON and JSONL forms.
+  T1–T10 (record coherence, including replay monotonicity), E1–E11 (the
+  execution state machine), SB1–SB4 (spec binding, including recomputed
+  graph fingerprints), H1, J1, JSONL1–3; JSON and JSONL forms. It reads its
+  input as BYTES and decodes explicitly — a reader that laundered CRLF into
+  LF would judge a document the file does not contain.
 - `contract/fixtures/` — versioned positive and negative instances; every
   negative declares the rule it violates, and the contract tests assert it
   fails for that reason and no other.

@@ -80,10 +80,19 @@ guarantees.md §4 how legacy access maps onto this surface.
 
 3.2. `reads_declared` / `writes_declared` in the GraphSpec are OPTIONAL. When
 present, the runtime compares captured reality against the declaration and
-records any mismatch in the transition record's `violations` field. In v1.0
-(Motus 0.5) mismatches are **recorded only** — enforcement (an undeclared
-write failing the node under `strict`) is version-gated to 0.6 with the rest
-of declaration enforcement, per the approved 0.5 exclusions.
+records any mismatch in the transition record's `violations` field.
+**"Captured reality" means every read, of every origin kind** — there is no
+exempt corner of the readable surface: a key that was looked up and missed
+(`absent`) is declared by that key, a scanned collection is declared by the
+collection's name, and a header read is declared as `intent` or as the
+metadata key taken. A node that touched something undeclared owes a violation
+for it whatever shape the touch had. (Cross-review v3 found `absent`, `scan`
+and `header` reads exempted, which let a node probe an undeclared key and
+still publish an empty violations list — a declaration that covers three
+quarters of the reads is not a declaration.) In v1.0 (Motus 0.5) mismatches
+are **recorded only** — enforcement (an undeclared write failing the node
+under `strict`) is version-gated to 0.6 with the rest of declaration
+enforcement, per the approved 0.5 exclusions.
 
 3.3. A node MUST NOT read state through any channel that evades capture
 (direct attribute access on internals, closures over prior states). The

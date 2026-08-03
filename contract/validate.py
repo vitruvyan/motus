@@ -1229,6 +1229,50 @@ def _trace_semantics(
                 )
             )
 
+    # T10 — replay capability only ever degrades.  The header declares what the
+    # run set out to guarantee; the terminal record reports what survived.  A
+    # run may DISCOVER it is less reproducible than it hoped (a node drawing
+    # ambient time downgrades it); it can never discover it is more.  Nor may a
+    # constraint that justified a downgrade quietly disappear.  Without this the
+    # two fields are decorative: cross-review v3 walked a trace from a declared
+    # 'none' to a final 'full'.
+    _RANK = {"none": 0, "partial": 1, "full": 2}
+    declared = run.get("replay") or {}
+    declared_cap = declared.get("capability")
+    for i, record in enumerate(records):
+        if record.get("kind") not in _TERMINAL_KINDS:
+            continue
+        final = record.get("replay") or {}
+        final_cap = final.get("capability")
+        if declared_cap in _RANK and final_cap in _RANK:
+            if _RANK[final_cap] > _RANK[declared_cap]:
+                v.append(
+                    Violation(
+                        "T10",
+                        f"$.records[{i}].replay.capability",
+                        f"final replay capability '{final_cap}' is STRONGER "
+                        f"than the declared '{declared_cap}' — capability "
+                        "degrades over a run, it never improves",
+                    )
+                )
+        lost = [
+            c
+            for c in (declared.get("constraints") or [])
+            if c not in (final.get("constraints") or [])
+        ]
+        if lost:
+            v.append(
+                Violation(
+                    "T10",
+                    f"$.records[{i}].replay.constraints",
+                    "declared constraint(s) "
+                    + ", ".join(repr(c) for c in lost)
+                    + " are absent from the final replay status; a constraint "
+                    "that justified a limitation cannot vanish by the end of "
+                    "the run",
+                )
+            )
+
     if not records:
         # Only reachable through the JSONL path (the JSON document form pins
         # minItems 1): a stream that ends right after its header.
@@ -1552,23 +1596,24 @@ def _trace_semantics(
                     )
                 )
             # SB4 — the recorded violations list is TRUTHFUL: recomputed from
-            # the declarations against captured keyed fact/decision reads
-            # (initial/transition origins) and fact/decision write keys.
-            # Scan, header and absent reads are exempt; a node without a
-            # declaration side contributes no expected entries for that side.
+            # the declarations against EVERY captured read and every
+            # fact/decision write key.  No origin kind is exempt: an `absent`
+            # read is captured precisely because a miss steers control flow as
+            # much as a value does, a `scan` read names the collection it swept
+            # (so the collection name is the declared key), and a `header` read
+            # names `intent` or the metadata key it took.  A node that touched
+            # something undeclared owes a violation for it whatever shape the
+            # touch had — exempting three quarters of the readable surface was
+            # how cross-review v3 read an undeclared key and published an empty
+            # violations list.  A node without a declaration side contributes no
+            # expected entries for that side.
             expected_violations: Counter = Counter()
             reads_declared = node_decl.get("reads_declared")
             if reads_declared is not None:
                 allowed_reads = set(reads_declared)
                 for read in record.get("reads") or []:
-                    origin = (read.get("origin") or {})
-                    if origin.get("kind") in ("initial", "transition") and origin.get(
-                        "collection"
-                    ) in ("facts", "decisions"):
-                        if read.get("key") not in allowed_reads:
-                            expected_violations[
-                                ("undeclared_read", read.get("key"))
-                            ] += 1
+                    if read.get("key") not in allowed_reads:
+                        expected_violations[("undeclared_read", read.get("key"))] += 1
             writes_declared = node_decl.get("writes_declared")
             if writes_declared is not None:
                 allowed_writes = set(writes_declared)
@@ -1869,6 +1914,42 @@ def _trace_semantics(
                             "default requires the declared default candidate",
                         )
                     )
+        elif outcome == "miss":
+            if taken:
+                v.append(
+                    Violation(
+                        "T8",
+                        path,
+                        f"outcome 'miss' requires zero taken candidates; "
+                        f"found {len(taken)}",
+                    )
+                )
+        elif outcome == "static":
+            # The schema pins exactly one candidate for static; verify it is
+            # the static edge, taken, and that it targets the selected step.
+            if len(candidates) == 1:
+                candidate = candidates[0]
+                if (
+                    candidate.get("taken") is not True
+                    or candidate.get("target") != selected
+                    or (candidate.get("condition") or {}).get("kind") != "static"
+                ):
+                    v.append(
+                        Violation(
+                            "T8",
+                            path,
+                            "static routing must have its single candidate of "
+                            "condition kind static, taken, with target equal "
+                            f"to selected '{selected}'",
+                        )
+                    )
+        # written_at is the routing record's own causal edge, and it is
+        # required of EVERY routed outcome — including a miss.  A miss is a
+        # routing decision like any other: the value that missed still came
+        # from somewhere, and saying where is the point of the record.
+        # (Cross-review v3 found these checks applied to matched/default
+        # only, so a miss could name run_started as its cause.)
+        if outcome in ("matched", "default", "miss") and record.get("written_at") is not None:
             # written_at is the routing record's own causal edge: it must
             # reference an existing EARLIER transition whose committed
             # writes.decisions contain the routed key, and the R10-most-recent
@@ -1971,35 +2052,36 @@ def _trace_semantics(
                                 "most recent recorded value",
                             )
                         )
-        elif outcome == "miss":
-            if taken:
+        elif outcome == "miss" and record.get("written_at") is None:
+            # A null written_at on a miss is legitimate ONLY when the key was
+            # never decided: nothing committed it, so there is no cause to
+            # name.  Otherwise the record hides its own causality.
+            on = record.get("on")
+            prior = [
+                r["seq"]
+                for r in records
+                if r.get("kind") == "transition"
+                and r.get("disposition") == "commit"
+                and isinstance(r.get("seq"), int)
+                and isinstance(record.get("seq"), int)
+                and r["seq"] < record["seq"]
+                and any(
+                    isinstance(e, dict) and e.get("key") == on
+                    for e in (r.get("writes") or {}).get("decisions") or []
+                )
+            ]
+            if prior:
                 v.append(
                     Violation(
                         "T8",
-                        path,
-                        f"outcome 'miss' requires zero taken candidates; "
-                        f"found {len(taken)}",
+                        f"$.records[{i}].written_at",
+                        "written_at is null on a miss, but transition seq "
+                        f"{prior[-1]} committed a decision {on!r} before this "
+                        "routing — a null cause is admissible only when the key "
+                        "was never decided",
                     )
                 )
-        elif outcome == "static":
-            # The schema pins exactly one candidate for static; verify it is
-            # the static edge, taken, and that it targets the selected step.
-            if len(candidates) == 1:
-                candidate = candidates[0]
-                if (
-                    candidate.get("taken") is not True
-                    or candidate.get("target") != selected
-                    or (candidate.get("condition") or {}).get("kind") != "static"
-                ):
-                    v.append(
-                        Violation(
-                            "T8",
-                            path,
-                            "static routing must have its single candidate of "
-                            "condition kind static, taken, with target equal "
-                            f"to selected '{selected}'",
-                        )
-                    )
+
         if spec is not None:
             step = transitions.get(record.get("after"))
             if isinstance(step, dict):
@@ -2044,6 +2126,38 @@ def _trace_semantics(
                             "matched, never defaulted",
                         )
                     )
+                # A miss must have been POSSIBLE.  GraphSpec R7/R9 decide that,
+                # not the producer: a value that is a declared map key was
+                # matched, and an unmapped value on a route that declares a
+                # default was defaulted.  Recording either as a miss claims the
+                # graph had nowhere to go when it did.  (Cross-review v3: the
+                # miss branch checked only that no candidate was taken, so both
+                # contradictions passed.)
+                if outcome == "miss" and step.get("kind") == "route":
+                    route_map = step.get("map") or {}
+                    if isinstance(value, str) and value in route_map:
+                        v.append(
+                            Violation(
+                                "T8",
+                                f"$.records[{i}]",
+                                f"outcome 'miss' but value {value!r} is a "
+                                "declared map key of the route step for "
+                                f"'{record.get('after')}' — a mapped value is "
+                                "matched, never missed",
+                            )
+                        )
+                    elif "default" in step:
+                        v.append(
+                            Violation(
+                                "T8",
+                                f"$.records[{i}]",
+                                f"outcome 'miss' but the route step for "
+                                f"'{record.get('after')}' declares a default "
+                                f"target {step.get('default')!r} — an unmapped "
+                                "value is defaulted there, never missed; a miss "
+                                "belongs to a strict route (R7)",
+                            )
+                        )
             # An undeclared 'after' is T5's finding; nothing to compare against.
 
     # E1–E11 — the execution state machine, after the T-rules and only over a
@@ -2289,9 +2403,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--spec and --allow-incomplete apply to trace/jsonl only")
 
     try:
-        raw = Path(args.file).read_text(encoding="utf-8")
+        # Bytes, then an explicit decode — NEVER read_text().  Python's
+        # universal-newline handling turns CRLF into LF before the validator
+        # can see it, so a physical CRLF file would sail past JSONL3 while the
+        # same bytes handed to the API were refused (cross-review v3, MF3-05).
+        # The file is what the contract judges; the reader must not launder it.
+        raw = Path(args.file).read_bytes().decode("utf-8")
     except OSError as exc:
         print(f"error: cannot read {args.file}: {exc}", file=sys.stderr)
+        return 2
+    except UnicodeDecodeError as exc:
+        print(f"error: {args.file} is not valid UTF-8: {exc}", file=sys.stderr)
         return 2
 
     spec = None

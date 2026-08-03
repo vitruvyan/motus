@@ -1,7 +1,9 @@
 """Benchmark of the axis v0.4.0 graph kernel (tree: feat/order-spec, timing-equivalent).
 
 Read-only w.r.t. the repo. Outputs a single JSON document to stdout.
-Methodology: time.perf_counter, >=5 repeats per measurement, report min and median.
+Methodology, normative per contract/guarantees.md §3: time.perf_counter,
+WARMUPS (2) discarded before >= 7 measured samples per measurement,
+gc.collect() before every sample, report min and median.
 """
 import gc
 import json
@@ -15,11 +17,21 @@ from axis.state import Fact
 from axis.events import now
 
 REPEATS = 7
+WARMUPS = 2
 OUT = {}
 
 
-def timeit(fn, repeats=REPEATS):
-    """Return (min_s, median_s, all_s) of repeats calls to fn()."""
+def timeit(fn, repeats=REPEATS, warmups=WARMUPS):
+    """Return (min_s, median_s, all_s) of `repeats` MEASURED calls to fn().
+
+    The first `warmups` calls are executed and discarded — cold import paths,
+    first-touch allocation and the interpreter's own caches otherwise land in
+    sample 1 and skew the min.  guarantees.md §3 makes the warmup normative;
+    the baseline JSON in this directory was regenerated with it.
+    """
+    for _ in range(warmups):
+        gc.collect()
+        fn()
     samples = []
     for _ in range(repeats):
         gc.collect()
@@ -118,7 +130,7 @@ OUT["3_runner_realistic"] = runner_real
 # (a) per-node cost windows inside single 1000-node realistic runs
 windows = {"nodes_1_100": (0, 100), "nodes_401_500": (400, 500), "nodes_901_1000": (900, 1000)}
 window_samples = {k: [] for k in windows}
-for _ in range(REPEATS):
+for _ in range(REPEATS + WARMUPS):
     nodes = [make_fact_node(i) for i in range(1000)]
     runner = Runner(nodes, policy=Policy.STRICT)
     obs = MarkObserver()
@@ -131,7 +143,7 @@ for _ in range(REPEATS):
         window_samples[key].append(sum(deltas[a:b]) / (b - a))
 scaling = {"per_node_us_windows": {}}
 for key in windows:
-    s = window_samples[key]
+    s = window_samples[key][WARMUPS:]  # discard the warmup runs (guarantees.md §3)
     scaling["per_node_us_windows"][key] = {
         "min_us": min(s) * 1e6,
         "median_us": statistics.median(s) * 1e6,
