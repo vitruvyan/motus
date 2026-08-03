@@ -2,9 +2,12 @@
 
 | | |
 |---|---|
-| Status | PROPOSED — awaiting founder approval |
+| Status | **ACCEPTED** |
 | Date | 2026-08-03 |
 | Deciders | Founder (final authority) · Codex (convergence + GitHub/CI implementation) · Claude (contract draft + independent review) |
+| Approved by | Davide Baldoni, founder — 2026-08-03 |
+| Approved at | `4665ab15aa5ced4af8ea1b52c24ff0cdee09311c` (the reviewed SHA; this commit changes status only) |
+| Independent review | Codex cross-reviews v1–v5, verdict PASS at the SHA above after seven adversarial rounds |
 | Source documents | *Vitruvyan Motus — fondazione v1.1* · Axis Vision 2026 independent review · Phase-A Terraveler audit · kernel microbenchmark (raw JSON in `benchmarks/` once ported) |
 
 ## Context
@@ -100,6 +103,26 @@ The evidence that shaped this decision:
   pure noise; in the pinned environment the suite is 0-failure, so "the
   suite passes" finally means something. Regenerating the constraints file
   is a deliberate, committed act.
+
+## Approval
+
+Approved by the founder on 2026-08-03 against reviewed SHA
+`4665ab15aa5ced4af8ea1b52c24ff0cdee09311c`, following an independent PASS
+from the Codex cross-review after seven adversarial rounds.
+
+**What this approves.** The contract and the implementation boundary — the
+four surfaces in `contract/`, the executable fence around them, and the scope
+of Motus 0.5. It does not assert that any Motus runtime exists.
+
+**What it does not yet unlock.** The three gates this contract marks REQUIRED
+BEFORE IMPLEMENTATION remain outstanding: the inherited Axis 0.4.0 conformance
+corpus in `tests/contract/`, the frozen Terraveler golden corpus in
+`tests/compat/terraveler/`, and the CI job asserting guarantees.md §3 against
+the baseline in `benchmarks/`. Implementation begins after those exist, not
+after this signature.
+
+**Amendment from here.** This document is now binding. A change to any
+contract surface is a versioned amendment with its own ADR, not an edit.
 
 ## Review round record
 
