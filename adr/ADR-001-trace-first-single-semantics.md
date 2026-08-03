@@ -196,8 +196,30 @@ The evidence that shaped this decision:
   negative), 108 contract tests, suite 239 passed / 14 skipped / 0 failed in
   the pinned environment, 3/3 v4 probes, 7/7 v3 probes and 22/22 v2 attacks
   correct, `axis/` and `orders/` untouched.
+- 2026-08-03, round 7 (Codex cross-review v5 on `8039582`, verdict REQUEST
+  CHANGES): one finding, and a precise one. R10 defines recency as
+  *last-in-array*, but staleness was computed only ACROSS sources — a later
+  committed transition superseding the origin — never WITHIN the array the
+  origin names. So an origin could point at index 0 of a record whose index 1
+  had already superseded the same key, in a committed transition or in the
+  seeded state alike, and validate clean. Exact addressability is not the
+  same as being current. Closed in both directions, and deliberately
+  position-based rather than payload-based: a duplicate carrying an identical
+  value still supersedes, because the origin promises the exact Decision
+  observed and not an equivalent one. Also applied: a test now pins the
+  baseline collector's five-run floor (the executable-fence principle reaches
+  the collector too), and the schema banner is refreshed. Delivered state:
+  110 fixtures (18 positive, 92 negative), 124 contract tests, suite 245
+  passed / 14 skipped / 0 failed in the pinned environment, 2/2 v5 probes,
+  3/3 v4, 7/7 v3, 22/22 v2 and the round-3 corpus all correct, `axis/` and
+  `orders/` untouched.
   ADR-001 moves to ACCEPTED only after Codex independently reproduces the
   new SHA and the founder signs.
+
+*Reporting note:* the round-6 handoff cited 108 contract tests when the
+committed number was 118 — a stale figure carried from round 5, not a code
+defect, caught by the cross-review. Counts in this record are taken from the
+run that produced the commit.
 
 ## Open choices — amended per the Codex cross-review (2026-08-03)
 

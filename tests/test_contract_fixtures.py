@@ -205,8 +205,8 @@ def test_every_advertised_rule_has_a_negative_fixture():
 
 
 def test_corpus_minimums_and_wrapper_shape():
-    assert len(POSITIVE) >= 16, f"corpus needs >= 16 positives, has {len(POSITIVE)}"
-    assert len(NEGATIVE) >= 89, f"corpus needs >= 89 negatives, has {len(NEGATIVE)}"
+    assert len(POSITIVE) >= 18, f"corpus needs >= 18 positives, has {len(POSITIVE)}"
+    assert len(NEGATIVE) >= 92, f"corpus needs >= 92 negatives, has {len(NEGATIVE)}"
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {"graphspec", "trace", "jsonl"}, path.name
         if wrapper["artifact"] == "jsonl":
@@ -324,6 +324,26 @@ def test_cli_smoke(tmp_path):
     ko = subprocess.run([*cli, "graphspec", str(bad)], capture_output=True, text=True)
     assert ko.returncode == 1, f"stdout={ko.stdout!r} stderr={ko.stderr!r}"
     assert "R1" in ko.stdout
+
+
+def test_baseline_collector_refuses_fewer_than_five_runs():
+    """guarantees.md §3 makes five independent runs the minimum for a baseline.
+
+    The collector must refuse BEFORE executing anything — otherwise the
+    official generator can emit a one-run document that calls itself a
+    baseline, which is exactly the single-run anecdote the method exists to
+    prevent.  The refusal is cheap to test precisely because it happens first.
+    """
+    collector = REPO_ROOT / "benchmarks" / "collect_baseline.py"
+    refused = subprocess.run(
+        [sys.executable, str(collector), "4"], capture_output=True, text=True,
+        timeout=60,
+    )
+    assert refused.returncode == 2, (
+        f"expected refusal; stdout={refused.stdout[:200]!r} "
+        f"stderr={refused.stderr[:200]!r}"
+    )
+    assert "5" in refused.stderr and refused.stdout == ""
 
 
 def test_cli_rejects_a_physical_crlf_jsonl_file(tmp_path):

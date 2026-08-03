@@ -2058,9 +2058,9 @@ def _trace_semantics(
                         f"{decision.get('value')!r} — the causal edge must lead to "
                         "the value actually routed on"))
 
-                # R10 staleness: the addressed decision must be the most recent
-                # one for its key.  A later committed write, or ANY committed
-                # write when the origin is the seed, supersedes it.
+                # R10 staleness, in the two directions recency actually runs.
+                # ACROSS sources: a later committed transition supersedes the
+                # origin — and ANY committed transition supersedes the seed.
                 oseq = origin.get("seq") if kind == "transition" else 0
                 stale = [
                     r["seq"] for r in records
@@ -2076,6 +2076,37 @@ def _trace_semantics(
                         f"later decision {on!r} before this routing "
                         f"(seq {record.get('seq')}) — R10 routes on the most "
                         "recent recorded value"))
+                else:
+                    # WITHIN the source: R10 says last-in-array, so an earlier
+                    # index is stale even inside the very record the origin
+                    # names — and even when the later entry carries the same
+                    # value, because the origin promises the exact Decision
+                    # observed, not an equivalent payload.  Exact
+                    # addressability is not the same as being current
+                    # (cross-review v5).
+                    if kind == "transition":
+                        siblings = (by_seq[origin["seq"]].get("writes") or {}).get(
+                            "decisions"
+                        ) or []
+                        where = f"transition seq {origin['seq']}"
+                    else:
+                        siblings = (
+                            (records[0].get("initial_state") or {}).get("decisions") or []
+                        )
+                        where = "the initial state"
+                    later = [
+                        k
+                        for k in range(origin["index"] + 1, len(siblings))
+                        if isinstance(siblings[k], dict)
+                        and siblings[k].get("key") == on
+                    ]
+                    if later:
+                        v.append(Violation("T8", opath,
+                            f"origin is STALE within its own source: {where} "
+                            f"records decision {on!r} again at index {later[-1]}, "
+                            f"after the index {origin['index']} this origin names "
+                            "— R10 routes on the LAST such entry, whatever value "
+                            "it carries"))
 
         if spec is not None:
             step = transitions.get(record.get("after"))
