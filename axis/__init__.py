@@ -24,6 +24,9 @@ from axis.node import Node
 from axis.runner import Runner, NodeFailed
 from axis.policy import Policy
 
+# The orderable contract (types only — see axis/orders.py)
+from axis.orders import Channels, Order, OrderSpec
+
 # Synaptic Bus (Phase 2.1)
 from axis.synaptic_bus import SynapticBus
 
@@ -76,6 +79,10 @@ __all__ = [
     "Runner",
     "NodeFailed",
     "Policy",
+    # The orderable contract
+    "Channels",
+    "OrderSpec",
+    "Order",
     # Synaptic Bus
     "SynapticBus",
     # Epistemic types
