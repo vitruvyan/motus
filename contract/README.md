@@ -50,7 +50,10 @@ insignificant whitespace, strict RFC 8259 (string keys only, no NaN/Infinity),
 integers only in fingerprinted numeric positions (floats forbidden there
 precisely because their canonical representation is not settled until the
 integrity schema 1.1 fixes it) — prefixed with the fingerprint kind, e.g.
-`graph:sha256:<hex>`. Hashes are computed over the canonical object form,
+`graph:sha256:<hex>`. `graph_fingerprint` is computed over the canonical
+encoding of the ENTIRE GraphSpec document as validated (no materialized
+defaults); the validator recomputes it (SB2) — every fixture fingerprint is
+TRUE, never decorative. Hashes are computed over the canonical object form,
 never over the bytes of a particular encoding (JSON vs JSONL).
 `code_fingerprint` is computed over the ordered node identity list —
 declared name, qualified name, source hash, config fingerprint — per the
@@ -61,8 +64,10 @@ exact recipe in `node-protocol.md` §6.3.
 The schemas alone cannot enforce the R-rules and T-rules. The fence is
 executable and versioned in this repository:
 
-- `contract/validate.py` — the semantic validator: GraphSpec R1–R12, trace
-  T1–T8, JSON and JSONL forms, correlation checks.
+- `contract/validate.py` — the semantic validator: GraphSpec R1–R12; trace
+  T1–T9 (record coherence), E1–E11 (the execution state machine), SB1–SB4
+  (spec binding, including recomputed graph fingerprints), H1, J1, JSONL1–3;
+  JSON and JSONL forms.
 - `contract/fixtures/` — versioned positive and negative instances; every
   negative declares the rule it violates, and the contract tests assert it
   fails for that reason and no other.
@@ -71,6 +76,24 @@ executable and versioned in this repository:
 
 A contract change that does not update fixtures alongside it is incomplete
 by definition.
+
+## Gates required before implementation — status honest at this SHA
+
+Surface 4's full enforcement names three further gates that are **not yet
+present in this tree** and are REQUIRED BEFORE the Motus 0.5 implementation
+begins (ADR-001 first-commit conditions):
+
+- `tests/contract/` — the inherited Axis 0.4.0 conformance corpus
+  (guarantees.md §5), ported without weakening;
+- `tests/compat/terraveler/` — the frozen Terraveler golden corpus
+  (guarantees.md §4);
+- the CI benchmark gate asserting guarantees.md §3 against the baseline in
+  `benchmarks/` (the measured baseline and method ship there now; the CI
+  assertion job lands with the CI foundation).
+
+Until they exist, those surfaces are bound by this contract's text and by
+review — not yet by a gate. Saying otherwise would be documentation that
+lies, which this README forbids.
 
 ## What lives where
 

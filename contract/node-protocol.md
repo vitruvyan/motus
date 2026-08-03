@@ -119,7 +119,12 @@ integrity activates in schema 1.1.)
 
 5.3. Prompts, credentials, tool arguments containing user content, and any
 value covered by a consumer's data policy SHOULD be redacted by default and
-exposed only by explicit policy.
+exposed only by explicit policy. **The redactable surfaces are exactly the
+Value positions** — fact/decision values, rejection evidence, context draws,
+metadata values. Intent, error messages, effect descriptions and reason
+fields are plain-text surfaces that identify and explain: they are NOT
+redactable, and a node MUST NOT place secret content there (cross-review
+MF2-06, narrowed by decision — a prompt is a value, never an intent string).
 
 ## 6. Nondeterminism and identity
 

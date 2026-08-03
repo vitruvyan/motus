@@ -1,0 +1,233 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "E7",
+  "reason_contains": "attempt_started",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "routed",
+    "version": "1.0.0",
+    "entry": "decide",
+    "nodes": [
+      {
+        "name": "decide",
+        "effect_class": "pure"
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect"
+      },
+      {
+        "name": "escalate",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "decide": {
+        "kind": "route",
+        "on": "verdict",
+        "map": {
+          "approve": "store",
+          "reject": "escalate"
+        }
+      },
+      "store": {
+        "kind": "terminal"
+      },
+      "escalate": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "run-e7",
+      "graph": {
+        "name": "routed",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:d1cb0e73f6aa42e6bebc6b1783a172ff636a933ffe9ab2c43003edd3d5362c27",
+        "code_fingerprint": "code:sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {
+        "actor": "fixtures"
+      },
+      "created_ts": "2026-08-03T11:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-03T11:00:01Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": "route me",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-03T11:00:02Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "decide",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-03T11:00:03Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "decide",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "pure",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "rejections": [],
+          "decisions": [
+            {
+              "key": "verdict",
+              "value": "approve",
+              "ts": "2026-08-03T11:00:03Z"
+            }
+          ]
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-03T11:00:04Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "decide",
+        "on": "verdict",
+        "value": "approve",
+        "written_at": 3,
+        "outcome": "matched",
+        "selected": "store",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "map",
+              "key": "approve"
+            },
+            "target": "store",
+            "taken": true
+          },
+          {
+            "condition": {
+              "kind": "map",
+              "key": "reject"
+            },
+            "target": "escalate",
+            "taken": false
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-03T11:00:05Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "escalate",
+        "attempt": 1
+      },
+      {
+        "seq": 6,
+        "ts": "2026-08-03T11:00:06Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "escalate",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 7,
+        "ts": "2026-08-03T11:00:07Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "escalate",
+        "on": null,
+        "value": null,
+        "written_at": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 8,
+        "ts": "2026-08-03T11:00:08Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  }
+}

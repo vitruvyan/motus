@@ -118,8 +118,34 @@ The evidence that shaped this decision:
   (failed_node in T5, R12 `===` relaxation, fixture rule-purity asserted,
   stale `status` vocabulary, JSONL blank-line tolerance documented). All
   applied. Codex's three ratifications (OPEN-07 SCC form, OPEN-08 sink
-  limitation, MF-17 naming) folded in the same pass. ADR-001 moves to
-  ACCEPTED only after Codex independently reproduces the final SHA and the
+  limitation, MF-17 naming) folded in the same pass.
+- 2026-08-03, round 4 (Codex cross-review v2 on `ad6e16e`, verdict REQUEST
+  CHANGES): the decisive finding — the trace was validated as records, not
+  as a graph execution. Applied: the **E-rules** (E1–E11, the normative
+  execution state machine: entry-first, routing drives the next attempt,
+  retry/abort/continue have mandatory successors, strict miss must fail as
+  route_miss, exploration miss completes with the miss on record, attempt
+  numbering per activation, failure-cause admissibility) and the
+  **SB-rules** (SB1–SB4, spec binding: header identity, RECOMPUTED graph
+  fingerprint — every fixture fingerprint is now true, the round-3 happy
+  path carried a false one — effect_class correlation, violations
+  truthfulness); T4 gained key↔origin binding and the `absent` origin its
+  surface discriminator; T8 gained R10 staleness; J1 became recursive
+  (nested non-JSON Python values, non-string keys, tuples); metadata values
+  route through Value (redaction representable, forgery rejected); intent/
+  messages/descriptions/reasons are declared plain-text non-redactable
+  surfaces by decision (MF2-06 narrow option); R12 rejects wildcard+local;
+  JSONL is LF-only with CR bytes rejected (JSONL3); `benchmarks/` now
+  carries the measured baseline; and the three remaining gates
+  (tests/contract/, tests/compat/terraveler/, the CI benchmark job) are
+  honestly marked REQUIRED BEFORE IMPLEMENTATION rather than claimed
+  present. Delivered state: 84 fixtures (11 positive, 73 negative, each
+  violating exactly one rule), 39 distinct rules — every advertised rule
+  carries a negative fixture, pinned by a coverage test — 96 contract
+  tests, full suite 217 passed / 14 skipped / 0 failed in the pinned
+  environment, all 22 reproduced cross-review attacks caught, zero changes
+  under `axis/` or `orders/` against `origin/main`. ADR-001 moves to
+  ACCEPTED only after Codex independently reproduces the new SHA and the
   founder signs.
 
 ## Open choices — amended per the Codex cross-review (2026-08-03)

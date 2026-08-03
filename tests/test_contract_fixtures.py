@@ -176,9 +176,37 @@ def test_jsonl_reassembles_to_equivalent_document(path, wrapper):
 # --------------------------------------------------------------------------- #
 
 
+# Every rule the contract advertises carries at least one negative fixture.
+# A rule with no fixture is a rule nothing proves — the exact failure mode the
+# README forbids ("a contract is binding exactly where a gate checks it").
+# Adding a rule to the contract means adding it here AND writing its fixture.
+ADVERTISED_RULES = {
+    # GraphSpec structure (R6/R7/R9/R10 are runtime semantics, not static)
+    "R1", "R2", "R3", "R4", "R5", "R8", "R11", "R12",
+    # Trace record coherence
+    "T1", "T2", "T3", "T3/INCOMPLETE", "T4", "T5", "T6", "T7", "T8", "T9",
+    # Execution state machine
+    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11",
+    # Spec binding
+    "SB1", "SB2", "SB3", "SB4",
+    # Header, JSON strictness, JSONL encoding, schema layer
+    "H1", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
+}
+
+
+def test_every_advertised_rule_has_a_negative_fixture():
+    covered = {wrapper["rule"] for _, wrapper in NEGATIVE}
+    missing = ADVERTISED_RULES - covered
+    assert not missing, f"rules with no negative fixture: {sorted(missing)}"
+    unexpected = covered - ADVERTISED_RULES
+    assert not unexpected, (
+        f"fixtures declare rules the contract does not advertise: {sorted(unexpected)}"
+    )
+
+
 def test_corpus_minimums_and_wrapper_shape():
-    assert len(POSITIVE) >= 8, f"corpus needs >= 8 positives, has {len(POSITIVE)}"
-    assert len(NEGATIVE) >= 26, f"corpus needs >= 26 negatives, has {len(NEGATIVE)}"
+    assert len(POSITIVE) >= 11, f"corpus needs >= 11 positives, has {len(POSITIVE)}"
+    assert len(NEGATIVE) >= 73, f"corpus needs >= 73 negatives, has {len(NEGATIVE)}"
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {"graphspec", "trace", "jsonl"}, path.name
         if wrapper["artifact"] == "jsonl":
@@ -190,6 +218,85 @@ def test_corpus_minimums_and_wrapper_shape():
             assert wrapper["layer"] in {"schema", "semantic"}, path.name
             assert wrapper["rule"], path.name
             assert wrapper["reason_contains"], path.name
+
+
+# --------------------------------------------------------------------------- #
+# (f) J1 cases no fixture FILE can carry                                      #
+#                                                                             #
+# J1 is recursive strict RFC 8259 on the API path.  Two of its cases cannot   #
+# live in the fixture corpus at all: a JSON file cannot contain a Python      #
+# tuple, a set, or a non-string mapping key — those values only exist for an  #
+# in-process caller handing the validator an already-built document.  So the  #
+# corpus pins what a file can express (NaN/Infinity literals, fixtures 55/56) #
+# and these tests pin the rest.                                               #
+# --------------------------------------------------------------------------- #
+
+
+def _happy_doc() -> dict:
+    """A clean, spec-bound trace to mutate — proven valid by the corpus."""
+    wrapper = _read(FIXTURES_DIR / "04-trace-happy-path.json")
+    return wrapper["instance"], wrapper["spec"]
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("tuple", {"pair": (1, 2)}),
+        ("set", {"members": {1, 2}}),
+        ("non-string key", {7: "seven"}),
+        ("nested non-finite", [1, [2, [float("nan")]]]),
+    ],
+)
+def test_j1_rejects_non_json_values_at_any_depth(label, value):
+    doc, spec = _happy_doc()
+    transition = next(r for r in doc["records"] if r["kind"] == "transition")
+    transition["writes"]["facts"].append(
+        {
+            "key": "smuggled",
+            "value": value,
+            "source": "test",
+            "ts": transition["ts"],
+        }
+    )
+    violations = validate.validate_trace(doc, spec=spec)
+    assert {v.rule for v in violations} == {"J1"}, (
+        f"a {label} value must be refused as J1; got:\n{_format(violations)}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# (g) fingerprints are true, not decorative (SB2)                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_positive_trace_fingerprints_are_recomputable():
+    """Every spec-bound positive trace declares the fingerprint of its own spec.
+
+    The round-3 corpus shipped a happy path whose declared graph fingerprint was
+    not its spec's — decorative, and invisible until SB2 recomputed it.  This
+    pins that it can never happen again.
+    """
+    checked = 0
+    for path, wrapper in POSITIVE:
+        if wrapper["artifact"] != "trace" or not wrapper.get("spec"):
+            continue
+        declared = wrapper["instance"]["run"]["graph"]["graph_fingerprint"]
+        recomputed = validate.fingerprint("graph", wrapper["spec"])
+        assert declared == recomputed, (
+            f"{path.name} declares {declared} but its spec fingerprints to "
+            f"{recomputed}"
+        )
+        checked += 1
+    assert checked >= 5, f"expected several spec-bound positives, checked {checked}"
+
+
+def test_canonical_json_is_key_order_independent():
+    """The canonical form is what hashes agree on — key order must not matter."""
+    a = {"b": 1, "a": {"d": 2, "c": [3, {"f": 4, "e": 5}]}}
+    b = {"a": {"c": [3, {"e": 5, "f": 4}], "d": 2}, "b": 1}
+    assert validate.canonical_json(a) == validate.canonical_json(b)
+    assert validate.fingerprint("graph", a) == validate.fingerprint("graph", b)
+    assert validate.fingerprint("graph", a).startswith("graph:sha256:")
 
 
 # --------------------------------------------------------------------------- #

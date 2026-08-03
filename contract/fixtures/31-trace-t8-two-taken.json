@@ -47,7 +47,7 @@
       "graph": {
         "name": "verdict-route",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:a12c671f28760625e67ed19d29fb791bf0e4e9e90589c9e2cbc4f04b02e05d60",
+        "graph_fingerprint": "graph:sha256:5d83979f61787a5af08f7838b4c28b9a7e43ff8be6b3669a79c932df4f3fc05c",
         "code_fingerprint": "code:sha256:a12c671f28760625e67ed19d29fb791bf0e4e9e90589c9e2cbc4f04b02e05d60",
         "spec_schema_version": "1.0.0"
       },

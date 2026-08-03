@@ -1,0 +1,34 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R12",
+  "reason_contains": "wildcard",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "linear",
+    "version": "1.0.0",
+    "entry": "alpha",
+    "nodes": [
+      {
+        "name": "alpha",
+        "effect_class": "pure"
+      },
+      {
+        "name": "beta",
+        "effect_class": "recorded_effect"
+      }
+    ],
+    "transitions": {
+      "alpha": {
+        "kind": "next",
+        "to": "beta"
+      },
+      "beta": {
+        "kind": "terminal"
+      }
+    },
+    "requires_motus": "==1.0+abc.*"
+  }
+}

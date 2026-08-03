@@ -44,7 +44,7 @@
       "graph": {
         "name": "strict-fork",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:af4a0e534fbd66c65eef41204a4c4602acf24d915cecbd6bb6881abd7752200a",
+        "graph_fingerprint": "graph:sha256:e70aa64da1b27160a45637f5a7fd668004c12e2eb4fc722d54cbe29e91a8ae85",
         "code_fingerprint": "code:sha256:af4a0e534fbd66c65eef41204a4c4602acf24d915cecbd6bb6881abd7752200a",
         "spec_schema_version": "1.0.0"
       },

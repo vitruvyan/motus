@@ -33,7 +33,7 @@
       "graph": {
         "name": "explore",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:0aeca2cf9e8dad3e05322c6e75c43f9925bd8e5ece1d76397a0acd6257e855b8",
+        "graph_fingerprint": "graph:sha256:dac8b40ea322aa701a20c44ce0f0c0c6b6ecfa91e75617efae4fb261f5661c67",
         "code_fingerprint": "code:sha256:0aeca2cf9e8dad3e05322c6e75c43f9925bd8e5ece1d76397a0acd6257e855b8",
         "spec_schema_version": "1.0.0"
       },
@@ -94,7 +94,8 @@
           {
             "key": "target",
             "origin": {
-              "kind": "absent"
+              "kind": "absent",
+              "surface": "facts"
             }
           }
         ],

@@ -36,7 +36,7 @@
       "graph": {
         "name": "two-step",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:bfe1b7d98e52cc11851e3b69b651ae65c6a5ee8a9abba2335ff196077bac06d2",
+        "graph_fingerprint": "graph:sha256:46198c785d956febdc51d968b4ab39090a9d3e7e746c80f303931836407dc169",
         "code_fingerprint": "code:sha256:bfe1b7d98e52cc11851e3b69b651ae65c6a5ee8a9abba2335ff196077bac06d2",
         "spec_schema_version": "1.0.0"
       },

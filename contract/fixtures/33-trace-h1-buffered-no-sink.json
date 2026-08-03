@@ -28,7 +28,7 @@
       "graph": {
         "name": "solo",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:f84bd92530d1c930c1b5c832243d15e5434db3302d594b79822c88e17aa2ace1",
+        "graph_fingerprint": "graph:sha256:465e07f63cf13ccd05408151a015556db99d371a305618f7726230a397af0430",
         "code_fingerprint": "code:sha256:f84bd92530d1c930c1b5c832243d15e5434db3302d594b79822c88e17aa2ace1",
         "spec_schema_version": "1.0.0"
       },

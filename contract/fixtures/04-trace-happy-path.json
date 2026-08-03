@@ -54,7 +54,7 @@
       "graph": {
         "name": "pipeline",
         "version": "1.2.0",
-        "graph_fingerprint": "graph:sha256:1bb5ad0843c416542cb2894005b4ec53a90fd90dbfebab7228e861b83f44ff7c",
+        "graph_fingerprint": "graph:sha256:9cd9261931b22f041bee638c6cdbf3a366c5000f16a76a59ec5c37702d290d89",
         "code_fingerprint": "code:sha256:1bb5ad0843c416542cb2894005b4ec53a90fd90dbfebab7228e861b83f44ff7c",
         "spec_schema_version": "1.0.0"
       },
@@ -142,7 +142,8 @@
           {
             "key": "retry_budget",
             "origin": {
-              "kind": "absent"
+              "kind": "absent",
+              "surface": "facts"
             }
           }
         ],

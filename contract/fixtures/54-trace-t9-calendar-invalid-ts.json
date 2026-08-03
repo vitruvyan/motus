@@ -36,7 +36,7 @@
       "graph": {
         "name": "two-phase",
         "version": "1.0.0",
-        "graph_fingerprint": "graph:sha256:26ced80fdc9b9ca770be7a91565e3379d873c56ab3cb59fab74a9eb5ef2e90bc",
+        "graph_fingerprint": "graph:sha256:3170c10f4cfdd62488ae151fb305693af14db557a211b7d8ac54ebe00437aa74",
         "code_fingerprint": "code:sha256:26ced80fdc9b9ca770be7a91565e3379d873c56ab3cb59fab74a9eb5ef2e90bc",
         "spec_schema_version": "1.0.0"
       },
