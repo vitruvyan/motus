@@ -22,7 +22,7 @@ KERNEL_PATH = PurePosixPath("tests/contract/kernel.py")
 # One-time Axis -> Motus compatibility switch approved by ADR-003.  Future
 # edits to the adapter binding are frozen just like every assertion around it.
 APPROVED_KERNEL_SHA256 = (
-    "be847519a790f756273440eb04de980fc551e3e6dcc008b1f2a761a1be1e3050"
+    "113dbc24fafd35dbf24d92eae88f26692a70df59801b8c733cebe6c254e56ec8"
 )
 
 

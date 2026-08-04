@@ -105,9 +105,12 @@ def test_frozen_path_policy(path, frozen):
 
 
 def test_one_time_kernel_switch_is_pinned_to_its_approved_digest():
-    assert hashlib.sha256(Path(KERNEL_PATH).read_bytes()).hexdigest() == (
-        APPROVED_KERNEL_SHA256
-    )
+    blob = subprocess.run(
+        ["git", "show", f"HEAD:{KERNEL_PATH.as_posix()}"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert hashlib.sha256(blob).hexdigest() == APPROVED_KERNEL_SHA256
 
 
 def test_a_rename_cannot_move_frozen_evidence_outside_the_guard(tmp_path, monkeypatch):

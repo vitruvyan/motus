@@ -76,4 +76,3 @@ def test_replay_constraints_are_strings_not_string_iterables():
         ReplayStatus("partial", "not-a-sequence-of-constraints")  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         ReplayStatus("partial", (42,))  # type: ignore[arg-type]
-
