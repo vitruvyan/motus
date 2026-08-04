@@ -1,0 +1,327 @@
+"""Trace values, records, envelope and the append-only chunked log."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import math
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Generic, Iterable, Iterator, TypeVar
+
+from vitruvyan_motus import TRACE_SCHEMA_VERSION
+from vitruvyan_motus.effects import EffectDescriptor
+
+__all__ = [
+    "RedactedValue", "Fact", "Decision", "Rejection",
+    "Trace", "redact",
+]
+
+T = TypeVar("T")
+_MISSING = object()
+_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
+)
+
+
+class _FrozenDict(dict):
+    def _blocked(self, *args, **kwargs):
+        raise TypeError("trace records are immutable")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = _blocked
+
+
+class _FrozenList(list):
+    def _blocked(self, *args, **kwargs):
+        raise TypeError("trace records are immutable")
+
+    __setitem__ = __delitem__ = append = clear = extend = insert = pop = remove = reverse = sort = __iadd__ = __imul__ = _blocked
+
+
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _FrozenDict({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return _FrozenList(_freeze_json(item) for item in value)
+    return value
+
+
+def _wire_timestamp(value: str | datetime) -> str:
+    if isinstance(value, str):
+        if _TIMESTAMP_RE.fullmatch(value) is None:
+            raise ValueError(
+                "timestamps must use canonical RFC 3339 UTC form "
+                "YYYY-MM-DDTHH:MM:SS[.ffffff]Z"
+            )
+        try:
+            datetime.fromisoformat(value[:-1] + "+00:00")
+        except ValueError as exc:
+            raise ValueError("timestamp is not calendar-valid RFC 3339") from exc
+        return value
+    if not isinstance(value, datetime):
+        raise TypeError("timestamp must be a datetime or RFC 3339 UTC string")
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("timestamp must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
+    """Validate and isolate one RFC 8259 value without coercion."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("NaN and Infinity are not RFC 8259 JSON values")
+        return value
+    if isinstance(value, list):
+        return [_strict_plain_json(item, reserve_redacted=reserve_redacted) for item in value]
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("JSON object keys must be strings")
+        if reserve_redacted and value.get("kind") == "redacted":
+            raise ValueError("redacted values are reserved for redact()")
+        return {
+            key: _strict_plain_json(item, reserve_redacted=reserve_redacted)
+            for key, item in value.items()
+        }
+    raise TypeError(
+        f"{type(value).__name__} is not a strict RFC 8259 JSON value; "
+        "convert it explicitly before writing"
+    )
+
+
+def _canonical_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+@dataclass(frozen=True, slots=True)
+class RedactedValue:
+    """A structural placeholder whose secret content never enters the trace."""
+
+    hash: str
+    policy_ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.hash, str) or not self.hash.startswith("redacted:sha256:"):
+            raise ValueError("redacted hash must be prefixed with 'redacted:sha256:'")
+        digest = self.hash[16:]
+        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise ValueError("redacted hash must contain a lowercase SHA-256 digest")
+        if not isinstance(self.policy_ref, str) or not self.policy_ref:
+            raise ValueError("redaction policy_ref must be a non-empty string")
+
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": "redacted", "hash": self.hash, "policy_ref": self.policy_ref}
+
+
+def redact(value: Any, policy_ref: str) -> RedactedValue:
+    """Replace a strict JSON value with its content hash and policy reference."""
+    plain = _strict_plain_json(value)
+    return RedactedValue(
+        "redacted:sha256:" + hashlib.sha256(_canonical_bytes(plain)).hexdigest(), policy_ref
+    )
+
+
+def _value(value: Any) -> Any:
+    if isinstance(value, RedactedValue):
+        return value.to_dict()
+    return _strict_plain_json(value)
+
+
+@dataclass(frozen=True, slots=True)
+class Fact:
+    key: str
+    value: Any
+    source: str
+    ts: str | datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.key, str) or not isinstance(self.source, str):
+            raise TypeError("Fact key and source must be strings")
+        object.__setattr__(self, "value", _value(self.value))
+        object.__setattr__(self, "ts", _wire_timestamp(self.ts))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"key": self.key, "value": copy.deepcopy(self.value), "source": self.source, "ts": self.ts}
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    key: str
+    value: Any
+    ts: str | datetime
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.key, str):
+            raise TypeError("Decision key must be a string")
+        if self.reason is not None and not isinstance(self.reason, str):
+            raise TypeError("Decision reason must be a string when present")
+        object.__setattr__(self, "value", _value(self.value))
+        object.__setattr__(self, "ts", _wire_timestamp(self.ts))
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {"key": self.key, "value": copy.deepcopy(self.value), "ts": self.ts}
+        if self.reason is not None:
+            out["reason"] = self.reason
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class Rejection:
+    what: str
+    reason: str
+    ts: str | datetime
+    evidence: Any = _MISSING
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.what, str) or not isinstance(self.reason, str):
+            raise TypeError("Rejection what and reason must be strings")
+        object.__setattr__(self, "ts", _wire_timestamp(self.ts))
+        if self.evidence is not _MISSING:
+            object.__setattr__(self, "evidence", _value(self.evidence))
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {"what": self.what, "reason": self.reason, "ts": self.ts}
+        if self.evidence is not _MISSING:
+            out["evidence"] = copy.deepcopy(self.evidence)
+        return out
+
+
+class _ChunkedLog(Generic[T]):
+    """Persistent append-only sequence with bounded-copy appends."""
+
+    __slots__ = ("_chunks", "_length", "_chunk_size")
+
+    def __init__(
+        self, chunks: tuple[tuple[T, ...], ...] = (), length: int = 0, chunk_size: int = 64
+    ) -> None:
+        self._chunks = chunks
+        self._length = length
+        self._chunk_size = chunk_size
+
+    def append(self, item: T) -> "_ChunkedLog[T]":
+        if self._chunks and len(self._chunks[-1]) < self._chunk_size:
+            chunks = self._chunks[:-1] + (self._chunks[-1] + (item,),)
+        else:
+            chunks = self._chunks + ((item,),)
+        return _ChunkedLog(chunks, self._length + 1, self._chunk_size)
+
+    def extend(self, items: Iterable[T]) -> "_ChunkedLog[T]":
+        result = self
+        for item in items:
+            result = result.append(item)
+        return result
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __iter__(self) -> Iterator[T]:
+        for chunk in self._chunks:
+            yield from chunk
+
+    def __getitem__(self, index: int) -> T:
+        if index < 0:
+            index += self._length
+        if index < 0 or index >= self._length:
+            raise IndexError(index)
+        chunk_index, inner = divmod(index, self._chunk_size)
+        return self._chunks[chunk_index][inner]
+
+    def is_prefix_of(self, other: "_ChunkedLog[T]") -> bool:
+        if self._length > other._length:
+            return False
+        # Persistent appends share complete chunks.  At most one partial
+        # boundary chunk needs value comparison.
+        complete, remainder = divmod(self._length, self._chunk_size)
+        if self._chunks[:complete] != other._chunks[:complete]:
+            return False
+        if remainder:
+            return self._chunks[complete] == other._chunks[complete][:remainder]
+        return True
+
+
+class Trace:
+    """A trace envelope backed by a persistent record log."""
+
+    __slots__ = ("_run", "_records", "_view_cache", "_json_cache")
+
+    def __init__(self, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]] | None = None) -> None:
+        self._run = _strict_plain_json(run, reserve_redacted=False)
+        self._records = _ChunkedLog() if records is None else records
+        self._view_cache = None
+        self._json_cache = None
+
+    @classmethod
+    def _from_parts(
+        cls, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]]
+    ) -> "Trace":
+        instance = object.__new__(cls)
+        instance._run = run
+        instance._records = records
+        instance._view_cache = None
+        instance._json_cache = None
+        return instance
+
+    def _view(self) -> dict[str, Any]:
+        if self._view_cache is None:
+            self._view_cache = _freeze_json({
+                "schema_version": TRACE_SCHEMA_VERSION,
+                "run": self._run,
+                "records": list(self._records),
+            })
+        return self._view_cache
+
+    @property
+    def run(self) -> dict[str, Any]:
+        # Never expose the cached evidence object.  Even a dict subclass that
+        # blocks normal mutation can be changed through ``dict.__setitem__``.
+        # Isolation, not convention, protects the trace.
+        return copy.deepcopy(self._run)
+
+    @property
+    def records(self) -> tuple[dict[str, Any], ...]:
+        return tuple(copy.deepcopy(record) for record in self._records)
+
+    @property
+    def log(self) -> _ChunkedLog[dict[str, Any]]:
+        return self._records
+
+    def append(self, record: dict[str, Any]) -> "Trace":
+        isolated = _strict_plain_json(record, reserve_redacted=False)
+        return Trace._from_parts(self._run, self._records.append(isolated))
+
+    def _append_runtime(self, record: dict[str, Any]) -> "Trace":
+        """Append a record already built from validated runtime primitives."""
+        return Trace._from_parts(self._run, self._records.append(record))
+
+    def to_dict(self) -> dict[str, Any]:
+        # Parsing the immutable cached encoding is both isolated (even direct
+        # base-class mutation is harmless) and substantially cheaper than a
+        # recursive Python deepcopy of thousands of small record objects.
+        return json.loads(self.to_json())
+
+    def to_json(self) -> str:
+        if self._json_cache is None:
+            self._json_cache = json.dumps(
+                self._view(),
+                ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+            )
+        return self._json_cache
+
+    def to_jsonl(self) -> str:
+        header = json.dumps(
+            {"schema_version": TRACE_SCHEMA_VERSION, "run": self._run},
+            ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        )
+        lines = [header]
+        lines.extend(
+            json.dumps(record, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+            for record in self._records
+        )
+        return "\n".join(lines) + "\n"

@@ -12,7 +12,9 @@ When Motus 0.5 lands, the compatibility view is what these names resolve to
 Motus-native one:
 
     from vitruvyan_motus.compat import (
-        GraphState, Runner, Policy, NodeFailed, Fact, Decision, Rejection,
+        GraphState, Runner, Policy, NodeFailed, Fact,
+        LegacyDecision as Decision,
+        Rejection, FileTraceObserver, retry, ConcurrentRunner,
     )
 
 If a name below cannot be provided by the new runtime's compatibility view,
@@ -20,14 +22,21 @@ that is a contract violation to be resolved by amendment (ADR), never by
 editing the corpus that noticed it.
 """
 
-from axis import GraphState, NodeFailed, Policy, Runner  # noqa: F401
-from axis.persistence import FileTraceObserver  # noqa: F401
-from axis.recovery import retry  # noqa: F401
-from axis.state import Decision, Fact, Rejection  # noqa: F401
-from axis.streaming import ConcurrentRunner  # noqa: F401
+from vitruvyan_motus.compat import (  # noqa: F401
+    ConcurrentRunner,
+    Fact,
+    FileTraceObserver,
+    GraphState,
+    LegacyDecision as Decision,
+    NodeFailed,
+    Policy,
+    Rejection,
+    Runner,
+    retry,
+)
 
 #: Which kernel this corpus ran against, for the record in failure output.
-KERNEL_UNDER_TEST = "axis (pre-rename)"
+KERNEL_UNDER_TEST = "vitruvyan_motus.compat (Motus 0.5)"
 
 __all__ = [
     "ConcurrentRunner",

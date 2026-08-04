@@ -23,4 +23,34 @@ __version__ = "0.5.0"
 #: fact"; ADR-003 §Decision 2).
 TRACE_SCHEMA_VERSION = "1.0.0"
 
-__all__ = ["__version__", "TRACE_SCHEMA_VERSION"]
+from vitruvyan_motus.context import ContextDraw, ReplayStatus, RunContext
+from vitruvyan_motus.effects import EffectClass, EffectDescriptor
+from vitruvyan_motus.errors import (
+    GraphSpecValidationError,
+    GraphSpecViolation,
+    MotusError,
+    NodeFailed,
+    SinkFailed,
+)
+from vitruvyan_motus.graph import GraphSpec, NodeDecl, Transition, TransitionKind
+from vitruvyan_motus.observers import (
+    InMemoryTraceSink,
+    Listener,
+    StreamDriver,
+    TraceRunSink,
+    TraceSink,
+)
+from vitruvyan_motus.runtime import DurabilityProfile, Policy, RunResult, Runtime
+from vitruvyan_motus.state import State
+from vitruvyan_motus.trace import Decision, Fact, RedactedValue, Rejection, Trace, redact
+
+__all__ = [
+    "__version__", "TRACE_SCHEMA_VERSION",
+    "ContextDraw", "ReplayStatus", "RunContext",
+    "EffectClass", "EffectDescriptor",
+    "MotusError", "GraphSpecViolation", "GraphSpecValidationError", "NodeFailed", "SinkFailed",
+    "GraphSpec", "NodeDecl", "Transition", "TransitionKind",
+    "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "StreamDriver",
+    "Policy", "DurabilityProfile", "RunResult", "Runtime",
+    "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
+]

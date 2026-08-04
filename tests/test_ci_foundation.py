@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +18,12 @@ from benchmarks.check_slo_baseline import (
     run_gate,
     validate_document,
 )
-from tools.check_frozen_paths import changed_paths, is_frozen_path
+from tools.check_frozen_paths import (
+    APPROVED_KERNEL_SHA256,
+    KERNEL_PATH,
+    changed_paths,
+    is_frozen_path,
+)
 
 
 def test_reference_slo_evidence_reproduces_the_published_contract():
@@ -41,8 +48,33 @@ def test_a_stored_aggregate_cannot_disagree_with_its_raw_runs():
 
 
 def test_candidate_mode_enforces_target_plus_tolerance():
+    candidate = load_document(DEFAULT_BASELINE)
+    candidate = copy.deepcopy(candidate)
+    attestation = {
+        "runtime": "vitruvyan-motus/0.5.0",
+        "cpu_model": "AMD EPYC test fixture",
+        "platform_system": "Linux",
+        "machine": "x86_64",
+    }
+    candidate["env"].update(attestation)
+    for run in candidate["runs"]:
+        run["env"].update(attestation)
+        for workload in ("noop_1000", "realistic_1000"):
+            run["6_serialization"][workload]["events_len"] = 3002
+            run["6_serialization"][workload]["violations_len"] = 0
+
     with pytest.raises(GateError, match="candidate misses target-plus-tolerance"):
-        run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, DEFAULT_BASELINE)
+        from tempfile import NamedTemporaryFile
+
+        with NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            import json
+
+            json.dump(candidate, handle)
+            candidate_path = handle.name
+        try:
+            run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, Path(candidate_path))
+        finally:
+            Path(candidate_path).unlink()
 
     inclusive = SloRow("x", "inclusive", 1.0, 1.25, 0.25)
     strict = SloRow("x", "strict", 10.0, 12.5, 0.25, strict=True)
@@ -63,13 +95,19 @@ def test_non_finite_json_is_not_benchmark_evidence(tmp_path):
     [
         ("tests/contract/test_inherited_conformance.py", True),
         ("tests/compat/terraveler/golden/production-ingestion-trace.json", True),
-        ("tests/contract/kernel.py", False),
+        ("tests/contract/kernel.py", True),
         ("tests/test_ci_foundation.py", False),
         (r"tests\compat\terraveler\test_frozen_surface.py", True),
     ],
 )
 def test_frozen_path_policy(path, frozen):
     assert is_frozen_path(path) is frozen
+
+
+def test_one_time_kernel_switch_is_pinned_to_its_approved_digest():
+    assert hashlib.sha256(Path(KERNEL_PATH).read_bytes()).hexdigest() == (
+        APPROVED_KERNEL_SHA256
+    )
 
 
 def test_a_rename_cannot_move_frozen_evidence_outside_the_guard(tmp_path, monkeypatch):
