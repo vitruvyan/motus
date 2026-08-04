@@ -37,8 +37,11 @@ enforcement point.
    Consumers pin the contract version they built against; the trace they
    persist names the version that produced it.
 3. **One source per fact.** No schema, version string, or invariant is
-   duplicated. `tests/contract/` includes a test that the schema version
-   constant in the package equals the one in this directory.
+   duplicated. The first Motus runtime commit MUST add
+   `tests/test_schema_version.py`, outside both frozen corpora, asserting that
+   the trace schema version constant single-sourced in the package equals the
+   const in `contract/trace.v1.schema.json`. The frozen corpora predate the
+   package and cannot host it.
 4. **Amendments leave a record.** A contract change is a PR touching this
    directory plus an ADR stating what changed, why, and what migrates.
 
