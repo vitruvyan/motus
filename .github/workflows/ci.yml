@@ -50,6 +50,8 @@ jobs:
           python-version: "3.10.12"
       - name: Collect five independent Motus 0.6 runs
         run: python benchmarks/collect_motus_baseline.py 5 > benchmarks/candidate-v0.6.0-ci.json
+        env:
+          PYTHONPATH: src
       - name: Publish the measured runner identity
         run: python -c "import json; d=json.load(open('benchmarks/candidate-v0.6.0-ci.json')); print(json.dumps(d['env'], indent=2))"
       - name: Upload candidate evidence for review
