@@ -27,8 +27,16 @@ except ImportError:  # pragma: no cover - exercised by the CI command itself
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = ROOT / "benchmarks" / "baseline-v0.4.0-epyc-py310.json"
+DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.0-epyc-py310.json"
 DEFAULT_GUARANTEES = ROOT / "contract" / "guarantees.md"
 MIN_RUNS = 5
+MOTUS_CANDIDATE_TOLERANCE = 0.25
+MOTUS_CANDIDATE_TARGETS = {
+    "per_node": 45.0,
+    "noop": 3.25,
+    "serialization": 1.5,
+    "superlinear": 10.0,
+}
 
 class GateError(ValueError):
     """The benchmark evidence or its published contract is inconsistent."""
@@ -329,8 +337,21 @@ def run_gate(baseline_path: Path, guarantees_path: Path, candidate_path: Path | 
         candidate_metrics = validate_document(
             candidate, name="candidate baseline", runtime_kind="motus"
         )
+        metric_keys = {
+            "per_node": "per_node_us",
+            "noop": "noop_100_ms",
+            "serialization": "serialization_ratio",
+            "superlinear": "superlinear_pct",
+        }
         candidate_rows = [
-            SloRow(row.key, row.label, row.target, float(candidate_metrics[{"per_node": "per_node_us", "noop": "noop_100_ms", "serialization": "serialization_ratio", "superlinear": "superlinear_pct"}[row.key]]), row.tolerance, row.strict)
+            SloRow(
+                row.key,
+                row.label,
+                MOTUS_CANDIDATE_TARGETS[row.key],
+                float(candidate_metrics[metric_keys[row.key]]),
+                MOTUS_CANDIDATE_TOLERANCE,
+                row.strict,
+            )
             for row in reference_rows
         ]
         failures = [row for row in candidate_rows if not row.passes]

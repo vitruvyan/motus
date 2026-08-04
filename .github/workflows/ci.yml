@@ -36,28 +36,6 @@ jobs:
         with:
           python-version: "3.10.12"
       - name: Reproduce guarantees section 3 from raw evidence
-        run: python benchmarks/check_slo_baseline.py
-
-  collect-motus-candidate:
-    name: collect-motus-candidate
-    if: github.event_name == 'pull_request' && github.head_ref == 'motus/0.6-replay'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.10.12"
-      - name: Collect five independent Motus 0.6 runs
-        run: python benchmarks/collect_motus_baseline.py 5 > benchmarks/candidate-v0.6.0-ci.json
-        env:
-          PYTHONPATH: src
-      - name: Publish the measured runner identity
-        run: python -c "import json; d=json.load(open('benchmarks/candidate-v0.6.0-ci.json')); print(json.dumps(d['env'], indent=2))"
-      - name: Upload candidate evidence for review
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: motus-0.6-candidate-baseline
-          path: benchmarks/candidate-v0.6.0-ci.json
-          retention-days: 3
-          if-no-files-found: error
+        run: >-
+          python benchmarks/check_slo_baseline.py
+          --candidate benchmarks/candidate-v0.6.0-epyc-py310.json

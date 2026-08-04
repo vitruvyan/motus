@@ -11,9 +11,11 @@ It follows the normative method: two discarded warmups, seven measured
 samples, `gc.collect()` before each, and a collector floor of five independent
 runs. The Axis benchmark, collector and baseline are unchanged.
 
-No candidate baseline is committed yet. The current machine is Windows with
-Python 3.14.6, not the required reference profile (Python 3.10.12 on the EPYC
-guest), so presenting its output as the release baseline would be false.
+The release candidate baseline is committed as
+`benchmarks/candidate-v0.6.0-epyc-py310.json`. It was collected by GitHub
+Actions run 30935054533 on Python 3.10.12 and AMD EPYC 9V74: five independent
+runs, two discarded warmups and seven measured samples per measurement. The
+raw file and every stored aggregate are checked in CI.
 
 ## Local engineering snapshot
 
@@ -61,10 +63,22 @@ candidate, and requires the candidate to attest Motus 0.6, Python 3.10.12,
 the operating system and an AMD EPYC CPU model. Local Windows evidence cannot
 masquerade as release evidence.
 
-## Release work still required
+## Release gate
 
-1. Run at least five independent collections on the reference Python 3.10.12
-   EPYC profile and commit the raw candidate document.
-2. Review the local timing debts against that evidence.
-3. Add the candidate baseline invocation to CI in its separately authorized
-   pull request.
+ADR-006 establishes a Motus-native regression profile because Motus records
+3,002 records for the 1,000-node workload while the immutable Axis reference
+records 2,002. The old Axis numbers remain unchanged and are not presented as
+a Motus pass.
+
+| Motus obligation | EPYC result | Gate target | Status |
+|---|---:|---:|---|
+| Realistic full-trace cost | 43.5001 us/node; 1.91% spread | <= 45 us/node | pass |
+| No-op overhead, 100 nodes | 3.08655 ms; 5.03% spread | <= 3.25 ms | pass |
+| Trace preparation / `json.dumps` | 0.788x | <= 1.5x | pass |
+| Positive superlinear term | 0% (ratio 0.9861) | < 10% | pass |
+| Trace completeness | 100%, 3,002 records, zero violations | 100% | pass |
+
+The standard 25% noise tolerance is a failure ceiling, not the published
+target. CI now runs the candidate checker on every change and tests that a
+regression beyond each ceiling is rejected. The performance gate required for
+Motus 0.6 is therefore executable rather than documentary.
