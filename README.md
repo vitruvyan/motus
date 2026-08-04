@@ -9,10 +9,10 @@ Motus is domain-neutral. It does not interpret facts, make epistemic claims,
 provide an agent framework or absorb Vitruvyan OS modules. Consumers build
 those layers above it.
 
-> Motus 0.5 is under active development. The contract is accepted; the native
-> runtime is implemented on the current development branch, while the
-> reference performance baseline and its CI candidate gate remain release
-> blockers. No PyPI publication is authorized yet.
+> **Current release:** [Motus 0.5.0](https://github.com/vitruvyan/motus/releases/tag/v0.5.0),
+> the first formal source release. It is licensed under Apache-2.0 and is not
+> yet published on PyPI. Motus 0.6 is being developed around compiled topology,
+> effect receipts, replay/resume and portable trace explanation.
 
 ## Why Motus
 
@@ -148,8 +148,21 @@ python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
 ```
 
-Performance evidence and the remaining release gates are described in
+Performance evidence and the reference-environment gate are described in
 [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md).
+
+## Release status
+
+- **0.5.0:** complete trace-first interpreter, formal GitHub release.
+- **0.6.0:** in development; compiled execution plan without a second
+  semantics, effect receipts, playback/verify/resume, trace bundles and
+  deterministic explanation.
+- **PyPI:** intentionally not published yet. Installation remains from a
+  checkout or a locally built wheel until a separate publication decision.
+
+Hash-chain activation, budgets, MCP exposure, capability enforcement and
+dynamic `PlanDelta` remain outside the 0.6 scope; they require their own
+contract decisions instead of being smuggled into replay or compilation.
 
 ## Repository history
 
