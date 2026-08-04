@@ -59,8 +59,8 @@ Execution and evidence are produced together.
 ## What makes Motus different
 
 Traditional observability usually reconstructs execution afterwards from
-logs, callbacks, and telemetry. Motus records causal evidence while execution
-is happening. That evidence is a native runtime output.
+logs, callbacks, and telemetry. **Motus records causal evidence while
+execution is happening. That evidence is a native runtime output.**
 
 The UI does not invent the story.
 
@@ -150,8 +150,8 @@ systems can perform their own assessment.
 
 ## Where Motus is useful
 
-Motus is designed for systems where execution matters and may later need to be
-inspected or reconstructed:
+**Motus is designed for systems where execution matters and may later need to
+be inspected or reconstructed:**
 
 - AI and multi-agent orchestration;
 - RAG and knowledge pipelines;
@@ -168,8 +168,8 @@ inspected or reconstructed:
 ### Regulated and audit-sensitive environments
 
 Some sectors have legal or regulatory duties concerning record keeping,
-traceability, supervision, or reconstruction of decisions. Motus can provide
-run-level technical evidence for systems operating in those environments.
+traceability, supervision, or reconstruction of decisions. **Motus can provide
+run-level technical evidence for systems operating in those environments.**
 
 - **Investment services and capital markets.** MiFID II Article 16(6) requires
   investment firms to keep records of services, activities, and transactions
