@@ -1,7 +1,8 @@
 # Node Protocol (normative)
 
-**Status: DRAFT v1.** The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY
-are to be interpreted as described in RFC 2119.
+**Status: v1 — accepted by ADR-001 on 2026-08-03.** The key words MUST,
+MUST NOT, SHOULD, SHOULD NOT and MAY are to be interpreted as described in
+RFC 2119.
 
 This document binds whoever writes node code. Its enforcement model is
 **record-and-compare**: the runtime captures what a node actually did; a

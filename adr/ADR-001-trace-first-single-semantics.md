@@ -289,8 +289,8 @@ Each choice now carries Codex's disposition and the amendment applied.
   component terminal-reachable); `max_transitions` is explicitly part of
   the graph fingerprint (changing the limit changes the graph); the cause
   kind is `transition_limit_exceeded`. Cycles legal, static termination not
-  guaranteed, safety valve not scheduler. **Founder signature pending
-  independent reproduction of the final SHA.**
+  guaranteed, safety valve not scheduler. **Ratified with ADR-001's
+  acceptance on 2026-08-03.**
 - **OPEN-08 — non-node failure causes.** APPROVED by the cross-review
   (2026-08-03) with one amendment, applied: `run_failed.cause` is structured
   (`node_failure | route_miss | sink_failure | validation_failure |
@@ -299,7 +299,7 @@ Each choice now carries Codex's disposition and the amendment applied.
   limitation is explicit** (schema cause description + guarantees §6): when
   the failing component is the required sink itself, the `run_failed` record
   is best-effort; the logical failure toward the caller stays guaranteed.
-  **Founder signature pending independent reproduction.**
+  **Ratified with ADR-001's acceptance on 2026-08-03.**
 - **MF-17 — vocabulary neutrality.** APPROVED by the cross-review
   (2026-08-03), applied: `Fact`/`Decision`/`Rejection` are neutral workflow
   primitives — a Fact is a *recorded assertion, never verified truth*;
@@ -307,8 +307,8 @@ Each choice now carries Codex's disposition and the amendment applied.
   consumer metadata; and legacy/native decisions have **no implicit mapping
   and no ambiguous public names** (`vitruvyan_motus.Decision` native,
   `vitruvyan_motus.compat.LegacyDecision` legacy — Terraveler migrates by
-  explicit import change, never by silent alias). **Founder signature
-  pending independent reproduction.**
+  explicit import change, never by silent alias). **Ratified with ADR-001's
+  acceptance on 2026-08-03.**
 
 ## Consequences
 
