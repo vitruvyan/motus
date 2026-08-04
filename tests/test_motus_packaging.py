@@ -80,6 +80,7 @@ def test_wheel_contains_the_package_and_py_typed_but_not_axis(built_wheel):
     )
     # Defense in depth against the same defect under a different name.
     assert not any("axis" in name.split("/")[0] for name in names if "/" in name)
+    assert any(name.endswith(".dist-info/licenses/LICENSE") for name in names)
 
 
 def test_wheel_metadata_is_accurate_and_declares_zero_runtime_dependencies(
@@ -105,6 +106,8 @@ def test_wheel_metadata_is_accurate_and_declares_zero_runtime_dependencies(
     )
     assert "Name: vitruvyan-motus" in metadata
     assert "Version: 0.5.0" in metadata
+    assert "License-Expression: Apache-2.0" in metadata
+    assert "License-File: LICENSE" in metadata
     assert "Vitruvyan Motus" in metadata
     assert "Vitruvyan Axis" not in metadata
     assert "Synaptic Bus" not in metadata

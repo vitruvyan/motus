@@ -13,23 +13,22 @@
 # on it being importable from the checkout, which `python -m pytest`
 # provides for free by putting the repository root on `sys.path`.
 #
-# No PyPI publication yet: gated on the license decision and the
-# name-migration plan (ADR-001 first-commit conditions).
+# Apache-2.0 is the founder-approved license for Motus 0.5. PyPI publication
+# remains a separate explicit release action.
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "vitruvyan-motus"
 dynamic = ["version"]
 description = "Motus — an embeddable, trace-first graph execution runtime whose immutable trace is the audit evidence"
-# Inline, not README.md: the current README still describes the predecessor
-# Axis runtime (Synaptic Bus, epistemic types, features Motus 0.5 excludes),
-# and that prose would otherwise ship verbatim into this wheel's METADATA.
-readme = { text = "Vitruvyan Motus is an embeddable, trace-first graph execution runtime. Version 0.5 is under active development and is implemented against the accepted contract in this repository.", content-type = "text/markdown" }
+readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Vitruvyan" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 keywords = ["orchestrator", "graph", "audit", "immutable", "trace"]
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -1,19 +1,15 @@
-"""Stable public errors (ADR-001 §Decision 2: errors.py owns this alone).
+"""Stable public errors (ADR-001 Decision 2: errors.py owns this alone).
 
-Two error types, both usable the moment they're imported, both independent
-of any Axis type:
+The errors are independent of every Axis type:
 
 ``GraphSpecValidationError`` — raised the instant an invalid GraphSpec is
 constructed (contract/graphspec.v1.schema.json: "an invalid graph refuses to
 exist — it does not start-and-warn"). Carries the violated rule(s) in a
 stable, machine-readable form.
 
-``NodeFailed`` — the Motus equivalent of the predecessor's failure-salvage
-error. Its contract (constructor shape, the ``.state`` attribute) is fixed
-now so that later milestones can start passing real ``State`` instances
-through it without any change here; ``state`` is deliberately untyped
-because no ``State`` type exists yet (Milestone C2), and this module does
-not scaffold one to get out of that.
+``NodeFailed`` is the predecessor-compatible failure-salvage pattern. It
+carries the accumulated state and trace. ``SinkFailed`` states invariant II:
+a required durable surface may prevent logical success.
 
 Neither type implements retry, routing, cancellation or trace production —
 those are runtime semantics, out of scope here (guarantees.md §6 assigns
@@ -29,6 +25,7 @@ __all__ = [
     "GraphSpecViolation",
     "GraphSpecValidationError",
     "NodeFailed",
+    "SinkFailed",
 ]
 
 
@@ -88,7 +85,18 @@ class NodeFailed(MotusError):
     by Milestone C2's real construction path, not by this class.
     """
 
-    def __init__(self, node: str, state: Any) -> None:
+    def __init__(self, node: str, state: Any, trace: Any = None, cause: BaseException | None = None) -> None:
         self.node = node
         self.state = state
+        self.trace = trace
+        self.cause = cause
         super().__init__(f"node {node!r} failed")
+
+
+class SinkFailed(MotusError):
+    """A required trace sink refused a record; logical success is impossible."""
+
+    def __init__(self, trace: Any, cause: BaseException) -> None:
+        self.trace = trace
+        self.cause = cause
+        super().__init__(f"required trace sink failed: {cause}")

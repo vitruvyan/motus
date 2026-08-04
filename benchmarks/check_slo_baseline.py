@@ -111,7 +111,10 @@ def load_document(path: Path) -> dict[str, Any]:
     return document
 
 
-def validate_document(document: dict[str, Any], *, name: str) -> dict[str, float | bool]:
+def validate_document(
+    document: dict[str, Any], *, name: str, runtime_kind: str = "axis"
+) -> dict[str, float | bool]:
+    require(runtime_kind in {"axis", "motus"}, f"{name}: unknown runtime kind")
     require(document.get("kind") == "motus-benchmark-baseline", f"{name}: wrong kind")
     runs = document.get("runs")
     require(isinstance(runs, list), f"{name}: runs must be an array")
@@ -135,6 +138,21 @@ def validate_document(document: dict[str, Any], *, name: str) -> dict[str, float
     require(isinstance(environment, dict), f"{name}: env must be an object")
     require(environment.get("python") == "3.10.12", f"{name}: the reference interpreter must be Python 3.10.12")
     require(environment.get("gc_enabled_during_runs") is True, f"{name}: GC must be enabled during runs")
+    if runtime_kind == "motus":
+        require(
+            environment.get("runtime") == "vitruvyan-motus/0.5.0",
+            f"{name}: runtime identity must be vitruvyan-motus/0.5.0",
+        )
+        cpu_model = environment.get("cpu_model")
+        require(
+            isinstance(cpu_model, str) and "EPYC" in cpu_model.upper(),
+            f"{name}: candidate must attest an AMD EPYC CPU model",
+        )
+        require(
+            isinstance(environment.get("platform_system"), str)
+            and bool(environment["platform_system"]),
+            f"{name}: candidate must record its operating system",
+        )
 
     summary = document.get("summary")
     require(isinstance(summary, dict), f"{name}: summary must be an object")
@@ -144,6 +162,12 @@ def validate_document(document: dict[str, Any], *, name: str) -> dict[str, float
         require(isinstance(run_environment, dict), f"{name}: run {index} env must be an object")
         require(run_environment.get("python") == environment.get("python"), f"{name}: run {index} used a different interpreter")
         require(run_environment.get("gc_enabled_during_runs") is True, f"{name}: run {index} disabled GC")
+        if runtime_kind == "motus":
+            for field in ("runtime", "cpu_model", "platform_system", "machine"):
+                require(
+                    run_environment.get(field) == environment.get(field),
+                    f"{name}: run {index} used a different {field}",
+                )
         repeats = run_environment.get("repeats")
         require(
             isinstance(repeats, int) and repeats >= samples_per_measurement,
@@ -169,17 +193,24 @@ def validate_document(document: dict[str, Any], *, name: str) -> dict[str, float
     superlinear_pct = max(0.0, (scaling_ratio - 1.0) / scaling_ratio * 100.0)
 
     completeness = True
+    expected_records = 3002 if runtime_kind == "motus" else 2002
     for index, run in enumerate(runs):
         noop = dig(run, ("6_serialization", "noop_1000"), f"{name}: run {index}")
         realistic = dig(run, ("6_serialization", "realistic_1000"), f"{name}: run {index}")
         complete = (
             isinstance(noop, dict)
             and isinstance(realistic, dict)
-            and noop.get("events_len") == 2002
+            and noop.get("events_len") == expected_records
             and noop.get("facts_len") == 0
-            and realistic.get("events_len") == 2002
+            and realistic.get("events_len") == expected_records
             and realistic.get("facts_len") == 1000
         )
+        if runtime_kind == "motus":
+            complete = (
+                complete
+                and noop.get("violations_len") == 0
+                and realistic.get("violations_len") == 0
+            )
         completeness = completeness and complete
 
     return {
@@ -295,7 +326,9 @@ def run_gate(baseline_path: Path, guarantees_path: Path, candidate_path: Path | 
 
     if candidate_path is not None:
         candidate = load_document(candidate_path)
-        candidate_metrics = validate_document(candidate, name="candidate baseline")
+        candidate_metrics = validate_document(
+            candidate, name="candidate baseline", runtime_kind="motus"
+        )
         candidate_rows = [
             SloRow(row.key, row.label, row.target, float(candidate_metrics[{"per_node": "per_node_us", "noop": "noop_100_ms", "serialization": "serialization_ratio", "superlinear": "superlinear_pct"}[row.key]]), row.tolerance, row.strict)
             for row in reference_rows
