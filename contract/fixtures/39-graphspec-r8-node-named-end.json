@@ -1,0 +1,30 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R8",
+  "reason_contains": "reserved for the terminal pseudo-target",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "end-node",
+    "version": "1.0.0",
+    "entry": "start",
+    "nodes": [
+      {
+        "name": "start"
+      },
+      {
+        "name": "END"
+      }
+    ],
+    "transitions": {
+      "start": {
+        "kind": "terminal"
+      },
+      "END": {
+        "kind": "terminal"
+      }
+    }
+  }
+}

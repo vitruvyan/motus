@@ -1,0 +1,240 @@
+{
+  "artifact": "trace",
+  "expect": "valid",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "explore",
+    "version": "1.0.0",
+    "entry": "probe",
+    "nodes": [
+      {
+        "name": "probe",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "summarize",
+        "effect_class": "pure"
+      }
+    ],
+    "transitions": {
+      "probe": {
+        "kind": "next",
+        "to": "summarize"
+      },
+      "summarize": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "run-explore-0002",
+      "graph": {
+        "name": "explore",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:dac8b40ea322aa701a20c44ce0f0c0c6b6ecfa91e75617efae4fb261f5661c67",
+        "code_fingerprint": "code:sha256:0aeca2cf9e8dad3e05322c6e75c43f9925bd8e5ece1d76397a0acd6257e855b8",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "exploration",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {
+        "actor": "fixtures"
+      },
+      "created_ts": "2026-08-03T10:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-03T10:00:01Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": null,
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-03T10:00:02Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "probe",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-03T10:00:03Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "probe",
+        "attempt": 1,
+        "outcome": "raised",
+        "disposition": "continue",
+        "effect_class": "recorded_effect",
+        "reads": [
+          {
+            "key": "target",
+            "origin": {
+              "kind": "absent",
+              "surface": "facts"
+            }
+          }
+        ],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": {
+          "type": "TimeoutError",
+          "message": "probe timed out after 30s"
+        },
+        "duration_us": 30000
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-03T10:00:04Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "probe",
+        "on": null,
+        "value": null,
+        "outcome": "static",
+        "selected": "summarize",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "summarize",
+            "taken": true
+          }
+        ],
+        "origin": null
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-03T10:00:05Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "summarize",
+        "attempt": 1
+      },
+      {
+        "seq": 6,
+        "ts": "2026-08-03T10:00:06Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "summarize",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "pure",
+        "reads": [
+          {
+            "key": "events",
+            "origin": {
+              "kind": "scan",
+              "collection": "events"
+            }
+          }
+        ],
+        "writes": {
+          "facts": [
+            {
+              "key": "summary",
+              "value": "probe raised; nothing to summarize",
+              "source": "node:summarize",
+              "ts": "2026-08-03T10:00:06Z"
+            }
+          ],
+          "decisions": [],
+          "rejections": [
+            {
+              "what": "probe result",
+              "reason": "attempt raised; excluded from summary",
+              "ts": "2026-08-03T10:00:06Z",
+              "evidence": {
+                "error_type": "TimeoutError"
+              }
+            }
+          ]
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 7,
+        "ts": "2026-08-03T10:00:07Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "summarize",
+        "on": null,
+        "value": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ],
+        "origin": null
+      },
+      {
+        "seq": 8,
+        "ts": "2026-08-03T10:00:08Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  }
+}

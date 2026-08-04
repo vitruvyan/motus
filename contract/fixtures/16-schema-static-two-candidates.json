@@ -1,0 +1,134 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "schema",
+  "rule": "SCHEMA",
+  "reason_contains": "is too long",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "run-mini-0005",
+      "graph": {
+        "name": "solo",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:f84bd92530d1c930c1b5c832243d15e5434db3302d594b79822c88e17aa2ace1",
+        "code_fingerprint": "code:sha256:f84bd92530d1c930c1b5c832243d15e5434db3302d594b79822c88e17aa2ace1",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "full",
+        "constraints": []
+      },
+      "metadata": {
+        "actor": "fixtures"
+      },
+      "created_ts": "2026-08-03T10:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-03T10:00:01Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": null,
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-03T10:00:02Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "solo",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-03T10:00:03Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "solo",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "recorded_effect",
+        "reads": [],
+        "writes": {
+          "facts": [
+            {
+              "key": "out",
+              "value": 1,
+              "source": "node:solo",
+              "ts": "2026-08-03T10:00:03Z"
+            }
+          ],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-03T10:00:04Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "solo",
+        "on": null,
+        "value": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          },
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": false
+          }
+        ],
+        "origin": null
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-03T10:00:05Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "full",
+          "constraints": []
+        }
+      }
+    ]
+  }
+}

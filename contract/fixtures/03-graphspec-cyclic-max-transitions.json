@@ -1,0 +1,35 @@
+{
+  "artifact": "graphspec",
+  "expect": "valid",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "retry-loop",
+    "version": "0.3.1",
+    "entry": "fetch",
+    "nodes": [
+      {
+        "name": "fetch",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "store",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "fetch": {
+        "kind": "route",
+        "on": "status",
+        "map": {
+          "ok": "store",
+          "retry": "fetch"
+        }
+      },
+      "store": {
+        "kind": "terminal"
+      }
+    },
+    "max_transitions": 25
+  }
+}

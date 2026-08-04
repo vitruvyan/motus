@@ -1,0 +1,31 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R2",
+  "reason_contains": "is not a declared node or END",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "bad-target",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "next",
+        "to": "ghost"
+      },
+      "b": {
+        "kind": "terminal"
+      }
+    }
+  }
+}

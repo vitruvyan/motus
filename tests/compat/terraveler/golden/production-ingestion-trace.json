@@ -1,0 +1,93 @@
+{
+ "decisions": [
+  {
+   "description": "Chunked into 0 text chunks; corpus now 0 docs",
+   "timestamp": "2026-07-27T09:41:34.610243+00:00"
+  },
+  {
+   "description": "Embedded 0 docs, 0 rejected (policy=exploration)",
+   "timestamp": "2026-07-27T09:41:34.610262+00:00"
+  }
+ ],
+ "events": [
+  {
+   "description": "Node node_0 started",
+   "event_type": "node_started",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610216"
+  },
+  {
+   "description": "Node node_0 skipped due to error: unknown voyage: xuanzang-629",
+   "event_type": "node_skipped",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610228"
+  },
+  {
+   "description": "Node node_1 started",
+   "event_type": "node_started",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610232"
+  },
+  {
+   "description": "Node node_1 completed",
+   "event_type": "node_completed",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610249"
+  },
+  {
+   "description": "Node node_2 started",
+   "event_type": "node_started",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610252"
+  },
+  {
+   "description": "Node node_2 completed",
+   "event_type": "node_completed",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610265"
+  },
+  {
+   "description": "Node node_3 started",
+   "event_type": "node_started",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610268"
+  },
+  {
+   "description": "Node node_3 skipped due to error: refusing to upsert an empty corpus for xuanzang-629 \u2014 0 source(s) loaded, 0 docs, 0 embedded. Existing rows left untouched. Check the rejections above for a failed fetch before re-running with --wipe.",
+   "event_type": "node_skipped",
+   "metadata": null,
+   "node_name": null,
+   "timestamp": "2026-07-27T09:41:34.610274"
+  }
+ ],
+ "facts": [
+  {
+   "key": "total_docs",
+   "source": "chunk",
+   "timestamp": "2026-07-27T09:41:34.610235+00:00",
+   "value": 0
+  },
+  {
+   "key": "embedded",
+   "source": "embed",
+   "timestamp": "2026-07-27T09:41:34.610257+00:00",
+   "value": 0
+  },
+  {
+   "key": "rejected",
+   "source": "embed",
+   "timestamp": "2026-07-27T09:41:34.610260+00:00",
+   "value": 0
+  }
+ ],
+ "intent": "ingest:xuanzang-629",
+ "rejections": [],
+ "trace_id": "xuanzang-629-20260727T094134Z"
+}

@@ -1,0 +1,226 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "T3",
+  "reason_contains": "nothing follows a terminal record",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "two-phase",
+    "version": "1.0.0",
+    "entry": "work",
+    "nodes": [
+      {
+        "name": "work",
+        "effect_class": "recorded_effect"
+      },
+      {
+        "name": "cleanup",
+        "effect_class": "external_effect"
+      }
+    ],
+    "transitions": {
+      "work": {
+        "kind": "next",
+        "to": "cleanup"
+      },
+      "cleanup": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "run-t3-after-terminal-0048",
+      "graph": {
+        "name": "two-phase",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:3170c10f4cfdd62488ae151fb305693af14db557a211b7d8ac54ebe00437aa74",
+        "code_fingerprint": "code:sha256:26ced80fdc9b9ca770be7a91565e3379d873c56ab3cb59fab74a9eb5ef2e90bc",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "buffered",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {
+        "actor": "fixtures"
+      },
+      "created_ts": "2026-08-03T10:00:00Z",
+      "sink": {
+        "flush_interval_ms": 200,
+        "chunk_records": 64
+      }
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-03T10:00:01Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": null,
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-03T10:00:02Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "work",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-03T10:00:03Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "work",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "recorded_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-03T10:00:04Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "work",
+        "on": null,
+        "value": null,
+        "outcome": "static",
+        "selected": "cleanup",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "cleanup",
+            "taken": true
+          }
+        ],
+        "origin": null
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-03T10:00:05Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "undeclared"
+          ]
+        }
+      },
+      {
+        "seq": 6,
+        "ts": "2026-08-03T10:00:06Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "cleanup",
+        "attempt": 1
+      },
+      {
+        "seq": 7,
+        "ts": "2026-08-03T10:00:07Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "cleanup",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 8,
+        "ts": "2026-08-03T10:00:08Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "cleanup",
+        "on": null,
+        "value": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ],
+        "origin": null
+      },
+      {
+        "seq": 9,
+        "ts": "2026-08-03T10:00:09Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  }
+}

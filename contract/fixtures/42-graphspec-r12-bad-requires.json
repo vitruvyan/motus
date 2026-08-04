@@ -1,0 +1,25 @@
+{
+  "artifact": "graphspec",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "R12",
+  "reason_contains": "not a valid PEP 440 specifier clause",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "name": "bad-requires",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {
+        "name": "a"
+      }
+    ],
+    "transitions": {
+      "a": {
+        "kind": "terminal"
+      }
+    },
+    "requires_motus": ">=0.5, banana"
+  }
+}
