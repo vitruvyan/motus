@@ -171,7 +171,7 @@ python3 tests/test_synaptic_bus.py
 
 ```bash
 # Clone repository
-git clone https://github.com/vitruvyan/axis.git
+git clone https://github.com/vitruvyan/motus.git
 cd axis
 
 # Run tests

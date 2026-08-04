@@ -552,7 +552,7 @@ See `examples/vitruvyan_mock.py` for demonstration of protocol implementations.
 
 **Contact:**  
 Vitruvyan Team  
-GitHub: github.com/vitruvyan/axis  
+GitHub: github.com/vitruvyan/motus<br>
 Documentation: [In progress]
 
 **Version History:**  

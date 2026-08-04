@@ -135,7 +135,7 @@ Unlike LangGraph/LangChain (built for rapid prototyping), Axis provides **audit 
 ## Key Contacts
 
 **Technical questions:** See [White Paper](AXIS_WHITEPAPER.md) (complete technical overview)  
-**Code:** github.com/vitruvyan/axis  
+**Code:** github.com/vitruvyan/motus<br>
 **Documentation:** In progress (Q1 2026)
 
 ---
