@@ -51,19 +51,18 @@ policy reference. Hash, reference and policy are evidence; the secret is not.
 
 ## 2. Replay and delivery semantics, stated honestly
 
-**In 0.5 Motus makes NO general delivery guarantee for external effects** —
-the only promise is the explicitly configured retry policy of an attempt.
-There is no replay, no resume, no receipt, and therefore no
-at-least-once-across-crashes claim: after a process loss, what happened to an
-in-flight external effect is recorded as *unknown* (the unclosed
-`attempt_started`), never guessed. The schema records what replay will need
-(per-value read origins, context draws, effect classes); the replay modes
-are 0.6+. When they land: playback never executes code; verify re-executes
-only `pure` nodes; effect replay reuses recorded results only when a valid
-receipt exists and the replay policy permits; resume continues from the last
-committed point per the durability profile — and only then does
-**at-least-once execution with idempotent effects** become a stated
-guarantee. Exactly-once is promised in no version, ever.
+Motus 0.6 implements three explicit modes. Playback reconstructs committed
+state and never executes node code. Verify re-executes only `pure` nodes with
+their recorded context draws and compares captured behavior. Resume creates a
+new trace segment linked to the last committed state; persisted history is
+never rewritten.
+
+For external effects, resume is permitted only when every observed effect has
+a non-empty idempotency key and a completed adapter-supplied receipt. This is
+an **at-least-once execution with idempotent effects** condition, not a proof
+that the external system committed exactly once. An absent or `unknown`
+receipt preserves uncertainty and makes automatic resume fail closed.
+Exactly-once is promised in no version, ever.
 
 ## 3. Performance SLOs (CI gate)
 

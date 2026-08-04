@@ -1,4 +1,4 @@
-# Motus 0.5 performance status
+# Motus performance status
 
 ## Status
 
@@ -34,6 +34,15 @@ unsafe to over-interpret. A five-run reference measurement is still required
 before deciding whether each debt is platform noise, an implementation debt,
 or an SLO amendment candidate.
 
+### 0.6 compiled-plan spot check
+
+A non-normative single collection after making the immutable `CompiledPlan`
+the runtime's default topology source measured 43.42 us/node at 1,000
+realistic nodes and a 1,000-vs-100 scaling ratio of 1.05 on the same Windows
+profile. Trace completeness remained 3,002 records. This is encouraging for
+the superlinear term, but it is not a five-run reference result and therefore
+does not alter an SLO or claim a release-grade speedup.
+
 ## Candidate-gate correction implemented
 
 The inherited candidate checker defined completeness using the Axis event
@@ -48,7 +57,7 @@ count: 2,002 events for a 1,000-node run. A valid Motus v1 trace contains
 
 The checker is now profile-aware: it preserves 2,002 for the frozen Axis
 reference, requires 3,002 and zero declaration violations for a Motus
-candidate, and requires the candidate to attest Motus 0.5, Python 3.10.12,
+candidate, and requires the candidate to attest Motus 0.6, Python 3.10.12,
 the operating system and an AMD EPYC CPU model. Local Windows evidence cannot
 masquerade as release evidence.
 

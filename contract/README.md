@@ -26,6 +26,10 @@ enforcement point.
 | 3 | Graph | `graphspec.v1.schema.json` | The declaration/execution boundary | Static validation at construction. An invalid graph refuses to exist — it does not start-and-warn |
 | 4 | Guarantees | `guarantees.md` | Operators and auditors | Executable: the conformance suite in `tests/contract/` and the CI benchmark gate. A release that violates either does not ship |
 
+Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
+receipt/resume form. `x-current-version` is the single source for the version
+emitted by the current package; old evidence remains valid without rewriting.
+
 ## Rules the contract imposes on itself
 
 1. **Never in the hot path.** Validation lives at boundaries — graph
@@ -70,8 +74,9 @@ executable and versioned in this repository:
 - `contract/validate.py` — the semantic validator: GraphSpec R1–R12; trace
   T1–T10 (record coherence, including replay monotonicity), E1–E11 (the
   execution state machine), SB1–SB4 (spec binding, including recomputed
-  graph fingerprints), H1, J1, JSONL1–3; JSON and JSONL forms. It reads its
-  input as BYTES and decodes explicitly — a reader that laundered CRLF into
+  graph fingerprints), H1–H2, J1, JSONL1–3; JSON and JSONL forms. H2 binds
+  resume provenance to a distinct run identity. It reads its input as BYTES
+  and decodes explicitly — a reader that laundered CRLF into
   LF would judge a document the file does not contain.
 - `contract/fixtures/` — versioned positive and negative instances; every
   negative declares the rule it violates, and the contract tests assert it

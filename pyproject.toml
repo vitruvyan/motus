@@ -13,7 +13,7 @@
 # on it being importable from the checkout, which `python -m pytest`
 # provides for free by putting the repository root on `sys.path`.
 #
-# Apache-2.0 is the founder-approved license for Motus 0.5. PyPI publication
+# Apache-2.0 is the founder-approved license for Motus. PyPI publication
 # remains a separate explicit release action.
 
 [build-system]

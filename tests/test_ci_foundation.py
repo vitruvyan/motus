@@ -51,7 +51,7 @@ def test_candidate_mode_enforces_target_plus_tolerance():
     candidate = load_document(DEFAULT_BASELINE)
     candidate = copy.deepcopy(candidate)
     attestation = {
-        "runtime": "vitruvyan-motus/0.5.0",
+        "runtime": "vitruvyan-motus/0.6.0",
         "cpu_model": "AMD EPYC test fixture",
         "platform_system": "Linux",
         "machine": "x86_64",

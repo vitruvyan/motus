@@ -47,6 +47,7 @@ __all__ = [
     "TransitionKind",
     "NodeDecl",
     "Transition",
+    "CompiledPlan",
     "GraphSpec",
 ]
 
@@ -656,6 +657,31 @@ class Transition:
         return cls(kind=kind)  # terminal
 
 
+@dataclass(frozen=True, slots=True)
+class CompiledPlan:
+    """Immutable, pre-indexed topology consumed by the single interpreter.
+
+    Compilation changes lookup cost, never execution semantics: the plan
+    contains only data already present in the validated GraphSpec.
+    """
+
+    entry: str
+    declarations: Mapping[str, NodeDecl]
+    transitions: Mapping[str, Transition]
+    max_transitions: int | float | None
+    graph_fingerprint: str
+
+    @classmethod
+    def _from_spec(cls, spec: "GraphSpec") -> "CompiledPlan":
+        return cls(
+            entry=spec.entry,
+            declarations=MappingProxyType({node.name: node for node in spec.nodes}),
+            transitions=MappingProxyType(dict(spec.transitions)),
+            max_transitions=spec.max_transitions,
+            graph_fingerprint=spec.graph_fingerprint,
+        )
+
+
 @dataclass(frozen=True)
 class GraphSpec:
     """A validated, fingerprintable GraphSpec.
@@ -689,6 +715,7 @@ class GraphSpec:
                 for key, step in frozen_source["transitions"].items()
             }),
         )
+        object.__setattr__(self, "_compiled", CompiledPlan._from_spec(self))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GraphSpec":
@@ -745,6 +772,10 @@ class GraphSpec:
     @property
     def transitions(self) -> Mapping[str, Transition]:
         return self._transitions  # type: ignore[attr-defined]
+
+    @property
+    def compiled(self) -> CompiledPlan:
+        return self._compiled  # type: ignore[attr-defined]
 
     # -- fingerprint and serialization --------------------------------------
 

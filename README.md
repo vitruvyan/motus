@@ -93,9 +93,12 @@ The public surface is explicitly listed in `vitruvyan_motus.__all__`. Its main
 groups are:
 
 - topology: `GraphSpec`, `NodeDecl`, `Transition`;
+- compiled topology: immutable `CompiledPlan`, consumed by the same runtime;
 - execution: `Runtime`, `Policy`, `DurabilityProfile`, `RunResult`;
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - evidence: `Trace`, `ReplayStatus`, `ContextDraw`;
+- portable evidence: `TraceBundle`, `ReplayEngine`, `ReplayResult`;
+- effects: `EffectDescriptor` and adapter-supplied `EffectReceipt`;
 - observation: `TraceSink`, run-scoped `TraceRunSink`, `Listener`,
   `StreamDriver`;
 - failures: `NodeFailed`, `SinkFailed`, `GraphSpecValidationError`.
@@ -131,6 +134,44 @@ Durable sinks are explicitly run-bound by ADR-004:
 run's ordered record batches. A shared sink can therefore partition concurrent
 or sequential runs without out-of-band knowledge, and each persisted stream
 has both the header and records needed to reconstruct trace v1.
+
+## Replay and portable explanation (0.6)
+
+```python
+from vitruvyan_motus import ReplayEngine, TraceBundle
+
+bundle = TraceBundle(spec, result.trace)
+
+# Never executes node code.
+restored = ReplayEngine(bundle).playback()
+
+# Re-executes pure nodes only, using their recorded context draws.
+verified = ReplayEngine(bundle).verify({"observe": observe})
+
+# Deterministic machine explanation and standalone offline HTML.
+explanation = bundle.explain()
+viewer_html = bundle.to_html()
+```
+
+`ReplayEngine.resume(runtime)` creates a new, causally linked run segment from
+an incomplete trace. It fails closed for graph mismatches and for external
+effects lacking both a non-empty idempotency key and a completed receipt.
+Persisted history is never rewritten, and Motus never claims exactly-once.
+
+Nodes record adapter evidence explicitly:
+
+```python
+from vitruvyan_motus import EffectClass, EffectDescriptor, EffectReceipt
+
+ctx.record_effect(
+    EffectDescriptor(
+        EffectClass.EXTERNAL_EFFECT,
+        "POST settlement",
+        idempotency_key="settlement:42",
+        receipt=EffectReceipt("provider-receipt:9"),
+    )
+)
+```
 
 ## Contract and verification
 

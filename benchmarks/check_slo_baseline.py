@@ -140,8 +140,8 @@ def validate_document(
     require(environment.get("gc_enabled_during_runs") is True, f"{name}: GC must be enabled during runs")
     if runtime_kind == "motus":
         require(
-            environment.get("runtime") == "vitruvyan-motus/0.5.0",
-            f"{name}: runtime identity must be vitruvyan-motus/0.5.0",
+            environment.get("runtime") == "vitruvyan-motus/0.6.0",
+            f"{name}: runtime identity must be vitruvyan-motus/0.6.0",
         )
         cpu_model = environment.get("cpu_model")
         require(

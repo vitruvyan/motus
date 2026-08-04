@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Literal
 
+from vitruvyan_motus.effects import EffectDescriptor
+
 __all__ = ["ContextDraw", "ReplayStatus", "RunContext"]
 
 DrawSource = Literal["now", "rand", "uuid"]
@@ -104,17 +106,19 @@ class RunContext:
     for and classify it.
     """
 
-    __slots__ = ("__now", "__rand", "__uuid")
+    __slots__ = ("__now", "__rand", "__uuid", "__record_effect")
 
     def __init__(
         self,
         now: Callable[[], datetime],
         rand: Callable[[], float],
         uuid: Callable[[], str],
+        record_effect: Callable[[EffectDescriptor], None],
     ) -> None:
         self.__now = now
         self.__rand = rand
         self.__uuid = uuid
+        self.__record_effect = record_effect
 
     def now(self) -> datetime:
         return self.__now()
@@ -125,13 +129,17 @@ class RunContext:
     def uuid(self) -> str:
         return self.__uuid()
 
+    def record_effect(self, effect: EffectDescriptor) -> None:
+        """Attach one adapter-supplied effect descriptor to this attempt."""
+        self.__record_effect(effect)
+
 
 class _RunController:
     """Executor-owned half of a run context (not a public package surface)."""
 
     __slots__ = (
-        "_clock", "_identity", "_random", "_draws", "_next_sequence",
-        "_declared_replay", "_replay", "_node_context",
+        "_clock", "_identity", "_random", "_draws", "_effects", "_next_sequence",
+        "_declared_replay", "_replay", "_node_context", "_effect_class",
     )
 
     def __init__(
@@ -146,10 +154,14 @@ class _RunController:
         self._identity = identity or (lambda: str(uuid_module.uuid4()))
         self._random = random_source or random.random
         self._draws: list[ContextDraw] = []
+        self._effects: list[EffectDescriptor] = []
+        self._effect_class = "external_effect"
         self._next_sequence = 1
         self._declared_replay = replay or ReplayStatus.declared()
         self._replay = self._declared_replay
-        self._node_context = RunContext(self._node_now, self._node_rand, self._node_uuid)
+        self._node_context = RunContext(
+            self._node_now, self._node_rand, self._node_uuid, self._record_effect
+        )
 
     @property
     def node_context(self) -> RunContext:
@@ -191,6 +203,33 @@ class _RunController:
         if cursor < 0 or cursor > len(self._draws):
             raise ValueError("draw cursor is outside the current draw log")
         return tuple(self._draws[cursor:])
+
+    def effect_cursor(self) -> int:
+        return len(self._effects)
+
+    def effects_since(self, cursor: int) -> tuple[EffectDescriptor, ...]:
+        if isinstance(cursor, bool) or not isinstance(cursor, int):
+            raise TypeError("effect cursor must be an integer")
+        if cursor < 0 or cursor > len(self._effects):
+            raise ValueError("effect cursor is outside the current effect log")
+        return tuple(self._effects[cursor:])
+
+    def _record_effect(self, effect: EffectDescriptor) -> None:
+        if not isinstance(effect, EffectDescriptor):
+            raise TypeError("record_effect requires EffectDescriptor")
+        if self._effect_class == "pure":
+            raise ValueError("a pure node cannot record effects")
+        if (
+            self._effect_class == "recorded_effect"
+            and effect.effect_class.value == "external_effect"
+        ):
+            raise ValueError("a recorded_effect node cannot record external effects")
+        self._effects.append(effect)
+
+    def begin_effect_scope(self, effect_class: str) -> None:
+        if effect_class not in ("pure", "recorded_effect", "external_effect"):
+            raise ValueError("unsupported node effect class")
+        self._effect_class = effect_class
 
     def downgrade(self, capability: ReplayCapability, constraint: str) -> ReplayStatus:
         if capability not in _CAPABILITY_RANK:

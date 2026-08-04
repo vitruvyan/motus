@@ -1,0 +1,109 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "H2",
+  "reason_contains": "new run_id distinct",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "h2",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [
+      {"name": "a", "effect_class": "pure"},
+      {"name": "b", "effect_class": "pure"}
+    ],
+    "transitions": {
+      "a": {"kind": "next", "to": "b"},
+      "b": {"kind": "terminal"}
+    }
+  },
+  "instance": {
+    "schema_version": "1.1.0",
+    "run": {
+      "run_id": "same-id",
+      "graph": {
+        "name": "h2",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:7c49f10b536e06c5e35c3551753c684ceb44253c6a97546a7b6afac3dc88027d",
+        "code_fingerprint": "code:sha256:1e0274bb2a5973a504c8281bd8de72874d2f22e1f1f5b487025b0fa61dd7a657",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {"capability": "partial", "constraints": ["resume:same-id"]},
+      "metadata": {"causation_id": "same-id"},
+      "created_ts": "2026-08-04T14:49:07.040126Z",
+      "resume": {
+        "source_run_id": "same-id",
+        "source_seq": 4,
+        "start_node": "b",
+        "bundle_fingerprint": "bundle:sha256:2308062b627748397f7c05a440ae3454d7e8a5d65b1fc36e460c7ece145fcd3c"
+      }
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-04T14:49:07.040173Z",
+        "kind": "run_started",
+        "integrity": {"payload_hash": null, "prev_hash": null},
+        "intent": "",
+        "initial_state": {"facts": [], "decisions": [], "rejections": []}
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-04T14:49:07.040187Z",
+        "kind": "attempt_started",
+        "integrity": {"payload_hash": null, "prev_hash": null},
+        "node": "b",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-04T14:49:07.040207Z",
+        "kind": "transition",
+        "integrity": {"payload_hash": null, "prev_hash": null},
+        "node": "b",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "pure",
+        "reads": [],
+        "writes": {"facts": [], "decisions": [], "rejections": []},
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-04T14:49:07.040217Z",
+        "kind": "routing",
+        "integrity": {"payload_hash": null, "prev_hash": null},
+        "after": "b",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {"condition": {"kind": "static"}, "target": "END", "taken": true}
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-04T14:49:07.040231Z",
+        "kind": "run_completed",
+        "integrity": {"payload_hash": null, "prev_hash": null},
+        "replay": {
+          "capability": "partial",
+          "constraints": [
+            "node:a:source_unavailable",
+            "node:b:source_unavailable",
+            "resume:same-id"
+          ]
+        }
+      }
+    ]
+  }
+}

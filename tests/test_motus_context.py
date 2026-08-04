@@ -12,7 +12,7 @@ def test_node_context_has_only_the_three_mediated_capabilities():
     context = control.node_context
     assert isinstance(context, RunContext)
     assert [name for name in dir(context) if not name.startswith("_")] == [
-        "now", "rand", "uuid"
+        "now", "rand", "record_effect", "uuid"
     ]
 
 

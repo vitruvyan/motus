@@ -249,9 +249,15 @@ class _ChunkedLog(Generic[T]):
 class Trace:
     """A trace envelope backed by a persistent record log."""
 
-    __slots__ = ("_run", "_records", "_view_cache", "_json_cache")
+    __slots__ = ("_schema_version", "_run", "_records", "_view_cache", "_json_cache")
 
-    def __init__(self, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]] | None = None,
+        *, schema_version: str = TRACE_SCHEMA_VERSION,
+    ) -> None:
+        if not isinstance(schema_version, str) or not schema_version:
+            raise ValueError("trace schema_version must be a non-empty string")
+        self._schema_version = schema_version
         self._run = _strict_plain_json(run, reserve_redacted=False)
         self._records = _ChunkedLog() if records is None else records
         self._view_cache = None
@@ -259,19 +265,52 @@ class Trace:
 
     @classmethod
     def _from_parts(
-        cls, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]]
+        cls, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]], schema_version: str
     ) -> "Trace":
         instance = object.__new__(cls)
+        instance._schema_version = schema_version
         instance._run = run
         instance._records = records
         instance._view_cache = None
         instance._json_cache = None
         return instance
 
+    @classmethod
+    def from_dict(cls, document: dict[str, Any]) -> "Trace":
+        """Load an isolated trace document while preserving its wire version."""
+        plain = _strict_plain_json(document, reserve_redacted=False)
+        if not isinstance(plain, dict):
+            raise TypeError("trace document must be an object")
+        if set(plain) != {"schema_version", "run", "records"}:
+            raise ValueError("trace document requires schema_version, run and records")
+        if plain["schema_version"] not in ("1.0.0", "1.1.0"):
+            raise ValueError("unsupported trace schema version")
+        if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
+            raise TypeError("trace run must be an object and records an array")
+        if plain["records"] and (
+            not isinstance(plain["records"][0], dict)
+            or plain["records"][0].get("kind") != "run_started"
+        ):
+            raise ValueError("trace records must begin with run_started")
+        log: _ChunkedLog[dict[str, Any]] = _ChunkedLog()
+        terminal_seen = False
+        for index, record in enumerate(plain["records"], start=1):
+            if not isinstance(record, dict):
+                raise TypeError("every trace record must be an object")
+            if record.get("seq") != index:
+                raise ValueError("trace record sequences must be gapless from one")
+            if terminal_seen:
+                raise ValueError("trace records cannot follow a terminal record")
+            terminal_seen = record.get("kind") in (
+                "run_completed", "run_failed", "run_cancelled"
+            )
+            log = log.append(record)
+        return cls(plain["run"], log, schema_version=plain["schema_version"])
+
     def _view(self) -> dict[str, Any]:
         if self._view_cache is None:
             self._view_cache = _freeze_json({
-                "schema_version": TRACE_SCHEMA_VERSION,
+                "schema_version": self._schema_version,
                 "run": self._run,
                 "records": list(self._records),
             })
@@ -290,15 +329,28 @@ class Trace:
 
     @property
     def log(self) -> _ChunkedLog[dict[str, Any]]:
+        # A compatibility-shaped read view, never the evidence-owned dicts.
+        # `_ChunkedLog` is structurally persistent but its generic items need
+        # not be immutable; returning the internal log would let a caller
+        # mutate records behind the cached JSON/bundle fingerprint.
+        return _ChunkedLog().extend(copy.deepcopy(record) for record in self._records)
+
+    @property
+    def _runtime_log(self) -> _ChunkedLog[dict[str, Any]]:
+        """Trusted package-internal log; never expose across the API boundary."""
         return self._records
 
     def append(self, record: dict[str, Any]) -> "Trace":
         isolated = _strict_plain_json(record, reserve_redacted=False)
-        return Trace._from_parts(self._run, self._records.append(isolated))
+        return Trace._from_parts(
+            self._run, self._records.append(isolated), self._schema_version
+        )
 
     def _append_runtime(self, record: dict[str, Any]) -> "Trace":
         """Append a record already built from validated runtime primitives."""
-        return Trace._from_parts(self._run, self._records.append(record))
+        return Trace._from_parts(
+            self._run, self._records.append(record), self._schema_version
+        )
 
     def to_dict(self) -> dict[str, Any]:
         # Parsing the immutable cached encoding is both isolated (even direct
@@ -316,7 +368,7 @@ class Trace:
 
     def to_jsonl(self) -> str:
         header = json.dumps(
-            {"schema_version": TRACE_SCHEMA_VERSION, "run": self._run},
+            {"schema_version": self._schema_version, "run": self._run},
             ensure_ascii=False, separators=(",", ":"), allow_nan=False,
         )
         lines = [header]

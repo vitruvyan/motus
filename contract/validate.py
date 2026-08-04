@@ -822,7 +822,12 @@ def _execution_violations(
     v: list[Violation] = []
     implicated: set[int] = set()
     policy = run.get("policy")
-    entry = spec.get("entry") if isinstance(spec, dict) else None
+    resume = run.get("resume") if isinstance(run.get("resume"), dict) else None
+    entry = (
+        resume.get("start_node")
+        if resume is not None
+        else (spec.get("entry") if isinstance(spec, dict) else None)
+    )
 
     def flag(index: int, rule: str, message: str, path: str | None = None) -> None:
         implicated.add(index)
@@ -1195,6 +1200,17 @@ def _trace_semantics(
     v: list[Violation] = []
     records = doc.get("records") or []
     run = doc.get("run") or {}
+
+    # H2 — resume provenance links two distinct immutable trace segments.
+    resume = run.get("resume") or {}
+    if resume and resume.get("source_run_id") == run.get("run_id"):
+        v.append(
+            Violation(
+                "H2",
+                "$.run.resume.source_run_id",
+                "a resumed segment must have a new run_id distinct from its source",
+            )
+        )
 
     # H1 — the buffered durability profile must disclose its loss window:
     # sink must be present WITH BOTH disclosure keys.  An empty or partial
@@ -1651,6 +1667,22 @@ def _trace_semantics(
                 for item in record.get("violations") or []
                 if isinstance(item, dict)
             )
+            # In schema 1.1 strict declaration enforcement happens before a
+            # returned write can commit. Transactional raised attempts keep
+            # `writes` structurally empty, so the attempted write key survives
+            # only in the DeclarationViolation evidence. Accept those keys
+            # exactly when they are in fact outside the declaration; reads
+            # remain independently recomputable from their captured records.
+            error = record.get("error") or {}
+            if (
+                record.get("outcome") == "raised"
+                and error.get("type") == "DeclarationViolation"
+                and writes_declared is not None
+            ):
+                allowed_writes = set(writes_declared)
+                for (kind, key), count in recorded_violations.items():
+                    if kind == "undeclared_write" and key not in allowed_writes:
+                        expected_violations[(kind, key)] += count
             if expected_violations != recorded_violations:
                 missing = expected_violations - recorded_violations
                 invented = recorded_violations - expected_violations
@@ -2388,6 +2420,15 @@ def validate_jsonl(
         # T-rules over the surviving lines would only cascade (T1 gaps, T6
         # adjacency breaks) off the lines already reported.
         return violations, None
+
+    # Per-line validation cannot express version-family constraints that bind
+    # a 1.0 header to 1.1-only record fields such as effect receipts.
+    root_violations = _schema_violations(
+        trace_schema, _trace_validator(), doc,
+    )
+    if root_violations:
+        violations.extend(root_violations)
+        return violations, doc
 
     # When truncation was detected the incompleteness is already on record;
     # run the T-rules in incomplete mode so it is not reported twice.

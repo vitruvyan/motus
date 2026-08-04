@@ -149,6 +149,55 @@ class State:
         state._log = state._log.extend(initial)
         return state
 
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: dict[str, list[dict[str, Any]]],
+        *,
+        intent: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> "State":
+        """Re-seed state from a trace snapshot for playback or resume."""
+        if not isinstance(snapshot, dict):
+            raise TypeError("snapshot must be an object")
+        facts = [Fact(**item) for item in snapshot.get("facts", [])]
+        decisions = [Decision(**item) for item in snapshot.get("decisions", [])]
+        rejections = [Rejection(**item) for item in snapshot.get("rejections", [])]
+        return cls.new(
+            intent, facts=facts, decisions=decisions, rejections=rejections,
+            metadata=metadata,
+        )
+
+    def snapshot(self) -> dict[str, list[dict[str, Any]]]:
+        """Return the complete committed state as a portable wire snapshot."""
+        out: dict[str, list[dict[str, Any]]] = {
+            "facts": [], "decisions": [], "rejections": []
+        }
+        for item in self._log:
+            out[item.collection].append(item.value.to_dict())
+        return out
+
+    def _replay_commit(
+        self, writes: dict[str, list[dict[str, Any]]], transition_seq: int
+    ) -> "State":
+        """Apply already-recorded committed writes with their original origins."""
+        additions: list[_StateItem] = []
+        constructors = {
+            "facts": Fact, "decisions": Decision, "rejections": Rejection,
+        }
+        for collection in ("facts", "decisions", "rejections"):
+            for index, wire in enumerate(writes.get(collection, [])):
+                value = constructors[collection](**wire)
+                additions.append(_StateItem(collection, value, {
+                    "kind": "transition", "seq": transition_seq,
+                    "collection": collection, "index": index,
+                }))
+        return State._from_parts(
+            log=self._log.extend(additions), pending=_ChunkedLog(),
+            intent=self._intent, metadata=self._metadata, reads=None,
+            events=self._events, lineage=self._lineage,
+        )
+
     def _spawn(self, *, pending: _ChunkedLog[_StateItem] | None = None) -> "State":
         return State._from_parts(
             log=self._log,

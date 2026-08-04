@@ -190,7 +190,7 @@ ADVERTISED_RULES = {
     # Spec binding
     "SB1", "SB2", "SB3", "SB4",
     # Header, JSON strictness, JSONL encoding, schema layer
-    "H1", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
+    "H1", "H2", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
 }
 
 
