@@ -179,6 +179,11 @@ are contract, not implementation detail; the implementer invents none of
 this.
 
 **TraceSink** — the durable surface.
+- Run binding: the durable surface is opened as
+  `TraceSink.open_run(header) -> TraceRunSink`. The isolated header is
+  delivered exactly once before the first record; every record batch for that
+  run is written only through the returned session. A required sink's refusal
+  to open the run is a sink failure. See ADR-004.
 - Delivery unit: trace records, in `seq` order, at the flush boundaries the
   durability profile defines (`synchronous`: every record; `buffered`: per
   chunk/interval, with failed-transition and terminal records flushed
