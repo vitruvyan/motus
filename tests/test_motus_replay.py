@@ -229,6 +229,46 @@ def test_resume_creates_a_linked_segment_from_last_committed_state():
     assert validate.validate_trace(result.trace.to_dict(), graph.to_dict()) == []
 
 
+def test_resume_rejects_a_persisted_route_redirected_to_another_valid_node():
+    def choose(state):
+        return state.with_decision(Decision("branch", "safe", NOW))
+
+    graph = spec(
+        [
+            {"name": "choose", "effect_class": "pure"},
+            {"name": "safe", "effect_class": "pure"},
+            {"name": "external", "effect_class": "external_effect"},
+        ],
+        {
+            "choose": {
+                "kind": "route",
+                "on": "branch",
+                "map": {"safe": "safe", "external": "external"},
+            },
+            "safe": {"kind": "terminal"},
+            "external": {"kind": "terminal"},
+        },
+    )
+    complete = Runtime(
+        graph,
+        {"choose": choose, "safe": lambda state: state, "external": lambda state: state},
+    ).run(run_id="route-source")
+    document = TraceBundle(graph, complete.trace).to_dict()
+    route_index = next(
+        i
+        for i, record in enumerate(document["trace"]["records"])
+        if record["kind"] == "routing" and record["after"] == "choose"
+    )
+    document["trace"]["records"] = document["trace"]["records"][: route_index + 1]
+    route = document["trace"]["records"][-1]
+    route["selected"] = "external"
+    for candidate in route["candidates"]:
+        candidate["taken"] = candidate["target"] == "external"
+
+    with pytest.raises(ValueError, match="routing semantics disagree"):
+        TraceBundle.from_dict(document)
+
+
 def test_resume_after_exploration_continue_advances_to_the_next_node():
     calls = []
 

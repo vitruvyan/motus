@@ -38,6 +38,7 @@ def _assert_bundle_semantics(spec: GraphSpec, trace: Trace) -> None:
     if expected_start not in declarations:
         raise ValueError("trace resume start node is not declared")
     records = trace.records
+    state = _initial_state(trace)
     if len(records) > 1:
         first = records[1]
         if first.get("kind") == "attempt_started" and first.get("node") != expected_start:
@@ -61,6 +62,11 @@ def _assert_bundle_semantics(spec: GraphSpec, trace: Trace) -> None:
                 and opener.get("attempt") == record.get("attempt")
             ):
                 raise ValueError("transition does not match its opening attempt")
+            if (
+                record.get("outcome") == "returned"
+                and record.get("disposition") == "commit"
+            ):
+                state = state._replay_commit(record["writes"], record["seq"])
         elif kind == "routing":
             if record.get("after") not in declarations:
                 raise ValueError("routing names an undeclared predecessor")
@@ -72,6 +78,99 @@ def _assert_bundle_semantics(spec: GraphSpec, trace: Trace) -> None:
                 and records[index - 1].get("node") == record.get("after")
             ):
                 raise ValueError("routing does not follow its transition")
+            step = spec.compiled.transitions[record["after"]]
+            expected = _expected_routing_semantics(step, state)
+            observed = {
+                key: record.get(key)
+                for key in (
+                    "on",
+                    "value",
+                    "origin",
+                    "outcome",
+                    "selected",
+                    "candidates",
+                )
+            }
+            if _canonical_bytes(observed) != _canonical_bytes(expected):
+                raise ValueError(
+                    "routing semantics disagree with the GraphSpec and recorded state"
+                )
+
+
+def _expected_routing_semantics(step: Any, state: State) -> dict[str, Any]:
+    """Recompute the exact routing evidence without trusting persisted fields."""
+    if step.kind == TransitionKind.TERMINAL:
+        return {
+            "on": None,
+            "value": None,
+            "origin": None,
+            "outcome": "static",
+            "selected": "END",
+            "candidates": [
+                {
+                    "condition": {"kind": "static"},
+                    "target": "END",
+                    "taken": True,
+                }
+            ],
+        }
+    if step.kind == TransitionKind.NEXT:
+        return {
+            "on": None,
+            "value": None,
+            "origin": None,
+            "outcome": "static",
+            "selected": step.to,
+            "candidates": [
+                {
+                    "condition": {"kind": "static"},
+                    "target": step.to,
+                    "taken": True,
+                }
+            ],
+        }
+
+    latest = state._latest_decision(step.on)
+    if latest is None:
+        value, origin = None, {"kind": "absent"}
+    else:
+        value, origin = latest
+    candidates = [
+        {
+            "condition": {"kind": "map", "key": key},
+            "target": target,
+            "taken": False,
+        }
+        for key, target in step.map.items()
+    ]
+    if step.default is not None:
+        candidates.append(
+            {
+                "condition": {"kind": "default"},
+                "target": step.default,
+                "taken": False,
+            }
+        )
+    if isinstance(value, str) and value in step.map:
+        outcome, selected = "matched", step.map[value]
+        for candidate in candidates:
+            if candidate["condition"] == {"kind": "map", "key": value}:
+                candidate["taken"] = True
+    elif isinstance(value, str) and step.default is not None:
+        outcome, selected = "default", step.default
+        for candidate in candidates:
+            if candidate["condition"] == {"kind": "default"}:
+                candidate["taken"] = True
+    else:
+        outcome, selected = "miss", "END"
+    return {
+        "on": step.on,
+        "value": value,
+        "origin": origin,
+        "outcome": outcome,
+        "selected": selected,
+        "candidates": candidates,
+    }
 
 
 def _initial_state(trace: Trace) -> State:
