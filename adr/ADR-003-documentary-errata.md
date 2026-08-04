@@ -2,9 +2,12 @@
 
 | | |
 |---|---|
-| Status | PROPOSED — awaiting founder approval |
+| Status | **ACCEPTED** |
 | Date | 2026-08-04 |
 | Deciders | Davide Baldoni, founder · Codex, independent review · Claude, contract authorship |
+| Approved by | Davide Baldoni, founder — 2026-08-04 |
+| Reviewed at | `83bcb0a1a39d82a11c0007632e4e07cb7dc99ac9` |
+| Independent review | Codex — PASS, no findings |
 | Amends | Wording and placement only, in `contract/` and `adr/ADR-001`. No schema version, no R/T/E/SB rule, no runtime behavior, no SLO. |
 
 ## Context
@@ -110,4 +113,7 @@ changes.
 
 ## Approval
 
-To be recorded on merge: approver, date, and the SHA this errata was applied to.
+Approved by Davide Baldoni, founder, on 2026-08-04 against reviewed SHA
+`83bcb0a1a39d82a11c0007632e4e07cb7dc99ac9`, following Codex's independent
+PASS with no findings. This acceptance records the decision only; it introduces
+no additional contract or runtime change.
