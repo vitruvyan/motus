@@ -6,10 +6,11 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
-  frozen-contract-paths:
-    name: frozen-contract-paths
+  trusted-frozen-contract-audit:
+    name: trusted-frozen-contract-audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -23,7 +24,33 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: git fetch --no-tags origin "pull/${PR_NUMBER}/head"
       - name: Reject edits to frozen evidence
+        id: frozen_guard
+        continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python tools/check_frozen_paths.py "$BASE_SHA" "$HEAD_SHA"
+      - name: Publish the required status on the PR head
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUARD_OUTCOME: ${{ steps.frozen_guard.outcome }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$GUARD_OUTCOME" = "success" ]; then
+            state=success
+            description="Frozen contract evidence is unchanged"
+          else
+            state=failure
+            description="Frozen contract evidence was changed"
+          fi
+          gh api "repos/$REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context="frozen-contract-paths" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
+      - name: Fail the trusted audit when the guard rejected the diff
+        if: steps.frozen_guard.outcome != 'success'
+        run: exit 1
