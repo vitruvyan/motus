@@ -26,6 +26,10 @@ __all__ = [
     "GraphSpecValidationError",
     "NodeFailed",
     "SinkFailed",
+    "ReplayError",
+    "ReplayMismatch",
+    "UnsafeResume",
+    "DeclarationViolation",
 ]
 
 
@@ -100,3 +104,31 @@ class SinkFailed(MotusError):
         self.trace = trace
         self.cause = cause
         super().__init__(f"required trace sink failed: {cause}")
+
+
+class ReplayError(MotusError):
+    """Base for playback, verification and resume failures."""
+
+
+class ReplayMismatch(ReplayError):
+    """Pure-node verification diverged from the recorded evidence."""
+
+    def __init__(self, node: str, record_seq: int, field: str) -> None:
+        self.node = node
+        self.record_seq = record_seq
+        self.field = field
+        super().__init__(
+            f"verify replay diverged at node {node!r}, record {record_seq}, field {field}"
+        )
+
+
+class UnsafeResume(ReplayError):
+    """A trace cannot be resumed without inventing an unsupported guarantee."""
+
+
+class DeclarationViolation(MotusError):
+    """Captured node behavior exceeded its declared read/write surface."""
+
+    def __init__(self, violations: list[dict[str, str]]) -> None:
+        self.violations = tuple(dict(item) for item in violations)
+        super().__init__("captured reads or writes violate the node declaration")

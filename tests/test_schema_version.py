@@ -23,11 +23,11 @@ TRACE_SCHEMA = REPO_ROOT / "contract" / "trace.v1.schema.json"
 
 def test_package_trace_schema_version_matches_the_contract_schema():
     schema = json.loads(TRACE_SCHEMA.read_text(encoding="utf-8"))
-    contract_const = schema["properties"]["schema_version"]["const"]
+    contract_const = schema["x-current-version"]
 
     assert TRACE_SCHEMA_VERSION == contract_const, (
         f"vitruvyan_motus.TRACE_SCHEMA_VERSION ({TRACE_SCHEMA_VERSION!r}) has "
-        f"drifted from contract/trace.v1.schema.json's schema_version const "
+        f"drifted from contract/trace.v1.schema.json's x-current-version "
         f"({contract_const!r}) — these must never disagree"
     )
 

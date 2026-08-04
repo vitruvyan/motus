@@ -51,19 +51,18 @@ policy reference. Hash, reference and policy are evidence; the secret is not.
 
 ## 2. Replay and delivery semantics, stated honestly
 
-**In 0.5 Motus makes NO general delivery guarantee for external effects** —
-the only promise is the explicitly configured retry policy of an attempt.
-There is no replay, no resume, no receipt, and therefore no
-at-least-once-across-crashes claim: after a process loss, what happened to an
-in-flight external effect is recorded as *unknown* (the unclosed
-`attempt_started`), never guessed. The schema records what replay will need
-(per-value read origins, context draws, effect classes); the replay modes
-are 0.6+. When they land: playback never executes code; verify re-executes
-only `pure` nodes; effect replay reuses recorded results only when a valid
-receipt exists and the replay policy permits; resume continues from the last
-committed point per the durability profile — and only then does
-**at-least-once execution with idempotent effects** become a stated
-guarantee. Exactly-once is promised in no version, ever.
+Motus 0.6 implements three explicit modes. Playback reconstructs committed
+state and never executes node code. Verify re-executes only `pure` nodes with
+their recorded context draws and compares captured behavior. Resume creates a
+new trace segment linked to the last committed state; persisted history is
+never rewritten.
+
+For external effects, resume is permitted only when every observed effect has
+a non-empty idempotency key and a completed adapter-supplied receipt. This is
+an **at-least-once execution with idempotent effects** condition, not a proof
+that the external system committed exactly once. An absent or `unknown`
+receipt preserves uncertainty and makes automatic resume fail closed.
+Exactly-once is promised in no version, ever.
 
 ## 3. Performance SLOs (CI gate)
 
@@ -86,7 +85,9 @@ beside it as an observation, never as a gate. Tolerance band: **±25%**, set
 above the measured spread of the asserted statistic and below the size of any
 regression worth catching. The second reference profile (a GitHub-runner
 class) must be characterized the same way — 5 runs, published spread — before
-it may gate anything.
+it may gate anything. ADR-006 completed that characterization for the native
+Motus 0.6 trace; its separately enforced profile follows the immutable Axis
+evidence below.
 
 | SLO (asserted statistic: min-of-samples, median across ≥5 runs) | Target | v0.4.0 measured | run-to-run spread |
 |---|---|---|---|
@@ -100,10 +101,30 @@ Published alongside, not asserted: the in-run median per-node cost, 12.5 µs
 (spread 27 %).
 
 A regression beyond target-plus-tolerance fails CI; improving a target
-requires an ADR, not a lucky run. The two rows that miss their targets are
-debts Motus 0.5 is expected to pay down — they are recorded as measured
-reality, not as achievements. Trace completeness is an invariant, never a
-debt and never a tunable sampling rate.
+requires an ADR, not a lucky run. The two Axis rows that miss their targets
+remain historical debts recorded as measured reality, not achievements.
+Trace completeness is an invariant, never a debt and never a tunable sampling
+rate.
+
+### Motus 0.6 GitHub EPYC profile (ADR-006)
+
+The native Motus workload is deliberately separate: a 1,000-node run emits
+3,002 records rather than the Axis reference's 2,002. Five independent runs
+on Python 3.10.12 and AMD EPYC 9V74 produced the committed raw document
+`benchmarks/candidate-v0.6.0-epyc-py310.json`.
+
+| Motus native SLO | Target | v0.6.0 measured | run-to-run spread |
+|---|---:|---:|---:|
+| Motus per-node overhead, full trace, n <= 1000 | <= 45 us | 43.5 us | 2% |
+| Motus 100-node no-op overhead | <= 3.25 ms | 3.09 ms | 5% |
+| Motus trace preparation / `json.dumps` | <= 1.5x | 0.8x | 5% / 16% |
+| Motus positive superlinear accumulation at n = 1000 | < 10% | 0% | 74% ratio spread |
+| Motus trace completeness | 100% — no sampling, ever | 100%; 3,002 records | — |
+
+The common 25% tolerance produces hard ceilings of 56.25 us/node, 4.0625 ms,
+1.875x serialization, and <12.5% positive superlinearity. The checker
+recomputes the measured values and refuses a different interpreter, runtime,
+CPU class, incomplete trace, or modified aggregate.
 
 ## 4. Terraveler compatibility surface (frozen)
 

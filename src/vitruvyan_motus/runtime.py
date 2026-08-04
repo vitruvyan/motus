@@ -14,7 +14,8 @@ from typing import Any, Callable, Iterator, Mapping
 
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.context import ReplayStatus, _RunController
-from vitruvyan_motus.errors import NodeFailed, SinkFailed
+from vitruvyan_motus.effects import EffectClass
+from vitruvyan_motus.errors import DeclarationViolation, NodeFailed, SinkFailed
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
 from vitruvyan_motus.observers import Listener, StreamDriver, TraceSink, _ObservationHub
 from vitruvyan_motus.state import State
@@ -129,6 +130,7 @@ class Runtime:
         if not isinstance(spec, GraphSpec):
             raise TypeError("spec must be GraphSpec")
         self.spec = spec
+        self._plan = spec.compiled
         self._graph_fingerprint = spec.graph_fingerprint
         self._nodes = dict(nodes)
         declared = {node.name for node in spec.nodes}
@@ -137,7 +139,7 @@ class Runtime:
             extra = sorted(set(self._nodes) - declared)
             raise ValueError(f"node registry must match GraphSpec; missing={missing}, extra={extra}")
         self._uses_context = {name: _accepts_context(node) for name, node in self._nodes.items()}
-        self._declarations = {node.name: node for node in spec.nodes}
+        self._declarations = self._plan.declarations
         identity_rows = []
         identity_constraints: list[tuple[str, str]] = []
         for declaration in spec.nodes:
@@ -210,7 +212,10 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> RunResult:
-        iterator = self._start(state, run_id=run_id, replay=replay, copy_yields=False)
+        iterator = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=False,
+            start_node=self._plan.entry, resume_info=None,
+        )
         for _ in iterator:
             pass
         assert self._state is not None and self._trace is not None
@@ -223,14 +228,17 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> StreamDriver:
-        iterator = self._start(state, run_id=run_id, replay=replay, copy_yields=True)
+        iterator = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=True,
+            start_node=self._plan.entry, resume_info=None,
+        )
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
         return StreamDriver(iterator, self.cancel, lambda: trace_ref[0])
 
     def _start(
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
-        copy_yields: bool,
+        copy_yields: bool, start_node: str, resume_info: dict[str, Any] | None,
     ) -> Iterator[dict[str, Any]]:
         if self._running:
             raise RuntimeError("a Runtime instance cannot execute overlapping runs")
@@ -248,6 +256,11 @@ class Runtime:
             actual_run_id = run_id or self._control.kernel_uuid()
             if not isinstance(actual_run_id, str) or not 1 <= len(actual_run_id) <= 200:
                 raise ValueError("run_id must be a string of length 1..200")
+            if (
+                resume_info is not None
+                and actual_run_id == resume_info.get("source_run_id")
+            ):
+                raise ValueError("a resumed segment must have a new run_id")
             header: dict[str, Any] = {
                 "run_id": actual_run_id,
                 "graph": {
@@ -263,6 +276,8 @@ class Runtime:
                 "metadata": copy.deepcopy(initial._metadata),
                 "created_ts": self._control.timestamp(),
             }
+            if resume_info is not None:
+                header["resume"] = _strict_plain_json(resume_info)
             if self.durability_profile is DurabilityProfile.BUFFERED:
                 header["sink"] = {
                     "flush_interval_ms": self._hub.flush_interval_ms,
@@ -271,15 +286,17 @@ class Runtime:
             self._trace = Trace(header)
             self._trace_ref = [self._trace]
             self._hub.bind(self._trace.run)
-            return self._managed_execute(copy_yields=copy_yields)
+            return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
         except BaseException:
             self._running = False
             self._active_attempt = None
             raise
 
-    def _managed_execute(self, *, copy_yields: bool) -> Iterator[dict[str, Any]]:
+    def _managed_execute(
+        self, *, copy_yields: bool, start_node: str
+    ) -> Iterator[dict[str, Any]]:
         try:
-            yield from self._execute(copy_yields=copy_yields)
+            yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:
             if self._hub is not None:
                 self._hub.close()
@@ -384,7 +401,7 @@ class Runtime:
         return out
 
     def _routing(self, node: str, state: State) -> tuple[dict[str, Any], str, bool]:
-        step = self.spec.transitions[node]
+        step = self._plan.transitions[node]
         record = self._base("routing")
         if step.kind == TransitionKind.TERMINAL:
             selected = "END"
@@ -432,14 +449,16 @@ class Runtime:
         })
         return record, selected, outcome == "miss"
 
-    def _execute(self, *, copy_yields: bool) -> Iterator[dict[str, Any]]:
+    def _execute(
+        self, *, copy_yields: bool, start_node: str
+    ) -> Iterator[dict[str, Any]]:
         assert self._control is not None and self._trace is not None and self._state is not None
         def exposed(record: dict[str, Any]) -> dict[str, Any]:
             return copy.deepcopy(record) if copy_yields else record
         started = self._base("run_started")
         started.update({"intent": self._state._intent, "initial_state": self._state._initial_wire()})
         yield exposed(self._store(started))
-        current_node = self.spec.entry
+        current_node = start_node
         committed_transitions = 0
         while True:
             if self._cancel_reason is not None:
@@ -460,8 +479,10 @@ class Runtime:
                     self._active_attempt = None
                     return
 
-                attempt_state = self._state._attempt_view(self._trace.log)
+                attempt_state = self._state._attempt_view(self._trace._runtime_log)
                 draw_cursor = self._control.draw_cursor()
+                effect_cursor = self._control.effect_cursor()
+                self._control.begin_effect_scope(declaration.effect_class.value)
                 error: BaseException | None = None
                 returned: State | None = None
                 try:
@@ -484,6 +505,29 @@ class Runtime:
                         writes = {"facts": [], "decisions": [], "rejections": []}
                 reads = attempt_state._reads_wire()
                 draws = [draw.to_dict() for draw in self._control.draws_since(draw_cursor)]
+                effects = [
+                    effect.to_dict()
+                    for effect in self._control.effects_since(effect_cursor)
+                ]
+                if declaration.effect_class is EffectClass.PURE and effects:
+                    error = ValueError("a pure node cannot record effects")
+                    effects = []
+                elif declaration.effect_class is EffectClass.RECORDED_EFFECT and any(
+                    effect["class"] == EffectClass.EXTERNAL_EFFECT.value
+                    for effect in effects
+                ):
+                    error = ValueError(
+                        "a recorded_effect node cannot record external effects"
+                    )
+                    effects = [
+                        effect for effect in effects
+                        if effect["class"] == EffectClass.RECORDED_EFFECT.value
+                    ]
+                violations = self._declaration_violations(declaration, reads, writes)
+                if error is None and violations and self.policy is Policy.STRICT:
+                    error = DeclarationViolation(violations)
+                if error is not None:
+                    writes = {"facts": [], "decisions": [], "rejections": []}
                 transition = self._base("transition", seq=transition_seq)
                 if error is None:
                     outcome, disposition, error_wire = "returned", "commit", None
@@ -504,8 +548,8 @@ class Runtime:
                     "outcome": outcome, "disposition": disposition,
                     "effect_class": declaration.effect_class.value,
                     "reads": reads, "writes": writes,
-                    "effects": [], "context_draws": draws,
-                    "violations": self._declaration_violations(declaration, reads, writes),
+                    "effects": effects, "context_draws": draws,
+                    "violations": violations,
                     "error": error_wire,
                 })
                 self._active_attempt = None
@@ -560,7 +604,7 @@ class Runtime:
                 terminal = self._terminal("run_completed", replay=self._control.replay.to_dict())
                 yield exposed(terminal)
                 return
-            limit = self.spec.max_transitions
+            limit = self._plan.max_transitions
             if limit is not None and committed_transitions >= limit:
                 terminal = self._terminal(
                     "run_failed",
@@ -574,3 +618,24 @@ class Runtime:
                 yield exposed(terminal)
                 return
             current_node = selected
+
+    def _run_from(
+        self,
+        state: State,
+        *,
+        start_node: str,
+        resume_info: dict[str, Any],
+        run_id: str | None = None,
+        replay: ReplayStatus | None = None,
+    ) -> RunResult:
+        """Execute a causally linked resume segment (used by ReplayEngine)."""
+        if start_node not in self._plan.declarations:
+            raise ValueError(f"resume start node {start_node!r} is not declared")
+        iterator = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=False,
+            start_node=start_node, resume_info=resume_info,
+        )
+        for _ in iterator:
+            pass
+        assert self._state is not None and self._trace is not None
+        return RunResult(self._state, self._trace)

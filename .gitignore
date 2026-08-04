@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+.test-tmp-*/
 .coverage
 htmlcov/
 .tox/

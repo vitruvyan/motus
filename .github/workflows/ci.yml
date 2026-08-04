@@ -36,4 +36,6 @@ jobs:
         with:
           python-version: "3.10.12"
       - name: Reproduce guarantees section 3 from raw evidence
-        run: python benchmarks/check_slo_baseline.py
+        run: >-
+          python benchmarks/check_slo_baseline.py
+          --candidate benchmarks/candidate-v0.6.0-epyc-py310.json

@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://vitruvyan.com/motus/contract/trace.v1.schema.json",
   "title": "Vitruvyan Motus trace document, v1",
+  "x-current-version": "1.1.0",
   "description": "v1 — accepted by ADR-001 on 2026-08-03. A trace is a run header plus an ordered append-only sequence of records: the causal, replayable account of one GRAPH EXECUTION — not merely a well-formed record sequence. Two canonical encodings of ONE logical model: (a) a single JSON document matching this schema's root; (b) JSONL — UTF-8, LF line endings ONLY (a validator REJECTS CR bytes anywhere in the stream, rule JSONL3 — canonical writers emit LF and readers do not silently normalize), no BOM, exactly one header line matching #/$defs/TraceHeader followed by one line per record matching #/$defs/Record; blank lines are tolerated and ignored (a crash may leave a trailing empty line). A JSON document and a JSONL stream are equivalent iff header (minus records) and record sequences are structurally equal; fixtures pin this. Integrity hashes, when activated (schema 1.1+), are computed over the canonical object form (contract/README.md), never over encoding bytes. A conformant validator MUST enforce, beyond this schema (executable in contract/validate.py): — THE T-RULES (record coherence): (T1) seq monotonic and gapless from 1; (T2) run_started appears exactly once, as the first record; (T3) the last record of a finished run is run_completed | run_failed | run_cancelled, and nothing follows a terminal record; a stream ending without one is incomplete/crash-truncated per guarantees.md invariant II; (T4) every read origin resolves to the exact value it names: kind transition references an EARLIER transition whose writes[collection][index] EXISTS AND WHOSE KEY EQUALS the read's key (for facts/decisions); kind initial likewise into run_started.initial_state; kind scan requires read.key == origin.collection; kind header field intent requires read.key == 'intent', field metadata requires the key to exist in run.metadata (a missing key is an absent read); kind absent carries the surface that missed (facts | decisions | metadata); (T5) node, after, selected, candidates[].target, active_attempt.node and run_failed.failed_node name declared nodes, or the literal END where permitted; (T6) every transition (node, attempt) is opened by the immediately preceding attempt_started with the same pair; an unclosed attempt_started may be followed only by run_cancelled naming it, run_failed with a non-node cause, or EOF (incomplete); conversely run_cancelled.active_attempt, when non-null, names exactly the immediately preceding unclosed attempt_started, else it is null; (T7) run_failed.failed_node is non-null iff cause.kind is node_failure, and cause.record_seq, when non-null, references an existing record; (T8) routing correlations: matched has exactly one taken candidate with condition {kind map, key == value} and target == selected; default has exactly one taken candidate with condition kind default (and, spec available, value absent from the map keys); static has exactly one candidate, taken, kind static, target == selected; miss has zero taken and selected END; the candidate list is the complete route step (every map entry once, default once when declared, or the single static edge); EVERY routed outcome — matched, default AND miss — carries the same causal duty through `origin`, which addresses the exact Decision observed: kind transition names an EARLIER committed transition's writes.decisions[index], kind initial names run_started.initial_state.decisions[index], and both must carry key `on` and a value EQUAL to the routed value under JSON equality (type-aware: the boolean true is not the number 1); kind absent asserts that no decision with key `on` exists anywhere in the run — seeded or committed — and is admissible only on a miss, only with value null, because nothing observed may be reported as something; R10 staleness holds for transition and initial origins alike, in BOTH directions recency runs: no LATER committed decision with that key before this routing, and no later entry with that key inside the origin's OWN array — R10 says last-in-array, so an earlier index is stale even when the later entry carries an identical value, because the origin promises the exact Decision observed and not an equivalent payload; origin is null exactly for a static step; and a miss must have been POSSIBLE — with a spec, a STRING value that is a declared map key was matched, and an unmapped STRING on a route declaring a default was defaulted (R7), so neither may be recorded as a miss, while a NON-STRING value is always a miss under R9 whether or not a default is declared, since it is never coerced; (T9) every ts and created_ts is a calendar-valid RFC 3339 UTC instant; (T10) replay capability only degrades: the terminal record's capability is equal to or weaker than the header's declared one (full > partial > none), and no constraint present in the declaration is absent from the final status — a run may discover it is less reproducible than it hoped, never more; (J1) values are strict RFC 8259, checked RECURSIVELY at every depth on the API path: non-finite numbers, non-string mapping keys, tuples and any non-JSON Python object are refused — and refused by the CLI parser for NaN/Infinity literals. — THE E-RULES (the execution state machine binding the trace to graph semantics; 'cancel/system-failure' below means: run_cancelled per T6, or run_failed with cause in {sink_failure, validation_failure, runner_internal}): (E1) the record after run_started is attempt_started(entry, 1), or cancel/system-failure — a run never completes without executing entry; (E2) after transition(returned, commit): routing(after = that node), or cancel/system-failure; (E3) after transition(raised, retry): attempt_started(same node, attempt + 1), or cancel/system-failure; (E4) after transition(raised, abort): run_failed(node_failure, failed_node = that node, record_seq = that transition's seq); (E5) transition(raised, continue) requires policy exploration, followed by routing(after = same node), or cancel/system-failure; (E6) after transition(cancelled, abort): run_cancelled with active_attempt null (the attempt closed itself cooperatively); (E7) after routing with outcome matched/default/static selecting node X: attempt_started(X, 1), or run_failed(transition_limit_exceeded, record_seq = that routing's seq), or cancel/system-failure; (E8) after routing selecting END with outcome matched/default/static: run_completed, or cancel/system-failure; (E9) after routing outcome miss: policy strict — run_failed(route_miss, record_seq = that routing's seq); policy exploration — run_completed (the miss is on record); or cancel/system-failure; (E10) attempt numbering: 1 at each routing-driven activation of a node, incremented only by E3 retries within the activation; (E11) admissibility of failure causes: node_failure only per E4; route_miss only per E9-strict; transition_limit_exceeded only per E7, and (spec available) only when the spec declares max_transitions and committed transitions reached it. — THE SB-RULES (spec binding, when validate_trace receives a GraphSpec): (SB1) run.graph.name, .version and .spec_schema_version equal the supplied spec's; (SB2) run.graph.graph_fingerprint equals the fingerprint RECOMPUTED over the supplied spec's canonical form per contract/README.md — a trace cannot claim one graph and be checked against another; code_fingerprint is NOT offline-verifiable without the runtime's node registry, an explicit limitation; (SB3) every transition's effect_class equals the spec node's declared class, or external_effect when undeclared; (SB4) each transition's violations list is TRUTHFUL: recomputed from the spec's reads_declared/writes_declared against EVERY captured read — no origin kind is exempt: an absent read is captured because a miss steers control flow, a scan read's key is the collection it swept, a header read's key is `intent` or the metadata key taken — and against every fact/decision write key, and must match exactly, no missing and no invented violations.",
   "type": "object",
   "required": [
@@ -13,7 +14,7 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0.0",
+      "enum": ["1.0.0", "1.1.0"],
       "description": "Version of THIS trace schema. Single-sourced in the package; a contract test asserts equality."
     },
     "run": {
@@ -28,6 +29,25 @@
       "description": "Append-only, ordered per T1–T3."
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"schema_version": {"const": "1.0.0"}},
+        "required": ["schema_version"]
+      },
+      "then": {
+        "allOf": [
+          {"properties": {"run": {"not": {"required": ["resume"]}}}},
+          {"properties": {"records": {"not": {"contains": {
+            "allOf": [
+              {"properties": {"kind": {"const": "transition"}}, "required": ["kind"]},
+              {"properties": {"effects": {"contains": {"required": ["receipt"]}}}, "required": ["effects"]}
+            ]
+          }}}}}
+        ]
+      }
+    }
+  ],
   "$defs": {
     "TraceHeader": {
       "type": "object",
@@ -39,12 +59,23 @@
       "properties": {
         "schema_version": {
           "type": "string",
-          "const": "1.0.0"
+          "enum": ["1.0.0", "1.1.0"]
         },
         "run": {
           "$ref": "#/$defs/RunHeader"
         }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"schema_version": {"const": "1.0.0"}},
+            "required": ["schema_version"]
+          },
+          "then": {
+            "properties": {"run": {"not": {"required": ["resume"]}}}
+          }
+        }
+      ],
       "description": "Line 1 of the JSONL encoding: this document minus records — so both encodings name the schema version that produced them."
     },
     "RunHeader": {
@@ -154,6 +185,18 @@
         },
         "created_ts": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "resume": {
+          "type": "object",
+          "required": ["source_run_id", "source_seq", "start_node", "bundle_fingerprint"],
+          "additionalProperties": false,
+          "properties": {
+            "source_run_id": {"type": "string", "minLength": 1},
+            "source_seq": {"type": "integer", "minimum": 0},
+            "start_node": {"type": "string", "minLength": 1},
+            "bundle_fingerprint": {"type": "string", "pattern": "^bundle:sha256:[0-9a-f]{64}$"}
+          },
+          "description": "Motus 0.6 resume provenance. A resumed segment is a new run linked to immutable prior evidence."
         }
       }
     },
@@ -583,7 +626,7 @@
           "items": {
             "$ref": "#/$defs/EffectDescriptor"
           },
-          "description": "Per-effect descriptions (node-protocol.md §4). v1.0 records description only; receipts and reuse-on-replay are additive in schema 1.1 (Motus 0.6). For raised/cancelled attempts this list is best-effort: effects the runtime observed before the interruption."
+          "description": "Per-effect evidence (node-protocol.md §4). Schema 1.1 adds adapter-supplied receipts for Motus 0.6 replay and resume. For raised/cancelled attempts this list is best-effort: effects the runtime observed before the interruption."
         },
         "context_draws": {
           "type": "array",
@@ -630,7 +673,7 @@
               }
             }
           },
-          "description": "Declared-vs-captured mismatches (node-protocol.md §3.2). Recorded in v1.0; enforcement is version-gated to 0.6."
+          "description": "Declared-vs-captured mismatches (node-protocol.md §3.2). Motus 0.6 fails strict attempts before commit and records the captured violation; exploration records and continues."
         },
         "error": {
           "oneOf": [
@@ -1319,9 +1362,26 @@
               "type": "null"
             }
           ],
-          "description": "Required for external_effect once effect enforcement lands (0.7); optional and recorded-only in v1.0."
+          "description": "A non-empty key plus a completed receipt is required before Motus 0.6 will resume past an observed external effect."
+        },
+        "receipt": {
+          "$ref": "#/$defs/EffectReceipt"
         }
       }
+    },
+    "EffectReceipt": {
+      "type": "object",
+      "required": ["receipt_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "receipt_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["completed", "unknown"]},
+        "result_fingerprint": {
+          "type": "string",
+          "pattern": "^effect:sha256:[0-9a-f]{64}$"
+        }
+      },
+      "description": "Adapter-supplied effect evidence. Recorded by Motus, never upgraded into an exactly-once claim."
     },
     "Value": {
       "oneOf": [

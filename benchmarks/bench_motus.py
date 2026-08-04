@@ -1,4 +1,4 @@
-"""Motus 0.5 benchmark using the guarantees.md section 3 method.
+"""Motus 0.6 benchmark using the guarantees.md section 3 method.
 
 It intentionally emits the field shape consumed by ``check_slo_baseline.py``
 without pretending that Motus trace records are Axis events.  In particular,
@@ -68,7 +68,7 @@ def make_runtime(size: int, *, realistic: bool = False):
     document = {
         "schema_version": "1.0.0",
         "name": f"motus-bench-{size}",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "entry": names[0],
         "nodes": [
             {

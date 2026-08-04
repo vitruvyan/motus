@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -11,10 +12,14 @@ import pytest
 
 from benchmarks.check_slo_baseline import (
     DEFAULT_BASELINE,
+    DEFAULT_CANDIDATE,
     DEFAULT_GUARANTEES,
     GateError,
+    MOTUS_CANDIDATE_TARGETS,
+    MOTUS_CANDIDATE_TOLERANCE,
     SloRow,
     load_document,
+    recomputed_stat,
     run_gate,
     validate_document,
 )
@@ -51,7 +56,7 @@ def test_candidate_mode_enforces_target_plus_tolerance():
     candidate = load_document(DEFAULT_BASELINE)
     candidate = copy.deepcopy(candidate)
     attestation = {
-        "runtime": "vitruvyan-motus/0.5.0",
+        "runtime": "vitruvyan-motus/0.6.0",
         "cpu_model": "AMD EPYC test fixture",
         "platform_system": "Linux",
         "machine": "x86_64",
@@ -80,6 +85,59 @@ def test_candidate_mode_enforces_target_plus_tolerance():
     strict = SloRow("x", "strict", 10.0, 12.5, 0.25, strict=True)
     assert inclusive.passes
     assert not strict.passes
+
+
+def test_committed_motus_candidate_passes_its_characterized_profile():
+    results = dict(
+        run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, DEFAULT_CANDIDATE)
+    )
+
+    assert results["Candidate Per-node overhead"] == "PASS"
+    assert results["Candidate 100-node no-op"] == "PASS"
+    assert results["Candidate Trace serialization"] == "PASS"
+    assert results["Candidate Superlinear accumulation"] == "PASS"
+    assert results["Candidate trace completeness"] == "PASS"
+
+
+def test_candidate_gate_recomputes_and_rejects_a_real_timing_regression(tmp_path):
+    candidate = copy.deepcopy(load_document(DEFAULT_CANDIDATE))
+    samples = []
+    for run in candidate["runs"]:
+        measurement = run["3_runner_realistic"]["1000"]
+        measurement["us_per_node_min"] *= 2
+        samples.append(measurement["us_per_node_min"])
+    candidate["summary"]["realistic_1000_us_per_node_min"] = recomputed_stat(
+        samples
+    )
+    slowed = tmp_path / "slowed-candidate.json"
+    slowed.write_text(json.dumps(candidate), encoding="utf-8")
+
+    with pytest.raises(GateError, match="candidate misses target-plus-tolerance"):
+        run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, slowed)
+
+
+def test_candidate_gate_rejects_a_different_cpu_profile():
+    candidate = copy.deepcopy(load_document(DEFAULT_CANDIDATE))
+    candidate["env"]["cpu_model"] = "not the characterized runner"
+
+    with pytest.raises(GateError, match="AMD EPYC"):
+        validate_document(candidate, name="wrong runner", runtime_kind="motus")
+
+
+@pytest.mark.parametrize("key", sorted(MOTUS_CANDIDATE_TARGETS))
+def test_motus_candidate_profile_rejects_a_regression_beyond_its_ceiling(key):
+    target = MOTUS_CANDIDATE_TARGETS[key]
+    strict = key == "superlinear"
+    row = SloRow(
+        key,
+        key,
+        target,
+        target * (1 + MOTUS_CANDIDATE_TOLERANCE) + 1e-9,
+        MOTUS_CANDIDATE_TOLERANCE,
+        strict=strict,
+    )
+
+    assert not row.passes
 
 
 def test_non_finite_json_is_not_benchmark_evidence(tmp_path):

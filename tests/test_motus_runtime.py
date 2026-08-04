@@ -207,7 +207,7 @@ def test_declaration_violations_are_recomputed_from_every_captured_surface():
         [{"name": "probes", "reads_declared": [], "writes_declared": []}],
         {"probes": {"kind": "terminal"}},
     )
-    result = Runtime(spec, {"probes": probes}).run(
+    result = Runtime(spec, {"probes": probes}, policy=Policy.EXPLORATION).run(
         State.empty(metadata={"actor": "davide"}), run_id="declarations"
     )
     transition = next(record for record in result.trace.records if record["kind"] == "transition")

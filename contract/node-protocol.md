@@ -92,10 +92,9 @@ metadata key taken. A node that touched something undeclared owes a violation
 for it whatever shape the touch had. (Cross-review v3 found `absent`, `scan`
 and `header` reads exempted, which let a node probe an undeclared key and
 still publish an empty violations list — a declaration that covers three
-quarters of the reads is not a declaration.) In v1.0 (Motus 0.5) mismatches
-are **recorded only** — enforcement (an undeclared write failing the node
-under `strict`) is version-gated to 0.6 with the rest of declaration
-enforcement, per the approved 0.5 exclusions.
+quarters of the reads is not a declaration.) In trace 1.0 / Motus 0.5,
+mismatches were recorded only. Motus 0.6 enforces captured mismatches under
+`strict` before commit; `exploration` records them and continues.
 
 3.3. A node MUST NOT read state through any channel that evades capture
 (direct attribute access on internals, closures over prior states). The
@@ -109,12 +108,17 @@ defaulted:
 | Class | Meaning | Obligations |
 |---|---|---|
 | `pure` | Output depends only on captured reads and context draws; no observable outside effect | MUST NOT perform I/O, mutate externals, or draw ambient nondeterminism. The claim is falsifiable: verify-replay (0.6) re-executes pure nodes and compares. |
-| `recorded_effect` | Performs reads of the outside world or model/tool calls whose *results* are the effect (LLM calls, HTTP GET, file reads) | SHOULD describe each effect in the transition record. Result values are recorded like any write. Receipts and reuse-on-replay arrive in 0.6 as additive schema. |
-| `external_effect` | Mutates something outside the run (writes a row, sends a message, POSTs) | Default class for any undeclared node — the conservative reading. SHOULD provide an idempotency key per effect; MUST once effect enforcement lands (0.7). **Delivery honesty (0.5): the runtime makes NO general delivery guarantee for external effects** beyond the explicitly configured retry policy of the attempt — at-least-once-with-idempotent-effects becomes a stated guarantee only in the release that ships effect log + receipts + resume, and exactly-once is promised in no version, ever. |
+| `recorded_effect` | Performs reads of the outside world or model/tool calls whose *results* are the effect (LLM calls, HTTP GET, file reads) | Records each effect through `RunContext.record_effect`. Result values are recorded like any write; an adapter receipt may be attached in trace schema 1.1. |
+| `external_effect` | Mutates something outside the run (writes a row, sends a message, POSTs) | Default class for any undeclared node — the conservative reading. Resume is permitted only with a non-empty idempotency key and completed receipt. The bounded claim is at-least-once under that idempotency contract; exactly-once is never promised. |
 
-4.2. Misclassification is not a crime the runtime can always detect in v1.0 —
+4.2. Misclassification is not a crime the runtime can always detect —
 but it is one the trace makes falsifiable over time (verify-replay for `pure`;
 effect enforcement for `external_effect`). Classify honestly or conservatively.
+
+4.3. Motus 0.6 receipts are opaque adapter assertions. Resume requires a
+completed receipt and non-empty idempotency key for every recorded external
+effect. `unknown` is evidence, not failure, but it blocks automatic resume.
+Exactly-once is never inferred.
 
 ## 5. Redaction
 

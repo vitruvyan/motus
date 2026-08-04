@@ -2,7 +2,7 @@
 
 This repository is the continuous history of Axis, now governed as
 **Vitruvyan Motus**. Axis v0.4.0 is the predecessor and compatibility source;
-Motus 0.5 is a trace-first graph runtime implemented inside an accepted
+Motus 0.6 is a trace-first graph runtime implemented inside an accepted
 contract.
 
 ## Authority order

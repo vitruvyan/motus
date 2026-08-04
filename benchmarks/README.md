@@ -33,3 +33,13 @@ The optional `--candidate FILE` mode enforces every target-plus-tolerance
 ceiling and 100% trace completeness against a separately characterized Motus
 profile. It must not be pointed at timings from an uncharacterized runner
 class; guarantees.md §3 requires five published runs for each profile first.
+
+The characterized Motus 0.6 profile is
+`candidate-v0.6.0-epyc-py310.json`: five GitHub-runner collections on Python
+3.10.12 and AMD EPYC 9V74. ADR-006 records its provenance and explains why
+its 3,002-record native trace has a separate regression target from the
+2,002-event Axis reference. Reproduce the release gate with:
+
+```console
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.0-epyc-py310.json
+```

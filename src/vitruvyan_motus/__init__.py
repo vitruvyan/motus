@@ -15,24 +15,28 @@ package is implemented inside it, never the other way around.
 # will diverge the day the schema goes a release without changing while
 # the runtime does, or the reverse — collapsing them into one constant is
 # exactly the version confusion the contract exists to make impossible.
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 #: Single-sourced trace schema version. Pinned equal to
 #: ``contract/trace.v1.schema.json``'s ``properties.schema_version.const``
 #: by ``tests/test_schema_version.py`` (contract/README.md, "One source per
 #: fact"; ADR-003 §Decision 2).
-TRACE_SCHEMA_VERSION = "1.0.0"
+TRACE_SCHEMA_VERSION = "1.1.0"
 
 from vitruvyan_motus.context import ContextDraw, ReplayStatus, RunContext
-from vitruvyan_motus.effects import EffectClass, EffectDescriptor
+from vitruvyan_motus.effects import EffectClass, EffectDescriptor, EffectReceipt
 from vitruvyan_motus.errors import (
     GraphSpecValidationError,
     GraphSpecViolation,
     MotusError,
     NodeFailed,
     SinkFailed,
+    ReplayError,
+    ReplayMismatch,
+    UnsafeResume,
+    DeclarationViolation,
 )
-from vitruvyan_motus.graph import GraphSpec, NodeDecl, Transition, TransitionKind
+from vitruvyan_motus.graph import CompiledPlan, GraphSpec, NodeDecl, Transition, TransitionKind
 from vitruvyan_motus.observers import (
     InMemoryTraceSink,
     Listener,
@@ -41,16 +45,19 @@ from vitruvyan_motus.observers import (
     TraceSink,
 )
 from vitruvyan_motus.runtime import DurabilityProfile, Policy, RunResult, Runtime
+from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Decision, Fact, RedactedValue, Rejection, Trace, redact
 
 __all__ = [
     "__version__", "TRACE_SCHEMA_VERSION",
     "ContextDraw", "ReplayStatus", "RunContext",
-    "EffectClass", "EffectDescriptor",
+    "EffectClass", "EffectDescriptor", "EffectReceipt",
     "MotusError", "GraphSpecViolation", "GraphSpecValidationError", "NodeFailed", "SinkFailed",
-    "GraphSpec", "NodeDecl", "Transition", "TransitionKind",
+    "ReplayError", "ReplayMismatch", "UnsafeResume", "DeclarationViolation",
+    "GraphSpec", "NodeDecl", "Transition", "TransitionKind", "CompiledPlan",
     "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "StreamDriver",
     "Policy", "DurabilityProfile", "RunResult", "Runtime",
+    "TraceBundle", "ReplayResult", "ReplayEngine",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
 ]
