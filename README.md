@@ -1,238 +1,165 @@
-# Vitruvyan Axis
+# Vitruvyan Motus
 
-**Epistemic orchestrator for auditable AI systems.**
+Motus is an embeddable, trace-first graph execution runtime. A run records
+what every node read, wrote and caused, including routing provenance, attempts,
+time, randomness and generated identifiers. The trace is execution evidence,
+not an after-the-fact log.
 
-Axis is a minimal kernel architected for regulated domains where audit trails are legally mandated. Unlike existing orchestrators (LangGraph), Axis provides immutability, non-intervening observation, and compliance readiness **by design**, not instrumentation.
+Motus is domain-neutral. It does not interpret facts, make epistemic claims,
+provide an agent framework or absorb Vitruvyan OS modules. Consumers build
+those layers above it.
 
-**Target domains:** Financial services (MiFID II), Healthcare AI (FDA 21 CFR Part 11), Legal reasoning (GDPR Article 22), Safety-critical systems.
+> Motus 0.5 is under active development. The contract is accepted; the native
+> runtime is implemented on the current development branch, while the
+> reference performance baseline and its CI candidate gate remain release
+> blockers. No PyPI publication is authorized yet.
 
-📄 **[Read the White Paper](docs/AXIS_WHITEPAPER.md)** — Complete technical overview, compliance mapping, and Vitruvyan integration strategy.
+## Why Motus
 
-[![License](https://img.shields.io/badge/license-TBD-blue.svg)](LICENSE)
+- Immutable state with write-boundary isolation and append-only history.
+- A validated `GraphSpec`; invalid topology never starts.
+- One interpreter and one execution semantics.
+- Causal routing: the trace identifies the exact decision it observed.
+- Transactional attempts: raised or cancelled attempts commit no writes.
+- Explicit replay capability and recorded `ctx.now()`, `ctx.rand()` and
+  `ctx.uuid()` draws.
+- Separate durable (`TraceSink`), live (`Listener`) and consumer-paced
+  (`StreamDriver`) observation surfaces.
+- Strict RFC 8259 values and structural redaction that preserves causality
+  without storing the secret.
+- A bounded Axis 0.4 compatibility view for Terraveler migration.
 
----
+## Install for development
 
-## Why Axis?
+```console
+python -m venv .venv
+.venv/bin/pip install -e ".[test]" -c constraints/test.txt
+```
 
-**Problem:** Existing orchestrators (LangGraph, LangChain) are built for rapid prototyping, not regulatory compliance. State mutability prevents guaranteed auditability. Mixed execution/interpretation layers obscure decision ownership. Audit trails require external instrumentation.
+On Windows, use `.venv\Scripts\python.exe` in place of `.venv/bin/python`.
+The `vitruvyan-motus` wheel has no runtime dependencies and contains only the
+`vitruvyan_motus` package; the historical `axis/` source tree is not shipped.
 
-**Solution:** Axis provides structural guarantees:
-- ✅ **Immutability:** Frozen dataclasses, append-only trace (no state corruption)
-- ✅ **Non-intervening observation:** Synaptic Bus is passive (observer cannot alter execution)
-- ✅ **Dual Memory Model:** Primary (execution truth) vs. Secondary (interpretation)
-- ✅ **Epistemic types:** Built-in structures for categories, patterns, constraints, violations
-- ✅ **MiFID II / EU AI Act ready:** Compliance is architectural, not added
-
-**Use Axis when:** Audit trails are legally required, immutability is non-negotiable, explainability must be built-in.
-
-**Use LangGraph when:** Rapid prototyping matters more than compliance.
-
----
-
-## What Axis IS
-
-- **GraphState**: Immutable cognitive trace (facts, decisions, rejections, events)
-- **Node**: Pure transformation protocol `(GraphState) -> GraphState`
-- **Runner**: Sequential execution with policy enforcement
-- **Policy**: Execution constraints (STRICT, EXPLORATION)
-- **Synaptic Bus**: Passive observational substrate (Phase 2.1)
-- **Epistemic Types**: Foundational structures for knowledge organization (Phase 2.2)
-- **Epistemic Protocols**: Interfaces for interpretation, validation, memory (Phase 2.2)
-
-## What Axis IS NOT
-
-- ❌ Not a product
-- ❌ Not an LLM orchestrator
-- ❌ Not a general agent framework
-- ❌ Not a workflow engine
-- ❌ Not a plugin system
-
----
-
-## Core Principles
-
-### Immutability
-State is never modified. Every transformation returns a new GraphState instance.
-
-### Explicitness
-No generic containers. Every piece of state has a named, typed field.
-
-### Simplicity
-Minimize abstraction. No hooks, no callbacks, no extensibility layers.
-
-### Rigidity
-The graph structure is defined at compile-time, not runtime.
-
----
-
-## Quick Start
-
-### Basic Example
+## Quick start
 
 ```python
-from datetime import datetime
-from state import GraphState, Fact
-from runner import GraphRunner
-from policy import Policy
+from vitruvyan_motus import Fact, GraphSpec, ReplayStatus, Runtime, State
 
-# Define a node (simple function)
-def add_observation(state: GraphState) -> GraphState:
-    fact = Fact(
-        key="temperature",
-        value=23.5,
-        timestamp=datetime.utcnow()
+
+def observe(state, ctx):
+    return state.with_fact(
+        Fact(
+            key="temperature_c",
+            value=23.5,
+            source="sensor:room-7",
+            ts=ctx.now(),
+        )
     )
-    return state.with_fact(fact)
 
-# Create runner
-runner = GraphRunner(
-    nodes=[add_observation],
-    policy=Policy.STRICT
+
+spec = GraphSpec.from_dict(
+    {
+        "schema_version": "1.0.0",
+        "name": "temperature-sample",
+        "version": "1.0.0",
+        "entry": "observe",
+        "nodes": [
+            {
+                "name": "observe",
+                "effect_class": "recorded_effect",
+                "writes_declared": ["temperature_c"],
+            }
+        ],
+        "transitions": {"observe": {"kind": "terminal"}},
+    }
 )
 
-# Execute
-initial = GraphState.empty("trace_001")
-final = runner.run(initial)
+result = Runtime(spec, {"observe": observe}).run(
+    State.empty("sample room 7"),
+    replay=ReplayStatus.declared("full"),
+)
 
-print(f"Facts: {len(final.facts)}")  # Facts: 1
+print(result.state.fact("temperature_c"))
+print(result.status, result.succeeded)
+print(result.trace.to_json())
 ```
 
-### Run Tests
+Nodes may have either `node(state)` or `node(state, ctx)` shape. Use the second
+when a reproducible run needs time, randomness or generated identifiers.
 
-```bash
-python3 tests/test_e2e.py
+## Native package surface
+
+The public surface is explicitly listed in `vitruvyan_motus.__all__`. Its main
+groups are:
+
+- topology: `GraphSpec`, `NodeDecl`, `Transition`;
+- execution: `Runtime`, `Policy`, `DurabilityProfile`, `RunResult`;
+- state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
+- evidence: `Trace`, `ReplayStatus`, `ContextDraw`;
+- observation: `TraceSink`, run-scoped `TraceRunSink`, `Listener`,
+  `StreamDriver`;
+- failures: `NodeFailed`, `SinkFailed`, `GraphSpecValidationError`.
+
+The native decision and the legacy type are deliberately unambiguous:
+
+```python
+from vitruvyan_motus import Decision
+from vitruvyan_motus.compat import LegacyDecision
 ```
 
----
+`vitruvyan_motus.compat` does not export a symbol named `Decision`.
 
-## Proof of Concept: Orchestrator
+Runtime configuration and its node registry are frozen after construction so
+the recorded fingerprints cannot diverge from the code and durability profile
+actually used. One Runtime may be reused sequentially; overlapping runs are
+refused. `Trace.to_dict()`, `.run` and `.records` return isolated values, so
+even low-level mutation of a returned object cannot alter the evidence.
 
-See [poc/](poc/) for a complete demonstration of an LLM orchestrator built on Axis.
+Node exception text is not copied into native trace v1: the trace records the
+exception type and a deterministic safe message, while `NodeFailed.cause`
+retains the original exception in process. This prevents an accidental secret
+inside `str(exc)` from becoming persisted evidence.
 
-The PoC demonstrates:
-- ✅ Routing decisions written to trace (no silent decisions)
-- ✅ Explicit rejection recording (know what paths were NOT taken)
-- ✅ Automatic explainability (generate explanations from trace)
-- ✅ Complete auditability (every decision, rejection, and fact recorded)
-- ✅ Real OpenAI integration with graceful fallback
+Redaction hashes are deterministic, unkeyed SHA-256 evidence. They prevent the
+content from entering the trace, but they do not hide equality and do not
+protect low-entropy values from offline guessing. Consumers needing that
+property must redact a keyed or salted token as the Value; changing the wire
+hash scheme itself requires a schema decision.
 
-**Run the demo:**
+Durable sinks are explicitly run-bound by ADR-004:
+`TraceSink.open_run(header)` returns a `TraceRunSink` that receives only that
+run's ordered record batches. A shared sink can therefore partition concurrent
+or sequential runs without out-of-band knowledge, and each persisted stream
+has both the header and records needed to reconstruct trace v1.
 
-```bash
-# Mock version (no API key needed)
-python3 poc/demo.py
+## Contract and verification
 
-# Real OpenAI integration
-cp .env.example .env  # Add your API key
-python3 poc/demo_openai.py
+The normative surfaces live in [`contract/`](contract/):
+
+- `graphspec.v1.schema.json` and R1-R12;
+- `trace.v1.schema.json` and T/E/SB/H/J/JSONL rules;
+- `node-protocol.md`;
+- `guarantees.md`.
+
+Run the suite and the executable contract validator with:
+
+```console
+python -m pytest tests/ -q
+python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
 ```
 
-**Key insight:** The orchestrator tells you not just **what** happened, but **why** (including what didn't happen and why not).
+Performance evidence and the remaining release gates are described in
+[`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md).
 
----
+## Repository history
 
-## Phase 2.1: Synaptic Bus
-
-See [docs/synaptic_bus.md](docs/synaptic_bus.md) for complete documentation.
-
-The **Axis Synaptic Bus** is a passive observational substrate that:
-- Observes completed Axis executions
-- Derives semantic signals from GraphState (1:1 mapping)
-- Notifies static observers (Orders)
-- **Never** influences execution or mutates Axis
-
-**Unidirectional:** `AXIS → BUS → ORDERS`
-
-**Run the demo:**
-
-```bash
-# Demonstrate Bus observation with example Orders
-python3 demo_synaptic_bus.py
-
-# Run test suite
-python3 tests/test_synaptic_bus.py
-```
-
----
-
-## Documentation
-
-- **[White Paper](docs/AXIS_WHITEPAPER.md)** — Complete technical overview and business case
-- [Architecture](docs/architecture.md) — Core concepts and design
-- [Synaptic Bus](docs/synaptic_bus.md) — Phase 2.1 observational substrate
-- [Epistemic Types](docs/epistemic_types.md) — Phase 2.2 knowledge organization
-- [API Reference](docs/api.md) — Complete API documentation
-- [Examples](docs/examples.md) — Usage patterns
-- [PoC README](poc/README.md) — Orchestrator demonstration
-
----
-
-## Installation
-
-```bash
-# Clone repository
-git clone https://github.com/vitruvyan/motus.git
-cd axis
-
-# Run tests
-python3 tests/test_e2e.py
-
-# Optional: For PoC with OpenAI
-pip install -r poc/requirements.txt
-```
-
----
-
-## Philosophy
-
-Axis is **minimal by design**. Every line of code exists for a reason. Every constraint serves a purpose. Every exclusion is deliberate.
-
-Axis is not a framework to be extended. It is a kernel to be composed.
-
-**Total core: ~200 lines of code.**
-
----
-
-## Project Status
-
-### Phase 1: Axis Core (Complete)
-- ✅ Core kernel: Complete (~200 lines)
-- ✅ Test suite: Complete (7 tests)
-- ✅ Documentation: Complete
-- ✅ Proof of concept: Complete (~550 lines)
-
-### Phase 2.1: Synaptic Bus (Complete)
-- ✅ Passive observational substrate (~200 lines)
-- ✅ 1:1 event derivation from GraphState
-- ✅ Test suite: Complete (8 tests)
-- ✅ Documentation: Complete
-- 📖 See [docs/synaptic_bus.md](docs/synaptic_bus.md)
-
-### Phase 2.2: Epistemic Types (Complete)
-- ✅ Foundational types: Category, Relation, Intent, Implication, Pattern, Constraint, Violation
-- ✅ Protocols: OntologyProvider, SemanticInterpreter, PatternDetector, ConstraintChecker, EpistemicMemory
-- ✅ Distilled from Vitruvyan Sacred Orders (8 months production experience)
-- 📖 See [axis/epistemic_types.py](axis/epistemic_types.py) and [axis/epistemic_protocols.py](axis/epistemic_protocols.py)
-
-### Phase 2.3+: In Design
-- 🔄 Concrete Order implementations (reference examples)
-- 🔄 Dual Memory Model integration
-- 🔄 MiFID II compliance patterns
-
----
+`axis/`, `orders/`, `poc/` and the older Axis documents remain byte-preserved
+historical evidence. They are not the Motus native runtime and are excluded
+from the wheel. Axis 0.4 remains independently pinnable for existing consumers
+until they explicitly migrate to `vitruvyan_motus.compat` or the native API.
 
 ## License
 
-[To be determined]
-
----
-
-## Contributing
-
-Axis accepts bug fixes but not feature additions. The kernel is intentionally minimal.
-
-To extend Axis, build orchestration layers **on top** of it (see `poc/` for an example).
-
----
-
-**Built with intention. Minimal by choice.**
+Vitruvyan Motus is licensed under the
+[Apache License 2.0](LICENSE). The license permits commercial and private use,
+modification and distribution subject to its notice and attribution terms.
