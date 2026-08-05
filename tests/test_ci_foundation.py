@@ -5,7 +5,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,61 @@ from tools.check_frozen_paths import (
     changed_paths,
     is_frozen_path,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_the_slo_gate_reads_its_runtime_identity_from_the_checkout(tmp_path):
+    """ADR-006 couples the version string to committed performance evidence:
+    ``bench_motus.py`` stamps ``f"vitruvyan-motus/{__version__}"`` and this gate
+    refuses a candidate whose runtime identity does not match.  So the gate has
+    to see the version the *checkout* declares.
+
+    The trap is that CI runs this gate on a bare interpreter — checkout,
+    setup-python, then straight to ``python benchmarks/check_slo_baseline.py``
+    with no install and no ``PYTHONPATH``.  An ``import vitruvyan_motus`` there
+    fails, and a fallback literal would freeze the identity at whatever version
+    was current when it was written: the release that bumps the version would
+    have its own fresh characterization rejected by its own gate.
+
+    This copies the gate next to a checkout declaring an impossible version and
+    runs it the way CI does.  If the identity is derived, it follows.
+    """
+    bench = tmp_path / "benchmarks"
+    bench.mkdir()
+    for name in ("check_slo_baseline.py", "collect_baseline.py"):
+        shutil.copy2(REPO_ROOT / "benchmarks" / name, bench / name)
+    package = tmp_path / "src" / "vitruvyan_motus"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text('__version__ = "9.9.9"\n', encoding="utf-8")
+
+    probe = subprocess.run(
+        [sys.executable, "-c", "import check_slo_baseline as g; print(g.MOTUS_RUNTIME_IDENTITY)"],
+        cwd=bench,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert probe.returncode == 0, probe.stderr
+    assert probe.stdout.strip() == "vitruvyan-motus/9.9.9", (
+        "the gate must read the version from the checkout it is run against, "
+        f"not from an installed package or a literal; got {probe.stdout.strip()!r}"
+    )
+
+
+def test_the_slo_gate_carries_no_frozen_version_literal():
+    """The sibling above proves the derivation works today.  This one keeps a
+    fallback from being reintroduced: any ``vitruvyan-motus/<version>`` literal
+    in the gate is the defect that test exists to catch, spelled out again."""
+    source = (REPO_ROOT / "benchmarks" / "check_slo_baseline.py").read_text(encoding="utf-8")
+
+    assert "vitruvyan-motus/0." not in source, (
+        "the SLO gate must not hardcode a runtime identity; derive it from "
+        "src/vitruvyan_motus/__init__.py so a version bump cannot invalidate "
+        "the characterization that bump requires"
+    )
 
 
 def test_reference_slo_evidence_reproduces_the_published_contract():

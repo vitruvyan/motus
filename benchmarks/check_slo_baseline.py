@@ -31,16 +31,34 @@ DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.1-epyc-py310.json"
 DEFAULT_GUARANTEES = ROOT / "contract" / "guarantees.md"
 MIN_RUNS = 5
 MOTUS_CANDIDATE_TOLERANCE = 0.25
-# Derived, never a literal: the collector stamps f"vitruvyan-motus/{__version__}"
-# and a version bump must not silently make characterization evidence
-# unacceptable to the gate that consumes it.
-try:  # package import under pytest; direct import when executed as a script
-    from vitruvyan_motus import __version__ as _MOTUS_VERSION
-except ImportError:  # pragma: no cover - a bare interpreter running the gate
-    _MOTUS_VERSION = None
-MOTUS_RUNTIME_IDENTITY = (
-    f"vitruvyan-motus/{_MOTUS_VERSION}" if _MOTUS_VERSION else "vitruvyan-motus/0.6.1"
-)
+
+
+def _declared_version() -> str:
+    """The version this checkout declares, read without importing it.
+
+    Derived, never a literal: the collector stamps
+    ``f"vitruvyan-motus/{__version__}"`` and a version bump must not silently
+    make characterization evidence unacceptable to the gate that consumes it.
+
+    Importing the package is not available on the path that matters.  CI runs
+    this gate on a bare interpreter — checkout, setup-python, and straight to
+    ``python benchmarks/check_slo_baseline.py``, with no install and no
+    ``PYTHONPATH`` — so an import here resolves only under pytest.  A gate that
+    reads the right version everywhere except the job that gates the release is
+    not derived at all; it is a literal wearing a fallback.
+    """
+    source = ROOT / "src" / "vitruvyan_motus" / "__init__.py"
+    match = re.search(
+        r'^__version__\s*[:=]\s*["\']([^"\']+)["\']',
+        source.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if match is None:
+        raise ValueError(f"no __version__ declaration found in {source}")
+    return match.group(1)
+
+
+MOTUS_RUNTIME_IDENTITY = f"vitruvyan-motus/{_declared_version()}"
 MOTUS_CANDIDATE_TARGETS = {
     "per_node": 45.0,
     "noop": 3.25,
