@@ -8,10 +8,10 @@ produce it:
    under `axis/` — checked structurally (the wheel's own file list) AND
    operationally (installed alone, in a venv that is not this checkout,
    `vitruvyan_motus` imports and `axis` does not);
-2. `axis` stays importable from the checkout regardless of what the wheel
-   contains — because that importability was never a packaging fact, it
-   is `python -m pytest` putting the repository root on `sys.path`
-   (verified directly against the current process, no assumption).
+2. the predecessor runtime is absent from the working tree entirely
+   (ADR-009), so claim 1's `axis`-is-not-importable guarantee now holds for
+   the stronger reason that there is nothing on disk to import — verified
+   directly against the current process, no assumption.
 
 Building a wheel here uses the same mechanism `pip install -e ".[test]"`
 already relies on in CI (build isolation fetching `setuptools>=68` per
@@ -21,6 +21,7 @@ a deterministic check of what that mechanism already requires to succeed.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 import venv
@@ -169,16 +170,15 @@ def test_installed_alone_motus_imports_and_axis_does_not(built_wheel, tmp_path):
     assert "No module named 'axis'" in axis_probe.stderr
 
 
-def test_axis_stays_importable_from_the_checkout():
-    """Not a packaging fact — a `python -m pytest` fact. This test running
-    at all, in this process, from this repository root, is the proof:
-    `axis` resolves from the checkout regardless of anything declared in
-    pyproject.toml, because the mechanism that finds it is CWD-on-sys.path,
-    never a pip install.
+def test_the_predecessor_runtime_is_absent_from_the_working_tree():
+    """ADR-009 removed `axis/`. Its sibling above still asserts the packaging
+    guarantee that matters — axis is not importable from a venv holding only
+    the Motus wheel — which is now true for the stronger reason that the
+    predecessor is not on disk at all. The byte-preserved artifact is the
+    `v0.6.1` tag; the pinnable distribution is `vitruvyan-axis` 0.4.0.
     """
-    import axis
-
-    assert Path(axis.__file__).resolve() == (REPO_ROOT / "axis" / "__init__.py")
+    assert not (REPO_ROOT / "axis").exists()
+    assert importlib.util.find_spec("axis") is None
 
 
 def test_importing_motus_pulls_no_third_party_module():

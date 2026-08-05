@@ -5,13 +5,13 @@
 # (ADR-001 §Decision 1), not a fork: the accepted contract in `contract/` is
 # unchanged, only the code that must satisfy it is new.
 #
-# `axis/` stays on disk, byte-identical, as the predecessor runtime the
-# frozen conformance corpora still run against until the compatibility
-# switch (ADR-001 §Decision 2) — it is evidence and history, not part of
-# this distribution. `where = ["src"]` below is what keeps it out of the
-# wheel; nothing in the test suite depends on axis being pip-installed, only
-# on it being importable from the checkout, which `python -m pytest`
-# provides for free by putting the repository root on `sys.path`.
+# `axis/` is gone from the working tree (ADR-009). The compatibility switch
+# it was waiting for (ADR-001 §Decision 2, executed by ADR-003) happened:
+# both frozen corpora resolve through `tests/contract/kernel.py` to
+# `vitruvyan_motus.compat`, not to the predecessor. The tag `v0.6.1` is the
+# byte-preserved artifact, and the `vitruvyan-axis` 0.4.0 distribution stays
+# independently pinnable for consumers who have not migrated. `where =
+# ["src"]` below is still what defines the wheel: one package, no history.
 #
 # Apache-2.0 is the founder-approved license for Motus. PyPI publication
 # remains a separate explicit release action.
