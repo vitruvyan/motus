@@ -1,7 +1,9 @@
 # ADR-011 — Making the sink protocol sufficient
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-05
+- **Accepted:** 2026-08-06 by the founder, after the adversarial round that
+  found two defects in the change and one false claim in this document.
 - **Authority:** founder direction; the 0.7 adoption track ("vai con B")
 - **Depends on:** ADR-004 (run-scoped TraceSink binding), ADR-010 §Open
 - **Amends:** ADR-004 §Decision — both the shape of `open_run`'s argument *and*
