@@ -61,7 +61,7 @@ def built_wheel(tmp_path_factory) -> Path:
 
 
 def test_wheel_is_named_for_the_declared_version(built_wheel):
-    assert built_wheel.name.startswith("vitruvyan_motus-0.6.0-")
+    assert built_wheel.name.startswith("vitruvyan_motus-0.6.1-")
 
 
 def test_wheel_contains_the_package_and_py_typed_but_not_axis(built_wheel):
@@ -105,7 +105,7 @@ def test_wheel_metadata_is_accurate_and_declares_zero_runtime_dependencies(
         f"dependencies, found: {unconditional}"
     )
     assert "Name: vitruvyan-motus" in metadata
-    assert "Version: 0.6.0" in metadata
+    assert "Version: 0.6.1" in metadata
     assert "License-Expression: Apache-2.0" in metadata
     assert "License-File: LICENSE" in metadata
     assert "Vitruvyan Motus" in metadata
@@ -154,7 +154,7 @@ def test_installed_alone_motus_imports_and_axis_does_not(built_wheel, tmp_path):
         cwd=str(tmp_path),
     )
     assert probe.returncode == 0, probe.stderr
-    assert "motus-ok 0.6.0" in probe.stdout
+    assert "motus-ok 0.6.1" in probe.stdout
 
     axis_probe = subprocess.run(
         [str(python), "-c", "import axis"],

@@ -14,7 +14,7 @@ from vitruvyan_motus.graph import GraphSpec
 from vitruvyan_motus.observers import InMemoryTraceSink
 from vitruvyan_motus.runtime import DurabilityProfile, Policy, Runtime
 from vitruvyan_motus.state import State
-from vitruvyan_motus.trace import Decision, Fact, redact
+from vitruvyan_motus.trace import Decision, Fact, Rejection, redact
 
 
 NOW = datetime(2026, 8, 4, tzinfo=timezone.utc)
@@ -235,6 +235,61 @@ def test_transition_limit_fails_at_the_refused_selection():
     result = Runtime(spec, {"loop": loop_or_end}).run(run_id="limit")
     assert result.trace.records[-1]["cause"]["kind"] == "transition_limit_exceeded"
     _assert_clean(result, spec)
+
+
+def test_transition_limit_also_bounds_exploration_failures():
+    def unavailable(state):
+        raise RuntimeError("dependency unavailable")
+
+    spec = _spec(
+        [{"name": "loop", "effect_class": "pure"}],
+        {"loop": {"kind": "route", "on": "route", "map": {"loop": "loop"}, "default": "END"}},
+        max_transitions=2,
+    )
+    initial = State.new("limit-failure", decisions=[Decision("route", "loop", NOW)])
+    result = Runtime(spec, {"loop": unavailable}, policy=Policy.EXPLORATION).run(initial)
+
+    assert result.status == "failed"
+    assert result.trace.records[-1]["cause"]["kind"] == "transition_limit_exceeded"
+    transitions = [record for record in result.trace.records if record["kind"] == "transition"]
+    assert [record["disposition"] for record in transitions] == ["continue", "continue"]
+    _assert_clean(result, spec)
+
+
+def test_evidence_free_rejection_remains_serializable_through_runtime():
+    def declines(state):
+        return state.with_rejection(Rejection("request", "not applicable", NOW))
+
+    spec = _spec([{"name": "decline", "effect_class": "pure"}], {"decline": {"kind": "terminal"}})
+    result = Runtime(spec, {"decline": declines}).run(run_id="rejection-without-evidence")
+
+    written = next(record for record in result.trace.records if record["kind"] == "transition")["writes"]["rejections"][0]
+    assert "evidence" not in written
+    result.trace.to_json()
+    result.trace.to_jsonl()
+    _assert_clean(result, spec)
+
+
+def test_pre_run_cancellation_is_consumed_without_executing_a_node():
+    executed = []
+
+    def node(state):
+        executed.append("node")
+        return state
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    runtime.cancel("shutdown before start")
+
+    cancelled = runtime.run(run_id="pre-cancelled")
+    assert cancelled.status == "cancelled"
+    assert executed == []
+    _assert_clean(cancelled, spec)
+
+    completed = runtime.run(run_id="after-pre-cancel")
+    assert completed.status == "completed"
+    assert executed == ["node"]
+    _assert_clean(completed, spec)
 
 
 def test_listener_failure_is_non_intervening_and_isolated():

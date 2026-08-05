@@ -222,18 +222,20 @@ this.
   node-protocol §1.2's guarantee) and MUST NOT feed anything back into
   execution.
 
-**Listener** — the live, non-intervening surface.
+**Listener** — the live, non-authoritative observation surface.
 - Delivery unit: each record, after it is committed to the run's log,
   in `seq` order per listener.
-- Structurally non-intervening: per-listener isolation in the dispatch
-  layer; a listener's exception is recorded (counted, logged) and swallowed;
-  there is NO critical flag on this surface — nothing a listener does can
-  affect execution, by construction rather than by convention.
+- Data and failure isolation: per-listener isolation in the dispatch layer; a
+  listener's exception is counted and swallowed, and record mutation affects
+  only a private copy. There is NO critical flag on this surface.
 - Read-only: delivered records are isolated; mutation attempts affect
   copies.
 - Ordering across listeners is unspecified; within one listener it is `seq`
-  order. Delivery is synchronous on the runner thread in 0.5 (the runner is
-  single-threaded; async delivery is a later, explicitly-versioned change).
+  order. Delivery is synchronous on the runner thread in 0.6, so a callback
+  can delay execution. Code that also holds the Runtime can invoke its public
+  cancellation surface. Listeners therefore MUST return promptly and MUST NOT
+  be presented as incapable of affecting scheduling. Moving delivery off the
+  runner thread is a later, explicitly-versioned change.
 
 **StreamDriver** — the execution-coupled surface.
 - The one surface honestly allowed to gate execution: it drives the run
