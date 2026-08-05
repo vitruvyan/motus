@@ -115,6 +115,14 @@ def _node_identity_parts(
     return static, material, opaque
 
 
+def _is_async_node(node: Callable[..., Any]) -> bool:
+    """Whether this callable produces an awaitable rather than a State."""
+    target = inspect.unwrap(node.func if isinstance(node, functools.partial) else node)
+    if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
+        target = inspect.unwrap(type(target).__call__)
+    return inspect.iscoroutinefunction(target)
+
+
 def _accepts_context(node: Callable[..., Any]) -> bool:
     signature = inspect.signature(node)
     positional = [
@@ -145,8 +153,16 @@ def _discard_awaitable(value: Any) -> None:
     boundary that encloses every call site.
     """
     closer = getattr(value, "close", None)
-    if callable(closer):
-        closer()
+    if not callable(closer):
+        return
+    result = closer()
+    if inspect.isawaitable(result):
+        # `async def close()` is the ordinary shape for async resources, and
+        # it hands back a coroutine this synchronous path cannot await.
+        # Closing that coroutine is what stops it complaining in turn.
+        inner = getattr(result, "close", None)
+        if callable(inner):
+            inner()
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,22 +215,29 @@ def _drive(
     ``StreamDriver`` — sees exactly the stream it always saw.
     """
     reply: Any = None
-    while True:
-        try:
-            item = machine.send(reply)
-        except StopIteration:
-            return
-        if type(item) is _Invoke:
+    try:
+        while True:
             try:
-                reply = invoke(item)
-            except BaseException as exc:
-                # Re-raise inside the machine so its `finally` runs at the
-                # same point a direct call would have raised.
-                machine.throw(exc)
-                raise
-            continue
-        reply = None
-        yield item
+                item = machine.send(reply)
+            except StopIteration:
+                return
+            if type(item) is _Invoke:
+                try:
+                    reply = invoke(item)
+                except BaseException as exc:
+                    # Re-raise inside the machine so its `finally` runs at the
+                    # same point a direct call would have raised.
+                    machine.throw(exc)
+                    raise
+                continue
+            reply = None
+            yield item
+    finally:
+        # Closing this driver must release the run it is driving. The async
+        # twin gets that from the loop's asyncgen finalisation; the
+        # synchronous one has to say so, or a caller that closes the driver
+        # strands the machine — and with it `_running` — forever.
+        machine.close()
 
 
 async def _invoke_async(request: _Invoke) -> tuple[Any, BaseException | None]:
@@ -358,6 +381,13 @@ class Runtime:
                 constraints.append(("partial", f"node:{name}:opaque_config"))
             if unavailable:
                 constraints.append(("partial", f"node:{name}:source_unavailable"))
+            if _is_async_node(self._nodes[name]):
+                # An async node is executable but not verify-replayable:
+                # `ReplayEngine.verify` and `resume` drive nodes
+                # synchronously. Invariant IV requires replay capability to be
+                # an explicit recorded property, so a run containing one may
+                # not silently keep a `full` claim it cannot honour.
+                constraints.append(("partial", f"node:{name}:async"))
         current_constraints = tuple(constraints)
         if changed or current_constraints != self._identity_constraints:
             self._code_fingerprint = (

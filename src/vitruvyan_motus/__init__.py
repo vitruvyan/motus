@@ -15,7 +15,7 @@ package is implemented inside it, never the other way around.
 # will diverge the day the schema goes a release without changing while
 # the runtime does, or the reverse — collapsing them into one constant is
 # exactly the version confusion the contract exists to make impossible.
-__version__ = "0.6.1"
+__version__ = "0.7.0.dev0"
 
 #: Single-sourced trace schema version. Pinned equal to
 #: ``contract/trace.v1.schema.json``'s ``properties.schema_version.const``
@@ -33,6 +33,7 @@ from vitruvyan_motus.errors import (
     SinkFailed,
     ReplayError,
     ReplayMismatch,
+    ReplayUnsupported,
     UnsafeResume,
     DeclarationViolation,
 )
@@ -55,7 +56,8 @@ __all__ = [
     "ContextDraw", "ReplayStatus", "RunContext",
     "EffectClass", "EffectDescriptor", "EffectReceipt",
     "MotusError", "GraphSpecViolation", "GraphSpecValidationError", "NodeFailed", "SinkFailed",
-    "ReplayError", "ReplayMismatch", "UnsafeResume", "DeclarationViolation",
+    "ReplayError", "ReplayMismatch", "ReplayUnsupported", "UnsafeResume",
+    "DeclarationViolation",
     "GraphSpec", "NodeDecl", "Transition", "TransitionKind", "CompiledPlan",
     "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "StreamDriver",
     "AsyncStreamDriver",

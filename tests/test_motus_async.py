@@ -29,6 +29,7 @@ from vitruvyan_motus import (
     InMemoryTraceSink,
     NodeFailed,
     Policy,
+    ReplayMismatch,
     Runtime,
     State,
 )
@@ -123,6 +124,19 @@ def _comparable(trace) -> dict:
     document["run"]["graph"]["code_fingerprint"] = "<pinned>"
     for record in document["records"]:
         record.pop("ts")
+        # Replay constraints derived from node IDENTITY are registry
+        # properties, not driver properties — exactly like code_fingerprint.
+        # An async node is executable but not verify-replayable, so it earns a
+        # `node:<name>:async` constraint the synchronous twin cannot have. The
+        # equivalence being asserted is of the state machine's decisions, and
+        # this is not one of them.
+        replay = record.get("replay")
+        if isinstance(replay, dict):
+            replay["constraints"] = [
+                c for c in replay["constraints"] if not c.endswith(":async")
+            ]
+            if not replay["constraints"] and replay["capability"] == "partial":
+                replay["capability"] = "<registry-derived>"
     return document
 
 
@@ -456,7 +470,7 @@ async def test_verify_refuses_an_async_node_instead_of_accusing_it_of_divergence
     Raising it for an async node — which ``verify`` simply cannot drive —
     would accuse unchanged code, and leak the coroutine besides."""
     from vitruvyan_motus import ReplayEngine, ReplayStatus, TraceBundle
-    from vitruvyan_motus.errors import ReplayError
+    from vitruvyan_motus.errors import ReplayError, ReplayUnsupported
 
     async def pure(state: State) -> State:
         await asyncio.sleep(0)
@@ -467,10 +481,14 @@ async def test_verify_refuses_an_async_node_instead_of_accusing_it_of_divergence
     )
     engine = ReplayEngine(TraceBundle(LINEAR, result.trace))
 
-    with pytest.raises(ReplayError) as raised:
+    with pytest.raises(ReplayUnsupported) as raised:
         engine.verify({"a": pure, "b": lambda s: s})
     assert "asynchronous" in str(raised.value)
-    assert type(raised.value).__name__ == "ReplayError"
+    # Distinct from ReplayMismatch on purpose: "this engine cannot drive the
+    # node" must be separable from "the recorded evidence and the code
+    # disagree", which is the contract's tampering/drift signal.
+    assert issubclass(ReplayUnsupported, ReplayError)
+    assert not isinstance(raised.value, ReplayMismatch)
 
 
 @pytest.mark.asyncio
