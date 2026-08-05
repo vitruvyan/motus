@@ -495,12 +495,13 @@ async def test_verify_refuses_an_async_node_instead_of_accusing_it_of_divergence
 
 @pytest.mark.asyncio
 async def test_a_stale_driver_cannot_cancel_a_run_that_is_still_starting():
-    """The run-scoped cancel keys on the identity of the per-run `_trace_ref`.
-    That identity must be published in the same critical section that claims
+    """The run-scoped cancel keys on the identity of the per-run handle. That
+    identity must be published in the same critical section that claims
     `_running`: assigning it after the controller, the hub and
     `motus_config()` evaluation would leave a window where `_running` names
-    the new run while `_trace_ref` still names the old one, and the scope test
+    the new run while the handle still names the old one, and the scope test
     would wave a stale driver through."""
+    from vitruvyan_motus.runtime import _RunHandle
     runtime = Runtime(LINEAR, {"a": lambda s: s, "b": lambda s: s})
     stale = runtime.astream(State.empty("first"), run_id="first")
     await stale.__anext__()
@@ -512,7 +513,7 @@ async def test_a_stale_driver_cannot_cancel_a_run_that_is_still_starting():
     with runtime._lifecycle_lock:
         runtime._running = True
         runtime._has_started = True
-        runtime._trace_ref = [None]
+        runtime._run = _RunHandle()
         window_verdict = scoped_cancel("stale context exit")
         runtime._running = False
         runtime._cancel_reason = None

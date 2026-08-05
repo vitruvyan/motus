@@ -30,6 +30,25 @@ def _iterator_is_finished(iterator: Any) -> bool:
     return True  # not a generator: assume the exception ended it
 
 
+def _iterator_is_running(iterator: Any) -> bool:
+    """Whether another caller is inside this generator right now.
+
+    Draining a generator someone else is executing does not cancel it — it
+    raises ("generator already executing" / "asynchronous generator is already
+    running") and leaves the run with no terminal record, which is strictly
+    worse than not draining at all.  The caller already inside will reach the
+    terminal; the cancellation is bound either way.
+
+    Both drivers ask the same question here deliberately.  This guard existed on
+    the asynchronous side only, and the synchronous side stranded runs for
+    exactly as long as the two were written separately.
+    """
+    for attribute in ("gi_running", "ag_running", "cr_running"):
+        if hasattr(iterator, attribute):
+            return bool(getattr(iterator, attribute))
+    return False
+
+
 @runtime_checkable
 class TraceRunSink(Protocol):
     """One run-scoped durable session receiving ordered record batches."""
@@ -256,7 +275,7 @@ class StreamDriver(Iterator[dict[str, Any]]):
     cancellation terminal, never the pending node attempt.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter")
+    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter", "_requested")
 
     def __init__(
         self,
@@ -267,6 +286,7 @@ class StreamDriver(Iterator[dict[str, Any]]):
         self._iterator = iterator
         self._cancel = cancel
         self._closed = False
+        self._requested = False
         self._trace_getter = trace_getter
 
     def __iter__(self) -> "StreamDriver":
@@ -294,7 +314,20 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def close(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:
             return
-        self._cancel(reason)
+        if not self._requested:
+            # The cancellation that actually stopped the run is the first one.
+            # A second close (a retry, or __exit__ after an explicit call) must
+            # not overwrite the reason the trace will attribute it to.
+            self._requested = True
+            self._cancel(reason)
+        if _iterator_is_running(self._iterator):
+            # Someone is inside this generator right now — a listener is
+            # delivered synchronously from within it, so a listener closing its
+            # own driver lands here. Draining would raise "generator already
+            # executing" and orphan the run with no terminal. The cancellation
+            # is bound; whoever is inside drives it to run_cancelled and closes
+            # this driver on the way out.
+            return
         try:
             while True:
                 next(self._iterator)
@@ -365,7 +398,7 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
             # must not overwrite the reason the trace will attribute it to.
             self._requested = True
             self._cancel(reason)
-        if getattr(self._iterator, "ag_running", False):
+        if _iterator_is_running(self._iterator):
             # A consumer is inside __anext__ right now — the graceful-shutdown
             # shape, where a supervisor closes a driver another task is
             # reading. Draining here would raise "asynchronous generator is
