@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Mapping
 
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.context import ReplayStatus, _RunController
@@ -23,7 +23,13 @@ from vitruvyan_motus.errors import (
     SinkFailed,
 )
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
-from vitruvyan_motus.observers import Listener, StreamDriver, TraceSink, _ObservationHub
+from vitruvyan_motus.observers import (
+    AsyncStreamDriver,
+    Listener,
+    StreamDriver,
+    TraceSink,
+    _ObservationHub,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Trace, _canonical_bytes, _strict_plain_json
 
@@ -109,6 +115,33 @@ def _node_identity_parts(
     return static, material, opaque
 
 
+def _is_async_node(node: Callable[..., Any]) -> bool:
+    """Whether this callable is statically known to produce an awaitable.
+
+    Every candidate is examined, not just the fully unwrapped one:
+    ``inspect.unwrap`` follows ``__wrapped__`` straight past the coroutine
+    function in the standard "asyncify a sync function" decorator, so asking
+    only the innermost target answers about the wrong callable. Async
+    generator functions count too — ``iscoroutinefunction`` is False for them,
+    while replay's own predicate refuses them, and the two must agree.
+
+    Statically unknowable shapes — a plain ``def`` that returns a coroutine —
+    are caught at the moment the runtime observes the awaitable instead.
+    """
+    candidates = [node]
+    inner = node.func if isinstance(node, functools.partial) else node
+    candidates.append(inner)
+    target = inspect.unwrap(inner)
+    candidates.append(target)
+    if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
+        call = type(target).__call__
+        candidates.extend((call, inspect.unwrap(call)))
+    return any(
+        inspect.iscoroutinefunction(candidate) or inspect.isasyncgenfunction(candidate)
+        for candidate in candidates
+    )
+
+
 def _accepts_context(node: Callable[..., Any]) -> bool:
     signature = inspect.signature(node)
     positional = [
@@ -128,6 +161,173 @@ def _accepts_context(node: Callable[..., Any]) -> bool:
         len(positional) == 2
         and positional[1].default is positional[1].empty
     )
+
+
+def _discard_awaitable(value: Any) -> None:
+    """Close an awaitable the runtime refuses, without letting it complain.
+
+    A coroutine that is never awaited emits an interpreter-level warning that
+    no consumer can act on, so the runtime closes what it declines. Cleanup
+    failures are the caller's to see; they surface through the node-failure
+    boundary that encloses every call site.
+    """
+    closer = getattr(value, "close", None)
+    if not callable(closer):
+        return
+    result = closer()
+    if inspect.isawaitable(result):
+        # `async def close()` is the ordinary shape for async resources, and
+        # it hands back a coroutine this synchronous path cannot await.
+        # Closing that coroutine is what stops it complaining in turn.
+        inner = getattr(result, "close", None)
+        if callable(inner):
+            inner()
+
+
+@dataclass(frozen=True, slots=True)
+class _Invoke:
+    """One request from the state machine to run one node.
+
+    The executor never calls a node itself: it asks, and a *driver* answers.
+    That inversion is what keeps guarantees.md invariant I true by
+    construction rather than by test — there is a single state machine, and
+    the synchronous and asynchronous drivers differ only in how they obtain
+    the node's result. No second engine exists to diverge from the first.
+    """
+
+    node: Callable[..., Any]
+    args: tuple[Any, ...]
+    name: str
+
+
+def _invoke_sync(request: _Invoke) -> tuple[Any, BaseException | None]:
+    """Answer one invocation request on the calling thread.
+
+    Only ``Exception`` is captured as node failure, exactly as a direct call
+    did: a ``BaseException`` must still tear the run down and leave the
+    ``attempt_started`` unclosed (node-protocol.md §7.3).
+    """
+    try:
+        returned = request.node(*request.args)
+        if inspect.isawaitable(returned):
+            # Inside the boundary on purpose: closing an awaitable can itself
+            # raise (a coroutine that swallows GeneratorExit raises
+            # RuntimeError), and that must be an ordinary node failure, not an
+            # escape that leaves the attempt unclosed as if the run had
+            # crashed (node-protocol §7.3).
+            _discard_awaitable(returned)
+            raise TypeError(
+                f"node {request.name!r} is asynchronous; drive it with "
+                "Runtime.arun() or Runtime.astream()"
+            )
+    except Exception as exc:  # noqa: BLE001 - this IS the node failure boundary
+        return None, exc
+    return returned, None
+
+
+def _drive(
+    machine: Iterator[Any], invoke: Callable[[_Invoke], tuple[Any, BaseException | None]]
+) -> Iterator[dict[str, Any]]:
+    """Advance the state machine, servicing its invocation requests.
+
+    Yields only trace records, so every consumer above this layer — including
+    ``StreamDriver`` — sees exactly the stream it always saw.
+    """
+    reply: Any = None
+    try:
+        while True:
+            try:
+                item = machine.send(reply)
+            except StopIteration:
+                return
+            if type(item) is _Invoke:
+                try:
+                    reply = invoke(item)
+                except BaseException as exc:
+                    # Re-raise inside the machine so its `finally` runs at the
+                    # same point a direct call would have raised.
+                    machine.throw(exc)
+                    raise
+                continue
+            reply = None
+            yield item
+    finally:
+        # Closing this driver must release the run it is driving. The async
+        # twin gets that from the loop's asyncgen finalisation; the
+        # synchronous one has to say so, or a caller that closes the driver
+        # strands the machine — and with it `_running` — forever.
+        machine.close()
+
+
+def _async_invoker(
+    observe: Callable[[str], None],
+) -> Callable[[_Invoke], Awaitable[tuple[Any, BaseException | None]]]:
+    """Bind the async invoker to the run that must record what it observes.
+
+    A plain ``def`` that returns a coroutine is async in every way that
+    matters and in no way a static predicate can see. The runtime does see
+    it — at the instant it decides to await — and invariant IV requires that
+    observation to reach the recorded replay capability rather than be
+    discarded.
+    """
+
+    async def invoke(request: _Invoke) -> tuple[Any, BaseException | None]:
+        try:
+            returned = request.node(*request.args)
+            if inspect.isawaitable(returned):
+                observe(request.name)
+                returned = await returned
+        except Exception as exc:  # noqa: BLE001 - the node failure boundary
+            return None, exc
+        return returned, None
+
+    return invoke
+
+
+async def _invoke_async(request: _Invoke) -> tuple[Any, BaseException | None]:
+    """Answer one invocation request, awaiting the node when it is awaitable.
+
+    A graph may mix shapes freely: an ordinary ``def`` node is called, an
+    ``async def`` node is awaited, and both produce the same transition
+    record. Only ``Exception`` is captured as node failure, matching
+    :func:`_invoke_sync`; ``asyncio.CancelledError`` is a ``BaseException``
+    and therefore tears the run down rather than becoming a raised attempt.
+    """
+    try:
+        returned = request.node(*request.args)
+        if inspect.isawaitable(returned):
+            returned = await returned
+    except Exception as exc:  # noqa: BLE001 - this IS the node failure boundary
+        return None, exc
+    return returned, None
+
+
+async def _adrive(
+    machine: Iterator[Any],
+    invoke: Callable[[_Invoke], Awaitable[tuple[Any, BaseException | None]]],
+) -> AsyncIterator[dict[str, Any]]:
+    """The asynchronous driver of the same synchronous state machine.
+
+    ``machine`` is the very generator :meth:`Runtime._execute` returns — not a
+    second implementation of it. Nothing here decides anything about
+    execution; it only awaits what the machine asked for and hands the answer
+    back, so the emitted record stream is the interpreter's, unchanged.
+    """
+    reply: Any = None
+    while True:
+        try:
+            item = machine.send(reply)
+        except StopIteration:
+            return
+        if type(item) is _Invoke:
+            try:
+                reply = await invoke(item)
+            except BaseException as exc:
+                machine.throw(exc)
+                raise
+            continue
+        reply = None
+        yield item
 
 
 class Runtime:
@@ -225,6 +425,13 @@ class Runtime:
                 constraints.append(("partial", f"node:{name}:opaque_config"))
             if unavailable:
                 constraints.append(("partial", f"node:{name}:source_unavailable"))
+            if _is_async_node(self._nodes[name]):
+                # An async node is executable but not verify-replayable:
+                # `ReplayEngine.verify` and `resume` drive nodes
+                # synchronously. Invariant IV requires replay capability to be
+                # an explicit recorded property, so a run containing one may
+                # not silently keep a `full` claim it cannot honour.
+                constraints.append(("partial", f"node:{name}:async"))
         current_constraints = tuple(constraints)
         if changed or current_constraints != self._identity_constraints:
             self._code_fingerprint = (
@@ -274,11 +481,11 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> RunResult:
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=self._plan.entry, resume_info=None,
         )
-        for _ in iterator:
+        for _ in _drive(machine, _invoke_sync):
             pass
         assert self._state is not None and self._trace is not None
         return RunResult(self._state, self._trace)
@@ -290,13 +497,89 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> StreamDriver:
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
-        return StreamDriver(iterator, self.cancel, lambda: trace_ref[0])
+        return StreamDriver(
+            _drive(machine, _invoke_sync),
+            self._run_scoped_cancel(trace_ref),
+            lambda: trace_ref[0],
+        )
+
+    def _async_invoker(self):
+        """The async invoker for the run in flight, wired to its controller."""
+        control = self._control
+        assert control is not None
+
+        def observe(name: str) -> None:
+            control.downgrade_many((("partial", f"node:{name}:async"),))
+
+        return _async_invoker(observe)
+
+    def _run_scoped_cancel(self, trace_ref: list[Trace | None]) -> Callable[[str], bool]:
+        """A cancellation that can only ever reach the run it was made for.
+
+        A driver outlives its run — an event loop finalising an abandoned
+        async generator ends the run without the driver noticing — and a bare
+        ``self.cancel`` would then bind to whatever run happens to be live.
+        ADR-008 §1 forbids exactly that: "an idle call ... cannot cancel a
+        later unrelated run." Each run gets a fresh ``_trace_ref``, so identity
+        of that list is the run's identity.
+        """
+
+        def cancel(reason: str) -> bool:
+            if self._trace_ref is not trace_ref:
+                return False
+            return self.cancel(reason)
+
+        return cancel
+
+    async def arun(
+        self,
+        state: State | None = None,
+        *,
+        run_id: str | None = None,
+        replay: ReplayStatus | None = None,
+    ) -> RunResult:
+        """Execute the graph, awaiting nodes that are awaitable.
+
+        The same state machine as :meth:`run`, driven asynchronously. Nodes may
+        be ``def`` or ``async def`` in any mixture; the resulting trace is the
+        one the interpreter produces either way. Execution remains single-lane
+        — one node at a time — because fan-out has no representation in
+        GraphSpec v1 (guarantees.md §5).
+        """
+        machine = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=False,
+            start_node=self._plan.entry, resume_info=None,
+        )
+        async for _ in _adrive(machine, self._async_invoker()):
+            pass
+        assert self._state is not None and self._trace is not None
+        return RunResult(self._state, self._trace)
+
+    def astream(
+        self,
+        state: State | None = None,
+        *,
+        run_id: str | None = None,
+        replay: ReplayStatus | None = None,
+    ) -> AsyncStreamDriver:
+        """Consumer-paced asynchronous execution, record by record."""
+        machine = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=True,
+            start_node=self._plan.entry, resume_info=None,
+        )
+        assert self._trace_ref is not None
+        trace_ref = self._trace_ref
+        return AsyncStreamDriver(
+            _adrive(machine, self._async_invoker()),
+            self._run_scoped_cancel(trace_ref),
+            lambda: trace_ref[0],
+        )
 
     def _start(
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
@@ -309,6 +592,13 @@ class Runtime:
             self._has_started = True
             self._cancel_reason = self._pending_cancel_reason
             self._pending_cancel_reason = None
+            # The new run's identity is published in the same critical section
+            # that claims `_running`. Assigning it later — after the controller,
+            # the hub, identity refresh and header construction, all of which
+            # run user code — would leave a window where `_running` describes
+            # this run while `_trace_ref` still names the previous one, and a
+            # stale driver's run-scoped cancel would pass its identity test.
+            self._trace_ref = [None]
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
@@ -358,7 +648,8 @@ class Runtime:
                     ),
                 }
             self._trace = Trace(header)
-            self._trace_ref = [self._trace]
+            assert self._trace_ref is not None
+            self._trace_ref[0] = self._trace
             self._hub.bind(self._trace.run)
             return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
         except BaseException:
@@ -561,16 +852,13 @@ class Runtime:
                 draw_cursor = self._control.draw_cursor()
                 effect_cursor = self._control.effect_cursor()
                 self._control.begin_effect_scope(declaration.effect_class.value)
-                error: BaseException | None = None
-                returned: State | None = None
-                try:
-                    node = self._nodes[current_node]
-                    if self._uses_context[current_node]:
-                        returned = node(attempt_state, self._control.node_context)
-                    else:
-                        returned = node(attempt_state)
-                except Exception as exc:
-                    error = exc
+                node = self._nodes[current_node]
+                arguments = (
+                    (attempt_state, self._control.node_context)
+                    if self._uses_context[current_node]
+                    else (attempt_state,)
+                )
+                returned, error = yield _Invoke(node, arguments, current_node)
                 transition_seq = self._control.next_seq()
                 writes = {"facts": [], "decisions": [], "rejections": []}
                 if error is None:
@@ -710,11 +998,11 @@ class Runtime:
         """Execute a causally linked resume segment (used by ReplayEngine)."""
         if start_node not in self._plan.declarations:
             raise ValueError(f"resume start node {start_node!r} is not declared")
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=start_node, resume_info=resume_info,
         )
-        for _ in iterator:
+        for _ in _drive(machine, _invoke_sync):
             pass
         assert self._state is not None and self._trace is not None
         return RunResult(self._state, self._trace)

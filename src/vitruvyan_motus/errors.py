@@ -29,6 +29,7 @@ __all__ = [
     "SinkFailed",
     "ReplayError",
     "ReplayMismatch",
+    "ReplayUnsupported",
     "UnsafeResume",
     "DeclarationViolation",
 ]
@@ -130,6 +131,16 @@ class ReplayMismatch(ReplayError):
         super().__init__(
             f"verify replay diverged at node {node!r}, record {record_seq}, field {field}"
         )
+
+
+class ReplayUnsupported(ReplayError):
+    """The replay engine cannot drive this node, and says so distinctly.
+
+    Not a divergence. ``ReplayMismatch`` means the recorded evidence and the
+    re-execution disagree — the contract's signal that the code changed. This
+    means the engine never got to compare, so a caller can separate "your
+    graph changed" from "this engine cannot re-execute an async node".
+    """
 
 
 class UnsafeResume(ReplayError):

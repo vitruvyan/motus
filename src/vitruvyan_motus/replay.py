@@ -10,13 +10,38 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from vitruvyan_motus.context import ReplayStatus, RunContext
-from vitruvyan_motus.errors import ReplayMismatch, UnsafeResume
+from vitruvyan_motus.errors import ReplayMismatch, ReplayUnsupported, UnsafeResume
 from vitruvyan_motus.graph import GraphSpec, TransitionKind
 from vitruvyan_motus.runtime import RunResult, Runtime
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Trace, _canonical_bytes
 
 __all__ = ["TraceBundle", "ReplayResult", "ReplayEngine"]
+
+
+def _is_asynchronous(value: Any) -> bool:
+    """Whether a node handed back something this synchronous path cannot drive.
+
+    ``inspect.isawaitable`` is False for an async *generator* object, so a
+    node written ``async def … yield`` would otherwise fall through to the
+    ``isinstance(returned, State)`` check and be reported as a divergence —
+    the contract's signal that the code changed — against code that did not.
+    """
+    return inspect.isawaitable(value) or inspect.isasyncgen(value)
+
+
+def _discard_unreplayable(value: Any) -> None:
+    """Close what verify declines, including an asynchronous ``close``."""
+    closer = getattr(value, "close", None)
+    if not callable(closer):
+        return
+    result = closer()
+    if inspect.isawaitable(result):
+        # `async def close()` hands back a coroutine we cannot await here;
+        # closing it is what stops it complaining about never being awaited.
+        inner = getattr(result, "close", None)
+        if callable(inner):
+            inner()
 
 
 def _assert_bundle_semantics(spec: GraphSpec, trace: Trace) -> None:
@@ -370,12 +395,30 @@ class ReplayEngine:
                 ]
                 returned = None
                 raised: BaseException | None = None
+                unreplayable = False
                 try:
                     returned = node(attempt, ctx) if len(positional) == 2 else node(attempt)
+                    if _is_asynchronous(returned):
+                        # Cleanup runs INSIDE the boundary: closing what we
+                        # decline can itself raise, and that must be an
+                        # ordinary re-execution failure rather than an
+                        # arbitrary exception escaping verify(). Only the
+                        # refusal itself is raised outside, because
+                        # ReplayMismatch and UnsafeResume are both
+                        # ReplayError subclasses — catching ReplayError here
+                        # would swallow a node's own failure as success.
+                        _discard_unreplayable(returned)
+                        unreplayable = True
                 except ReplayMismatch:
                     raise
                 except BaseException as exc:
                     raised = exc
+                if unreplayable and raised is None:
+                    raise ReplayUnsupported(
+                        f"pure node {record['node']!r} is asynchronous; "
+                        "verify replay drives nodes synchronously and "
+                        "cannot re-execute it"
+                    )
                 if record["outcome"] == "returned":
                     if raised is not None or not isinstance(returned, State):
                         raise ReplayMismatch(record["node"], record["seq"], "outcome") from raised
