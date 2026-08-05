@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import threading
+import time
 import weakref
 from datetime import datetime, timezone
 from typing import Any
@@ -416,3 +417,62 @@ async def test_an_aclose_whose_cancellation_is_rejected_does_not_disarm_the_driv
         f"aclose() ran the graph instead of cancelling it; nodes: {executed}"
     )
     assert executed == []
+
+
+def test_two_threads_closing_one_driver_cancel_it_exactly_once():
+    """`if not self._requested: cancel(); latch()` is check-then-act, and two
+    threads closing one driver is an ordinary supervisor shape.
+
+    Unserialised it loses twice: both reach `_cancel`, and `Runtime.cancel` is
+    last-writer-wins, so the trace names a request that did NOT stop the run;
+    and both reach the drain, so the loser's `next()` raises "generator already
+    executing" out of `close`, and therefore out of `__exit__`.
+
+    Deterministic rather than statistical: the first closer is held *inside*
+    `_cancel`, which is precisely the window, so the second closer arrives
+    while the latch is still unset.
+    """
+    runtime = Runtime(LINEAR, {"a": passthrough, "b": passthrough})
+    driver = runtime.stream(State.empty("concurrent"))
+    next(driver)
+
+    calls: list[str] = []
+    inside = threading.Event()
+    proceed = threading.Event()
+    bound_cancel = driver._cancel
+
+    def held_cancel(reason: str) -> Any:
+        calls.append(reason)
+        inside.set()
+        proceed.wait(5)
+        return bound_cancel(reason)
+
+    driver._cancel = held_cancel
+    escapes: list[BaseException] = []
+
+    def close_with(reason: str) -> None:
+        try:
+            driver.close(reason)
+        except BaseException as exc:
+            escapes.append(exc)
+
+    first = threading.Thread(target=close_with, args=("the one that stopped it",))
+    first.start()
+    assert inside.wait(5), "the first closer never reached _cancel"
+
+    second = threading.Thread(target=close_with, args=("the one that did not",))
+    second.start()
+    time.sleep(0.1)          # let the second closer reach the guard
+    proceed.set()
+    first.join(10)
+    second.join(10)
+
+    assert calls == ["the one that stopped it"], (
+        f"the cancellation was requested more than once: {calls}"
+    )
+    assert escapes == [], f"close() raised: {escapes}"
+    terminal = driver.trace.records[-1]
+    assert terminal["kind"] == "run_cancelled"
+    assert terminal["reason"] == "the one that stopped it", (
+        "the trace names a cancellation that did not stop the run"
+    )

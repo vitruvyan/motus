@@ -281,7 +281,7 @@ class StreamDriver(Iterator[dict[str, Any]]):
     # default.
     __slots__ = (
         "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
-        "__weakref__",
+        "_close_lock", "__weakref__",
     )
 
     def __init__(
@@ -294,6 +294,10 @@ class StreamDriver(Iterator[dict[str, Any]]):
         self._cancel = cancel
         self._closed = False
         self._requested = False
+        # Re-entrant: a listener is delivered synchronously from inside the
+        # generator this drain advances, so a listener closing its own driver
+        # re-enters `close` on the very thread already holding this.
+        self._close_lock = threading.RLock()
         self._trace_getter = trace_getter
 
     def __iter__(self) -> "StreamDriver":
@@ -321,35 +325,46 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def close(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:
             return
-        if not self._requested:
-            # The cancellation that actually stopped the run is the first one.
-            # A second close (a retry, or __exit__ after an explicit call) must
-            # not overwrite the reason the trace will attribute it to.
-            #
-            # The latch is set only once the cancellation has actually bound.
-            # Setting it first burns it on a call that never cancelled — a
-            # non-str reason, an interrupt landing between the two statements —
-            # and then the retry, or __exit__, skips the cancel and drains
-            # instead: `close` would execute every remaining node, performing
-            # their external effects, where guarantees.md §6 requires it to
-            # land a recorded run_cancelled.
-            self._cancel(reason)
-            self._requested = True
-        if _iterator_is_running(self._iterator):
-            # Someone is inside this generator right now — a listener is
-            # delivered synchronously from within it, so a listener closing its
-            # own driver lands here. Draining would raise "generator already
-            # executing" and orphan the run with no terminal. The cancellation
-            # is bound; whoever is inside drives it to run_cancelled and closes
-            # this driver on the way out.
-            return
-        try:
-            while True:
-                next(self._iterator)
-        except StopIteration:
-            pass
-        finally:
-            self._closed = True
+        # Serialised, not merely guarded. Two threads closing one driver is an
+        # ordinary supervisor shape, and a bare check-then-act loses twice:
+        # both reach `_cancel`, and `Runtime.cancel` is last-writer-wins, so the
+        # trace names a request that did not stop the run; and both reach the
+        # drain, so the loser's `next()` raises "generator already executing"
+        # out of `close`, and therefore out of `__exit__`.
+        with self._close_lock:
+            if self._closed:
+                return
+            if not self._requested:
+                # The cancellation that actually stopped the run is the first
+                # one. A second close (a retry, or __exit__ after an explicit
+                # call) must not overwrite the reason the trace attributes it
+                # to.
+                #
+                # The latch is set only once the cancellation has bound.
+                # Setting it first burns it on a call that never cancelled — a
+                # non-str reason, an interrupt landing between the two
+                # statements — and then the retry, or __exit__, skips the
+                # cancel and drains instead: `close` would execute every
+                # remaining node, performing their external effects, where
+                # guarantees.md §6 requires a recorded run_cancelled.
+                self._cancel(reason)
+                self._requested = True
+            if _iterator_is_running(self._iterator):
+                # Someone is inside this generator right now — a listener is
+                # delivered synchronously from within it, so a listener closing
+                # its own driver lands here, re-entering this lock on its own
+                # thread. Draining would raise "generator already executing"
+                # and orphan the run with no terminal. The cancellation is
+                # bound; whoever is inside drives it to run_cancelled and
+                # closes this driver on the way out.
+                return
+            try:
+                while True:
+                    next(self._iterator)
+            except StopIteration:
+                pass
+            finally:
+                self._closed = True
 
     def __enter__(self) -> "StreamDriver":
         return self
