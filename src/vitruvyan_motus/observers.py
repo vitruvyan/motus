@@ -226,7 +226,20 @@ class _ObservationHub:
             return
         assert self._run_sink is not None
         if self.profile in ("in-memory", "synchronous"):
-            self._run_sink.write((copy.deepcopy(record),))
+            try:
+                self._run_sink.write((copy.deepcopy(record),))
+            except BaseException as exc:
+                # Latch, exactly as the buffered path already does. A write
+                # that raised may still have committed — the canonical lost
+                # acknowledgement, which guarantees.md invariant II explicitly
+                # contemplates by naming replication. The runtime cannot tell,
+                # so it must not write to this session again: a retry that
+                # lands beside a record which did commit produces a duplicate
+                # `seq` and, on the terminal, one artifact asserting both that
+                # the run completed and that it failed. OPEN-08 licenses a
+                # truncated prefix; it does not license a corrupted suffix.
+                self._async_failure = exc
+                raise
             return
         with self._lock:
             if self._async_failure is not None:
@@ -261,10 +274,32 @@ class _ObservationHub:
                 self.listener_failures += 1
 
     def close(self) -> None:
-        """Stop background scheduling after a run has reached a terminal."""
+        """Stop background scheduling, and hand over what is still held.
+
+        Every terminal record force-flushes, so a run that reaches one leaves
+        nothing behind. A run that does *not* — a node raising ``BaseException``,
+        a cancelled task, an abandoned driver — used to arrive here with its
+        buffer full and have it discarded: the trace named 47 records, the sink
+        received 0, and the process was alive the whole time.
+
+        The buffered profile's declared loss window (``guarantees.md`` invariant
+        II) is about evidence lost *with the process*. ADR-008 §2 is explicit
+        that it "does not license silent loss while the process is alive", and
+        node-protocol §7.3 requires an interrupted attempt's unclosed
+        ``attempt_started`` to be visible evidence rather than an erased gap.
+
+        Best-effort: a sink that refuses here has already failed the run by
+        every path that cares, and a failure stored earlier is never retried —
+        that would be the retry-after-failure this class deliberately refuses.
+        """
         with self._lock:
-            self._closed = True
             self._cancel_timer_locked()
+            if self._async_failure is None:
+                try:
+                    self._flush_locked()
+                except BaseException:
+                    pass  # _flush_locked has already stored it
+            self._closed = True
 
 
 class StreamDriver(Iterator[dict[str, Any]]):
