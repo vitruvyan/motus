@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from benchmarks.check_slo_baseline import (
+    MOTUS_RUNTIME_IDENTITY,
     DEFAULT_BASELINE,
     DEFAULT_CANDIDATE,
     DEFAULT_GUARANTEES,
@@ -56,7 +57,7 @@ def test_candidate_mode_enforces_target_plus_tolerance():
     candidate = load_document(DEFAULT_BASELINE)
     candidate = copy.deepcopy(candidate)
     attestation = {
-        "runtime": "vitruvyan-motus/0.6.1",
+        "runtime": MOTUS_RUNTIME_IDENTITY,
         "cpu_model": "AMD EPYC test fixture",
         "platform_system": "Linux",
         "machine": "x86_64",

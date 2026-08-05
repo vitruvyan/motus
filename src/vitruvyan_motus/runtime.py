@@ -116,11 +116,30 @@ def _node_identity_parts(
 
 
 def _is_async_node(node: Callable[..., Any]) -> bool:
-    """Whether this callable produces an awaitable rather than a State."""
-    target = inspect.unwrap(node.func if isinstance(node, functools.partial) else node)
+    """Whether this callable is statically known to produce an awaitable.
+
+    Every candidate is examined, not just the fully unwrapped one:
+    ``inspect.unwrap`` follows ``__wrapped__`` straight past the coroutine
+    function in the standard "asyncify a sync function" decorator, so asking
+    only the innermost target answers about the wrong callable. Async
+    generator functions count too — ``iscoroutinefunction`` is False for them,
+    while replay's own predicate refuses them, and the two must agree.
+
+    Statically unknowable shapes — a plain ``def`` that returns a coroutine —
+    are caught at the moment the runtime observes the awaitable instead.
+    """
+    candidates = [node]
+    inner = node.func if isinstance(node, functools.partial) else node
+    candidates.append(inner)
+    target = inspect.unwrap(inner)
+    candidates.append(target)
     if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
-        target = inspect.unwrap(type(target).__call__)
-    return inspect.iscoroutinefunction(target)
+        call = type(target).__call__
+        candidates.extend((call, inspect.unwrap(call)))
+    return any(
+        inspect.iscoroutinefunction(candidate) or inspect.isasyncgenfunction(candidate)
+        for candidate in candidates
+    )
 
 
 def _accepts_context(node: Callable[..., Any]) -> bool:
@@ -238,6 +257,31 @@ def _drive(
         # synchronous one has to say so, or a caller that closes the driver
         # strands the machine — and with it `_running` — forever.
         machine.close()
+
+
+def _async_invoker(
+    observe: Callable[[str], None],
+) -> Callable[[_Invoke], Awaitable[tuple[Any, BaseException | None]]]:
+    """Bind the async invoker to the run that must record what it observes.
+
+    A plain ``def`` that returns a coroutine is async in every way that
+    matters and in no way a static predicate can see. The runtime does see
+    it — at the instant it decides to await — and invariant IV requires that
+    observation to reach the recorded replay capability rather than be
+    discarded.
+    """
+
+    async def invoke(request: _Invoke) -> tuple[Any, BaseException | None]:
+        try:
+            returned = request.node(*request.args)
+            if inspect.isawaitable(returned):
+                observe(request.name)
+                returned = await returned
+        except Exception as exc:  # noqa: BLE001 - the node failure boundary
+            return None, exc
+        return returned, None
+
+    return invoke
 
 
 async def _invoke_async(request: _Invoke) -> tuple[Any, BaseException | None]:
@@ -465,6 +509,16 @@ class Runtime:
             lambda: trace_ref[0],
         )
 
+    def _async_invoker(self):
+        """The async invoker for the run in flight, wired to its controller."""
+        control = self._control
+        assert control is not None
+
+        def observe(name: str) -> None:
+            control.downgrade_many((("partial", f"node:{name}:async"),))
+
+        return _async_invoker(observe)
+
     def _run_scoped_cancel(self, trace_ref: list[Trace | None]) -> Callable[[str], bool]:
         """A cancellation that can only ever reach the run it was made for.
 
@@ -502,7 +556,7 @@ class Runtime:
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=self._plan.entry, resume_info=None,
         )
-        async for _ in _adrive(machine, _invoke_async):
+        async for _ in _adrive(machine, self._async_invoker()):
             pass
         assert self._state is not None and self._trace is not None
         return RunResult(self._state, self._trace)
@@ -522,7 +576,7 @@ class Runtime:
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
         return AsyncStreamDriver(
-            _adrive(machine, _invoke_async),
+            _adrive(machine, self._async_invoker()),
             self._run_scoped_cancel(trace_ref),
             lambda: trace_ref[0],
         )

@@ -395,20 +395,25 @@ class ReplayEngine:
                 ]
                 returned = None
                 raised: BaseException | None = None
+                unreplayable = False
                 try:
                     returned = node(attempt, ctx) if len(positional) == 2 else node(attempt)
+                    if _is_asynchronous(returned):
+                        # Cleanup runs INSIDE the boundary: closing what we
+                        # decline can itself raise, and that must be an
+                        # ordinary re-execution failure rather than an
+                        # arbitrary exception escaping verify(). Only the
+                        # refusal itself is raised outside, because
+                        # ReplayMismatch and UnsafeResume are both
+                        # ReplayError subclasses — catching ReplayError here
+                        # would swallow a node's own failure as success.
+                        _discard_unreplayable(returned)
+                        unreplayable = True
                 except ReplayMismatch:
                     raise
                 except BaseException as exc:
                     raised = exc
-                if raised is None and _is_asynchronous(returned):
-                    # Refuse outside the boundary above, so this refusal cannot
-                    # be confused with a node that legitimately raised one of
-                    # the public replay errors — ReplayMismatch and
-                    # UnsafeResume are both ReplayError subclasses, so catching
-                    # ReplayError here would swallow a node's own failure and
-                    # report it as success.
-                    _discard_unreplayable(returned)
+                if unreplayable and raised is None:
                     raise ReplayUnsupported(
                         f"pure node {record['node']!r} is asynchronous; "
                         "verify replay drives nodes synchronously and "

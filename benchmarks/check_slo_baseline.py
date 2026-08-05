@@ -31,6 +31,16 @@ DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.1-epyc-py310.json"
 DEFAULT_GUARANTEES = ROOT / "contract" / "guarantees.md"
 MIN_RUNS = 5
 MOTUS_CANDIDATE_TOLERANCE = 0.25
+# Derived, never a literal: the collector stamps f"vitruvyan-motus/{__version__}"
+# and a version bump must not silently make characterization evidence
+# unacceptable to the gate that consumes it.
+try:  # package import under pytest; direct import when executed as a script
+    from vitruvyan_motus import __version__ as _MOTUS_VERSION
+except ImportError:  # pragma: no cover - a bare interpreter running the gate
+    _MOTUS_VERSION = None
+MOTUS_RUNTIME_IDENTITY = (
+    f"vitruvyan-motus/{_MOTUS_VERSION}" if _MOTUS_VERSION else "vitruvyan-motus/0.6.1"
+)
 MOTUS_CANDIDATE_TARGETS = {
     "per_node": 45.0,
     "noop": 3.25,
@@ -148,8 +158,8 @@ def validate_document(
     require(environment.get("gc_enabled_during_runs") is True, f"{name}: GC must be enabled during runs")
     if runtime_kind == "motus":
         require(
-            environment.get("runtime") == "vitruvyan-motus/0.6.1",
-            f"{name}: runtime identity must be vitruvyan-motus/0.6.1",
+            environment.get("runtime") == MOTUS_RUNTIME_IDENTITY,
+            f"{name}: runtime identity must be {MOTUS_RUNTIME_IDENTITY}",
         )
         cpu_model = environment.get("cpu_model")
         require(

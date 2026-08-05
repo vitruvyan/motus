@@ -14,6 +14,7 @@ streams, byte for byte, once the declared nondeterminism sources are pinned.
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib.util
 import json
 import sys
@@ -30,6 +31,7 @@ from vitruvyan_motus import (
     NodeFailed,
     Policy,
     ReplayMismatch,
+    ReplayStatus,
     Runtime,
     State,
 )
@@ -574,6 +576,150 @@ async def test_the_recorded_cancellation_reason_is_the_one_that_stopped_the_run(
     await consumer
 
     assert driver.trace.records[-1]["reason"] == "the reason that stopped it"
+
+
+# --------------------------------------------------------------------------- #
+# Evidence-shape assertions                                                    #
+#                                                                              #
+# A mutation probe found that deleting two of the fixes above left this suite  #
+# green: it asserted behaviour thoroughly and the SHAPE OF THE EVIDENCE not at #
+# all. These are the assertions that were missing.                             #
+# --------------------------------------------------------------------------- #
+
+
+def module_level_sync(state: State) -> State:
+    return state
+
+
+async def module_level_async(state: State) -> State:
+    await asyncio.sleep(0)
+    return state
+
+
+def _sync_to_async(function):
+    @functools.wraps(function)
+    async def wrapper(state: State) -> State:
+        return function(state)
+    return wrapper
+
+
+wrapped_async = _sync_to_async(module_level_sync)
+
+
+def returns_a_coroutine(state: State) -> State:
+    return module_level_async(state)
+
+
+@pytest.mark.asyncio
+async def test_an_async_node_degrades_the_recorded_replay_capability():
+    """Invariant IV: replay capability is an explicit recorded property. An
+    async node is executable but not verify-replayable — `verify` refuses it
+    and `resume` cannot drive it — so a run containing one may not keep a
+    `full` claim it cannot honour."""
+    synchronous = Runtime(LINEAR, {"a": module_level_sync, "b": module_level_sync}).run(
+        State.empty("sync"), replay=ReplayStatus.declared("full")
+    )
+    assert synchronous.trace.records[-1]["replay"] == {
+        "capability": "full",
+        "constraints": [],
+    }
+
+    asynchronous = await Runtime(
+        LINEAR, {"a": module_level_async, "b": module_level_sync}
+    ).arun(State.empty("async"), replay=ReplayStatus.declared("full"))
+    terminal = asynchronous.trace.records[-1]["replay"]
+    assert terminal["capability"] == "partial"
+    assert "node:a:async" in terminal["constraints"]
+    assert validate.validate_trace(
+        asynchronous.trace.to_dict(), spec=LINEAR_DOC
+    ) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "node,expected",
+    [
+        pytest.param(module_level_async, True, id="async-def"),
+        pytest.param(wrapped_async, True, id="functools-wraps-asyncified"),
+        pytest.param(returns_a_coroutine, True, id="def-returning-a-coroutine"),
+        pytest.param(module_level_sync, False, id="plain-sync"),
+    ],
+)
+async def test_every_async_shape_reaches_the_recorded_capability(node, expected):
+    """`inspect.unwrap` walks straight past the coroutine function in the
+    standard asyncify decorator, and a plain `def` that returns a coroutine is
+    not statically knowable at all — so static detection alone is not enough
+    and the runtime also records what it observes."""
+    result = await Runtime(LINEAR, {"a": node, "b": module_level_sync}).arun(
+        State.empty("shapes"), replay=ReplayStatus.declared("full")
+    )
+    constraints = result.trace.records[-1]["replay"]["constraints"]
+    assert ("node:a:async" in constraints) is expected
+
+
+@pytest.mark.asyncio
+async def test_an_async_node_never_reached_still_constrains_the_run():
+    """Two nets guard this, and only one of them covers this case.
+
+    Observation at await time is precise but sees only what ran. Static
+    detection is conservative and sees the whole registry — which is what a
+    consumer holds when they ask whether this graph is replayable. A run that
+    could have taken the async branch is not fully verify-replayable evidence
+    of a graph that contains one.
+    """
+    result = await Runtime(
+        ROUTED,
+        {"classify": classify, "review": module_level_sync, "reject": module_level_async},
+    ).arun(State.empty("unreached"), replay=ReplayStatus.declared("full"))
+
+    executed = {r["node"] for r in result.trace.records if r["kind"] == "transition"}
+    assert "reject" not in executed, "the async node must not have run"
+    assert "node:reject:async" in result.trace.records[-1]["replay"]["constraints"]
+
+
+def test_closing_a_stream_driver_releases_the_run_it_drives():
+    """`_drive` wraps the state machine, so closing the driver must close the
+    machine — otherwise the run, and `_running` with it, is stranded. The async
+    twin gets this from the loop's generator finalisation; the synchronous one
+    has to say so."""
+    runtime = Runtime(LINEAR, {"a": module_level_sync, "b": module_level_sync})
+    driver = runtime.stream(State.empty("stranded"))
+    next(driver)
+    assert runtime._running is True
+
+    driver._iterator.close()
+
+    assert runtime._running is False
+    assert runtime.run(State.empty("after")).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_verify_survives_a_cleanup_that_raises():
+    """`verify` closes the awaitable it declines. That cleanup can itself
+    raise, and the failure must stay inside the re-execution boundary — an
+    arbitrary third-party exception escaping `verify()` would defeat
+    `except ReplayError` around it."""
+    from vitruvyan_motus import ReplayEngine, TraceBundle
+    from vitruvyan_motus.errors import ReplayError
+
+    class HostileAwaitable:
+        def __await__(self):
+            yield
+            return None
+
+        def close(self):
+            raise RuntimeError("cleanup refused")
+
+    def pure(state: State) -> State:
+        return HostileAwaitable()  # type: ignore[return-value]
+
+    result = await Runtime(
+        LINEAR, {"a": module_level_async, "b": module_level_sync}
+    ).arun(State.empty("hostile"))
+    engine = ReplayEngine(TraceBundle(LINEAR, result.trace))
+
+    with pytest.raises(ReplayError):
+        engine.verify({"a": pure, "b": module_level_sync})
 
 
 @pytest.mark.asyncio
