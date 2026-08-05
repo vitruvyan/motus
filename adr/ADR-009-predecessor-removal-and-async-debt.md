@@ -1,7 +1,10 @@
 # ADR-009 — Predecessor removal, and the undeclared async regression
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-05
+- **Accepted:** 2026-08-05 by the founder, after both decisions had been
+  executed and gated: the removal merged as `f5fcf84`, the asynchronous
+  execution §3 binds merged as `36bf25b`.
 - **Authority:** founder direction opening the 0.7 architecture phase
 - **Depends on:** ADR-001 (§Decision 2, the Axis→Motus rename-in-place),
   ADR-003 (§Decision, the one-time `tests/contract/kernel.py` switch)
@@ -121,6 +124,23 @@ reason the inversion is tried first.
 
 This clause binds the 0.7 design discussion. It does not authorise
 implementation, which is a separate scope decision.
+
+**Outcome, recorded after the fact.** The implementation decision was taken
+separately and the inversion was built and merged as `36bf25b`. The shape held:
+`_execute` yields an `_Invoke` request and receives `(returned, error)` back, so
+`run`/`stream` answer on the calling thread and `arun`/`astream` await — one
+state machine, two drivers of about twenty lines each. **The fallback this
+clause priced was not needed**: there is no second executor, so there is nothing
+for a differential harness to compare, and invariant I holds because no
+alternative path exists rather than because one is tested per release. The 439
+pre-existing tests passed with zero test edits, which is the evidence that the
+inversion changed how the machine is driven and not what it decides.
+
+Three adversarial rounds against the implementation found fifteen defects, all
+closed with regression tests and verified by a mutation probe reporting zero
+escapes. Two capabilities the async surface does not yet have are recorded as
+open work rather than as decisions: run-lifecycle coordination (#28) and the
+async twin of the replay surface (#29). Neither reopens this clause.
 
 ## Consequences
 
