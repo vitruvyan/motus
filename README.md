@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.6.0](https://github.com/vitruvyan/motus/releases/tag/v0.6.0)
+> **Current release:** [Motus 0.6.1](https://github.com/vitruvyan/motus/releases/tag/v0.6.1)
 >
 > Apache-2.0 · dependency-free runtime · source release · not yet published on PyPI
 
@@ -431,10 +431,15 @@ requires its own ADR and executable tests.
 
 ## Repository history
 
-`axis/`, `orders/`, `poc/`, and older Axis documents remain byte-preserved
-historical evidence. They are not the native Motus runtime and are excluded
-from the wheel. Axis 0.4 remains independently pinnable for existing consumers
-until they explicitly migrate to `vitruvyan_motus.compat` or the native API.
+The predecessor runtime and its satellites — `axis/`, `orders/`, `poc/`,
+`examples/` and the Axis-era planning documents — were removed from the
+working tree by ADR-009. They are not lost: the tag `v0.6.1` holds them
+byte-identical, and the `vitruvyan-axis` 0.4.0 distribution remains
+independently pinnable for consumers who have not yet migrated to
+`vitruvyan_motus.compat` or the native API. The compatibility surface those
+consumers depend on lives in `src/vitruvyan_motus/compat.py` and is exercised
+by the frozen corpora in `tests/compat/` and `tests/contract/`, which are
+unchanged.
 
 ## License
 

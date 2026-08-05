@@ -1,2 +1,0 @@
-# Optional: Install python-dotenv for .env file support
-pip install python-dotenv openai
