@@ -233,7 +233,13 @@ def test_a_hostile_run_id_cannot_escape_the_directory(tmp_path):
     ).run(State.empty("hostile"), run_id="../../escaped")
 
     artifact = sink.artifacts[0]
-    assert artifact.parent == target, f"the artifact escaped to {artifact}"
+    # The RESOLVED path, not the parent. Comparing `.parent` passes for a file
+    # that is a symlink pointing anywhere, and for a file that is not there at
+    # all -- which is exactly how the first version of this test missed a
+    # planted symlink redirecting the trace out of the directory.
+    assert artifact.resolve().parent == target.resolve(), (
+        f"the artifact escaped to {artifact.resolve()}"
+    )
     assert not (tmp_path.parent / "escaped.jsonl").exists()
     assert_valid(artifact)
 
@@ -277,3 +283,126 @@ def test_the_written_bytes_are_the_trace_the_runtime_would_have_written(tmp_path
     written = [json.loads(line) for line in sink.artifacts[0].read_text().splitlines()]
     expected = [json.loads(line) for line in result.trace.to_jsonl().splitlines()]
     assert written == expected
+
+
+def test_the_same_run_id_twice_keeps_both_accounts(tmp_path):
+    """A retried job keeping its job id is the ordinary case, and nothing in
+    the contract or the schema requires `run_id` to be unique. The path was a
+    pure function of it and the file was opened truncating, so the second run
+    destroyed the first — the precise failure this sink exists to prevent,
+    committed under a message saying so."""
+    sink = JsonlTraceSink(tmp_path, fsync=False)
+    for tag in ("first", "second"):
+        Runtime(
+            CHAIN, {"a": note, "b": passthrough, "c": passthrough},
+            sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+        ).run(State.empty(tag), run_id="job-4711")
+
+    assert len(set(sink.artifacts)) == 2, (
+        f"one run overwrote the other: {sink.artifacts}"
+    )
+    intents = sorted(assert_valid(path)["run"]["metadata"].get("intent", "")
+                     or assert_valid(path)["records"][0]["kind"] for path in sink.artifacts)
+    assert len(intents) == 2
+    for path in sink.artifacts:
+        assert assert_valid(path)["run"]["run_id"] == "job-4711"
+
+
+def test_two_live_runs_on_one_run_id_do_not_share_a_document(tmp_path):
+    """Interleaved, single-threaded, public API only. The second session used
+    to write into the first one's file — publishing one document that asserted
+    two runs, and that `contract/validate.py` rejects as malformed JSON."""
+    sink = JsonlTraceSink(tmp_path, fsync=False)
+    nodes = {"a": note, "b": passthrough, "c": passthrough}
+
+    left = Runtime(CHAIN, nodes, sink=sink,
+                   durability_profile=DurabilityProfile.SYNCHRONOUS)
+    right = Runtime(CHAIN, nodes, sink=sink,
+                    durability_profile=DurabilityProfile.SYNCHRONOUS)
+
+    a = left.stream(State.empty("left"), run_id="shared")
+    b = right.stream(State.empty("right"), run_id="shared")
+    next(a); next(b); next(a); next(b)
+    a.close("left done"); b.close("right done")
+
+    assert len(set(sink.artifacts)) == 2
+    for path in sink.artifacts:
+        assert_valid(path)
+
+
+def test_a_planted_symlink_cannot_redirect_the_trace(tmp_path):
+    """The in-flight name is an unsalted, fully computable function of
+    `run_id`, so anyone who can write to the sink directory can predict it.
+    Following a symlink there would let them choose where the evidence lands,
+    and truncate whatever is at the far end.
+
+    `guarantees.md` §5 requires the file sink to prevent path traversal.
+    """
+    sink_dir = tmp_path / "sink"
+    sink_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "victim.txt"
+    victim.write_text("EVIDENCE FROM AN EARLIER RUN\n", encoding="utf-8")
+
+    sink = JsonlTraceSink(sink_dir, fsync=False)
+    # Plant the link at the name the next run will use.
+    from vitruvyan_motus.sinks import _file_stem
+    (sink_dir / f"{_file_stem('nightly')}.jsonl.part").symlink_to(victim)
+
+    Runtime(
+        CHAIN, {"a": note, "b": passthrough, "c": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).run(State.empty("nightly"), run_id="nightly")
+
+    assert victim.read_text(encoding="utf-8") == "EVIDENCE FROM AN EARLIER RUN\n", (
+        "the trace was written through a planted symlink"
+    )
+    artifact = sink.artifacts[0]
+    assert artifact.resolve().parent == sink_dir.resolve()
+    assert not artifact.is_symlink()
+    assert_valid(artifact)
+
+
+def test_the_file_bytes_are_the_writer_s_own_encoding(tmp_path):
+    """Parsing to the same document is not the same as being the same bytes.
+    A durable artifact that cannot be compared byte-for-byte against
+    `Trace.to_jsonl()` is not reproducible against the writer, and the default
+    separators cost about a tenth of every file."""
+    sink = JsonlTraceSink(tmp_path, fsync=False)
+    result = Runtime(
+        CHAIN, {"a": note, "b": passthrough, "c": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).run(State.empty("bytes"), run_id="bytes-exact")
+
+    assert sink.artifacts[0].read_text(encoding="utf-8") == result.trace.to_jsonl()
+
+
+def test_a_publish_that_fails_is_not_reported_as_published(tmp_path):
+    """`complete` and "where the file is" are different facts. Setting the
+    first before the rename, and never recording that the rename failed, made
+    the accessor name a file that is not there — on the ordinary success path,
+    for a run that returned a RunResult."""
+    import os
+
+    sink_dir = tmp_path / "sink"
+    sink = JsonlTraceSink(sink_dir, fsync=False)
+    runtime = Runtime(
+        CHAIN, {"a": note, "b": passthrough, "c": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+    driver = runtime.stream(State.empty("locked"), run_id="locked")
+    next(driver)
+    os.chmod(sink_dir, 0o500)          # publishing can no longer create a name
+    try:
+        driver.close("stop")
+    finally:
+        os.chmod(sink_dir, 0o700)
+
+    session = sink.sessions[0]
+    # A cancelled run HAS a terminal record, so the account is whole -- the
+    # sink simply could not put it under its final name.
+    assert session.complete is True, "what the runtime said must still be recorded"
+    assert session.published is None, "nothing was published, and it must say so"
+    for path in sink.artifacts:
+        assert path.exists(), f"the sink named a file that is not there: {path}"

@@ -41,30 +41,92 @@ def _file_stem(run_id: str) -> str:
     return f"{safe}-{digest}"
 
 
+def _sync_directory(directory: Path) -> None:
+    """Commit a directory entry, which ``fsync`` on the file does not.
+
+    Creating a file and renaming it are both directory operations. A sink that
+    syncs only the data has bought half of what the ``synchronous`` profile
+    promises: the bytes survive, the name they are published under may not.
+    """
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass  # not every filesystem permits it; the data sync already happened
+    finally:
+        os.close(descriptor)
+
+
 class _JsonlRunSession:
     """One run's file. Written as it goes, named for what it turned out to be."""
 
     __slots__ = ("path", "partial_path", "pending_path", "_handle", "_lock",
-                 "_records", "_fsync", "complete")
+                 "_records", "_fsync", "_directory", "complete", "published")
 
     def __init__(self, directory: Path, header: dict[str, Any], *, fsync: bool) -> None:
-        stem = _file_stem(header["run"]["run_id"])
-        self.path = directory / f"{stem}.jsonl"
-        self.partial_path = directory / f"{stem}.partial.jsonl"
-        # Written under a third name throughout. A process that dies mid-run
-        # leaves `.part` behind, which is exactly what it is: a stream nobody
-        # ever declared finished. Neither of the other two names can appear
-        # unless the runtime said so.
-        self.pending_path = directory / f"{stem}.jsonl.part"
         self._lock = threading.Lock()
         self._records = 0
         self._fsync = fsync
+        self._directory = directory
         self.complete: bool | None = None
-        self._handle = open(self.pending_path, "w", encoding="utf-8")
-        self._emit(header)
+        self.published: Path | None = None
+
+        # Created exclusively, and never through a symlink. O_EXCL means this
+        # session owns a file no other session is holding: two runs sharing a
+        # run_id -- a retried job keeping its job id is the obvious case -- get
+        # two files instead of one truncating the other, and a second live run
+        # cannot interleave its records into the first one's document.
+        # O_NOFOLLOW refuses a symlink planted at this path: the name is a pure
+        # function of run_id and therefore fully predictable, so following one
+        # would let anyone who can write to the directory choose where the
+        # trace lands. guarantees.md section 5 requires containment.
+        stem = _file_stem(header["run"]["run_id"])
+        self._handle, chosen = self._create(stem)
+        self.path = directory / f"{chosen}.jsonl"
+        self.partial_path = directory / f"{chosen}.partial.jsonl"
+        # A third name throughout: a process that dies mid-run leaves `.part`,
+        # which is exactly what it is -- a stream nobody ever declared over.
+        self.pending_path = directory / f"{chosen}.jsonl.part"
+        try:
+            self._emit(header)
+            if fsync:
+                _sync_directory(directory)
+        except BaseException:
+            self._handle.close()
+            raise
+
+    def _create(self, stem: str):
+        """Claim an unused name, and prove the file we opened is really ours."""
+        for attempt in range(1, 1000):
+            candidate = stem if attempt == 1 else f"{stem}-{attempt}"
+            target = self._directory / f"{candidate}.jsonl.part"
+            try:
+                descriptor = os.open(
+                    target,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                )
+            except FileExistsError:
+                continue
+            handle = os.fdopen(descriptor, "w", encoding="utf-8")
+            # Belt and braces: O_EXCL|O_NOFOLLOW already refuses a planted
+            # link, but containment is a contract property and asserting it on
+            # the RESOLVED path is the only check that cannot be fooled --
+            # comparing `.parent` passes for a file that is not there at all.
+            resolved = target.resolve()
+            if resolved.parent != self._directory.resolve():
+                handle.close()
+                target.unlink(missing_ok=True)
+                raise OSError(f"refusing to write trace evidence outside {self._directory}")
+            return handle, candidate
+        raise OSError(f"cannot claim a free artifact name for {stem!r}")
 
     def _emit(self, value: dict[str, Any]) -> None:
-        self._handle.write(json.dumps(value, ensure_ascii=False) + "\n")
+        # The same separators `Trace.to_jsonl` uses. A durable artifact that
+        # merely parses to the same document as the writer's own encoding is
+        # not byte-reproducible against it, and costs ~10% of every file.
+        self._handle.write(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n"
+        )
         self._handle.flush()
         if self._fsync:
             os.fsync(self._handle.fileno())
@@ -75,6 +137,23 @@ class _JsonlRunSession:
                 self._emit(record)
                 self._records += 1
 
+    def _publish_as(self, destination: Path) -> Path:
+        """Rename onto a free name, so publishing never destroys an account."""
+        target, attempt = destination, 1
+        while attempt < 1000:
+            try:
+                # `link` + `unlink` rather than `replace`: replace() silently
+                # clobbers, and this sink exists to stop evidence disappearing.
+                os.link(self.pending_path, target)
+                self.pending_path.unlink()
+                return target
+            except FileExistsError:
+                attempt += 1
+                target = destination.with_name(
+                    destination.name.replace(".", f"-{attempt}.", 1)
+                )
+        raise OSError(f"cannot publish {self.pending_path} without overwriting")
+
     def finish(self, *, complete: bool) -> None:
         """Name the file for what it actually holds.
 
@@ -83,27 +162,49 @@ class _JsonlRunSession:
         file would be publishing something no reader can accept. It is removed
         instead. A prefix is kept under a name that says so, because a truncated
         account is still evidence; it just is not a whole one.
+
+        ``complete`` and ``published`` are set only once the file is actually
+        where they say it is. A rename can fail — a full disk, a read-only
+        directory, a name taken by a directory — and reporting a published
+        artifact that is not there is worse than reporting the truth.
         """
         with self._lock:
             if self.complete is not None:
                 return  # the runtime calls this once; a sink should not assume
-            self.complete = complete
             self._handle.close()
-            if complete:
-                self.pending_path.replace(self.path)
-            elif self._records == 0:
-                self.pending_path.unlink(missing_ok=True)
-            else:
-                self.pending_path.replace(self.partial_path)
+            published: Path | None = None
+            try:
+                if complete:
+                    published = self._publish_as(self.path)
+                elif self._records == 0:
+                    self.pending_path.unlink(missing_ok=True)
+                else:
+                    published = self._publish_as(self.partial_path)
+            finally:
+                # Two different facts, recorded separately. What the runtime
+                # said about the run is true whether or not this sink managed
+                # to act on it, and a publish can fail — a full disk, a
+                # read-only directory, a name taken by a directory. Letting the
+                # failure suppress `complete` too would leave the session
+                # claiming to be in flight forever, for a run that ended.
+                self.published = published
+                self.complete = complete
+                if self._fsync:
+                    _sync_directory(self._directory)
 
     @property
     def artifact(self) -> Path | None:
-        """Where this run's evidence ended up, or None if there was none."""
+        """Where this run's evidence actually is, or None if there is none.
+
+        Never a path that was intended: a run still in flight answers with the
+        pending file, a finished one with what was published, and a session
+        whose publish failed with the pending file it is still in.
+        """
         if self.complete is None:
-            return self.pending_path
-        if self.complete:
-            return self.path
-        return self.partial_path if self._records else None
+            return self.pending_path if self.pending_path.exists() else None
+        if self.published is not None:
+            return self.published
+        return self.pending_path if self.pending_path.exists() else None
 
 
 class JsonlTraceSink:
