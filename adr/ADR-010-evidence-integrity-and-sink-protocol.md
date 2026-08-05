@@ -1,7 +1,10 @@
 # ADR-010 — Evidence integrity, and what the sink protocol still cannot express
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-05
+- **Accepted:** 2026-08-05 by the founder. Decisions 1–3 were already merged as
+  `d896339` with the evidence recorded below; the acceptance covers those and
+  the two questions §Open leaves deliberately undecided.
 - **Authority:** founder direction continuing the 0.7 phase
 - **Depends on:** ADR-004 (run-scoped TraceSink binding), ADR-008 §2 (durability
   profiles and the declared loss window)
