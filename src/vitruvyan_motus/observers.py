@@ -275,7 +275,14 @@ class StreamDriver(Iterator[dict[str, Any]]):
     cancellation terminal, never the pending node attempt.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter", "_requested")
+    # `__weakref__` is explicit because the runtime attaches a finaliser to a
+    # driver: a driver dropped before it was ever advanced must still release
+    # the run it claimed, and a slotted class is not weak-referenceable by
+    # default.
+    __slots__ = (
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "__weakref__",
+    )
 
     def __init__(
         self,
@@ -353,7 +360,10 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     ``aclose`` on a live run drains only the cancellation terminal.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter", "_requested")
+    __slots__ = (
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "__weakref__",
+    )
 
     def __init__(
         self,

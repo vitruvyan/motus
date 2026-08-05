@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import threading
+import weakref
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -203,6 +204,7 @@ class _RunHandle:
 
     trace: "Trace | None" = None
     state: State | None = None
+    started: bool = False
     finished: bool = False
 
 
@@ -529,11 +531,13 @@ class Runtime:
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
-        return StreamDriver(
+        driver = StreamDriver(
             _drive(machine, _invoke_sync),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
         )
+        weakref.finalize(driver, self._release_if_never_started, handle)
+        return driver
 
     def _async_invoker(self):
         """The async invoker for the run in flight, wired to its controller."""
@@ -544,6 +548,33 @@ class Runtime:
             control.downgrade_many((("partial", f"node:{name}:async"),))
 
         return _async_invoker(observe)
+
+    def _release_if_never_started(self, handle: _RunHandle) -> None:
+        """Release a claim whose driver was dropped before it was ever advanced.
+
+        ``stream()`` claims the run up front, and has to: a second ``stream()``
+        must be refused. The claim is normally released by
+        :meth:`_managed_execute`'s ``finally`` — but a generator that was never
+        started does not run one, so a driver created and dropped left the
+        Runtime claiming a run that had not executed a single node, for good.
+
+        Deliberately narrow. A driver dropped *mid-run* is already handled: its
+        generator is live, closing it raises ``GeneratorExit`` inside, and the
+        ``finally`` releases the claim and publishes the result. Releasing that
+        case here too would open a window where the claim is free while the
+        generator is still unwinding, and the unwind would then publish another
+        run's trace onto this handle — trading a wedge for a corruption.
+
+        Scoped to this handle for the same reason cancellation is: a finaliser
+        runs at an arbitrary later moment, and a Runtime that has since started
+        another run must not be disarmed by it.
+        """
+        if handle.started or handle.finished:
+            return
+        with self._lifecycle_lock:
+            if self._run is handle and self._running:
+                self._running = False
+                self._cancel_reason = None
 
     def _run_scoped_cancel(self, handle: _RunHandle) -> Callable[[str], bool]:
         """A cancellation that can only ever reach the run it was made for.
@@ -598,11 +629,13 @@ class Runtime:
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
-        return AsyncStreamDriver(
+        driver = AsyncStreamDriver(
             _adrive(machine, self._async_invoker()),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
         )
+        weakref.finalize(driver, self._release_if_never_started, handle)
+        return driver
 
     def _start(
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
@@ -687,6 +720,7 @@ class Runtime:
     def _managed_execute(
         self, *, copy_yields: bool, start_node: str, handle: _RunHandle
     ) -> Iterator[dict[str, Any]]:
+        handle.started = True
         try:
             yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:

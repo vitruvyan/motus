@@ -16,6 +16,7 @@ widens a window the attack proves exists unaided, it does not create one.
 from __future__ import annotations
 
 import asyncio
+import gc
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -230,3 +231,83 @@ def test_a_second_close_does_not_rewrite_why_the_run_stopped():
     assert terminal["reason"] == "the real reason", (
         "a later close overwrote the reason the run actually stopped for"
     )
+
+
+def test_dropping_a_driver_that_was_never_advanced_releases_the_run():
+    """`stream()` claims the run before the consumer asks for anything, which is
+    right: a second `stream()` must be refused.  But the claim was released only
+    by `_managed_execute`'s `finally`, and an generator that was never started
+    does not run one — so a driver created and dropped left the Runtime claiming
+    a run that had not executed a single node, permanently.
+    """
+    runtime = Runtime(LINEAR, {"a": passthrough, "b": passthrough})
+
+    driver = runtime.stream(State.empty("never-advanced"))
+    assert runtime._running, "stream() must claim the run up front"
+    del driver
+    gc.collect()
+
+    assert not runtime._running, "the abandoned run still holds the Runtime"
+    assert runtime.run(State.empty("after")).status == "completed"
+
+
+def test_dropping_an_async_driver_that_was_never_advanced_releases_the_run():
+    runtime = Runtime(LINEAR, {"a": apassthrough, "b": apassthrough})
+
+    driver = runtime.astream(State.empty("never-advanced"))
+    assert runtime._running
+    del driver
+    gc.collect()
+
+    assert not runtime._running, "the abandoned run still holds the Runtime"
+    assert asyncio.run(runtime.arun(State.empty("after"))).status == "completed"
+
+
+def test_an_abandoned_driver_cannot_release_a_later_run():
+    """The release is scoped to the run the driver was made for, for the same
+    reason cancellation is: a finaliser runs at an arbitrary later moment, and a
+    Runtime that has since started another run must not be disarmed by it.
+    """
+    runtime = Runtime(LINEAR, {"a": passthrough, "b": passthrough})
+
+    abandoned = runtime.stream(State.empty("abandoned"))
+    list(abandoned)                      # this run finishes normally
+    second = runtime.stream(State.empty("second"))
+    assert runtime._running
+
+    del abandoned
+    gc.collect()
+
+    assert runtime._running, "a stale driver's finaliser released a live run"
+    list(second)
+    assert not runtime._running
+
+
+def test_the_abandoned_release_never_touches_a_run_that_has_begun():
+    """The finaliser is narrowed to runs whose generator never started, and the
+    narrowing is the load-bearing part.
+
+    A driver dropped *mid-run* is already handled by its own generator: closing
+    it raises `GeneratorExit` inside, and the `finally` both publishes the
+    result and releases the claim.  Releasing that case here as well would free
+    the claim while the generator is still unwinding, and the unwind would then
+    publish another run's trace — and close another run's observation hub —
+    through this handle.  That trades a wedge for a corruption.
+
+    Exercised directly rather than through a dropped reference, because the
+    damage needs a second thread to enter the window and the window lives
+    inside object deallocation.
+    """
+    runtime = Runtime(LINEAR, {"a": passthrough, "b": passthrough})
+    driver = runtime.stream(State.empty("begun"))
+    handle = runtime._run
+    next(driver)                      # the generator has now started
+
+    assert handle.started and not handle.finished
+    runtime._release_if_never_started(handle)
+
+    assert runtime._running, (
+        "the abandoned-driver path released a run whose generator is live"
+    )
+    list(driver)
+    assert not runtime._running
