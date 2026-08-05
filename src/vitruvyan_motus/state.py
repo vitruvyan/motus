@@ -22,89 +22,38 @@ class _StateItem:
     origin: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
-class _IndexLeaf:
-    hash_value: int
-    entries: tuple[tuple[tuple[str, str], _StateItem], ...]
+_StateIndex = dict[tuple[str, str], _StateItem]
 
 
-@dataclass(frozen=True, slots=True)
-class _IndexBranch:
-    children: dict[int, "_IndexLeaf | _IndexBranch"]
+def _index_item(index: _StateIndex, item: _StateItem) -> None:
+    if item.collection in ("facts", "decisions"):
+        index[(item.collection, item.value.key)] = item  # type: ignore[attr-defined]
 
 
-_IndexNode = _IndexLeaf | _IndexBranch
-_INDEX_BITS = 6
-_INDEX_MASK = (1 << _INDEX_BITS) - 1
+def _advance_index(
+    index: _StateIndex,
+    old_log: _ChunkedLog[_StateItem],
+    new_log: _ChunkedLog[_StateItem],
+) -> _StateIndex:
+    """Index newly completed chunks, preserving prior snapshots by copying.
+
+    The current partial chunk is intentionally not indexed: lookup scans at
+    most 63 entries there before consulting this dictionary.  Consequently a
+    keyed read has a fixed upper bound while most appends allocate no index.
+    """
+    old_complete = len(old_log) // old_log._chunk_size
+    new_complete = len(new_log) // new_log._chunk_size
+    if old_complete == new_complete:
+        return index
+    updated = index.copy()
+    for chunk_number in range(old_complete, new_complete):
+        for item in new_log._chunks[chunk_number]:
+            _index_item(updated, item)
+    return updated
 
 
-def _index_hash(key: tuple[str, str]) -> int:
-    return hash(key) & ((1 << 64) - 1)
-
-
-def _index_merge_leaves(
-    left: _IndexLeaf, right: _IndexLeaf, shift: int
-) -> _IndexBranch:
-    left_slot = (left.hash_value >> shift) & _INDEX_MASK
-    right_slot = (right.hash_value >> shift) & _INDEX_MASK
-    if left_slot != right_slot:
-        return _IndexBranch({left_slot: left, right_slot: right})
-    child = _index_merge_leaves(left, right, shift + _INDEX_BITS)
-    return _IndexBranch({left_slot: child})
-
-
-def _index_set_at(
-    root: _IndexNode | None,
-    key: tuple[str, str],
-    value: _StateItem,
-    hash_value: int,
-    shift: int,
-) -> _IndexNode:
-    if root is None:
-        return _IndexLeaf(hash_value, ((key, value),))
-    if isinstance(root, _IndexLeaf):
-        if root.hash_value != hash_value:
-            return _index_merge_leaves(
-                root, _IndexLeaf(hash_value, ((key, value),)), shift
-            )
-        entries = list(root.entries)
-        for index, (existing, _) in enumerate(entries):
-            if existing == key:
-                entries[index] = (existing, value)
-                return _IndexLeaf(hash_value, tuple(entries))
-        entries.append((key, value))
-        return _IndexLeaf(hash_value, tuple(entries))
-    slot = (hash_value >> shift) & _INDEX_MASK
-    children = root.children.copy()
-    children[slot] = _index_set_at(
-        children.get(slot), key, value, hash_value, shift + _INDEX_BITS
-    )
-    return _IndexBranch(children)
-
-
-def _index_set(
-    root: _IndexNode | None, key: tuple[str, str], value: _StateItem
-) -> _IndexNode:
-    return _index_set_at(root, key, value, _index_hash(key), 0)
-
-
-def _index_get(root: _IndexNode | None, key: tuple[str, str]) -> _StateItem | None:
-    hash_value = _index_hash(key)
-    shift = 0
-    while isinstance(root, _IndexBranch):
-        root = root.children.get((hash_value >> shift) & _INDEX_MASK)
-        shift += _INDEX_BITS
-    if root is not None and root.hash_value == hash_value:
-        for existing, value in root.entries:
-            if existing == key:
-                return value
-    return None
-
-
-def _index_add(root: _IndexNode | None, item: _StateItem) -> _IndexNode | None:
-    if item.collection not in ("facts", "decisions"):
-        return root
-    return _index_set(root, (item.collection, item.value.key), item)  # type: ignore[attr-defined]
+def _build_index(log: _ChunkedLog[_StateItem]) -> _StateIndex:
+    return _advance_index({}, _ChunkedLog(chunk_size=log._chunk_size), log)
 
 
 class _ReadCapture:
@@ -160,7 +109,7 @@ class State:
         reads: _ReadCapture | None = None,
         events: _ChunkedLog[dict[str, Any]] | None = None,
         lineage: object | None = None,
-        index: _IndexNode | None = None,
+        index: _StateIndex | None = None,
     ) -> None:
         if not isinstance(intent, str):
             raise TypeError("intent must be a string")
@@ -177,7 +126,7 @@ class State:
         self._reads = reads
         self._events = _ChunkedLog() if events is None else events
         self._lineage = lineage or object()
-        self._index = index
+        self._index = _build_index(self._log) if index is None else index
 
     @classmethod
     def _from_parts(
@@ -190,7 +139,7 @@ class State:
         reads: _ReadCapture | None,
         events: _ChunkedLog[dict[str, Any]],
         lineage: object,
-        index: _IndexNode | None,
+        index: _StateIndex,
     ) -> "State":
         state = object.__new__(cls)
         state._log = log
@@ -235,9 +184,9 @@ class State:
                 initial.append(_StateItem(collection, _isolate_item_value(value), {
                     "kind": "initial", "collection": collection, "index": index,
                 }))
-        state._log = state._log.extend(initial)
-        for item in initial:
-            state._index = _index_add(state._index, item)
+        old_log = state._log
+        state._log = old_log.extend(initial)
+        state._index = _advance_index(state._index, old_log, state._log)
         return state
 
     @classmethod
@@ -283,11 +232,10 @@ class State:
                     "kind": "transition", "seq": transition_seq,
                     "collection": collection, "index": index,
                 }))
-        index = self._index
-        for item in additions:
-            index = _index_add(index, item)
+        new_log = self._log.extend(additions)
+        index = _advance_index(self._index, self._log, new_log)
         return State._from_parts(
-            log=self._log.extend(additions), pending=_ChunkedLog(),
+            log=new_log, pending=_ChunkedLog(),
             intent=self._intent, metadata=self._metadata, reads=None,
             events=self._events, lineage=self._lineage, index=index,
         )
@@ -324,11 +272,10 @@ class State:
                 "kind": "transition", "seq": transition_seq,
                 "collection": item.collection, "index": index,
             }))
-        index = self._index
-        for item in committed:
-            index = _index_add(index, item)
+        new_log = self._log.extend(committed)
+        index = _advance_index(self._index, self._log, new_log)
         return State._from_parts(
-            log=self._log.extend(committed), pending=_ChunkedLog(),
+            log=new_log, pending=_ChunkedLog(),
             intent=self._intent, metadata=self._metadata, reads=None,
             events=self._events, lineage=self._lineage, index=index,
         )
@@ -390,7 +337,7 @@ class State:
                 raise RuntimeError(
                     "attempt-local writes cannot be read before commit; keep the local value"
                 )
-        item = _index_get(self._index, (collection, key))
+        item = self._latest_item(collection, key)
         if item is not None:
             if self._reads is not None:
                 self._reads.add(key, item.origin)
@@ -398,6 +345,17 @@ class State:
         if self._reads is not None:
             self._reads.add(key, {"kind": "absent", "surface": collection})
         return copy.deepcopy(default)
+
+    def _latest_item(self, collection: str, key: str) -> _StateItem | None:
+        partial_start = (len(self._log) // self._log._chunk_size) * self._log._chunk_size
+        for position in range(len(self._log) - 1, partial_start - 1, -1):
+            item = self._log[position]
+            if (
+                item.collection == collection
+                and item.value.key == key  # type: ignore[attr-defined]
+            ):
+                return item
+        return self._index.get((collection, key))
 
     def fact(self, key: str, default: Any = None) -> Any:
         return self._lookup("facts", key, default)
@@ -440,7 +398,7 @@ class State:
         return out
 
     def _latest_decision(self, key: str) -> tuple[Any, dict[str, Any]] | None:
-        item = _index_get(self._index, ("decisions", key))
+        item = self._latest_item("decisions", key)
         if item is not None:
             decision = item.value
             origin = item.origin
