@@ -2,6 +2,9 @@ name: Motus benchmark characterization
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/0.6.1-adversarial-remediation
 
 permissions:
   contents: read
