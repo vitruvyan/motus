@@ -53,10 +53,26 @@ class RunResult:
     state: State
     trace: Trace
 
+    _TERMINALS = ("run_completed", "run_failed", "run_cancelled")
+
     @property
     def status(self) -> str:
-        """The explicit terminal status: completed, failed or cancelled."""
-        terminal = self.trace.records[-1]["kind"]
+        """The explicit terminal status: completed, failed or cancelled.
+
+        Guarded, because the last record of a trace is not always a terminal.
+        A driver abandoned mid-run leaves one ending in ``transition`` or
+        ``routing``, and stripping the ``run_`` prefix off those quietly
+        answered ``"transition"`` — a value outside the three this contract
+        names, which callers compare against and branch on.
+        """
+        records = self.trace.records
+        terminal = records[-1]["kind"] if records else None
+        if terminal not in self._TERMINALS:
+            raise ValueError(
+                f"this trace has no terminal record: it ends with {terminal!r}. "
+                "A run that was abandoned before finishing has no status; its "
+                "evidence is incomplete by construction."
+            )
         return terminal.removeprefix("run_")
 
     @property
@@ -686,7 +702,12 @@ class Runtime:
                 raise TypeError("run state must be State")
             self._state = initial
             self._control.downgrade_many(self._identity_constraints)
-            actual_run_id = run_id or self._control.kernel_uuid()
+            # `or` would treat "" as "not supplied" and silently generate a
+            # UUID, so the stated 1..200 check below never saw it. A caller
+            # who passes an empty run_id has made a mistake and should be told.
+            actual_run_id = (
+                self._control.kernel_uuid() if run_id is None else run_id
+            )
             if not isinstance(actual_run_id, str) or not 1 <= len(actual_run_id) <= 200:
                 raise ValueError("run_id must be a string of length 1..200")
             if (

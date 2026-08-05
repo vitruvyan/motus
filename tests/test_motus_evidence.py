@@ -186,3 +186,42 @@ def test_a_close_never_retries_a_sink_that_already_failed():
     assert all(
         record["kind"] != "attempt_started" for record in sink.records
     ), "the refused record was written after all"
+
+
+def test_a_trace_without_a_terminal_has_no_status():
+    """`status` strips the `run_` prefix off the last record's kind. A driver
+    abandoned mid-run leaves a trace ending in `transition` or `routing`, and
+    that quietly answered `"transition"` — a value outside the three the
+    contract names, which callers compare against and branch on."""
+    from vitruvyan_motus import RunResult
+
+    runtime = Runtime(CHAIN, {"a": passthrough, "b": passthrough})
+    driver = runtime.stream(State.empty("abandoned"))
+    next(driver)
+    next(driver)
+
+    incomplete = RunResult(State.empty("x"), driver.trace)
+    assert incomplete.trace.records[-1]["kind"] not in (
+        "run_completed", "run_failed", "run_cancelled",
+    )
+    with pytest.raises(ValueError, match="no terminal record"):
+        incomplete.status
+
+
+def test_an_empty_run_id_is_refused_rather_than_replaced():
+    """`run_id or uuid()` treated "" as "not supplied", so the stated 1..200
+    check never saw it and the caller silently got a generated identity for a
+    run they meant to name."""
+    runtime = Runtime(CHAIN, {"a": passthrough, "b": passthrough})
+
+    with pytest.raises(ValueError, match="run_id"):
+        runtime.run(State.empty("e"), run_id="")
+
+
+def test_a_generated_run_id_is_still_produced_when_none_is_asked_for():
+    runtime = Runtime(CHAIN, {"a": passthrough, "b": passthrough})
+    result = runtime.run(State.empty("e"))
+
+    assert isinstance(result.trace.run["run_id"], str)
+    assert result.trace.run["run_id"]
+
