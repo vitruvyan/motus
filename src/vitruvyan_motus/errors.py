@@ -25,6 +25,7 @@ __all__ = [
     "GraphSpecViolation",
     "GraphSpecValidationError",
     "NodeFailed",
+    "NodeConfigurationError",
     "SinkFailed",
     "ReplayError",
     "ReplayMismatch",
@@ -95,6 +96,15 @@ class NodeFailed(MotusError):
         self.trace = trace
         self.cause = cause
         super().__init__(f"node {node!r} failed")
+
+
+class NodeConfigurationError(MotusError):
+    """A node could not provide stable strict-JSON identity material."""
+
+    def __init__(self, node: str, cause: BaseException) -> None:
+        self.node = node
+        self.cause = cause
+        super().__init__(f"node {node!r} configuration identity failed: {cause}")
 
 
 class SinkFailed(MotusError):

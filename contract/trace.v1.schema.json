@@ -152,7 +152,7 @@
               "minimum": 1
             }
           },
-          "description": "Sink configuration disclosing the loss window. Validator rule H1: when durability_profile is `buffered`, `sink` MUST be present WITH BOTH disclosure keys (flush_interval_ms and chunk_records) — an empty sink object discloses nothing and does not satisfy the rule. Optional otherwise."
+          "description": "Sink configuration disclosing the delivery window. Validator rule H1: when durability_profile is `buffered`, `sink` MUST be present WITH BOTH disclosure keys (flush_interval_ms and chunk_records) — an empty sink object discloses nothing and does not satisfy the rule. Optional otherwise. When a caller explicitly supplies a sink under `in-memory` or `synchronous`, the runtime records its effective synchronous delivery as flush_interval_ms 0 and chunk_records 1; this disclosure does not strengthen the profile's crash guarantee."
         },
         "replay": {
           "$ref": "#/$defs/ReplayStatus",

@@ -33,6 +33,14 @@ class _Missing:
     def __deepcopy__(self, memo: dict[int, Any]) -> "_Missing":
         return self
 
+    def __reduce__(self):
+        return (_restore_missing, ())
+
+
+def _restore_missing() -> "_Missing":
+    """Return the process-local singleton after a pickle round trip."""
+    return _MISSING
+
 
 _MISSING = _Missing()
 _TIMESTAMP_RE = re.compile(

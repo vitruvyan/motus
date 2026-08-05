@@ -7,6 +7,7 @@ import functools
 import hashlib
 import inspect
 import json
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -15,7 +16,12 @@ from typing import Any, Callable, Iterator, Mapping
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.context import ReplayStatus, _RunController
 from vitruvyan_motus.effects import EffectClass
-from vitruvyan_motus.errors import DeclarationViolation, NodeFailed, SinkFailed
+from vitruvyan_motus.errors import (
+    DeclarationViolation,
+    NodeConfigurationError,
+    NodeFailed,
+    SinkFailed,
+)
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
 from vitruvyan_motus.observers import Listener, StreamDriver, TraceSink, _ObservationHub
 from vitruvyan_motus.state import State
@@ -189,7 +195,9 @@ class Runtime:
         self._cancel_reason: str | None = None
         self._pending_cancel_reason: str | None = None
         self._active_attempt: tuple[str, int] | None = None
+        self._lifecycle_lock = threading.RLock()
         self._running = False
+        self._has_started = False
         self._trace_ref: list[Trace | None] | None = None
 
     def _refresh_identity(self) -> None:
@@ -199,7 +207,10 @@ class Runtime:
         changed = not self._identity_cache
         for declaration in self._declarations.values():
             name = declaration.name
-            static, material, opaque = _node_identity_parts(self._nodes[name])
+            try:
+                static, material, opaque = _node_identity_parts(self._nodes[name])
+            except Exception as exc:
+                raise NodeConfigurationError(name, exc) from exc
             unavailable = static[2]
             cached = self._identity_cache.get(name)
             if cached is not None and cached[0] == static and cached[1] == material:
@@ -238,13 +249,23 @@ class Runtime:
     def trace(self) -> Trace | None:
         return self._trace
 
-    def cancel(self, reason: str = "cancelled by caller") -> None:
+    def cancel(self, reason: str = "cancelled by caller") -> bool:
+        """Cancel the active run, or queue cancellation before first use.
+
+        Once this Runtime has executed, an idle cancellation returns ``False``
+        instead of leaking into an unrelated future run.  ``True`` means the
+        request was bound to the active run or to the first run not yet begun.
+        """
         if not isinstance(reason, str):
             raise TypeError("cancellation reason must be a string")
-        if self._running:
-            self._cancel_reason = reason
-        else:
-            self._pending_cancel_reason = reason
+        with self._lifecycle_lock:
+            if self._running:
+                self._cancel_reason = reason
+                return True
+            if not self._has_started:
+                self._pending_cancel_reason = reason
+                return True
+            return False
 
     def run(
         self,
@@ -281,15 +302,17 @@ class Runtime:
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
         copy_yields: bool, start_node: str, resume_info: dict[str, Any] | None,
     ) -> Iterator[dict[str, Any]]:
-        if self._running:
-            raise RuntimeError("a Runtime instance cannot execute overlapping runs")
-        self._running = True
+        with self._lifecycle_lock:
+            if self._running:
+                raise RuntimeError("a Runtime instance cannot execute overlapping runs")
+            self._running = True
+            self._has_started = True
+            self._cancel_reason = self._pending_cancel_reason
+            self._pending_cancel_reason = None
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
             self._refresh_identity()
-            self._cancel_reason = self._pending_cancel_reason
-            self._pending_cancel_reason = None
             self._active_attempt = None
             initial = State.empty() if state is None else state
             if not isinstance(initial, State):
@@ -321,17 +344,27 @@ class Runtime:
             }
             if resume_info is not None:
                 header["resume"] = _strict_plain_json(resume_info)
-            if self.durability_profile is DurabilityProfile.BUFFERED:
+            if self._hub.sink is not None:
                 header["sink"] = {
-                    "flush_interval_ms": self._hub.flush_interval_ms,
-                    "chunk_records": self._hub.chunk_records,
+                    "flush_interval_ms": (
+                        self._hub.flush_interval_ms
+                        if self.durability_profile is DurabilityProfile.BUFFERED
+                        else 0
+                    ),
+                    "chunk_records": (
+                        self._hub.chunk_records
+                        if self.durability_profile is DurabilityProfile.BUFFERED
+                        else 1
+                    ),
                 }
             self._trace = Trace(header)
             self._trace_ref = [self._trace]
             self._hub.bind(self._trace.run)
             return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
         except BaseException:
-            self._running = False
+            with self._lifecycle_lock:
+                self._running = False
+                self._cancel_reason = None
             self._active_attempt = None
             raise
 
@@ -344,7 +377,9 @@ class Runtime:
             if self._hub is not None:
                 self._hub.close()
             self._active_attempt = None
-            self._running = False
+            with self._lifecycle_lock:
+                self._running = False
+                self._cancel_reason = None
 
     def _replace_trace(self, trace: Trace) -> None:
         self._trace = trace

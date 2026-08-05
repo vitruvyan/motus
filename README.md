@@ -344,7 +344,8 @@ The run header declares one durability profile:
 - `synchronous`: commit is gated by sink acknowledgement, subject to the
   persistent medium's own guarantees.
 
-A required sink failure prevents logical success. If the required sink itself
+A profile-required or explicitly supplied sink failure prevents logical
+success. If the required sink itself
 fails, the final failure record is necessarily best-effort because the
 component responsible for persisting it is unavailable.
 

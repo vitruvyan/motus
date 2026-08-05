@@ -179,6 +179,13 @@ The fingerprint is the SHA-256 of the canonical JSON encoding
 unavailable (C extensions, REPL) contribute `"unavailable"` as source_hash
 with the same downgrade rule.
 
+`motus_config()` is an attestation method, not an event hook. A callable that
+provides it MUST make it pure, total, cheap and strict-JSON-valued. The runtime
+evaluates it at construction and at each run start so mutable configuration
+cannot retain a stale fingerprint. Failure is reported as
+`NodeConfigurationError` before `run_started`: without valid identity material
+there is no run whose code fingerprint Motus can truthfully record.
+
 ## 7. Failure, attempts, and dispositions
 
 7.1. A node fails by raising. The trace separates **what the attempt did**

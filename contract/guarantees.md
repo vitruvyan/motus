@@ -12,8 +12,9 @@ engines; any future alternative path must prove trace-equivalence against the
 interpreter per release, in CI.
 
 **II. TraceSink failure prevents logical success.** A run cannot declare
-itself completed if the sink required by its durability profile has not
-accepted the trace. Crash guarantees depend on the declared profile:
+itself completed if its required sink has not accepted the trace. A sink is
+required when the profile requires one or when the caller explicitly supplies
+one. Crash guarantees still depend only on the declared profile:
 
 | Profile | Guarantee after process loss |
 |---|---|
@@ -22,7 +23,9 @@ accepted the trace. Crash guarantees depend on the declared profile:
 | `synchronous` | A transition is committable only after sink ack, within the declared limits of the persistent medium (fsync semantics, replication if any). |
 
 The profile is recorded in the run header. Claiming a stronger guarantee than
-the profile bought is a contract violation.
+the profile bought is a contract violation. An explicitly supplied sink under
+`in-memory` is synchronous (`flush_interval_ms: 0`, `chunk_records: 1`) and its
+configuration is recorded in the header, but it adds no crash-survival claim.
 
 **III. The kernel does not interpret the domain.** Motus imports and embeds no
 LLM, no Vitruvyan OS, no LangChain, no Orders, no epistemic categories.

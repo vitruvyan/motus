@@ -185,10 +185,10 @@ class _ObservationHub:
                 return
 
     def persist(self, record: dict[str, Any], *, force: bool = False) -> None:
-        if self.profile == "in-memory" and self._run_sink is None:
-            return
         if self._async_failure is not None:
             raise self._async_failure
+        if self.profile == "in-memory" and self._run_sink is None:
+            return
         assert self._run_sink is not None
         if self.profile in ("in-memory", "synchronous"):
             self._run_sink.write((copy.deepcopy(record),))
@@ -259,7 +259,14 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def __next__(self) -> dict[str, Any]:
         if self._closed:
             raise StopIteration
-        return next(self._iterator)
+        try:
+            return next(self._iterator)
+        except BaseException:
+            # Exhaustion and execution failures both finish this driver.  In
+            # particular, normal exhaustion must make context-manager exit a
+            # no-op rather than queueing cancellation for a later run.
+            self._closed = True
+            raise
 
     @property
     def trace(self) -> Any:
