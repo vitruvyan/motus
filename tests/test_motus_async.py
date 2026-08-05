@@ -740,3 +740,134 @@ async def test_one_runtime_still_refuses_overlapping_async_runs():
         await runtime.arun(State.empty("second"))
     release.set()
     assert (await first).status == "completed"
+
+
+# --- the asynchronous twin of the replay surface (#29) ----------------------
+
+
+ASYNC_REPLAY_SPEC = GraphSpec.from_dict({
+    "schema_version": "1.0.0",
+    "name": "async-replay",
+    "version": "1.0.0",
+    "entry": "compute",
+    "nodes": [
+        {"name": "compute", "effect_class": "pure"},
+        {"name": "publish", "effect_class": "external_effect"},
+    ],
+    "transitions": {
+        "compute": {"kind": "next", "to": "publish"},
+        "publish": {"kind": "terminal"},
+    },
+})
+
+
+async def _async_pure(state: State) -> State:
+    await asyncio.sleep(0)
+    return state.with_fact(Fact("value", 42, "pure", NOW))
+
+
+def _sync_pure(state: State) -> State:
+    return state.with_fact(Fact("value", 42, "pure", NOW))
+
+
+def _external(state: State) -> State:
+    return state
+
+
+def _bundle(result):
+    from vitruvyan_motus import TraceBundle
+
+    return TraceBundle(spec=ASYNC_REPLAY_SPEC, trace=result.trace)
+
+
+def _sync_bundle(nodes):
+    result = Runtime(ASYNC_REPLAY_SPEC, nodes).run(
+        State.empty("replay"), replay=ReplayStatus.declared("full")
+    )
+    return _bundle(result)
+
+
+async def _async_bundle(nodes):
+    result = await Runtime(ASYNC_REPLAY_SPEC, nodes).arun(
+        State.empty("replay"), replay=ReplayStatus.declared("full")
+    )
+    return _bundle(result)
+
+
+@pytest.mark.asyncio
+async def test_averify_reexecutes_a_pure_node_that_verify_cannot():
+    """A node that is both `async def` and `pure` is deterministic and should
+    be checkable — but `verify()` drives nodes on the calling thread, so it
+    could only refuse. That refusal was honest and the gap was real: an async
+    adopter's traces were only partly re-checkable, in a product whose thesis
+    is evidence you can re-check."""
+    from vitruvyan_motus import ReplayEngine, ReplayUnsupported
+
+    bundle = await _async_bundle({"compute": _async_pure, "publish": _external})
+
+    with pytest.raises(ReplayUnsupported, match="averify"):
+        ReplayEngine(bundle).verify({"compute": _async_pure})
+
+    result = await ReplayEngine(bundle).averify({"compute": _async_pure})
+
+    assert len(result.verified) == 1
+    assert result.mode == "verify"
+
+
+@pytest.mark.asyncio
+async def test_averify_still_catches_code_that_no_longer_agrees():
+    """Being able to run is worthless if it cannot refuse."""
+    from vitruvyan_motus import ReplayEngine
+
+    bundle = await _async_bundle({"compute": _async_pure, "publish": _external})
+
+    async def changed(state: State) -> State:
+        await asyncio.sleep(0)
+        return state.with_fact(Fact("value", 99, "pure", NOW))
+
+    with pytest.raises(ReplayMismatch):
+        await ReplayEngine(bundle).averify({"compute": changed})
+
+
+@pytest.mark.asyncio
+async def test_averify_drives_synchronous_nodes_too():
+    """`averify` is a superset, not an alternative — a graph that mixes both
+    must be verifiable through one call."""
+    from vitruvyan_motus import ReplayEngine
+
+    bundle = _sync_bundle({"compute": _sync_pure, "publish": _external})
+
+    result = await ReplayEngine(bundle).averify({"compute": _sync_pure})
+
+    assert len(result.verified) == 1
+
+
+def test_verify_and_averify_agree_on_a_synchronous_trace():
+    """One comparison state machine, two drivers. If these ever disagree,
+    there are two copies of the logic and guarantees.md invariant I is the
+    thing being violated."""
+    from vitruvyan_motus import ReplayEngine
+
+    bundle = _sync_bundle({"compute": _sync_pure, "publish": _external})
+
+    synchronous = ReplayEngine(bundle).verify({"compute": _sync_pure})
+    asynchronous = asyncio.run(ReplayEngine(bundle).averify({"compute": _sync_pure}))
+
+    assert synchronous.mode == asynchronous.mode
+    assert synchronous.verified == asynchronous.verified
+    assert synchronous.state.snapshot() == asynchronous.state.snapshot()
+
+
+@pytest.mark.asyncio
+async def test_averify_refuses_an_async_generator_node():
+    """An async generator produces a stream, not the single State a transition
+    recorded, so there is nothing to compare it against."""
+    from vitruvyan_motus import ReplayEngine, ReplayUnsupported
+
+    bundle = await _async_bundle({"compute": _async_pure, "publish": _external})
+
+    async def streaming(state: State):
+        yield state
+
+    with pytest.raises(ReplayUnsupported):
+        await ReplayEngine(bundle).averify({"compute": streaming})

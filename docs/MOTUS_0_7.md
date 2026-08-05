@@ -69,6 +69,26 @@ clause is what prevented it. Two changes (ADR-011) make the promise true:
 Protocol member** — Python has no optional protocol member, and declaring it
 would reject every write-only sink.
 
+## Replay follows the same inversion
+
+`ReplayEngine.verify` had the same shape the runtime had before 0.7: one long
+comparison loop with a single call site. A node that was both `async def` and
+`pure` is deterministic and ought to be checkable, but `verify` drives nodes on
+the calling thread, so it could only refuse — and in a product whose thesis is
+evidence you can re-check, an async adopter's traces were only partly
+re-checkable.
+
+`_verify` is now the comparison state machine, yielding an invocation request,
+with `verify` and `averify` as its two drivers. Same reasoning as execution: a
+second copy of the comparison logic could drift from the first. A test asserts
+the two drivers return identical results on a synchronous trace, because if they
+ever disagree there are two copies and invariant I is what is being broken.
+
+`averify` is a superset — it drives synchronous nodes too — so a mixed graph is
+verifiable through one call. An async *generator* node is still refused: it
+produces a stream, not the single `State` a transition recorded, so there is
+nothing to compare against.
+
 ## Evidence may be absent, or a prefix, never self-contradicting
 
 Two paths produced an account worse than a missing one.
@@ -111,9 +131,9 @@ the protocol a sink author actually implements — but `trace.v1.schema.json`,
 
 ## Deliberate exclusions
 
-Fan-out. `averify`/`aresume` — the asynchronous twin of the replay surface, so a
-node that is both `async def` and `pure` is still refused with
-`ReplayUnsupported` rather than verified (#29). Whether a caller should learn
+Fan-out. `aresume` — `resume` still drives new work synchronously, so a resumed
+segment cannot contain an `async def` node; `averify` landed, `aresume` did not.
+Whether a caller should learn
 that a required sink refused a `run_cancelled` or `run_failed(route_miss)`
 terminal — ADR-011 §Open records why each obvious answer is wrong in a different
 way. Hash-chain activation, budgets, capability enforcement and distributed
