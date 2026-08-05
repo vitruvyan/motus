@@ -7,6 +7,7 @@ import functools
 import hashlib
 import inspect
 import json
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -15,7 +16,12 @@ from typing import Any, Callable, Iterator, Mapping
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.context import ReplayStatus, _RunController
 from vitruvyan_motus.effects import EffectClass
-from vitruvyan_motus.errors import DeclarationViolation, NodeFailed, SinkFailed
+from vitruvyan_motus.errors import (
+    DeclarationViolation,
+    NodeConfigurationError,
+    NodeFailed,
+    SinkFailed,
+)
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
 from vitruvyan_motus.observers import Listener, StreamDriver, TraceSink, _ObservationHub
 from vitruvyan_motus.state import State
@@ -51,33 +57,36 @@ class RunResult:
         return self.status == "completed"
 
 
-def _config_fingerprint(node: Callable[..., Any]) -> tuple[str, bool]:
-    """Return the node's config marker/fingerprint and whether it is opaque."""
+def _config_material(node: Callable[..., Any]) -> tuple[tuple[str, Any], bool]:
+    """Return isolated comparable config material and whether it is opaque."""
     if isinstance(node, functools.partial):
         value = {"args": list(node.args), "keywords": node.keywords or {}}
-        canonical = _strict_plain_json(value)
-        return "config:sha256:" + hashlib.sha256(_canonical_bytes(canonical)).hexdigest(), False
+        return ("value", _strict_plain_json(value)), False
     if not inspect.isfunction(node) and not inspect.ismethod(node):
         config = getattr(node, "motus_config", None)
         if callable(config):
-            canonical = _strict_plain_json(config())
-            return "config:sha256:" + hashlib.sha256(_canonical_bytes(canonical)).hexdigest(), False
-        return "opaque", True
+            return ("value", _strict_plain_json(config())), False
+        return ("marker", "opaque"), True
     target = inspect.unwrap(node)
     if inspect.isfunction(target) and target.__closure__ is None and "<locals>" not in target.__qualname__:
-        return "none", False
+        return ("marker", "none"), False
     if inspect.ismethod(target) and target.__self__ is not None:
         config = getattr(target.__self__, "motus_config", None)
         if callable(config):
-            canonical = _strict_plain_json(config())
-            return "config:sha256:" + hashlib.sha256(_canonical_bytes(canonical)).hexdigest(), False
-    return "opaque", True
+            return ("value", _strict_plain_json(config())), False
+    return ("marker", "opaque"), True
 
 
-def _node_identity(name: str, node: Callable[..., Any]) -> tuple[list[str], bool, bool]:
-    target = inspect.unwrap(node.func if isinstance(node, functools.partial) else node)
-    if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
-        target = inspect.unwrap(type(target).__call__)
+def _config_fingerprint(material: tuple[str, Any]) -> str:
+    kind, value = material
+    if kind == "marker":
+        return value
+    return "config:sha256:" + hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+@functools.lru_cache(maxsize=4096)
+def _static_callable_identity(target: Callable[..., Any]) -> tuple[str, str, bool]:
+    """Cache immutable source identity; mutable config is never cached."""
     qualified = f"{getattr(target, '__module__', type(target).__module__)}.{getattr(target, '__qualname__', type(target).__qualname__)}"
     unavailable = False
     try:
@@ -86,8 +95,18 @@ def _node_identity(name: str, node: Callable[..., Any]) -> tuple[list[str], bool
     except (OSError, TypeError):
         source_hash = "unavailable"
         unavailable = True
-    config, opaque = _config_fingerprint(node)
-    return [name, qualified, source_hash, config], opaque, unavailable
+    return qualified, source_hash, unavailable
+
+
+def _node_identity_parts(
+    node: Callable[..., Any],
+) -> tuple[tuple[str, str, bool], tuple[str, Any], bool]:
+    target = inspect.unwrap(node.func if isinstance(node, functools.partial) else node)
+    if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
+        target = inspect.unwrap(type(target).__call__)
+    static = _static_callable_identity(target)
+    material, opaque = _config_material(node)
+    return static, material, opaque
 
 
 def _accepts_context(node: Callable[..., Any]) -> bool:
@@ -105,7 +124,10 @@ def _accepts_context(node: Callable[..., Any]) -> bool:
         raise TypeError(
             f"node {node!r} must have signature (state) or (state, ctx)"
         )
-    return len(positional) == 2
+    return (
+        len(positional) == 2
+        and positional[1].default is positional[1].empty
+    )
 
 
 class Runtime:
@@ -140,21 +162,13 @@ class Runtime:
             raise ValueError(f"node registry must match GraphSpec; missing={missing}, extra={extra}")
         self._uses_context = {name: _accepts_context(node) for name, node in self._nodes.items()}
         self._declarations = self._plan.declarations
-        identity_rows = []
-        identity_constraints: list[tuple[str, str]] = []
-        for declaration in spec.nodes:
-            row, opaque, unavailable = _node_identity(
-                declaration.name, self._nodes[declaration.name]
-            )
-            identity_rows.append(row)
-            if opaque:
-                identity_constraints.append(("partial", f"node:{declaration.name}:opaque_config"))
-            if unavailable:
-                identity_constraints.append(("partial", f"node:{declaration.name}:source_unavailable"))
-        self._identity_constraints = tuple(identity_constraints)
-        self._code_fingerprint = (
-            "code:sha256:" + hashlib.sha256(_canonical_bytes(identity_rows)).hexdigest()
-        )
+        self._identity_cache: dict[
+            str,
+            tuple[tuple[str, str, bool], tuple[str, Any], list[str], bool],
+        ] = {}
+        self._code_fingerprint = ""
+        self._identity_constraints: tuple[tuple[str, str], ...] = ()
+        self._refresh_identity()
         self._policy = Policy(policy)
         self._durability_profile = DurabilityProfile(durability_profile)
         if isinstance(max_attempts, Mapping):
@@ -179,9 +193,44 @@ class Runtime:
         self._control: _RunController | None = None
         self._hub: _ObservationHub | None = None
         self._cancel_reason: str | None = None
+        self._pending_cancel_reason: str | None = None
         self._active_attempt: tuple[str, int] | None = None
+        self._lifecycle_lock = threading.RLock()
         self._running = False
+        self._has_started = False
         self._trace_ref: list[Trace | None] | None = None
+
+    def _refresh_identity(self) -> None:
+        """Refresh only config rows whose observable material changed."""
+        rows: list[list[str]] = []
+        constraints: list[tuple[str, str]] = []
+        changed = not self._identity_cache
+        for declaration in self._declarations.values():
+            name = declaration.name
+            try:
+                static, material, opaque = _node_identity_parts(self._nodes[name])
+            except Exception as exc:
+                raise NodeConfigurationError(name, exc) from exc
+            unavailable = static[2]
+            cached = self._identity_cache.get(name)
+            if cached is not None and cached[0] == static and cached[1] == material:
+                row = cached[2]
+            else:
+                qualified, source_hash, _ = static
+                row = [name, qualified, source_hash, _config_fingerprint(material)]
+                self._identity_cache[name] = (static, material, row, opaque)
+                changed = True
+            rows.append(row)
+            if opaque:
+                constraints.append(("partial", f"node:{name}:opaque_config"))
+            if unavailable:
+                constraints.append(("partial", f"node:{name}:source_unavailable"))
+        current_constraints = tuple(constraints)
+        if changed or current_constraints != self._identity_constraints:
+            self._code_fingerprint = (
+                "code:sha256:" + hashlib.sha256(_canonical_bytes(rows)).hexdigest()
+            )
+            self._identity_constraints = current_constraints
 
     @property
     def nodes(self) -> Mapping[str, Callable[..., State]]:
@@ -200,10 +249,23 @@ class Runtime:
     def trace(self) -> Trace | None:
         return self._trace
 
-    def cancel(self, reason: str = "cancelled by caller") -> None:
+    def cancel(self, reason: str = "cancelled by caller") -> bool:
+        """Cancel the active run, or queue cancellation before first use.
+
+        Once this Runtime has executed, an idle cancellation returns ``False``
+        instead of leaking into an unrelated future run.  ``True`` means the
+        request was bound to the active run or to the first run not yet begun.
+        """
         if not isinstance(reason, str):
             raise TypeError("cancellation reason must be a string")
-        self._cancel_reason = reason
+        with self._lifecycle_lock:
+            if self._running:
+                self._cancel_reason = reason
+                return True
+            if not self._has_started:
+                self._pending_cancel_reason = reason
+                return True
+            return False
 
     def run(
         self,
@@ -240,13 +302,17 @@ class Runtime:
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
         copy_yields: bool, start_node: str, resume_info: dict[str, Any] | None,
     ) -> Iterator[dict[str, Any]]:
-        if self._running:
-            raise RuntimeError("a Runtime instance cannot execute overlapping runs")
-        self._running = True
+        with self._lifecycle_lock:
+            if self._running:
+                raise RuntimeError("a Runtime instance cannot execute overlapping runs")
+            self._running = True
+            self._has_started = True
+            self._cancel_reason = self._pending_cancel_reason
+            self._pending_cancel_reason = None
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
-            self._cancel_reason = None
+            self._refresh_identity()
             self._active_attempt = None
             initial = State.empty() if state is None else state
             if not isinstance(initial, State):
@@ -278,17 +344,27 @@ class Runtime:
             }
             if resume_info is not None:
                 header["resume"] = _strict_plain_json(resume_info)
-            if self.durability_profile is DurabilityProfile.BUFFERED:
+            if self._hub.sink is not None:
                 header["sink"] = {
-                    "flush_interval_ms": self._hub.flush_interval_ms,
-                    "chunk_records": self._hub.chunk_records,
+                    "flush_interval_ms": (
+                        self._hub.flush_interval_ms
+                        if self.durability_profile is DurabilityProfile.BUFFERED
+                        else 0
+                    ),
+                    "chunk_records": (
+                        self._hub.chunk_records
+                        if self.durability_profile is DurabilityProfile.BUFFERED
+                        else 1
+                    ),
                 }
             self._trace = Trace(header)
             self._trace_ref = [self._trace]
             self._hub.bind(self._trace.run)
             return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
         except BaseException:
-            self._running = False
+            with self._lifecycle_lock:
+                self._running = False
+                self._cancel_reason = None
             self._active_attempt = None
             raise
 
@@ -301,7 +377,9 @@ class Runtime:
             if self._hub is not None:
                 self._hub.close()
             self._active_attempt = None
-            self._running = False
+            with self._lifecycle_lock:
+                self._running = False
+                self._cancel_reason = None
 
     def _replace_trace(self, trace: Trace) -> None:
         self._trace = trace
@@ -459,7 +537,7 @@ class Runtime:
         started.update({"intent": self._state._intent, "initial_state": self._state._initial_wire()})
         yield exposed(self._store(started))
         current_node = start_node
-        committed_transitions = 0
+        routed_activations = 0
         while True:
             if self._cancel_reason is not None:
                 terminal = self._cancelled()
@@ -561,7 +639,7 @@ class Runtime:
                     return
                 if error is None:
                     self._state = committed
-                    committed_transitions += 1
+                    routed_activations += 1
                     break
                 if disposition == "retry":
                     attempt_number += 1
@@ -580,6 +658,7 @@ class Runtime:
                     yield exposed(terminal)
                     raise NodeFailed(current_node, self._state, self._trace, error) from error
                 # exploration: route using the unchanged committed state.
+                routed_activations += 1
                 break
 
             routing, selected, missed = self._routing(current_node, self._state)
@@ -605,7 +684,7 @@ class Runtime:
                 yield exposed(terminal)
                 return
             limit = self._plan.max_transitions
-            if limit is not None and committed_transitions >= limit:
+            if limit is not None and routed_activations >= limit:
                 terminal = self._terminal(
                     "run_failed",
                     cause={

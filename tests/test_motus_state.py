@@ -66,6 +66,27 @@ def test_attempt_local_writes_are_not_readable_before_their_causal_commit():
         _ = pending.facts
 
 
+def test_chunk_index_preserves_old_and_sibling_snapshot_views():
+    base = State.new(
+        "chunk-index",
+        facts=[Fact(f"k{index}", index, "seed", NOW) for index in range(64)],
+    )
+
+    def branch(value):
+        attempt = base._attempt_view(Trace({}).log)
+        returned = attempt.with_fact(Fact("k0", value, "branch", NOW))
+        return attempt._committed(returned, 1)
+
+    left = branch("left")
+    right = branch("right")
+
+    assert base.fact("k0") == 0
+    assert left.fact("k0") == "left"
+    assert right.fact("k0") == "right"
+    assert left.fact("k63") == 63
+    assert right.fact("absent") is None
+
+
 def test_reads_capture_initial_absent_header_and_scan_origins():
     state = State.new(
         "intent", facts=[Fact("seed", 1, "test", NOW)], metadata={"actor": "d"}

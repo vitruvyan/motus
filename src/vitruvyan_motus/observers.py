@@ -30,7 +30,12 @@ class TraceSink(Protocol):
 
 @runtime_checkable
 class Listener(Protocol):
-    """Live read-only surface. Listener failures never affect execution."""
+    """Live read-only surface.
+
+    Record mutation and callback failures are isolated.  Delivery is
+    synchronous, so callbacks can delay the runner and code holding the
+    Runtime may use its public cancellation surface.
+    """
 
     def on_record(self, record: dict[str, Any]) -> None: ...
 
@@ -127,9 +132,8 @@ class _ObservationHub:
 
     def bind(self, header: dict[str, Any]) -> None:
         """Open the required run-scoped session without losing its failure."""
-        if self.profile == "in-memory":
+        if self.sink is None:
             return
-        assert self.sink is not None
         try:
             session = self.sink.open_run(copy.deepcopy(header))
             if not callable(getattr(session, "write", None)):
@@ -181,12 +185,12 @@ class _ObservationHub:
                 return
 
     def persist(self, record: dict[str, Any], *, force: bool = False) -> None:
-        if self.profile == "in-memory":
-            return
         if self._async_failure is not None:
             raise self._async_failure
+        if self.profile == "in-memory" and self._run_sink is None:
+            return
         assert self._run_sink is not None
-        if self.profile == "synchronous":
+        if self.profile in ("in-memory", "synchronous"):
             self._run_sink.write((copy.deepcopy(record),))
             return
         with self._lock:
@@ -255,7 +259,14 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def __next__(self) -> dict[str, Any]:
         if self._closed:
             raise StopIteration
-        return next(self._iterator)
+        try:
+            return next(self._iterator)
+        except BaseException:
+            # Exhaustion and execution failures both finish this driver.  In
+            # particular, normal exhaustion must make context-manager exit a
+            # no-op rather than queueing cancellation for a later run.
+            self._closed = True
+            raise
 
     @property
     def trace(self) -> Any:

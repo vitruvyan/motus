@@ -39,7 +39,7 @@
     "max_transitions": {
       "type": "integer",
       "minimum": 1,
-      "description": "Runtime safety limit on committed transitions per run. REQUIRED (validator rule R11) when the spec contains any cycle; optional otherwise. A field of the canonical spec, hence part of the graph fingerprint. Tripping it ends the run as run_failed with cause kind transition_limit_exceeded."
+      "description": "Runtime safety limit on routing-producing node activations per run: returned/commit and raised/continue transitions count; retry attempts do not. REQUIRED (validator rule R11) when the spec contains any cycle; optional otherwise. A field of the canonical spec, hence part of the graph fingerprint. Tripping it ends the run as run_failed with cause kind transition_limit_exceeded."
     },
     "nodes": {
       "type": "array",

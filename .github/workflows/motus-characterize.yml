@@ -1,0 +1,31 @@
+name: Motus benchmark characterization
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  characterize:
+    name: characterize-py310-epyc
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+      - name: Collect five independent cold-materialization runs
+        env:
+          PYTHONPATH: src
+        run: >-
+          python benchmarks/collect_motus_baseline.py 5
+          > benchmarks/candidate-v0.6.1-epyc-py310.json
+      - name: Upload raw characterization evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: motus-v0.6.1-epyc-py310
+          path: benchmarks/candidate-v0.6.1-epyc-py310.json
+          if-no-files-found: error
+          retention-days: 30

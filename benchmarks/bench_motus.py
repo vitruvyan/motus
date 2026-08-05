@@ -68,7 +68,7 @@ def make_runtime(size: int, *, realistic: bool = False):
     document = {
         "schema_version": "1.0.0",
         "name": f"motus-bench-{size}",
-        "version": "0.6.0",
+        "version": "0.6.1",
         "entry": names[0],
         "nodes": [
             {
@@ -159,9 +159,15 @@ for label, result in (
     ("realistic_1000", final_realistic[1000]),
 ):
     minimum_dict, median_dict, _ = timeit(result.trace.to_dict)
+    # Prime the immutable JSON encoding deliberately: this is a convenience
+    # path and is reported separately from cold document materialization.
+    result.trace.to_json()
+    minimum_cached_json, median_cached_json, _ = timeit(result.trace.to_json)
     document = result.trace.to_dict()
     minimum_json, median_json, _ = timeit(
-        lambda document=document: json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+        lambda document=document: json.dumps(
+            document, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        )
     )
     serialization[label] = {
         "events_len": len(result.trace.records),
@@ -171,6 +177,8 @@ for label, result in (
         ),
         "to_dict_min_ms": minimum_dict * 1e3,
         "to_dict_median_ms": median_dict * 1e3,
+        "cached_to_json_min_ms": minimum_cached_json * 1e3,
+        "cached_to_json_median_ms": median_cached_json * 1e3,
         "json_dumps_min_ms": minimum_json * 1e3,
         "json_dumps_median_ms": median_json * 1e3,
     }

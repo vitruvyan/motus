@@ -20,7 +20,29 @@ __all__ = [
 ]
 
 T = TypeVar("T")
-_MISSING = object()
+
+
+class _Missing:
+    """Identity sentinel that remains itself across isolation boundaries."""
+
+    __slots__ = ()
+
+    def __copy__(self) -> "_Missing":
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "_Missing":
+        return self
+
+    def __reduce__(self):
+        return (_restore_missing, ())
+
+
+def _restore_missing() -> "_Missing":
+    """Return the process-local singleton after a pickle round trip."""
+    return _MISSING
+
+
+_MISSING = _Missing()
 _TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
 )
@@ -353,10 +375,12 @@ class Trace:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        # Parsing the immutable cached encoding is both isolated (even direct
-        # base-class mutation is harmless) and substantially cheaper than a
-        # recursive Python deepcopy of thousands of small record objects.
-        return json.loads(self.to_json())
+        # A document materialization is deliberately cold: callers receive an
+        # isolated object and benchmarks measure the work named by to_dict(),
+        # never a parse of to_json()'s memoized encoding.
+        return json.loads(json.dumps(
+            self._view(), ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        ))
 
     def to_json(self) -> str:
         if self._json_cache is None:

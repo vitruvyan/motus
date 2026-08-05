@@ -1171,20 +1171,21 @@ def _execution_violations(
                         )
                     )
                 else:
-                    committed = sum(
+                    routed_activations = sum(
                         1
                         for r in records
                         if r.get("kind") == "transition"
-                        and r.get("disposition") == "commit"
+                        and r.get("disposition") in ("commit", "continue")
                     )
-                    if committed < spec["max_transitions"]:
+                    if routed_activations != spec["max_transitions"]:
                         v.append(
                             Violation(
                                 "E11",
                                 path,
                                 f"cause transition_limit_exceeded but only "
-                                f"{committed} committed transition(s) are on "
-                                f"record, below max_transitions "
+                                f"{routed_activations} routing-producing "
+                                f"activation(s) are on record; the terminal is "
+                                f"valid only exactly at max_transitions "
                                 f"{spec['max_transitions']}",
                             )
                         )

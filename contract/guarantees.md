@@ -12,8 +12,9 @@ engines; any future alternative path must prove trace-equivalence against the
 interpreter per release, in CI.
 
 **II. TraceSink failure prevents logical success.** A run cannot declare
-itself completed if the sink required by its durability profile has not
-accepted the trace. Crash guarantees depend on the declared profile:
+itself completed if its required sink has not accepted the trace. A sink is
+required when the profile requires one or when the caller explicitly supplies
+one. Crash guarantees still depend only on the declared profile:
 
 | Profile | Guarantee after process loss |
 |---|---|
@@ -22,7 +23,9 @@ accepted the trace. Crash guarantees depend on the declared profile:
 | `synchronous` | A transition is committable only after sink ack, within the declared limits of the persistent medium (fsync semantics, replication if any). |
 
 The profile is recorded in the run header. Claiming a stronger guarantee than
-the profile bought is a contract violation.
+the profile bought is a contract violation. An explicitly supplied sink under
+`in-memory` is synchronous (`flush_interval_ms: 0`, `chunk_records: 1`) and its
+configuration is recorded in the header, but it adds no crash-survival claim.
 
 **III. The kernel does not interpret the domain.** Motus imports and embeds no
 LLM, no Vitruvyan OS, no LangChain, no Orders, no epistemic categories.
@@ -106,19 +109,21 @@ remain historical debts recorded as measured reality, not achievements.
 Trace completeness is an invariant, never a debt and never a tunable sampling
 rate.
 
-### Motus 0.6 GitHub EPYC profile (ADR-006)
+### Motus 0.6.1 GitHub EPYC profile (ADR-006 + ADR-007)
 
 The native Motus workload is deliberately separate: a 1,000-node run emits
 3,002 records rather than the Axis reference's 2,002. Five independent runs
-on Python 3.10.12 and AMD EPYC 9V74 produced the committed raw document
-`benchmarks/candidate-v0.6.0-epyc-py310.json`.
+on Python 3.10.12 and AMD EPYC 9V74 produced the corrected cold-materialization
+document `benchmarks/candidate-v0.6.1-epyc-py310.json`. The 0.6.0 document is
+historical evidence only: its serialization row measured a cache hit and is
+not a current product claim.
 
-| Motus native SLO | Target | v0.6.0 measured | run-to-run spread |
+| Motus native SLO | Target | v0.6.1 measured | run-to-run spread |
 |---|---:|---:|---:|
-| Motus per-node overhead, full trace, n <= 1000 | <= 45 us | 43.5 us | 2% |
-| Motus 100-node no-op overhead | <= 3.25 ms | 3.09 ms | 5% |
-| Motus trace preparation / `json.dumps` | <= 1.5x | 0.8x | 5% / 16% |
-| Motus positive superlinear accumulation at n = 1000 | < 10% | 0% | 74% ratio spread |
+| Motus per-node overhead, full trace, n <= 1000 | <= 45 us | 51.2 us | 3% |
+| Motus 100-node no-op overhead | <= 3.25 ms | 3.44 ms | 4% |
+| Motus cold trace materialization / `json.dumps` | <= 1.5x | 1.7x | 10% / 14% |
+| Motus positive superlinear accumulation at n = 1000 | < 10% | 3% | 77% ratio spread |
 | Motus trace completeness | 100% — no sampling, ever | 100%; 3,002 records | — |
 
 The common 25% tolerance produces hard ceilings of 56.25 us/node, 4.0625 ms,
@@ -222,18 +227,20 @@ this.
   node-protocol §1.2's guarantee) and MUST NOT feed anything back into
   execution.
 
-**Listener** — the live, non-intervening surface.
+**Listener** — the live, non-authoritative observation surface.
 - Delivery unit: each record, after it is committed to the run's log,
   in `seq` order per listener.
-- Structurally non-intervening: per-listener isolation in the dispatch
-  layer; a listener's exception is recorded (counted, logged) and swallowed;
-  there is NO critical flag on this surface — nothing a listener does can
-  affect execution, by construction rather than by convention.
+- Data and failure isolation: per-listener isolation in the dispatch layer; a
+  listener's exception is counted and swallowed, and record mutation affects
+  only a private copy. There is NO critical flag on this surface.
 - Read-only: delivered records are isolated; mutation attempts affect
   copies.
 - Ordering across listeners is unspecified; within one listener it is `seq`
-  order. Delivery is synchronous on the runner thread in 0.5 (the runner is
-  single-threaded; async delivery is a later, explicitly-versioned change).
+  order. Delivery is synchronous on the runner thread in 0.6, so a callback
+  can delay execution. Code that also holds the Runtime can invoke its public
+  cancellation surface. Listeners therefore MUST return promptly and MUST NOT
+  be presented as incapable of affecting scheduling. Moving delivery off the
+  runner thread is a later, explicitly-versioned change.
 
 **StreamDriver** — the execution-coupled surface.
 - The one surface honestly allowed to gate execution: it drives the run
