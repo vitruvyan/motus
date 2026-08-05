@@ -38,6 +38,7 @@ from vitruvyan_motus.errors import (
 )
 from vitruvyan_motus.graph import CompiledPlan, GraphSpec, NodeDecl, Transition, TransitionKind
 from vitruvyan_motus.observers import (
+    AsyncStreamDriver,
     InMemoryTraceSink,
     Listener,
     StreamDriver,
@@ -57,6 +58,7 @@ __all__ = [
     "ReplayError", "ReplayMismatch", "UnsafeResume", "DeclarationViolation",
     "GraphSpec", "NodeDecl", "Transition", "TransitionKind", "CompiledPlan",
     "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "StreamDriver",
+    "AsyncStreamDriver",
     "Policy", "DurabilityProfile", "RunResult", "Runtime",
     "TraceBundle", "ReplayResult", "ReplayEngine",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",

@@ -5,12 +5,12 @@ from __future__ import annotations
 import copy
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
     "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink",
-    "StreamDriver",
+    "StreamDriver", "AsyncStreamDriver",
 ]
 
 
@@ -290,3 +290,64 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def __exit__(self, exc_type, exc, tb) -> None:
         if not self._closed:
             self.close("stream context exited")
+
+
+class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
+    """The asynchronous twin of :class:`StreamDriver`.
+
+    Same contract, same cancellation semantics: the runtime cannot advance
+    until the consumer asks for the next record, exhaustion closes the driver
+    so a later context exit cannot cancel an unrelated run (ADR-008 §1), and
+    ``aclose`` on a live run drains only the cancellation terminal.
+    """
+
+    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter")
+
+    def __init__(
+        self,
+        iterator: AsyncIterator[dict[str, Any]],
+        cancel: Callable[[str], None],
+        trace_getter: Callable[[], Any],
+    ) -> None:
+        self._iterator = iterator
+        self._cancel = cancel
+        self._closed = False
+        self._trace_getter = trace_getter
+
+    def __aiter__(self) -> "AsyncStreamDriver":
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        if self._closed:
+            raise StopAsyncIteration
+        try:
+            return await self._iterator.__anext__()
+        except BaseException:
+            # Exhaustion and execution failures both finish this driver, so
+            # context exit afterwards is a no-op rather than a cancellation
+            # queued against a later run.
+            self._closed = True
+            raise
+
+    @property
+    def trace(self) -> Any:
+        return self._trace_getter()
+
+    async def aclose(self, reason: str = "stream consumer stopped") -> None:
+        if self._closed:
+            return
+        self._cancel(reason)
+        try:
+            while True:
+                await self._iterator.__anext__()
+        except StopAsyncIteration:
+            pass
+        finally:
+            self._closed = True
+
+    async def __aenter__(self) -> "AsyncStreamDriver":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if not self._closed:
+            await self.aclose("stream context exited")

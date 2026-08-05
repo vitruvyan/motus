@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Mapping
 
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.context import ReplayStatus, _RunController
@@ -23,7 +23,13 @@ from vitruvyan_motus.errors import (
     SinkFailed,
 )
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
-from vitruvyan_motus.observers import Listener, StreamDriver, TraceSink, _ObservationHub
+from vitruvyan_motus.observers import (
+    AsyncStreamDriver,
+    Listener,
+    StreamDriver,
+    TraceSink,
+    _ObservationHub,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Trace, _canonical_bytes, _strict_plain_json
 
@@ -128,6 +134,116 @@ def _accepts_context(node: Callable[..., Any]) -> bool:
         len(positional) == 2
         and positional[1].default is positional[1].empty
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _Invoke:
+    """One request from the state machine to run one node.
+
+    The executor never calls a node itself: it asks, and a *driver* answers.
+    That inversion is what keeps guarantees.md invariant I true by
+    construction rather than by test — there is a single state machine, and
+    the synchronous and asynchronous drivers differ only in how they obtain
+    the node's result. No second engine exists to diverge from the first.
+    """
+
+    node: Callable[..., Any]
+    args: tuple[Any, ...]
+    name: str
+
+
+def _invoke_sync(request: _Invoke) -> tuple[Any, BaseException | None]:
+    """Answer one invocation request on the calling thread.
+
+    Only ``Exception`` is captured as node failure, exactly as a direct call
+    did: a ``BaseException`` must still tear the run down and leave the
+    ``attempt_started`` unclosed (node-protocol.md §7.3).
+    """
+    try:
+        returned = request.node(*request.args)
+    except Exception as exc:  # noqa: BLE001 - this IS the node failure boundary
+        return None, exc
+    if inspect.isawaitable(returned):
+        if hasattr(returned, "close"):
+            returned.close()
+        return None, TypeError(
+            f"node {request.name!r} is asynchronous; drive it with "
+            "Runtime.arun() or Runtime.astream()"
+        )
+    return returned, None
+
+
+def _drive(
+    machine: Iterator[Any], invoke: Callable[[_Invoke], tuple[Any, BaseException | None]]
+) -> Iterator[dict[str, Any]]:
+    """Advance the state machine, servicing its invocation requests.
+
+    Yields only trace records, so every consumer above this layer — including
+    ``StreamDriver`` — sees exactly the stream it always saw.
+    """
+    reply: Any = None
+    while True:
+        try:
+            item = machine.send(reply)
+        except StopIteration:
+            return
+        if type(item) is _Invoke:
+            try:
+                reply = invoke(item)
+            except BaseException as exc:
+                # Re-raise inside the machine so its `finally` runs at the
+                # same point a direct call would have raised.
+                machine.throw(exc)
+                raise
+            continue
+        reply = None
+        yield item
+
+
+async def _invoke_async(request: _Invoke) -> tuple[Any, BaseException | None]:
+    """Answer one invocation request, awaiting the node when it is awaitable.
+
+    A graph may mix shapes freely: an ordinary ``def`` node is called, an
+    ``async def`` node is awaited, and both produce the same transition
+    record. Only ``Exception`` is captured as node failure, matching
+    :func:`_invoke_sync`; ``asyncio.CancelledError`` is a ``BaseException``
+    and therefore tears the run down rather than becoming a raised attempt.
+    """
+    try:
+        returned = request.node(*request.args)
+        if inspect.isawaitable(returned):
+            returned = await returned
+    except Exception as exc:  # noqa: BLE001 - this IS the node failure boundary
+        return None, exc
+    return returned, None
+
+
+async def _adrive(
+    machine: Iterator[Any],
+    invoke: Callable[[_Invoke], Awaitable[tuple[Any, BaseException | None]]],
+) -> AsyncIterator[dict[str, Any]]:
+    """The asynchronous driver of the same synchronous state machine.
+
+    ``machine`` is the very generator :meth:`Runtime._execute` returns — not a
+    second implementation of it. Nothing here decides anything about
+    execution; it only awaits what the machine asked for and hands the answer
+    back, so the emitted record stream is the interpreter's, unchanged.
+    """
+    reply: Any = None
+    while True:
+        try:
+            item = machine.send(reply)
+        except StopIteration:
+            return
+        if type(item) is _Invoke:
+            try:
+                reply = await invoke(item)
+            except BaseException as exc:
+                machine.throw(exc)
+                raise
+            continue
+        reply = None
+        yield item
 
 
 class Runtime:
@@ -274,11 +390,11 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> RunResult:
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=self._plan.entry, resume_info=None,
         )
-        for _ in iterator:
+        for _ in _drive(machine, _invoke_sync):
             pass
         assert self._state is not None and self._trace is not None
         return RunResult(self._state, self._trace)
@@ -290,13 +406,55 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> StreamDriver:
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
-        return StreamDriver(iterator, self.cancel, lambda: trace_ref[0])
+        return StreamDriver(_drive(machine, _invoke_sync), self.cancel, lambda: trace_ref[0])
+
+    async def arun(
+        self,
+        state: State | None = None,
+        *,
+        run_id: str | None = None,
+        replay: ReplayStatus | None = None,
+    ) -> RunResult:
+        """Execute the graph, awaiting nodes that are awaitable.
+
+        The same state machine as :meth:`run`, driven asynchronously. Nodes may
+        be ``def`` or ``async def`` in any mixture; the resulting trace is the
+        one the interpreter produces either way. Execution remains single-lane
+        — one node at a time — because fan-out has no representation in
+        GraphSpec v1 (guarantees.md §5).
+        """
+        machine = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=False,
+            start_node=self._plan.entry, resume_info=None,
+        )
+        async for _ in _adrive(machine, _invoke_async):
+            pass
+        assert self._state is not None and self._trace is not None
+        return RunResult(self._state, self._trace)
+
+    def astream(
+        self,
+        state: State | None = None,
+        *,
+        run_id: str | None = None,
+        replay: ReplayStatus | None = None,
+    ) -> AsyncStreamDriver:
+        """Consumer-paced asynchronous execution, record by record."""
+        machine = self._start(
+            state, run_id=run_id, replay=replay, copy_yields=True,
+            start_node=self._plan.entry, resume_info=None,
+        )
+        assert self._trace_ref is not None
+        trace_ref = self._trace_ref
+        return AsyncStreamDriver(
+            _adrive(machine, _invoke_async), self.cancel, lambda: trace_ref[0]
+        )
 
     def _start(
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
@@ -561,16 +719,13 @@ class Runtime:
                 draw_cursor = self._control.draw_cursor()
                 effect_cursor = self._control.effect_cursor()
                 self._control.begin_effect_scope(declaration.effect_class.value)
-                error: BaseException | None = None
-                returned: State | None = None
-                try:
-                    node = self._nodes[current_node]
-                    if self._uses_context[current_node]:
-                        returned = node(attempt_state, self._control.node_context)
-                    else:
-                        returned = node(attempt_state)
-                except Exception as exc:
-                    error = exc
+                node = self._nodes[current_node]
+                arguments = (
+                    (attempt_state, self._control.node_context)
+                    if self._uses_context[current_node]
+                    else (attempt_state,)
+                )
+                returned, error = yield _Invoke(node, arguments, current_node)
                 transition_seq = self._control.next_seq()
                 writes = {"facts": [], "decisions": [], "rejections": []}
                 if error is None:
@@ -710,11 +865,11 @@ class Runtime:
         """Execute a causally linked resume segment (used by ReplayEngine)."""
         if start_node not in self._plan.declarations:
             raise ValueError(f"resume start node {start_node!r} is not declared")
-        iterator = self._start(
+        machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=start_node, resume_info=resume_info,
         )
-        for _ in iterator:
+        for _ in _drive(machine, _invoke_sync):
             pass
         assert self._state is not None and self._trace is not None
         return RunResult(self._state, self._trace)
