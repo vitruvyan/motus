@@ -4,8 +4,12 @@
 - **Date:** 2026-08-05
 - **Authority:** founder direction; the 0.7 adoption track ("vai con B")
 - **Depends on:** ADR-004 (run-scoped TraceSink binding), ADR-010 §Open
-- **Amends:** ADR-004 §Decision (the shape of `open_run`'s argument) and
-  §Verification item 1. ADR-001…003, 005…010 stand unedited.
+- **Amends:** ADR-004 §Decision — both the shape of `open_run`'s argument *and*
+  the sentence "Version 0.5 adds no separate `close()` acknowledgement because
+  terminal acceptance is already the success boundary", which Decision 2 below
+  supersedes — and §Verification item 1. Also amends `contract/guarantees.md`
+  §6's **TraceSink** clause, which is normative and must describe the protocol
+  a sink author actually has to implement. ADR-001…003, 005…010 stand unedited.
 
 ## Context
 
@@ -69,6 +73,16 @@ omits it behaves as before and forfeits only the distinction. Requiring it
 would break every ad-hoc sink for no safety gain, since a sink that does not
 implement it has no use for the signal.
 
+**It is therefore deliberately not declared as a member of the
+`TraceRunSink` Protocol.** Python has no optional protocol member: declaring it
+makes `isinstance` and every static checker reject a write-only sink, imposing
+exactly the break this clause promises not to impose. A first attempt did
+declare it, and the package's own `_InMemoryRunSink` then failed its own
+`runtime_checkable` Protocol — caught by the adversarial round, not by the
+suite, because nothing in-repo calls `isinstance` on it. The signature lives in
+the Protocol's docstring, and `InMemoryTraceSink` implements `finish` so the
+shipped example is the complete shape rather than the partial one.
+
 Called **outside** the hub lock, because it reaches user code that may block on
 a filesystem or a network, and holding the lock across that stalls anything
 else touching the hub. Best-effort: the run has already reached whatever end it
@@ -78,11 +92,28 @@ bookkeeping failure.
 ## Consequences
 
 - A sink written against the protocol and nothing else produces an artifact
-  that passes `contract/validate.py`. This is the property ADR-004 claimed and
-  did not deliver, and it is now a test rather than a claim.
+  that passes `contract/validate.py` — **whenever the session received at least
+  one record.** This is the property ADR-004 claimed and did not deliver, and
+  it is now a test rather than a claim.
+
+  The qualifier is not a hedge. A session that received *zero* records cannot
+  produce a valid artifact at all: `records` has `minItems: 1`, so a header-only
+  file fails even under `--allow-incomplete`, which covers a truncated stream
+  and not an empty one. That is a property of the schema, not of this decision,
+  and the answer is Decision 2: a sink told `complete=False` with nothing
+  written can discard the file rather than publish it. An unqualified claim here
+  would have been false, and was, until the adversarial round measured it.
 - Rows 1–3 of ADR-010's twelve (a session opened and given no records) remain
   possible, but are now **knowable**: the sink is told `complete=False`. The
   other nine were always partial sequences; they too are now labelled.
+
+  Making this true took a second fix. The signal is emitted by
+  `_ObservationHub.close()`, which lives in `_managed_execute`'s `finally` — and
+  a generator that was never advanced never runs one, so a driver created and
+  dropped left its session opened and told *nothing*, in all three profiles.
+  The hub is now published on the run handle and closed by the same finaliser
+  that releases the run claim. The consequence above was written before that
+  was true; the round is what made it true rather than aspirational.
 - The reference durable sink that M4 needs can be written honestly. That
   sequencing was the reason to do this first: a reference sink shipped against
   the old protocol would have had to import the schema version to work, and

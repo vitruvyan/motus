@@ -340,3 +340,91 @@ def test_a_sink_without_finish_still_works():
 
     assert result.status == "completed"
     assert [r["kind"] for r in sink.records][-1] == "run_completed"
+
+
+def test_a_session_opened_for_a_driver_that_never_ran_is_still_told(tmp_path):
+    """`_start` opens the durable session before the consumer asks for
+    anything, so a driver created and dropped leaves one open. The signal that
+    ends it lives in `_managed_execute`'s `finally`, which a generator that
+    never started does not run — so the session was opened and then told
+    nothing at all, ever, and its header-only file is byte-identical to a live
+    run's.
+
+    ADR-011 claims exactly this row becomes knowable. It has to be true.
+    """
+    sink = ProtocolOnlySink(tmp_path / "never.jsonl")
+    runtime = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+
+    driver = runtime.stream(State.empty("never"))
+    del driver
+    import gc
+    gc.collect()
+
+    assert sink.finished == [False], (
+        "the session was opened and never told the run was over"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_async_session_for_a_driver_that_never_ran_is_still_told(tmp_path):
+    sink = ProtocolOnlySink(tmp_path / "never-async.jsonl")
+    runtime = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+
+    driver = runtime.astream(State.empty("never"))
+    del driver
+    import gc
+    gc.collect()
+
+    assert sink.finished == [False]
+
+
+def test_a_write_only_sink_still_satisfies_the_run_sink_protocol():
+    """ADR-011 §2 promises `finish` is optional on the sink's side. Python has
+    no optional protocol member, so declaring it makes `isinstance` and every
+    static checker reject a write-only sink — imposing precisely the break the
+    decision says it does not impose. The runtime duck-types it instead."""
+    from vitruvyan_motus import TraceRunSink
+
+    class WriteOnly:
+        def write(self, records: tuple[dict[str, Any], ...]) -> None:
+            pass
+
+    assert isinstance(WriteOnly(), TraceRunSink), (
+        "declaring finish on the Protocol makes it mandatory, contradicting "
+        "ADR-011 §2"
+    )
+
+
+def test_the_shipped_sink_implements_the_whole_shape():
+    """The example people copy should not be the partial one."""
+    from vitruvyan_motus import InMemoryTraceSink
+
+    sink = InMemoryTraceSink()
+    runtime = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+    runtime.run(State.empty("shipped"))
+
+    session = sink._runs[-1]
+    assert callable(getattr(session, "finish", None))
+    assert session.complete is True
+
+    abandoned = InMemoryTraceSink()
+    other = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=abandoned, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+    driver = other.stream(State.empty("dropped"))
+    next(driver)
+    del driver
+    import gc
+    gc.collect()
+
+    assert abandoned._runs[-1].complete is False

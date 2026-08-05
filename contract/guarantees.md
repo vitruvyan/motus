@@ -210,6 +210,21 @@ this.
   delivered exactly once before the first record; every record batch for that
   run is written only through the returned session. A required sink's refusal
   to open the run is a sink failure. See ADR-004.
+- Header shape: `header` is the document's **TraceHeader** —
+  `{schema_version, run}`, the JSONL document's first line — not the `run`
+  object inside it. A sink can therefore write a conforming artifact from what
+  it is handed, importing nothing from the writer. See ADR-011, which amends
+  ADR-004 §Verification item 1 on this point.
+- Session end: the runtime calls `TraceRunSink.finish(*, complete: bool)` once,
+  when it will send that session nothing more — `complete=True` when the
+  session received a terminal record, `False` when the persisted account is a
+  prefix. Without it a session cannot tell *in flight* from *abandoned
+  forever*. It is **optional on the sink's side**: the runtime calls it when
+  present, and a sink that omits it forfeits only that distinction. ADR-011
+  supersedes ADR-004 §Decision's "adds no separate `close()` acknowledgement".
+  A session that receives zero records cannot produce a valid artifact at all
+  (`records` has `minItems: 1`); `complete=False` is what lets a sink discard
+  it rather than publish a header-only file.
 - Delivery unit: trace records, in `seq` order, at the flush boundaries the
   durability profile defines (`synchronous`: every record; `buffered`: per
   chunk/interval, with failed-transition and terminal records flushed

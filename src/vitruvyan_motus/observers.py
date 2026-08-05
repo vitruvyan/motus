@@ -67,11 +67,21 @@ class TraceRunSink(Protocol):
     record and the sequence is a whole trace, False when it did not and the
     persisted account is a prefix. A sink that omits ``finish`` keeps the old
     behaviour and forfeits only that distinction.
+
+    ``finish`` is **deliberately not declared as a member below**. Python has no
+    optional protocol member: declaring it would make ``isinstance`` and every
+    static checker reject a write-only sink, which is exactly the break ADR-011
+    promises not to impose. The runtime therefore duck-types it, the same way it
+    already duck-types ``write`` at bind time. The signature a sink must provide
+    is::
+
+        def finish(self, *, complete: bool) -> None: ...
+
+    A durable sink should implement it; :class:`InMemoryTraceSink` does, so the
+    shipped sink demonstrates the whole shape.
     """
 
     def write(self, records: tuple[dict[str, Any], ...]) -> None: ...
-
-    def finish(self, *, complete: bool) -> None: ...
 
 
 @runtime_checkable
@@ -99,14 +109,22 @@ class Listener(Protocol):
 
 
 class _InMemoryRunSink:
-    __slots__ = ("header", "_records")
+    __slots__ = ("header", "_records", "complete")
 
     def __init__(self, header: dict[str, Any]) -> None:
         self.header = copy.deepcopy(header)
         self._records: list[dict[str, Any]] = []
+        self.complete: bool | None = None
 
     def write(self, records: tuple[dict[str, Any], ...]) -> None:
         self._records.extend(copy.deepcopy(records))
+
+    def finish(self, *, complete: bool) -> None:
+        # `None` until the runtime says otherwise, so "still in flight" and
+        # "ended with a prefix" stay distinguishable — which is the whole point
+        # of the signal. The shipped sink implements it so that the example
+        # people copy is the complete shape.
+        self.complete = complete
 
     @property
     def records(self) -> tuple[dict[str, Any], ...]:
