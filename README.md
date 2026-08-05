@@ -219,6 +219,21 @@ On Windows, use `.venv\Scripts\python.exe` in place of
 `.venv/bin/python`. The wheel contains only `vitruvyan_motus`, includes
 `py.typed`, and declares no runtime dependencies.
 
+## Run something
+
+Three examples, each standalone and each printing what it did:
+
+```console
+python examples/01_first_run.py          # a graph, a run, and the trace it left
+python examples/02_durable_evidence.py   # write evidence to disk, then check it without trusting the writer
+python examples/03_async_and_streaming.py # async nodes, live records, stopping mid-run
+```
+
+The second one is the one to read if you only read one. It writes a run to a
+file, validates that file from a **separate process** using only the published
+contract, shows a truncated copy being refused, and then replays it against
+changed code to watch the mismatch get caught.
+
 ## Quick start
 
 ```python
@@ -267,6 +282,41 @@ print(result.trace.to_json())
 Nodes may have either `node(state)` or `node(state, ctx)` shape. Use
 `RunContext` when a reproducible run needs time, randomness, generated
 identifiers, or explicit effect evidence.
+
+## Synchronous or asynchronous, one semantics
+
+A graph that calls anything over a network has to be asynchronous, so Motus
+drives nodes either way:
+
+```python
+result = runtime.run(state)            # answers on the calling thread
+result = await runtime.arun(state)     # awaits nodes that are awaitable
+
+with runtime.stream(state) as driver:          # records as they happen
+    for record in driver:
+        ...
+
+async with runtime.astream(state) as driver:   # the same, awaited
+    async for record in driver:
+        ...
+```
+
+A graph may mix `def` and `async def` nodes freely.
+
+What does **not** change is the part that matters. There is one state machine.
+`_execute` does not call nodes — it yields an invocation request and receives
+the outcome back, so the synchronous and asynchronous drivers are about twenty
+lines each and differ only in how they obtain a node's result. `guarantees.md`
+invariant I forbids co-equal engines and requires any alternative path to prove
+trace-equivalence per release, in CI; here there is no second engine to
+diverge, so the invariant holds **by construction rather than by test**. The
+439 tests that predated the asynchronous surface pass against it with zero
+edits, which is the evidence that inversion changed how the machine is driven
+and not what it decides.
+
+An `async def` node handed to `run()` is refused by name — *"node 'fetch' is
+asynchronous; drive it with Runtime.arun() or Runtime.astream()"* — rather than
+failing somewhere deep with an `AttributeError` about a coroutine.
 
 ## Routing is recorded causally
 
@@ -335,7 +385,21 @@ Motus separates three surfaces:
 - `TraceSink`: run-bound durable evidence;
 - `Listener`: isolated, synchronous live observation; callbacks can delay the
   runner and cancellation remains trace-visible;
-- `StreamDriver`: consumer-paced execution with explicit backpressure.
+- `StreamDriver` / `AsyncStreamDriver`: consumer-paced execution with explicit
+  backpressure; the runtime cannot advance until you ask for the next record.
+
+`JsonlTraceSink` is the shipped durable sink. It writes one JSONL document per
+run — the trace header on line one, one record per line — in the exact form
+`contract/validate.py` accepts, and `fsync`s by default because that is what
+the `synchronous` profile promises. A run that reaches its terminal lands as
+`<run>.jsonl`; one cut short lands as `<run>.partial.jsonl`; one whose process
+died mid-write stays `<run>.jsonl.part`, because nothing ever declared it over.
+A truncated account is still evidence — it just is not a whole one, and the
+name says so.
+
+It is written against the sink protocol and nothing else: it imports no schema
+version and inspects no record kind, which is enforced by a test. If the
+protocol were insufficient, that file could not exist.
 
 The run header declares one durability profile:
 
@@ -386,13 +450,20 @@ python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.1-
 
 The public API is explicitly listed in `vitruvyan_motus.__all__`:
 
-- topology: `GraphSpec`, `NodeDecl`, `Transition`, `CompiledPlan`;
+- topology: `GraphSpec`, `NodeDecl`, `Transition`, `TransitionKind`,
+  `CompiledPlan`;
 - execution: `Runtime`, `Policy`, `DurabilityProfile`, `RunResult`;
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
-- observation: `TraceSink`, `TraceRunSink`, `Listener`, `StreamDriver`;
-- failures: `NodeFailed`, `SinkFailed`, `UnsafeResume`, `ReplayMismatch`.
+- identity: `__version__`;
+- observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
+  `JsonlTraceSink`, `StreamDriver`, `AsyncStreamDriver`;
+- evidence: `Trace`, `TRACE_SCHEMA_VERSION`, `RedactedValue`, `ContextDraw`,
+  `RunContext`;
+- failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
+  `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
+  `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
 
 The native and legacy decision types are deliberately unambiguous:
 
@@ -400,6 +471,19 @@ The native and legacy decision types are deliberately unambiguous:
 from vitruvyan_motus import Decision
 from vitruvyan_motus.compat import LegacyDecision
 ```
+
+## Shipped in 0.7
+
+- asynchronous execution — `arun`, `astream`, `AsyncStreamDriver` — with one
+  state machine and no second engine;
+- `JsonlTraceSink`: a durable sink, so `buffered` and `synchronous` stop being
+  profiles nobody can reach;
+- a sink protocol a conforming sink can be written against alone: the header
+  handed over is the document's, and a session is told when it will receive
+  nothing more;
+- a persisted artifact may be absent, or a prefix, but never
+  self-contradicting;
+- three runnable examples, executed by the test suite on every commit.
 
 ## Shipped in 0.6
 
