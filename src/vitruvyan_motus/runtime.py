@@ -508,6 +508,13 @@ class Runtime:
             self._has_started = True
             self._cancel_reason = self._pending_cancel_reason
             self._pending_cancel_reason = None
+            # The new run's identity is published in the same critical section
+            # that claims `_running`. Assigning it later — after the controller,
+            # the hub, identity refresh and header construction, all of which
+            # run user code — would leave a window where `_running` describes
+            # this run while `_trace_ref` still names the previous one, and a
+            # stale driver's run-scoped cancel would pass its identity test.
+            self._trace_ref = [None]
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
@@ -557,7 +564,8 @@ class Runtime:
                     ),
                 }
             self._trace = Trace(header)
-            self._trace_ref = [self._trace]
+            assert self._trace_ref is not None
+            self._trace_ref[0] = self._trace
             self._hub.bind(self._trace.run)
             return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
         except BaseException:

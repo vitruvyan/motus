@@ -14,6 +14,22 @@ __all__ = [
 ]
 
 
+def _iterator_is_finished(iterator: Any) -> bool:
+    """Whether the underlying generator has actually terminated.
+
+    A driver latches itself closed when its iterator is done, so that a later
+    context exit cannot cancel an unrelated run (ADR-008 §1). But not every
+    exception out of ``next``/``__anext__`` means "done": a concurrency clash
+    raises ``RuntimeError``/``ValueError`` while the generator is very much
+    alive, and latching on that abandons a live run with no terminal record.
+    A finished generator has released its frame; anything else has not.
+    """
+    for attribute in ("gi_frame", "ag_frame", "cr_frame"):
+        if hasattr(iterator, attribute):
+            return getattr(iterator, attribute) is None
+    return True  # not a generator: assume the exception ended it
+
+
 @runtime_checkable
 class TraceRunSink(Protocol):
     """One run-scoped durable session receiving ordered record batches."""
@@ -264,8 +280,11 @@ class StreamDriver(Iterator[dict[str, Any]]):
         except BaseException:
             # Exhaustion and execution failures both finish this driver.  In
             # particular, normal exhaustion must make context-manager exit a
-            # no-op rather than queueing cancellation for a later run.
-            self._closed = True
+            # no-op rather than queueing cancellation for a later run.  A
+            # concurrency clash does NOT finish it — latching there would
+            # abandon a live run with no terminal record.
+            if _iterator_is_finished(self._iterator):
+                self._closed = True
             raise
 
     @property
@@ -301,7 +320,7 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     ``aclose`` on a live run drains only the cancellation terminal.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter")
+    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter", "_requested")
 
     def __init__(
         self,
@@ -312,6 +331,7 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
         self._iterator = iterator
         self._cancel = cancel
         self._closed = False
+        self._requested = False
         self._trace_getter = trace_getter
 
     def __aiter__(self) -> "AsyncStreamDriver":
@@ -325,8 +345,11 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
         except BaseException:
             # Exhaustion and execution failures both finish this driver, so
             # context exit afterwards is a no-op rather than a cancellation
-            # queued against a later run.
-            self._closed = True
+            # queued against a later run.  "asynchronous generator is already
+            # running" is neither: the generator is alive and another task is
+            # inside it, so latching there would strand that run for good.
+            if _iterator_is_finished(self._iterator):
+                self._closed = True
             raise
 
     @property
@@ -336,7 +359,12 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     async def aclose(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:
             return
-        self._cancel(reason)
+        if not self._requested:
+            # The cancellation that actually stopped the run is the first one.
+            # A second aclose (a retry, or __aexit__ after an explicit call)
+            # must not overwrite the reason the trace will attribute it to.
+            self._requested = True
+            self._cancel(reason)
         if getattr(self._iterator, "ag_running", False):
             # A consumer is inside __anext__ right now — the graceful-shutdown
             # shape, where a supervisor closes a driver another task is

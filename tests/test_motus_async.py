@@ -474,6 +474,91 @@ async def test_verify_refuses_an_async_node_instead_of_accusing_it_of_divergence
 
 
 @pytest.mark.asyncio
+async def test_a_stale_driver_cannot_cancel_a_run_that_is_still_starting():
+    """The run-scoped cancel keys on the identity of the per-run `_trace_ref`.
+    That identity must be published in the same critical section that claims
+    `_running`: assigning it after the controller, the hub and
+    `motus_config()` evaluation would leave a window where `_running` names
+    the new run while `_trace_ref` still names the old one, and the scope test
+    would wave a stale driver through."""
+    runtime = Runtime(LINEAR, {"a": lambda s: s, "b": lambda s: s})
+    stale = runtime.astream(State.empty("first"), run_id="first")
+    await stale.__anext__()
+    scoped_cancel = stale._cancel
+    await stale._iterator.aclose()  # end run one behind the driver's back
+
+    # Claim the next run's identity the way `_start` does, then check the
+    # stale driver's scope from inside that window — before any record exists.
+    with runtime._lifecycle_lock:
+        runtime._running = True
+        runtime._has_started = True
+        runtime._trace_ref = [None]
+        window_verdict = scoped_cancel("stale context exit")
+        runtime._running = False
+        runtime._cancel_reason = None
+
+    assert window_verdict is False, "a stale driver was admitted mid-start"
+    assert (await runtime.arun(State.empty("later"))).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_a_concurrency_clash_does_not_close_the_driver():
+    """`__anext__` latches `_closed` so a finished driver cannot cancel a later
+    run. But "asynchronous generator is already running" means the generator is
+    *alive* and another task is inside it — latching there would strand that
+    run with no terminal record, which guarantees.md §6 forbids."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(state: State) -> State:
+        entered.set()
+        await release.wait()
+        return state
+
+    runtime = Runtime(LINEAR, {"a": slow, "b": lambda s: s})
+    driver = runtime.astream(State.empty("clash"))
+    consumer = asyncio.create_task(_consume(driver))
+    await entered.wait()
+
+    with pytest.raises(RuntimeError, match="already running"):
+        await driver.__anext__()
+    assert driver._closed is False  # transient, not termination
+
+    await driver.aclose("after the clash")
+    release.set()
+    kinds = await consumer
+
+    assert kinds[-1] == "run_cancelled"
+    assert not runtime._running
+    assert (await runtime.arun(State.empty("after"))).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_the_recorded_cancellation_reason_is_the_one_that_stopped_the_run():
+    """A retried or context-manager-triggered `aclose` must not overwrite the
+    reason the trace attributes the cancellation to."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(state: State) -> State:
+        entered.set()
+        await release.wait()
+        return state
+
+    runtime = Runtime(LINEAR, {"a": slow, "b": lambda s: s})
+    driver = runtime.astream(State.empty("attribution"))
+    consumer = asyncio.create_task(_consume(driver))
+    await entered.wait()
+
+    await driver.aclose("the reason that stopped it")
+    await driver.aclose("a later, irrelevant reason")
+    release.set()
+    await consumer
+
+    assert driver.trace.records[-1]["reason"] == "the reason that stopped it"
+
+
+@pytest.mark.asyncio
 async def test_one_runtime_still_refuses_overlapping_async_runs():
     started = asyncio.Event()
     release = asyncio.Event()
