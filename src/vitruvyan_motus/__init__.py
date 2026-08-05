@@ -47,6 +47,7 @@ from vitruvyan_motus.observers import (
     TraceSink,
 )
 from vitruvyan_motus.runtime import DurabilityProfile, Policy, RunResult, Runtime
+from vitruvyan_motus.sinks import JsonlTraceSink
 from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Decision, Fact, RedactedValue, Rejection, Trace, redact
@@ -59,7 +60,8 @@ __all__ = [
     "ReplayError", "ReplayMismatch", "ReplayUnsupported", "UnsafeResume",
     "DeclarationViolation",
     "GraphSpec", "NodeDecl", "Transition", "TransitionKind", "CompiledPlan",
-    "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "StreamDriver",
+    "TraceSink", "TraceRunSink", "Listener", "InMemoryTraceSink", "JsonlTraceSink",
+    "StreamDriver",
     "AsyncStreamDriver",
     "Policy", "DurabilityProfile", "RunResult", "Runtime",
     "TraceBundle", "ReplayResult", "ReplayEngine",
