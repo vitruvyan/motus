@@ -360,6 +360,119 @@ async def test_sinks_listeners_and_policy_behave_identically_under_arun():
     assert validate.validate_trace(result.trace.to_dict(), spec=LINEAR_DOC) == []
 
 
+# --------------------------------------------------------------------------- #
+# Regressions from the adversarial round on this branch                        #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_a_driver_outliving_its_run_cannot_cancel_a_later_one():
+    """The RA-001 shape, in its asynchronous form.
+
+    An event loop finalises abandoned async generators at shutdown, so a run
+    can end without its driver noticing and ``_closed`` staying False. A bare
+    ``Runtime.cancel`` would then bind to whatever run is live. ADR-008 §1:
+    "an idle call ... cannot cancel a later unrelated run."
+    """
+    runtime = Runtime(LINEAR, {"a": lambda s: s, "b": lambda s: s})
+    stale = runtime.astream(State.empty("stale"), run_id="stale")
+    await stale.__anext__()
+
+    # End the first run the way a loop shutdown would, behind the driver's back.
+    await stale._iterator.aclose()
+    assert stale._closed is False
+
+    later = await runtime.arun(State.empty("later"), run_id="later")
+    await stale.aclose("stale context exit")
+
+    assert later.status == "completed"
+    assert runtime._pending_cancel_reason is None
+    assert (await runtime.arun(State.empty("after"))).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_aclose_during_an_in_flight_anext_still_lands_a_terminal():
+    """The graceful-shutdown shape: a supervisor closes a driver that another
+    task is reading. Draining from the supervisor would raise "asynchronous
+    generator is already running" and orphan the run — guarantees.md §6 says
+    cancellation lands "as the trace-recorded run_cancelled ... never as an
+    abandoned generator"."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(state: State) -> State:
+        entered.set()
+        await release.wait()
+        return state
+
+    runtime = Runtime(LINEAR, {"a": slow, "b": lambda s: s})
+    driver = runtime.astream(State.empty("shutdown"))
+    consumer = asyncio.create_task(_consume(driver))
+    await entered.wait()
+
+    await driver.aclose("graceful shutdown")
+    release.set()
+    kinds = await consumer
+
+    assert kinds[-1] == "run_cancelled"
+    assert not runtime._running
+    assert (await runtime.arun(State.empty("after"))).status == "completed"
+
+
+async def _consume(driver) -> list[str]:
+    return [record["kind"] async for record in driver]
+
+
+def test_a_failing_awaitable_cleanup_stays_inside_the_node_failure_boundary():
+    """``_invoke_sync`` closes an awaitable it refuses. ``close()`` can itself
+    raise — a coroutine that swallows ``GeneratorExit`` raises RuntimeError —
+    and that must be an ordinary raised attempt, not an escape that leaves the
+    attempt unclosed as though the run had crashed (node-protocol §7.3)."""
+
+    async def swallows_generator_exit(state: State) -> State:
+        try:
+            await asyncio.sleep(0)
+        except GeneratorExit:
+            await asyncio.sleep(0)
+        return state
+
+    def node(state: State) -> State:
+        coroutine = swallows_generator_exit(state)
+        coroutine.send(None)  # start it, so close() has something to interrupt
+        return coroutine
+
+    runtime = Runtime(LINEAR, {"a": node, "b": lambda s: s})
+    with pytest.raises(NodeFailed):
+        runtime.run(State.empty("cleanup"))
+
+    kinds = [r["kind"] for r in runtime.trace.records]
+    assert kinds == ["run_started", "attempt_started", "transition", "run_failed"]
+    assert validate.validate_trace(runtime.trace.to_dict(), spec=LINEAR_DOC) == []
+
+
+@pytest.mark.asyncio
+async def test_verify_refuses_an_async_node_instead_of_accusing_it_of_divergence():
+    """``ReplayMismatch`` is the contract's signal that the code changed.
+    Raising it for an async node — which ``verify`` simply cannot drive —
+    would accuse unchanged code, and leak the coroutine besides."""
+    from vitruvyan_motus import ReplayEngine, ReplayStatus, TraceBundle
+    from vitruvyan_motus.errors import ReplayError
+
+    async def pure(state: State) -> State:
+        await asyncio.sleep(0)
+        return state.with_fact(Fact("k", 1, "s", NOW))
+
+    result = await Runtime(LINEAR, {"a": pure, "b": lambda s: s}).arun(
+        State.empty("verify"), replay=ReplayStatus.declared("full")
+    )
+    engine = ReplayEngine(TraceBundle(LINEAR, result.trace))
+
+    with pytest.raises(ReplayError) as raised:
+        engine.verify({"a": pure, "b": lambda s: s})
+    assert "asynchronous" in str(raised.value)
+    assert type(raised.value).__name__ == "ReplayError"
+
+
 @pytest.mark.asyncio
 async def test_one_runtime_still_refuses_overlapping_async_runs():
     started = asyncio.Event()

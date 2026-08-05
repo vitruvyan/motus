@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from vitruvyan_motus.context import ReplayStatus, RunContext
-from vitruvyan_motus.errors import ReplayMismatch, UnsafeResume
+from vitruvyan_motus.errors import ReplayError, ReplayMismatch, UnsafeResume
 from vitruvyan_motus.graph import GraphSpec, TransitionKind
 from vitruvyan_motus.runtime import RunResult, Runtime
 from vitruvyan_motus.state import State
@@ -372,7 +372,21 @@ class ReplayEngine:
                 raised: BaseException | None = None
                 try:
                     returned = node(attempt, ctx) if len(positional) == 2 else node(attempt)
-                except ReplayMismatch:
+                    if inspect.isawaitable(returned):
+                        # Refuse loudly rather than let an un-awaited coroutine
+                        # fail the `isinstance(returned, State)` check below:
+                        # that would report a ReplayMismatch — the contract's
+                        # signal that the CODE CHANGED — against code that did
+                        # not change, and leak the coroutine besides.
+                        closer = getattr(returned, "close", None)
+                        if callable(closer):
+                            closer()
+                        raise ReplayError(
+                            f"pure node {record['node']!r} is asynchronous; "
+                            "verify replay drives nodes synchronously and "
+                            "cannot re-execute it"
+                        )
+                except (ReplayMismatch, ReplayError):
                     raise
                 except BaseException as exc:
                     raised = exc

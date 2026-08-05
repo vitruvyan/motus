@@ -337,6 +337,14 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
         if self._closed:
             return
         self._cancel(reason)
+        if getattr(self._iterator, "ag_running", False):
+            # A consumer is inside __anext__ right now — the graceful-shutdown
+            # shape, where a supervisor closes a driver another task is
+            # reading. Draining here would raise "asynchronous generator is
+            # already running" and orphan the run with no terminal. The
+            # cancellation is bound; the consumer drives it to run_cancelled
+            # and closes this driver on the way out.
+            return
         try:
             while True:
                 await self._iterator.__anext__()

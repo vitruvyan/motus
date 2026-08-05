@@ -136,6 +136,19 @@ def _accepts_context(node: Callable[..., Any]) -> bool:
     )
 
 
+def _discard_awaitable(value: Any) -> None:
+    """Close an awaitable the runtime refuses, without letting it complain.
+
+    A coroutine that is never awaited emits an interpreter-level warning that
+    no consumer can act on, so the runtime closes what it declines. Cleanup
+    failures are the caller's to see; they surface through the node-failure
+    boundary that encloses every call site.
+    """
+    closer = getattr(value, "close", None)
+    if callable(closer):
+        closer()
+
+
 @dataclass(frozen=True, slots=True)
 class _Invoke:
     """One request from the state machine to run one node.
@@ -161,15 +174,19 @@ def _invoke_sync(request: _Invoke) -> tuple[Any, BaseException | None]:
     """
     try:
         returned = request.node(*request.args)
+        if inspect.isawaitable(returned):
+            # Inside the boundary on purpose: closing an awaitable can itself
+            # raise (a coroutine that swallows GeneratorExit raises
+            # RuntimeError), and that must be an ordinary node failure, not an
+            # escape that leaves the attempt unclosed as if the run had
+            # crashed (node-protocol §7.3).
+            _discard_awaitable(returned)
+            raise TypeError(
+                f"node {request.name!r} is asynchronous; drive it with "
+                "Runtime.arun() or Runtime.astream()"
+            )
     except Exception as exc:  # noqa: BLE001 - this IS the node failure boundary
         return None, exc
-    if inspect.isawaitable(returned):
-        if hasattr(returned, "close"):
-            returned.close()
-        return None, TypeError(
-            f"node {request.name!r} is asynchronous; drive it with "
-            "Runtime.arun() or Runtime.astream()"
-        )
     return returned, None
 
 
@@ -412,7 +429,29 @@ class Runtime:
         )
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
-        return StreamDriver(_drive(machine, _invoke_sync), self.cancel, lambda: trace_ref[0])
+        return StreamDriver(
+            _drive(machine, _invoke_sync),
+            self._run_scoped_cancel(trace_ref),
+            lambda: trace_ref[0],
+        )
+
+    def _run_scoped_cancel(self, trace_ref: list[Trace | None]) -> Callable[[str], bool]:
+        """A cancellation that can only ever reach the run it was made for.
+
+        A driver outlives its run — an event loop finalising an abandoned
+        async generator ends the run without the driver noticing — and a bare
+        ``self.cancel`` would then bind to whatever run happens to be live.
+        ADR-008 §1 forbids exactly that: "an idle call ... cannot cancel a
+        later unrelated run." Each run gets a fresh ``_trace_ref``, so identity
+        of that list is the run's identity.
+        """
+
+        def cancel(reason: str) -> bool:
+            if self._trace_ref is not trace_ref:
+                return False
+            return self.cancel(reason)
+
+        return cancel
 
     async def arun(
         self,
@@ -453,7 +492,9 @@ class Runtime:
         assert self._trace_ref is not None
         trace_ref = self._trace_ref
         return AsyncStreamDriver(
-            _adrive(machine, _invoke_async), self.cancel, lambda: trace_ref[0]
+            _adrive(machine, _invoke_async),
+            self._run_scoped_cancel(trace_ref),
+            lambda: trace_ref[0],
         )
 
     def _start(
