@@ -747,7 +747,12 @@ class Runtime:
                 }
             self._trace = Trace(header)
             handle.trace = self._trace
-            self._hub.bind(self._trace.run)
+            # ADR-011: the sink is handed the document's TraceHeader, not the
+            # run object one level inside it. `run` alone is not a valid header
+            # and a sink given only that can conform only by importing the
+            # schema version from the writer — the out-of-band coupling ADR-004
+            # exists to remove.
+            self._hub.bind(self._trace.header)
             return handle, self._managed_execute(
                 copy_yields=copy_yields, start_node=start_node, handle=handle,
             )

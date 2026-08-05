@@ -332,7 +332,11 @@ def test_synchronous_sink_receives_every_record_in_order():
     result = Runtime(
         spec, {"done": unchanged}, durability_profile="synchronous", sink=sink
     ).run(run_id="sync")
-    assert sink.header == result.trace.run
+    # ADR-011: the sink receives the document's TraceHeader --
+    # {schema_version, run} -- not the run object one level inside it, so
+    # what it was handed is enough to write a conforming artifact. The
+    # equality is tightened here, not relaxed: it now covers the version.
+    assert sink.header == result.trace.header
     assert sink.records == result.trace.records
 
 
@@ -598,7 +602,7 @@ def test_shared_sink_partitions_runs_and_cannot_mutate_trace_headers():
     second = Runtime(
         spec, {"done": unchanged}, durability_profile="synchronous", sink=sink
     ).run(run_id="second")
-    assert [run["header"]["run_id"] for run in sink.runs] == ["first", "second"]
+    assert [run["header"]["run"]["run_id"] for run in sink.runs] == ["first", "second"]
     assert first.trace.run["run_id"] == "first"
     assert second.trace.run["run_id"] == "second"
     assert all(run["records"][-1]["kind"] == "run_completed" for run in sink.runs)

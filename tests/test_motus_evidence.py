@@ -225,3 +225,118 @@ def test_a_generated_run_id_is_still_produced_when_none_is_asked_for():
     assert isinstance(result.trace.run["run_id"], str)
     assert result.trace.run["run_id"]
 
+
+
+class ProtocolOnlySink:
+    """A sink written against the protocol and nothing else.
+
+    It imports no constant from the writer and inspects no record. If Motus's
+    sink protocol is sufficient, this produces a conforming JSONL artifact; if
+    it is not, this is the shape that proves it.
+    """
+
+    def __init__(self, path) -> None:
+        self.path = path
+        self.finished: list[bool] = []
+
+    def open_run(self, header: dict[str, Any]) -> "ProtocolOnlySink":
+        import json
+        self.handle = open(self.path, "w", encoding="utf-8")
+        self.handle.write(json.dumps(header) + "\n")
+        return self
+
+    def write(self, records: tuple[dict[str, Any], ...]) -> None:
+        import json
+        for record in records:
+            self.handle.write(json.dumps(record) + "\n")
+
+    def finish(self, *, complete: bool) -> None:
+        self.finished.append(complete)
+        self.handle.close()
+
+
+def _validate_jsonl(path) -> list[Any]:
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    name = "motus_evidence_contract_validate"
+    if name in sys.modules:
+        module = sys.modules[name]
+    else:
+        spec = importlib.util.spec_from_file_location(name, root / "contract" / "validate.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    violations, _document = module.validate_jsonl(path.read_text(encoding="utf-8"))
+    return violations
+
+
+def test_a_sink_written_against_the_protocol_alone_produces_a_valid_artifact(tmp_path):
+    """ADR-004's Consequence 1 claims a sink "receives everything needed to
+    persist an independently verifiable trace". It did not: `open_run` handed
+    over the `run` object, which is not a valid TraceHeader, so a sink could
+    conform only by importing TRACE_SCHEMA_VERSION from the writer.
+
+    ADR-011 hands over the TraceHeader instead. This is the test that would
+    have caught the earlier, wrong fix: it writes what it was given, unchanged.
+    """
+    path = tmp_path / "run.jsonl"
+    sink = ProtocolOnlySink(path)
+    runtime = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+    runtime.run(State.empty("protocol"))
+
+    assert _validate_jsonl(path) == [], (
+        "a sink that persists exactly what the protocol handed it produced an "
+        "artifact the contract validator rejects"
+    )
+
+
+def test_a_session_is_told_whether_its_record_sequence_is_whole(tmp_path):
+    """The runtime only ever called `open_run` then `write`, so a session had
+    no moment at which it could treat a file as final — *in flight* and
+    *abandoned forever* looked identical. A run torn down before its terminal
+    left a partial artifact indistinguishable from a live one."""
+    complete_sink = ProtocolOnlySink(tmp_path / "complete.jsonl")
+    Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=complete_sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).run(State.empty("whole"))
+
+    assert complete_sink.finished == [True]
+    assert _validate_jsonl(tmp_path / "complete.jsonl") == []
+
+    partial_sink = ProtocolOnlySink(tmp_path / "partial.jsonl")
+    runtime = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=partial_sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    )
+    driver = runtime.stream(State.empty("partial"))
+    next(driver)
+    del driver
+    import gc
+    gc.collect()
+
+    assert partial_sink.finished == [False], (
+        "an abandoned run told its session nothing; the sink cannot know its "
+        "artifact is a prefix"
+    )
+
+
+def test_a_sink_without_finish_still_works():
+    """`finish` is optional on the sink's side: omitting it forfeits the
+    distinction, not the sink."""
+    sink = RecordingSink()
+    assert not hasattr(sink, "finish")
+
+    result = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).run(State.empty("nofinish"))
+
+    assert result.status == "completed"
+    assert [r["kind"] for r in sink.records][-1] == "run_completed"

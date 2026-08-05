@@ -14,6 +14,9 @@ __all__ = [
 ]
 
 
+_TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
+
+
 def _iterator_is_finished(iterator: Any) -> bool:
     """Whether the underlying generator has actually terminated.
 
@@ -51,14 +54,34 @@ def _iterator_is_running(iterator: Any) -> bool:
 
 @runtime_checkable
 class TraceRunSink(Protocol):
-    """One run-scoped durable session receiving ordered record batches."""
+    """One run-scoped durable session receiving ordered record batches.
+
+    ``finish`` is called exactly once, when the runtime will send nothing more.
+    Without it a session cannot tell *in flight* from *abandoned forever* — the
+    runtime only ever called ``open_run`` then ``write``, so a sink had no
+    moment at which it could treat a file as final, and a run torn down before
+    its terminal left a partial artifact indistinguishable from a live one
+    (ADR-011).
+
+    ``complete`` is the whole signal: True when the session received a terminal
+    record and the sequence is a whole trace, False when it did not and the
+    persisted account is a prefix. A sink that omits ``finish`` keeps the old
+    behaviour and forfeits only that distinction.
+    """
 
     def write(self, records: tuple[dict[str, Any], ...]) -> None: ...
+
+    def finish(self, *, complete: bool) -> None: ...
 
 
 @runtime_checkable
 class TraceSink(Protocol):
-    """Factory binding a trace header to one durable run session."""
+    """Factory binding a trace header to one durable run session.
+
+    ``header`` is the document's ``TraceHeader`` — ``{schema_version, run}`` —
+    so a sink can write a conforming artifact from what it is handed, without
+    importing anything from the writer.
+    """
 
     def open_run(self, header: dict[str, Any]) -> TraceRunSink: ...
 
@@ -131,7 +154,7 @@ class _ObservationHub:
     __slots__ = (
         "profile", "sink", "listeners", "chunk_records", "flush_interval_ms",
         "_buffer", "_last_flush", "listener_failures", "_lock", "_timer",
-        "_async_failure", "_closed", "_run_sink",
+        "_async_failure", "_closed", "_run_sink", "_saw_terminal",
     )
 
     def __init__(
@@ -164,6 +187,7 @@ class _ObservationHub:
         self._async_failure: BaseException | None = None
         self._closed = False
         self._run_sink: TraceRunSink | None = None
+        self._saw_terminal = False
 
     def bind(self, header: dict[str, Any]) -> None:
         """Open the required run-scoped session without losing its failure."""
@@ -204,6 +228,8 @@ class _ObservationHub:
         except BaseException as exc:
             self._async_failure = exc
             raise
+        if any(record["kind"] in _TERMINAL_KINDS for record in batch):
+            self._saw_terminal = True
         self._buffer.clear()
         self._last_flush = time.monotonic()
 
@@ -240,6 +266,8 @@ class _ObservationHub:
                 # truncated prefix; it does not license a corrupted suffix.
                 self._async_failure = exc
                 raise
+            if record["kind"] in _TERMINAL_KINDS:
+                self._saw_terminal = True
             return
         with self._lock:
             if self._async_failure is not None:
@@ -300,6 +328,30 @@ class _ObservationHub:
                 except BaseException:
                     pass  # _flush_locked has already stored it
             self._closed = True
+            session, self._run_sink = self._run_sink, None
+        if session is not None:
+            self._signal_finish(session)
+
+    def _signal_finish(self, session: TraceRunSink) -> None:
+        """Tell the session the runtime will send it nothing more.
+
+        Optional on the sink's side: a session without ``finish`` behaves as it
+        always did. Called outside the lock, because it reaches user code that
+        may block on a filesystem or a network, and holding `_lock` across that
+        stalls anything else touching this hub.
+
+        Best-effort. The run has already reached whatever end it was going to
+        reach; raising here would replace that outcome with a bookkeeping
+        failure, and `_async_failure` is not set because there is nothing left
+        to refuse.
+        """
+        finish = getattr(session, "finish", None)
+        if not callable(finish):
+            return
+        try:
+            finish(complete=self._saw_terminal)
+        except BaseException:
+            pass
 
 
 class StreamDriver(Iterator[dict[str, Any]]):
