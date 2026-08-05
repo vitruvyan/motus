@@ -208,6 +208,26 @@ class _RunHandle:
     finished: bool = False
 
 
+def _release_abandoned_run(runtime_ref: "weakref.ref[Runtime]", handle: _RunHandle) -> None:
+    """Finaliser body for an abandoned driver — deliberately not a method.
+
+    ``weakref.finalize`` keeps its callback and arguments in a module-global
+    registry, and that registry is a strong root. A bound method here would put
+    the Runtime under that root, and the Runtime reaches the driver in the very
+    shape this finaliser exists for — a listener that holds the Runtime and
+    closes its own driver (guarantees.md §6 blesses exactly that). The driver
+    would then never become unreachable, the finaliser would never fire, and the
+    registry entry would never leave: an unbounded leak dragging the Trace,
+    State, observation hub and the caller's sink with every run.
+
+    Holding the Runtime weakly keeps the registry out of that path. A dead
+    Runtime has no claim left to release.
+    """
+    runtime = runtime_ref()
+    if runtime is not None:
+        runtime._release_if_never_started(handle)
+
+
 def _result_of(handle: _RunHandle) -> RunResult:
     """The result of the run this handle names, and of no other run."""
     if not handle.finished or handle.state is None or handle.trace is None:
@@ -536,7 +556,7 @@ class Runtime:
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
         )
-        weakref.finalize(driver, self._release_if_never_started, handle)
+        weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver
 
     def _async_invoker(self):
@@ -634,7 +654,7 @@ class Runtime:
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
         )
-        weakref.finalize(driver, self._release_if_never_started, handle)
+        weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver
 
     def _start(

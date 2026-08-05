@@ -18,8 +18,11 @@ from __future__ import annotations
 import asyncio
 import gc
 import threading
+import weakref
 from datetime import datetime, timezone
 from typing import Any
+
+import pytest
 
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State
 
@@ -311,3 +314,105 @@ def test_the_abandoned_release_never_touches_a_run_that_has_begun():
     )
     list(driver)
     assert not runtime._running
+
+
+def test_the_abandoned_driver_finaliser_does_not_keep_its_runtime_alive():
+    """`weakref.finalize` keeps its callback in a module-global registry, and
+    that registry is a strong root.
+
+    A bound method as the callback puts the Runtime under that root, and the
+    Runtime reaches the driver in exactly the shape this finaliser exists for —
+    a listener that holds the Runtime and closes its own driver, which
+    guarantees.md §6 explicitly blesses.  The driver then never becomes
+    unreachable, so the finaliser never fires and its registry entry never
+    leaves: an unbounded leak dragging the Trace, State, hub and the caller's
+    sink along with every run.
+    """
+    alive: list[Any] = []
+
+    for _ in range(20):
+        holder: dict[str, Any] = {}
+
+        # Bound as a default argument, not as a closure cell: `del holder`
+        # below empties a cell, which would quietly break the very reference
+        # path under test and let this pass against the defect.
+        def listener(record: dict[str, Any], _held: dict[str, Any] = holder) -> None:
+            _held.get("driver")
+
+        runtime = Runtime(LINEAR, {"a": passthrough, "b": passthrough}, listeners=(listener,))
+        driver = runtime.stream(State.empty("leak"))
+        holder["driver"] = driver          # Runtime -> listener -> driver
+        list(driver)
+        alive.append(weakref.ref(runtime))
+        del runtime, driver, holder, listener
+
+    gc.collect()
+    survivors = [reference for reference in alive if reference() is not None]
+
+    assert survivors == [], (
+        f"{len(survivors)}/20 Runtimes survived collection — the finaliser "
+        "registry is rooting them, and every one holds a Trace, a State, an "
+        "observation hub and the caller's sink"
+    )
+
+
+def test_a_close_whose_cancellation_is_rejected_does_not_disarm_the_driver():
+    """The latch must be set only once the cancellation has actually bound.
+
+    Burning it on a call that never cancelled leaves the driver armed-looking
+    but inert, and the retry — or `__exit__` — then skips the cancel and
+    *drains*: `close` would execute every remaining node, performing whatever
+    external effects they carry, where guarantees.md §6 requires it to land a
+    recorded `run_cancelled`.
+    """
+    executed: list[str] = []
+
+    def record_a(state: State) -> State:
+        executed.append("a")
+        return state
+
+    def record_b(state: State) -> State:
+        executed.append("b")
+        return state
+
+    runtime = Runtime(LINEAR, {"a": record_a, "b": record_b})
+    driver = runtime.stream(State.empty("rejected"))
+    next(driver)
+    executed.clear()
+
+    with pytest.raises(TypeError):
+        driver.close(None)                 # Runtime.cancel refuses a non-str
+
+    driver.close("the retry that must still work")
+
+    assert driver.trace.records[-1]["kind"] == "run_cancelled", (
+        f"close() ran the graph instead of cancelling it; nodes executed: {executed}"
+    )
+    assert executed == [], f"close() executed pending nodes: {executed}"
+
+
+@pytest.mark.asyncio
+async def test_an_aclose_whose_cancellation_is_rejected_does_not_disarm_the_driver():
+    """The asynchronous twin, which carried this defect from the round it was
+    written in — the latch was copied to the synchronous side before it was
+    correct on either."""
+    executed: list[str] = []
+
+    async def record_a(state: State) -> State:
+        executed.append("a")
+        return state
+
+    runtime = Runtime(LINEAR, {"a": record_a, "b": apassthrough})
+    driver = runtime.astream(State.empty("rejected"))
+    await driver.__anext__()
+    executed.clear()
+
+    with pytest.raises(TypeError):
+        await driver.aclose(None)
+
+    await driver.aclose("the retry that must still work")
+
+    assert driver.trace.records[-1]["kind"] == "run_cancelled", (
+        f"aclose() ran the graph instead of cancelling it; nodes: {executed}"
+    )
+    assert executed == []

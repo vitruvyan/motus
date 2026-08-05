@@ -325,8 +325,16 @@ class StreamDriver(Iterator[dict[str, Any]]):
             # The cancellation that actually stopped the run is the first one.
             # A second close (a retry, or __exit__ after an explicit call) must
             # not overwrite the reason the trace will attribute it to.
-            self._requested = True
+            #
+            # The latch is set only once the cancellation has actually bound.
+            # Setting it first burns it on a call that never cancelled — a
+            # non-str reason, an interrupt landing between the two statements —
+            # and then the retry, or __exit__, skips the cancel and drains
+            # instead: `close` would execute every remaining node, performing
+            # their external effects, where guarantees.md §6 requires it to
+            # land a recorded run_cancelled.
             self._cancel(reason)
+            self._requested = True
         if _iterator_is_running(self._iterator):
             # Someone is inside this generator right now — a listener is
             # delivered synchronously from within it, so a listener closing its
@@ -406,8 +414,9 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
             # The cancellation that actually stopped the run is the first one.
             # A second aclose (a retry, or __aexit__ after an explicit call)
             # must not overwrite the reason the trace will attribute it to.
-            self._requested = True
+            # Latched only once it has bound — see StreamDriver.close.
             self._cancel(reason)
+            self._requested = True
         if _iterator_is_running(self._iterator):
             # A consumer is inside __anext__ right now — the graceful-shutdown
             # shape, where a supervisor closes a driver another task is
