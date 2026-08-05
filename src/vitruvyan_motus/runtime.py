@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import threading
+import weakref
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -182,6 +183,56 @@ def _discard_awaitable(value: Any) -> None:
         inner = getattr(result, "close", None)
         if callable(inner):
             inner()
+
+
+@dataclass(slots=True)
+class _RunHandle:
+    """One run's identity, and the evidence that run will answer with.
+
+    A run is not over when its generator unwinds — it is over when its terminal
+    record is written *and* its caller has read its result.  The lifecycle claim
+    is released at the first of those events, so anything the caller still needs
+    afterwards cannot live in a ``Runtime`` attribute: a second run admitted in
+    that window rebinds ``self._trace`` and ``self._state`` before the first
+    caller reads them, and hands one caller another caller's evidence.
+
+    Identity was already run-scoped, because run-scoped cancellation needed it
+    (see :meth:`Runtime._run_scoped_cancel`).  The result travels on the same
+    handle for the same reason: a handle belongs to exactly one run and no later
+    run can reach it.
+    """
+
+    trace: "Trace | None" = None
+    state: State | None = None
+    started: bool = False
+    finished: bool = False
+
+
+def _release_abandoned_run(runtime_ref: "weakref.ref[Runtime]", handle: _RunHandle) -> None:
+    """Finaliser body for an abandoned driver — deliberately not a method.
+
+    ``weakref.finalize`` keeps its callback and arguments in a module-global
+    registry, and that registry is a strong root. A bound method here would put
+    the Runtime under that root, and the Runtime reaches the driver in the very
+    shape this finaliser exists for — a listener that holds the Runtime and
+    closes its own driver (guarantees.md §6 blesses exactly that). The driver
+    would then never become unreachable, the finaliser would never fire, and the
+    registry entry would never leave: an unbounded leak dragging the Trace,
+    State, observation hub and the caller's sink with every run.
+
+    Holding the Runtime weakly keeps the registry out of that path. A dead
+    Runtime has no claim left to release.
+    """
+    runtime = runtime_ref()
+    if runtime is not None:
+        runtime._release_if_never_started(handle)
+
+
+def _result_of(handle: _RunHandle) -> RunResult:
+    """The result of the run this handle names, and of no other run."""
+    if not handle.finished or handle.state is None or handle.trace is None:
+        raise AssertionError("a finished run must publish its state and trace")
+    return RunResult(handle.state, handle.trace)
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,7 +449,7 @@ class Runtime:
         self._lifecycle_lock = threading.RLock()
         self._running = False
         self._has_started = False
-        self._trace_ref: list[Trace | None] | None = None
+        self._run: _RunHandle | None = None
 
     def _refresh_identity(self) -> None:
         """Refresh only config rows whose observable material changed."""
@@ -481,14 +532,13 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> RunResult:
-        machine = self._start(
+        handle, machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=self._plan.entry, resume_info=None,
         )
         for _ in _drive(machine, _invoke_sync):
             pass
-        assert self._state is not None and self._trace is not None
-        return RunResult(self._state, self._trace)
+        return _result_of(handle)
 
     def stream(
         self,
@@ -497,17 +547,17 @@ class Runtime:
         run_id: str | None = None,
         replay: ReplayStatus | None = None,
     ) -> StreamDriver:
-        machine = self._start(
+        handle, machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
-        assert self._trace_ref is not None
-        trace_ref = self._trace_ref
-        return StreamDriver(
+        driver = StreamDriver(
             _drive(machine, _invoke_sync),
-            self._run_scoped_cancel(trace_ref),
-            lambda: trace_ref[0],
+            self._run_scoped_cancel(handle),
+            lambda: handle.trace,
         )
+        weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
+        return driver
 
     def _async_invoker(self):
         """The async invoker for the run in flight, wired to its controller."""
@@ -519,19 +569,46 @@ class Runtime:
 
         return _async_invoker(observe)
 
-    def _run_scoped_cancel(self, trace_ref: list[Trace | None]) -> Callable[[str], bool]:
+    def _release_if_never_started(self, handle: _RunHandle) -> None:
+        """Release a claim whose driver was dropped before it was ever advanced.
+
+        ``stream()`` claims the run up front, and has to: a second ``stream()``
+        must be refused. The claim is normally released by
+        :meth:`_managed_execute`'s ``finally`` — but a generator that was never
+        started does not run one, so a driver created and dropped left the
+        Runtime claiming a run that had not executed a single node, for good.
+
+        Deliberately narrow. A driver dropped *mid-run* is already handled: its
+        generator is live, closing it raises ``GeneratorExit`` inside, and the
+        ``finally`` releases the claim and publishes the result. Releasing that
+        case here too would open a window where the claim is free while the
+        generator is still unwinding, and the unwind would then publish another
+        run's trace onto this handle — trading a wedge for a corruption.
+
+        Scoped to this handle for the same reason cancellation is: a finaliser
+        runs at an arbitrary later moment, and a Runtime that has since started
+        another run must not be disarmed by it.
+        """
+        if handle.started or handle.finished:
+            return
+        with self._lifecycle_lock:
+            if self._run is handle and self._running:
+                self._running = False
+                self._cancel_reason = None
+
+    def _run_scoped_cancel(self, handle: _RunHandle) -> Callable[[str], bool]:
         """A cancellation that can only ever reach the run it was made for.
 
         A driver outlives its run — an event loop finalising an abandoned
         async generator ends the run without the driver noticing — and a bare
         ``self.cancel`` would then bind to whatever run happens to be live.
         ADR-008 §1 forbids exactly that: "an idle call ... cannot cancel a
-        later unrelated run." Each run gets a fresh ``_trace_ref``, so identity
-        of that list is the run's identity.
+        later unrelated run." Each run gets a fresh handle, so identity of that
+        handle is the run's identity.
         """
 
         def cancel(reason: str) -> bool:
-            if self._trace_ref is not trace_ref:
+            if self._run is not handle:
                 return False
             return self.cancel(reason)
 
@@ -552,14 +629,13 @@ class Runtime:
         — one node at a time — because fan-out has no representation in
         GraphSpec v1 (guarantees.md §5).
         """
-        machine = self._start(
+        handle, machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=self._plan.entry, resume_info=None,
         )
         async for _ in _adrive(machine, self._async_invoker()):
             pass
-        assert self._state is not None and self._trace is not None
-        return RunResult(self._state, self._trace)
+        return _result_of(handle)
 
     def astream(
         self,
@@ -569,22 +645,22 @@ class Runtime:
         replay: ReplayStatus | None = None,
     ) -> AsyncStreamDriver:
         """Consumer-paced asynchronous execution, record by record."""
-        machine = self._start(
+        handle, machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=True,
             start_node=self._plan.entry, resume_info=None,
         )
-        assert self._trace_ref is not None
-        trace_ref = self._trace_ref
-        return AsyncStreamDriver(
+        driver = AsyncStreamDriver(
             _adrive(machine, self._async_invoker()),
-            self._run_scoped_cancel(trace_ref),
-            lambda: trace_ref[0],
+            self._run_scoped_cancel(handle),
+            lambda: handle.trace,
         )
+        weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
+        return driver
 
     def _start(
         self, state: State | None, *, run_id: str | None, replay: ReplayStatus | None,
         copy_yields: bool, start_node: str, resume_info: dict[str, Any] | None,
-    ) -> Iterator[dict[str, Any]]:
+    ) -> tuple[_RunHandle, Iterator[dict[str, Any]]]:
         with self._lifecycle_lock:
             if self._running:
                 raise RuntimeError("a Runtime instance cannot execute overlapping runs")
@@ -596,9 +672,10 @@ class Runtime:
             # that claims `_running`. Assigning it later — after the controller,
             # the hub, identity refresh and header construction, all of which
             # run user code — would leave a window where `_running` describes
-            # this run while `_trace_ref` still names the previous one, and a
-            # stale driver's run-scoped cancel would pass its identity test.
-            self._trace_ref = [None]
+            # this run while `_run` still names the previous one, and a stale
+            # driver's run-scoped cancel would pass its identity test.
+            handle = _RunHandle()
+            self._run = handle
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
@@ -648,10 +725,11 @@ class Runtime:
                     ),
                 }
             self._trace = Trace(header)
-            assert self._trace_ref is not None
-            self._trace_ref[0] = self._trace
+            handle.trace = self._trace
             self._hub.bind(self._trace.run)
-            return self._managed_execute(copy_yields=copy_yields, start_node=start_node)
+            return handle, self._managed_execute(
+                copy_yields=copy_yields, start_node=start_node, handle=handle,
+            )
         except BaseException:
             with self._lifecycle_lock:
                 self._running = False
@@ -660,11 +738,18 @@ class Runtime:
             raise
 
     def _managed_execute(
-        self, *, copy_yields: bool, start_node: str
+        self, *, copy_yields: bool, start_node: str, handle: _RunHandle
     ) -> Iterator[dict[str, Any]]:
+        handle.started = True
         try:
             yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:
+            # Publish onto the run's own handle BEFORE releasing the claim.
+            # Afterwards `self._state` and `self._trace` describe whichever run
+            # the Runtime is executing, which need not be this one any more.
+            handle.trace = self._trace
+            handle.state = self._state
+            handle.finished = True
             if self._hub is not None:
                 self._hub.close()
             self._active_attempt = None
@@ -674,8 +759,8 @@ class Runtime:
 
     def _replace_trace(self, trace: Trace) -> None:
         self._trace = trace
-        if self._trace_ref is not None:
-            self._trace_ref[0] = trace
+        if self._run is not None:
+            self._run.trace = trace
 
     def _base(self, kind: str, *, seq: int | None = None) -> dict[str, Any]:
         assert self._control is not None
@@ -998,11 +1083,10 @@ class Runtime:
         """Execute a causally linked resume segment (used by ReplayEngine)."""
         if start_node not in self._plan.declarations:
             raise ValueError(f"resume start node {start_node!r} is not declared")
-        machine = self._start(
+        handle, machine = self._start(
             state, run_id=run_id, replay=replay, copy_yields=False,
             start_node=start_node, resume_info=resume_info,
         )
         for _ in _drive(machine, _invoke_sync):
             pass
-        assert self._state is not None and self._trace is not None
-        return RunResult(self._state, self._trace)
+        return _result_of(handle)

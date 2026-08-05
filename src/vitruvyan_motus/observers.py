@@ -30,6 +30,25 @@ def _iterator_is_finished(iterator: Any) -> bool:
     return True  # not a generator: assume the exception ended it
 
 
+def _iterator_is_running(iterator: Any) -> bool:
+    """Whether another caller is inside this generator right now.
+
+    Draining a generator someone else is executing does not cancel it — it
+    raises ("generator already executing" / "asynchronous generator is already
+    running") and leaves the run with no terminal record, which is strictly
+    worse than not draining at all.  The caller already inside will reach the
+    terminal; the cancellation is bound either way.
+
+    Both drivers ask the same question here deliberately.  This guard existed on
+    the asynchronous side only, and the synchronous side stranded runs for
+    exactly as long as the two were written separately.
+    """
+    for attribute in ("gi_running", "ag_running", "cr_running"):
+        if hasattr(iterator, attribute):
+            return bool(getattr(iterator, attribute))
+    return False
+
+
 @runtime_checkable
 class TraceRunSink(Protocol):
     """One run-scoped durable session receiving ordered record batches."""
@@ -256,7 +275,14 @@ class StreamDriver(Iterator[dict[str, Any]]):
     cancellation terminal, never the pending node attempt.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter")
+    # `__weakref__` is explicit because the runtime attaches a finaliser to a
+    # driver: a driver dropped before it was ever advanced must still release
+    # the run it claimed, and a slotted class is not weak-referenceable by
+    # default.
+    __slots__ = (
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "_close_lock", "__weakref__",
+    )
 
     def __init__(
         self,
@@ -267,6 +293,11 @@ class StreamDriver(Iterator[dict[str, Any]]):
         self._iterator = iterator
         self._cancel = cancel
         self._closed = False
+        self._requested = False
+        # Re-entrant: a listener is delivered synchronously from inside the
+        # generator this drain advances, so a listener closing its own driver
+        # re-enters `close` on the very thread already holding this.
+        self._close_lock = threading.RLock()
         self._trace_getter = trace_getter
 
     def __iter__(self) -> "StreamDriver":
@@ -294,14 +325,46 @@ class StreamDriver(Iterator[dict[str, Any]]):
     def close(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:
             return
-        self._cancel(reason)
-        try:
-            while True:
-                next(self._iterator)
-        except StopIteration:
-            pass
-        finally:
-            self._closed = True
+        # Serialised, not merely guarded. Two threads closing one driver is an
+        # ordinary supervisor shape, and a bare check-then-act loses twice:
+        # both reach `_cancel`, and `Runtime.cancel` is last-writer-wins, so the
+        # trace names a request that did not stop the run; and both reach the
+        # drain, so the loser's `next()` raises "generator already executing"
+        # out of `close`, and therefore out of `__exit__`.
+        with self._close_lock:
+            if self._closed:
+                return
+            if not self._requested:
+                # The cancellation that actually stopped the run is the first
+                # one. A second close (a retry, or __exit__ after an explicit
+                # call) must not overwrite the reason the trace attributes it
+                # to.
+                #
+                # The latch is set only once the cancellation has bound.
+                # Setting it first burns it on a call that never cancelled — a
+                # non-str reason, an interrupt landing between the two
+                # statements — and then the retry, or __exit__, skips the
+                # cancel and drains instead: `close` would execute every
+                # remaining node, performing their external effects, where
+                # guarantees.md §6 requires a recorded run_cancelled.
+                self._cancel(reason)
+                self._requested = True
+            if _iterator_is_running(self._iterator):
+                # Someone is inside this generator right now — a listener is
+                # delivered synchronously from within it, so a listener closing
+                # its own driver lands here, re-entering this lock on its own
+                # thread. Draining would raise "generator already executing"
+                # and orphan the run with no terminal. The cancellation is
+                # bound; whoever is inside drives it to run_cancelled and
+                # closes this driver on the way out.
+                return
+            try:
+                while True:
+                    next(self._iterator)
+            except StopIteration:
+                pass
+            finally:
+                self._closed = True
 
     def __enter__(self) -> "StreamDriver":
         return self
@@ -320,7 +383,10 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     ``aclose`` on a live run drains only the cancellation terminal.
     """
 
-    __slots__ = ("_iterator", "_cancel", "_closed", "_trace_getter", "_requested")
+    __slots__ = (
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "__weakref__",
+    )
 
     def __init__(
         self,
@@ -363,9 +429,10 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
             # The cancellation that actually stopped the run is the first one.
             # A second aclose (a retry, or __aexit__ after an explicit call)
             # must not overwrite the reason the trace will attribute it to.
-            self._requested = True
+            # Latched only once it has bound — see StreamDriver.close.
             self._cancel(reason)
-        if getattr(self._iterator, "ag_running", False):
+            self._requested = True
+        if _iterator_is_running(self._iterator):
             # A consumer is inside __anext__ right now — the graceful-shutdown
             # shape, where a supervisor closes a driver another task is
             # reading. Draining here would raise "asynchronous generator is
