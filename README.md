@@ -333,7 +333,8 @@ receipt. Motus never claims exactly-once delivery.
 Motus separates three surfaces:
 
 - `TraceSink`: run-bound durable evidence;
-- `Listener`: live, non-intervening observation;
+- `Listener`: isolated, synchronous live observation; callbacks can delay the
+  runner and cancellation remains trace-visible;
 - `StreamDriver`: consumer-paced execution with explicit backpressure.
 
 The run header declares one durability profile:
@@ -349,18 +350,19 @@ component responsible for persisting it is unavailable.
 
 ## Performance profile
 
-Motus 0.6 has a separately characterized native profile based on five
+Motus 0.6.1 has a separately characterized native profile based on five
 independent AMD EPYC 9V74 / Python 3.10.12 runs:
 
-- 43.5001 microseconds per node for a realistic 1,000-node full trace;
-- 3.08655 milliseconds overhead for a 100-node no-op run;
-- 0.788x trace preparation versus `json.dumps`;
-- no positive superlinear term in the measured profile;
+- 51.2301 microseconds per node for a realistic 1,000-node full trace;
+- 3.43542 milliseconds overhead for a 100-node no-op run;
+- 1.749x cold trace materialization versus `json.dumps`;
+- 3.47% positive superlinear accumulation in the measured profile;
 - 3,002 trace records and zero declaration violations, with no sampling.
 
 The CI gate recomputes aggregates from the committed raw evidence, verifies
-the runner identity, and rejects regressions beyond the accepted ADR-006
-ceilings. See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md).
+the runner identity, and rejects regressions beyond the ADR-006 ceilings using
+the corrected ADR-007 method. See
+[`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md).
 
 ## Contract and verification
 
@@ -376,7 +378,7 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.0-epyc-py310.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.1-epyc-py310.json
 ```
 
 ## Native package surface

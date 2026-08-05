@@ -106,19 +106,21 @@ remain historical debts recorded as measured reality, not achievements.
 Trace completeness is an invariant, never a debt and never a tunable sampling
 rate.
 
-### Motus 0.6 GitHub EPYC profile (ADR-006)
+### Motus 0.6.1 GitHub EPYC profile (ADR-006 + ADR-007)
 
 The native Motus workload is deliberately separate: a 1,000-node run emits
 3,002 records rather than the Axis reference's 2,002. Five independent runs
-on Python 3.10.12 and AMD EPYC 9V74 produced the committed raw document
-`benchmarks/candidate-v0.6.0-epyc-py310.json`.
+on Python 3.10.12 and AMD EPYC 9V74 produced the corrected cold-materialization
+document `benchmarks/candidate-v0.6.1-epyc-py310.json`. The 0.6.0 document is
+historical evidence only: its serialization row measured a cache hit and is
+not a current product claim.
 
-| Motus native SLO | Target | v0.6.0 measured | run-to-run spread |
+| Motus native SLO | Target | v0.6.1 measured | run-to-run spread |
 |---|---:|---:|---:|
-| Motus per-node overhead, full trace, n <= 1000 | <= 45 us | 43.5 us | 2% |
-| Motus 100-node no-op overhead | <= 3.25 ms | 3.09 ms | 5% |
-| Motus trace preparation / `json.dumps` | <= 1.5x | 0.8x | 5% / 16% |
-| Motus positive superlinear accumulation at n = 1000 | < 10% | 0% | 74% ratio spread |
+| Motus per-node overhead, full trace, n <= 1000 | <= 45 us | 51.2 us | 3% |
+| Motus 100-node no-op overhead | <= 3.25 ms | 3.44 ms | 4% |
+| Motus cold trace materialization / `json.dumps` | <= 1.5x | 1.7x | 10% / 14% |
+| Motus positive superlinear accumulation at n = 1000 | < 10% | 3% | 77% ratio spread |
 | Motus trace completeness | 100% — no sampling, ever | 100%; 3,002 records | — |
 
 The common 25% tolerance produces hard ceilings of 56.25 us/node, 4.0625 ms,

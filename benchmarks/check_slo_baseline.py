@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - exercised by the CI command itself
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = ROOT / "benchmarks" / "baseline-v0.4.0-epyc-py310.json"
-DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.0-epyc-py310.json"
+DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.1-epyc-py310.json"
 DEFAULT_GUARANTEES = ROOT / "contract" / "guarantees.md"
 MIN_RUNS = 5
 MOTUS_CANDIDATE_TOLERANCE = 0.25
@@ -148,8 +148,8 @@ def validate_document(
     require(environment.get("gc_enabled_during_runs") is True, f"{name}: GC must be enabled during runs")
     if runtime_kind == "motus":
         require(
-            environment.get("runtime") == "vitruvyan-motus/0.6.0",
-            f"{name}: runtime identity must be vitruvyan-motus/0.6.0",
+            environment.get("runtime") == "vitruvyan-motus/0.6.1",
+            f"{name}: runtime identity must be vitruvyan-motus/0.6.1",
         )
         cpu_model = environment.get("cpu_model")
         require(
