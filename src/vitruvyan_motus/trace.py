@@ -339,6 +339,18 @@ class Trace:
         return self._view_cache
 
     @property
+    def header(self) -> dict[str, Any]:
+        """The document's ``TraceHeader``: ``{schema_version, run}``.
+
+        This — not :attr:`run` — is what a durable sink needs. ``run`` alone is
+        not a valid ``TraceHeader`` (``schema_version`` is required, and the
+        schema forbids additional properties inside ``run``), so a sink handed
+        only ``run`` could produce a conforming document only by importing the
+        version from the writer. ADR-011.
+        """
+        return copy.deepcopy({"schema_version": self._schema_version, "run": self._run})
+
+    @property
     def run(self) -> dict[str, Any]:
         # Never expose the cached evidence object.  Even a dict subclass that
         # blocks normal mutation can be changed through ``dict.__setitem__``.

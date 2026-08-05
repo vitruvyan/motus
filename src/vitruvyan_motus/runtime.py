@@ -220,6 +220,7 @@ class _RunHandle:
 
     trace: "Trace | None" = None
     state: State | None = None
+    hub: "_ObservationHub | None" = None
     started: bool = False
     finished: bool = False
 
@@ -611,6 +612,15 @@ class Runtime:
             if self._run is handle and self._running:
                 self._running = False
                 self._cancel_reason = None
+        # The durable session was opened by `_start`, before the consumer asked
+        # for anything, so an abandoned driver leaves it open and — worse —
+        # never told. `_ObservationHub.close()` is what signals the session,
+        # and it lives in `_managed_execute`'s `finally`, which a generator
+        # that never started does not run. Closed through the handle, never
+        # `self._hub`: by now that may name a later run's hub.
+        hub, handle.hub = handle.hub, None
+        if hub is not None:
+            hub.close()
 
     def _run_scoped_cancel(self, handle: _RunHandle) -> Callable[[str], bool]:
         """A cancellation that can only ever reach the run it was made for.
@@ -695,6 +705,7 @@ class Runtime:
         try:
             self._control = _RunController(replay=replay, **self._source_args)
             self._hub = _ObservationHub(**self._hub_args)
+            handle.hub = self._hub
             self._refresh_identity()
             self._active_attempt = None
             initial = State.empty() if state is None else state
@@ -747,7 +758,12 @@ class Runtime:
                 }
             self._trace = Trace(header)
             handle.trace = self._trace
-            self._hub.bind(self._trace.run)
+            # ADR-011: the sink is handed the document's TraceHeader, not the
+            # run object one level inside it. `run` alone is not a valid header
+            # and a sink given only that can conform only by importing the
+            # schema version from the writer — the out-of-band coupling ADR-004
+            # exists to remove.
+            self._hub.bind(self._trace.header)
             return handle, self._managed_execute(
                 copy_yields=copy_yields, start_node=start_node, handle=handle,
             )
@@ -771,6 +787,7 @@ class Runtime:
             handle.trace = self._trace
             handle.state = self._state
             handle.finished = True
+            handle.hub = None
             if self._hub is not None:
                 self._hub.close()
             self._active_attempt = None

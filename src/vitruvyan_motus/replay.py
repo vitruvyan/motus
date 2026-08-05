@@ -343,6 +343,87 @@ class TraceBundle:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _ReplayInvoke:
+    """One request from the comparison machine to re-execute one pure node."""
+
+    node: Callable[..., Any]
+    attempt: Any
+    ctx: Any
+    wants_context: bool
+
+
+def _replay_invoke_sync(request: _ReplayInvoke) -> tuple[Any, BaseException | None, bool]:
+    """Answer a re-execution request on the calling thread.
+
+    An awaitable here cannot be driven, so it is closed and refused. Cleanup
+    runs INSIDE the boundary: closing what we decline can itself raise, and
+    that must be an ordinary re-execution failure rather than an arbitrary
+    exception escaping verify(). Only the refusal is raised outside, because
+    ReplayMismatch and UnsafeResume are both ReplayError subclasses — catching
+    ReplayError here would swallow a node's own failure as success.
+    """
+    returned: Any = None
+    unreplayable = False
+    try:
+        returned = request.node(request.attempt, request.ctx) if request.wants_context \
+            else request.node(request.attempt)
+        if _is_asynchronous(returned):
+            _discard_unreplayable(returned)
+            unreplayable = True
+    except ReplayMismatch:
+        raise
+    except BaseException as exc:
+        return None, exc, False
+    return returned, None, unreplayable
+
+
+async def _replay_invoke_async(request: _ReplayInvoke) -> tuple[Any, BaseException | None, bool]:
+    """Answer a re-execution request by awaiting what is awaitable.
+
+    An async generator is still refused: it produces a stream, not the single
+    State a transition recorded, so there is nothing to compare against.
+    """
+    returned: Any = None
+    try:
+        returned = request.node(request.attempt, request.ctx) if request.wants_context \
+            else request.node(request.attempt)
+        if inspect.isasyncgen(returned):
+            _discard_unreplayable(returned)
+            return None, None, True
+        if inspect.isawaitable(returned):
+            returned = await returned
+    except ReplayMismatch:
+        raise
+    except BaseException as exc:
+        return None, exc, False
+    return returned, None, False
+
+
+def _drive_verify(machine: Any, invoke: Callable[[_ReplayInvoke], Any]) -> "ReplayResult":
+    reply: Any = None
+    try:
+        while True:
+            request = machine.send(reply)
+            reply = invoke(request)
+    except StopIteration as stop:
+        return stop.value
+    finally:
+        machine.close()
+
+
+async def _adrive_verify(machine: Any, invoke: Callable[[_ReplayInvoke], Any]) -> "ReplayResult":
+    reply: Any = None
+    try:
+        while True:
+            request = machine.send(reply)
+            reply = await invoke(request)
+    except StopIteration as stop:
+        return stop.value
+    finally:
+        machine.close()
+
+
 class ReplayEngine:
     """Replay one immutable bundle under explicit, bounded modes."""
 
@@ -357,6 +438,26 @@ class ReplayEngine:
         return ReplayResult("playback", state, self.bundle.trace)
 
     def verify(self, nodes: Mapping[str, Callable[..., State]]) -> ReplayResult:
+        """Re-execute the pure nodes and check they still agree with the record.
+
+        Drives :meth:`_verify` synchronously. An ``async def`` node cannot be
+        driven here and is refused with :class:`ReplayUnsupported`; use
+        :meth:`averify`.
+        """
+        return _drive_verify(self._verify(nodes), _replay_invoke_sync)
+
+    async def averify(self, nodes: Mapping[str, Callable[..., Any]]) -> ReplayResult:
+        """The asynchronous twin of :meth:`verify`.
+
+        The same comparison state machine, awaited rather than called — the
+        same inversion the runtime applies to execution, and for the same
+        reason: a second copy of the comparison logic could drift from the
+        first, and guarantees.md invariant I exists to forbid exactly that.
+        A node that is both ``async def`` and ``pure`` is verifiable here.
+        """
+        return await _adrive_verify(self._verify(nodes), _replay_invoke_async)
+
+    def _verify(self, nodes: Mapping[str, Callable[..., Any]]) -> Any:
         registry = dict(nodes)
         state = _initial_state(self.bundle.trace)
         declarations = self.bundle.spec.compiled.declarations
@@ -393,31 +494,17 @@ class ReplayEngine:
                     p for p in inspect.signature(node).parameters.values()
                     if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
                 ]
-                returned = None
-                raised: BaseException | None = None
-                unreplayable = False
-                try:
-                    returned = node(attempt, ctx) if len(positional) == 2 else node(attempt)
-                    if _is_asynchronous(returned):
-                        # Cleanup runs INSIDE the boundary: closing what we
-                        # decline can itself raise, and that must be an
-                        # ordinary re-execution failure rather than an
-                        # arbitrary exception escaping verify(). Only the
-                        # refusal itself is raised outside, because
-                        # ReplayMismatch and UnsafeResume are both
-                        # ReplayError subclasses — catching ReplayError here
-                        # would swallow a node's own failure as success.
-                        _discard_unreplayable(returned)
-                        unreplayable = True
-                except ReplayMismatch:
-                    raise
-                except BaseException as exc:
-                    raised = exc
+                # The comparison never calls the node itself: it asks, and a
+                # driver answers. One state machine, two thin drivers -- the
+                # same inversion `Runtime._execute` uses, for the same reason.
+                returned, raised, unreplayable = yield _ReplayInvoke(
+                    node, attempt, ctx, len(positional) == 2
+                )
                 if unreplayable and raised is None:
                     raise ReplayUnsupported(
                         f"pure node {record['node']!r} is asynchronous; "
-                        "verify replay drives nodes synchronously and "
-                        "cannot re-execute it"
+                        "verify() drives nodes synchronously and cannot "
+                        "re-execute it -- use ReplayEngine.averify()"
                     )
                 if record["outcome"] == "returned":
                     if raised is not None or not isinstance(returned, State):
