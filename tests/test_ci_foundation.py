@@ -126,19 +126,11 @@ def test_candidate_mode_enforces_target_plus_tolerance():
             run["6_serialization"][workload]["events_len"] = 3002
             run["6_serialization"][workload]["violations_len"] = 0
 
-    with pytest.raises(GateError, match="candidate misses target-plus-tolerance"):
-        from tempfile import NamedTemporaryFile
-
-        with NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
-            import json
-
-            json.dump(candidate, handle)
-            candidate_path = handle.name
-        try:
-            run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, Path(candidate_path))
-        finally:
-            Path(candidate_path).unlink()
-
+    # ADR-012: the Motus candidate rows are RECORDED, not gated -- a ceiling
+    # derived from one host refuses code it previously accepted on another.
+    # A release is gated on the ratio to the previous release instead. The
+    # target arithmetic itself still has to be right, because the recorded
+    # report says whether a row met its target.
     inclusive = SloRow("x", "inclusive", 1.0, 1.25, 0.25)
     strict = SloRow("x", "strict", 10.0, 12.5, 0.25, strict=True)
     assert inclusive.passes
@@ -150,28 +142,54 @@ def test_committed_motus_candidate_passes_its_characterized_profile():
         run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, DEFAULT_CANDIDATE)
     )
 
-    assert results["Candidate Per-node overhead"] == "PASS"
-    assert results["Candidate 100-node no-op"] == "PASS"
-    assert results["Candidate Trace serialization"] == "PASS"
-    assert results["Candidate Superlinear accumulation"] == "PASS"
+    # Recorded, with the value, rather than a verdict (ADR-012). What is still
+    # a verdict is completeness: no sampling, ever -- an invariant, never a
+    # measurement, so it cannot become a recorded number.
+    for label in (
+        "Candidate Per-node overhead",
+        "Candidate 100-node no-op",
+        "Candidate Trace serialization",
+        "Candidate Superlinear accumulation",
+    ):
+        assert results[label].startswith(("RECORDED", "MEETS TARGET")), results[label]
     assert results["Candidate trace completeness"] == "PASS"
 
 
-def test_candidate_gate_recomputes_and_rejects_a_real_timing_regression(tmp_path):
+def test_candidate_evidence_cannot_disagree_with_its_own_raw_runs(tmp_path):
+    """ADR-012 stopped gating the candidate on a ceiling, because a ceiling
+    derived from one host refuses code it previously accepted on another. It
+    did NOT stop the gate recomputing: a summary that disagrees with the runs
+    beneath it is a document nobody should trust, whatever it says.
+
+    The regression question moved to `check_relative_baseline.py`, where it is
+    asked as a ratio measured on one machine in one job.
+    """
+    candidate = copy.deepcopy(load_document(DEFAULT_CANDIDATE))
+    # A summary that flatters the runs beneath it.
+    candidate["summary"]["realistic_1000_us_per_node_min"]["median_across_runs"] /= 2
+    doctored = tmp_path / "doctored-candidate.json"
+    doctored.write_text(json.dumps(candidate), encoding="utf-8")
+
+    with pytest.raises(GateError, match="recomputed"):
+        run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, doctored)
+
+
+def test_a_slower_candidate_is_recorded_rather_than_refused(tmp_path):
+    """The behaviour change ADR-012 makes, pinned so it is deliberate."""
     candidate = copy.deepcopy(load_document(DEFAULT_CANDIDATE))
     samples = []
     for run in candidate["runs"]:
         measurement = run["3_runner_realistic"]["1000"]
         measurement["us_per_node_min"] *= 2
         samples.append(measurement["us_per_node_min"])
-    candidate["summary"]["realistic_1000_us_per_node_min"] = recomputed_stat(
-        samples
-    )
+    candidate["summary"]["realistic_1000_us_per_node_min"] = recomputed_stat(samples)
     slowed = tmp_path / "slowed-candidate.json"
     slowed.write_text(json.dumps(candidate), encoding="utf-8")
 
-    with pytest.raises(GateError, match="candidate misses target-plus-tolerance"):
-        run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, slowed)
+    results = dict(run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES, slowed))
+
+    assert results["Candidate Per-node overhead"].startswith("RECORDED")
+    assert results["Candidate trace completeness"] == "PASS"
 
 
 def test_candidate_gate_rejects_a_different_cpu_profile():

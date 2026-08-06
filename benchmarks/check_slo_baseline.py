@@ -382,10 +382,26 @@ def run_gate(baseline_path: Path, guarantees_path: Path, candidate_path: Path | 
             )
             for row in reference_rows
         ]
-        failures = [row for row in candidate_rows if not row.passes]
+        # ADR-012: these rows are RECORDED, not gated. The same v0.6.1 code
+        # measures 51.2 us/node on the EPYC 9V74 the targets came from and
+        # 66.1 us/node on an EPYC 7763 allocated later, and the runner check
+        # ("EPYC" in the model string) cannot tell them apart -- so a ceiling
+        # here refuses code it previously accepted, which is measuring the
+        # runner. A release is gated on the ratio to the previous release
+        # instead; see check_relative_baseline.py.
+        #
+        # Everything else still binds: the aggregates are recomputed from the
+        # raw runs, the interpreter and the runtime identity must match, and an
+        # incomplete trace is still a refusal. Completeness is an invariant,
+        # never a measurement.
         require(bool(candidate_metrics["trace_complete"]), "candidate baseline sampled or lost trace records")
-        require(not failures, "candidate misses target-plus-tolerance: " + "; ".join(f"{row.label}={row.measured:.6g}, ceiling={row.ceiling:.6g}" for row in failures))
-        results.extend((f"Candidate {row.label}", "PASS") for row in candidate_rows)
+        results.extend(
+            (
+                f"Candidate {row.label}",
+                "MEETS TARGET" if row.passes else f"RECORDED {row.measured:.6g}",
+            )
+            for row in candidate_rows
+        )
         results.append(("Candidate trace completeness", "PASS"))
 
     return results

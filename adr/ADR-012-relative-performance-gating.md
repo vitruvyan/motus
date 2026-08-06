@@ -148,19 +148,29 @@ between them except the host GitHub allocated.
 
 ### The canonical value of each regression
 
-Under §1's rule — the median of the job ratios — 0.7.0's figures against
-v0.6.1 are:
+The three dispatches above established how much the ratio moves when nothing
+changes, and that is what the budgets are derived from. The release's own
+figures come from a **separate** set of three, committed under
+`benchmarks/relative-v0.7.0/`. Under §1's rule — the median of the job ratios —
+0.7.0 against v0.6.1 is:
 
-| metric | **canonical** | observed across jobs |
-|---|---|---|
-| per-node overhead | **+6.6 %** | +4.5 % … +7.6 % |
-| 100-node no-op overhead | **+12.3 %** | +9.2 % … +12.5 % |
-| trace materialization | **+0.6 %** | −0.8 % … +1.1 % |
+| metric | **canonical** | observed across jobs | paired spread |
+|---|---|---|---|
+| per-node overhead | **+5.7 %** | +5.6 % … +7.2 % | 3.9 % |
+| 100-node no-op overhead | **+10.2 %** | +8.0 % … +12.3 % | **104 %** |
+| trace materialization | **+0.3 %** | −0.1 % … +0.6 % | 9.3 % |
 
-These three numbers are what 0.7.0 costs relative to 0.6.1. They are the
-figures the gate compares, the figures the release notes publish, and the
-figures 0.8.0 will be measured against. Ranges are published beside them and
-are never the quoted value — a range invites picking an end.
+These are what 0.7.0 costs relative to 0.6.1: the figures the gate compares,
+the release notes publish, and 0.8.0 is measured against. Ranges are published
+beside them and are never the quoted value — a range invites picking an end.
+
+**The no-op row carries a warning its own tooling raised.** A paired spread of
+104 % is far wider than the +10.2 % it is reporting, which means this metric's
+figure is the least trustworthy of the three — the 100-node workload is short
+enough that scheduling noise dominates it. The honest reading is not "+10.2 %
+is fine" but "this metric needs a longer workload before its number deserves
+three significant figures". Recorded here rather than smoothed away, and it is
+part of why the row is deferred rather than optimised against.
 
 **The absolute figure moves 55 % between identical runs. The ratio moves about
 3 points.** That is the whole case for this ADR, measured rather than argued.
