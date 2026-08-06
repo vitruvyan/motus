@@ -220,6 +220,39 @@ def test_declaration_violations_are_recomputed_from_every_captured_surface():
     _assert_clean(result, spec)
 
 
+def test_a_declaration_violation_names_the_offending_keys_in_its_message():
+    """The structured `violations` field is complete, but a developer reading a
+    production traceback sees the string — and "some read or write was
+    undeclared" without saying which one costs them the lookup the runtime
+    already did. The first external integrator hit exactly this: four minutes
+    to find out that the key was `question`, on the first line of every trace
+    they wrote. ReplayMismatch names its node/record/field; this now matches.
+    """
+    from vitruvyan_motus import DeclarationViolation
+
+    def leaks(state):
+        state.metadata("question")
+        return state.with_fact(Fact("x", 1, "test", NOW))
+
+    spec = _spec(
+        [{"name": "leaks", "reads_declared": ["sources"]}],
+        {"leaks": {"kind": "terminal"}},
+    )
+    with pytest.raises(NodeFailed) as raised:
+        Runtime(spec, {"leaks": leaks}).run(State.empty(metadata={"question": "?"}))
+
+    cause = raised.value.cause
+    assert isinstance(cause, DeclarationViolation)
+    message = str(cause)
+    assert "question" in message, (
+        f"the message must name the offending key, not only the exception "
+        f"attribute: {message!r}"
+    )
+    assert "undeclared_read" in message
+    # The structured field stays authoritative and unchanged.
+    assert cause.violations == ({"kind": "undeclared_read", "key": "question"},)
+
+
 def test_transition_limit_fails_at_the_refused_selection():
     def loop_or_end(state):
         count = state.fact("count", 0)

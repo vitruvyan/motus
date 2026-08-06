@@ -283,6 +283,30 @@ Nodes may have either `node(state)` or `node(state, ctx)` shape. Use
 `RunContext` when a reproducible run needs time, randomness, generated
 identifiers, or explicit effect evidence.
 
+Ambient nondeterminism enters through the context, and the context's sources
+are injected at the `Runtime`, so a node never reaches for the wall clock
+itself — which is what lets the same run be replayed:
+
+```python
+from datetime import datetime, timezone
+
+def observe(state, ctx):
+    return state.with_fact(
+        Fact("seen_at", ctx.now().isoformat(), "sensor", ctx.now())
+    )  # also: ctx.rand() -> float, ctx.uuid() -> str
+
+runtime = Runtime(
+    spec, {"observe": observe},
+    clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),  # fixed time
+    identity=lambda: "00000000-0000-4000-8000-000000000000",  # fixed ids
+    random_source=lambda: 0.5,                                 # fixed randomness
+)
+```
+
+Every draw is recorded, so `verify` re-runs the node against the exact values
+it saw. Omit the sources and the run still executes; it simply declares no
+reproducibility, which the trace records rather than pretending otherwise.
+
 ## Synchronous or asynchronous, one semantics
 
 A graph that calls anything over a network has to be asynchronous, so Motus

@@ -22,9 +22,13 @@ NOW = datetime(2026, 8, 6, tzinfo=timezone.utc)
 
 # ---------------------------------------------------------------- the spec
 
-# `effect_class` is a claim about what the node does, and the runtime holds it
-# to that claim. "pure" means: no outside world, same inputs give the same
-# answer — which is what makes a node re-executable during replay.
+# `effect_class` is a claim about what the node does. "pure" means: no outside
+# world, same inputs give the same answer — which is what makes a node
+# re-executable during replay. The runtime does NOT police this at run time (a
+# `pure` node that quietly calls the network still runs to completion); the
+# claim is what makes such a node re-executed during verify replay, where a
+# lie would show up as a mismatch. What the runtime *does* enforce at run time
+# is the read/write declaration below — see `assess`.
 SPEC = GraphSpec.from_dict({
     "schema_version": "1.0.0",
     "name": "triage",

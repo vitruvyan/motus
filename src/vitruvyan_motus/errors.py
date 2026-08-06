@@ -152,4 +152,16 @@ class DeclarationViolation(MotusError):
 
     def __init__(self, violations: list[dict[str, str]]) -> None:
         self.violations = tuple(dict(item) for item in violations)
-        super().__init__("captured reads or writes violate the node declaration")
+        # Name the offending keys in the message, not only in `violations`.
+        # The structured field is complete, but a developer reading a traceback
+        # in production sees the string — and "some read or write was
+        # undeclared" without saying which one costs them the one lookup the
+        # runtime already did. ReplayMismatch names its node, record and field
+        # for the same reason; this follows it.
+        detail = ", ".join(
+            f"{v.get('kind', 'violation')} {v['key']!r}" if "key" in v
+            else str(v.get("kind", "violation"))
+            for v in self.violations
+        )
+        message = "captured reads or writes violate the node declaration"
+        super().__init__(f"{message}: {detail}" if detail else message)
