@@ -475,3 +475,54 @@ def test_trace_schema_1_0_rejects_resume_and_wrong_bundle_namespace():
     document["schema_version"] = "1.1.0"
     document["run"]["resume"]["bundle_fingerprint"] = graph.graph_fingerprint
     assert {v.rule for v in validate.validate_trace(document)} == {"SCHEMA"}
+
+
+def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
+    """TRIPWIRE for ADR-013. Delete this test only when you close the gap.
+
+    `result_fingerprint` has a format in trace.v1.schema.json and no recipe
+    anywhere: nothing says what it is a fingerprint *of*, and `validate.py`
+    never recomputes it. So two producers with the same effect result can stamp
+    different fingerprints, which is the one thing a fingerprint exists to make
+    impossible. The first external integrator found this by having to invent
+    the fingerprint's meaning in their own adapter.
+
+    ADR-013 declares the field unverifiable for now — honestly, as `receipt_id`
+    already is — rather than inventing a recipe with one consumer in the world.
+    The risk of that choice is doing it half-way: a recipe added to the code
+    without the contract following, or the reverse. This test is the machine
+    enforcement against that. It asserts the field is UNCHECKED today. The day
+    someone gives it a recipe, `validate.py` will reject the tamper below, this
+    test will fail, and the failure message points here — forcing ADR-013 to be
+    superseded rather than silently contradicted.
+    """
+    receipt = EffectReceipt("provider:42", result_fingerprint="effect:sha256:" + "a" * 64)
+
+    def node(state, ctx):
+        ctx.record_effect(EffectDescriptor(
+            EffectClass.RECORDED_EFFECT, "GET map tile", receipt=receipt
+        ))
+        return state.with_fact(Fact("tile", "ok", "http", NOW))
+
+    graph = spec(
+        [{"name": "fetch", "effect_class": "recorded_effect", "writes_declared": ["tile"]}],
+        {"fetch": {"kind": "terminal"}},
+    )
+    result = Runtime(graph, {"fetch": node}).run(replay=ReplayStatus.declared("full"))
+
+    document = json.loads(json.dumps(result.trace.to_dict()))
+    for record in document["records"]:
+        if record["kind"] == "transition":
+            # Same format, a different value — the seal now describes nothing
+            # that produced this run.
+            record["effects"][0]["receipt"]["result_fingerprint"] = (
+                "effect:sha256:" + "b" * 64
+            )
+
+    violations = validate.validate_trace(document, graph.to_dict())
+    assert violations == [], (
+        "validate.py now rejects a tampered result_fingerprint. If that is "
+        "intended, the field gained a recipe — supersede ADR-013, replace this "
+        "tripwire with a test that asserts the tamper IS caught, and update the "
+        "schema description. Do not simply delete this assertion."
+    )
