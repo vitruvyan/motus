@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.6.1](https://github.com/vitruvyan/motus/releases/tag/v0.6.1)
+> **Current release:** [Motus 0.7.0](https://github.com/vitruvyan/motus/releases/tag/v0.7.0)
 >
 > Apache-2.0 · dependency-free runtime · source release · not yet published on PyPI
 
@@ -353,7 +353,7 @@ its forged target is another declared node.
 
 ## Replay and portable evidence
 
-Motus 0.6 provides three explicit replay operations:
+Motus provides three explicit replay operations:
 
 ```python
 from vitruvyan_motus import ReplayEngine, TraceBundle
@@ -366,6 +366,11 @@ restored = engine.playback()
 
 # Re-execute pure nodes against their recorded context draws.
 verified = engine.verify({"observe": observe})
+
+# The same comparison, awaited -- so a node that is both `async def` and
+# `pure` is verifiable too. One comparison state machine, two drivers, for
+# the same reason execution has two: a second copy could drift from the first.
+verified = await engine.averify({"observe": observe})
 
 # Produce deterministic explanation data and standalone offline HTML.
 explanation = bundle.explain()
@@ -415,19 +420,41 @@ component responsible for persisting it is unavailable.
 
 ## Performance profile
 
-Motus 0.6.1 has a separately characterized native profile based on five
-independent AMD EPYC 9V74 / Python 3.10.12 runs:
+**A release is gated on how much slower it is than the release before it**, not
+on an absolute ceiling. Both halves are measured in the same CI job on the same
+host, interleaved, so machine speed cancels out (ADR-012).
 
-- 51.2301 microseconds per node for a realistic 1,000-node full trace;
-- 3.43542 milliseconds overhead for a 100-node no-op run;
-- 1.749x cold trace materialization versus `json.dumps`;
-- 3.47% positive superlinear accumulation in the measured profile;
-- 3,002 trace records and zero declaration violations, with no sampling.
+0.7.0 against v0.6.1 — three independent dispatches, canonical value is the
+median of the job ratios:
 
-The CI gate recomputes aggregates from the committed raw evidence, verifies
-the runner identity, and rejects regressions beyond the ADR-006 ceilings using
-the corrected ADR-007 method. See
-[`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md).
+| metric | canonical | across jobs |
+|---|---:|---:|
+| per-node overhead | **+5.7 %** | +5.6 … +7.2 % |
+| 100-node no-op overhead | **+10.2 %** | +8.0 … +12.3 % |
+| trace materialization | **+0.3 %** | −0.1 … +0.6 % |
+
+The no-op row exceeds the +10 % per-release budget and ships as a scoped,
+machine-enforced exception that expires by construction — the same
+measurements labelled `0.8.0` fail the gate. It is deferred on a *stated
+hypothesis*, that executor overhead is negligible against real work, which is
+[due for falsification](https://github.com/vitruvyan/motus/issues/38) rather
+than assumed.
+
+**Why the change.** The previous ceilings came from one host and were guarded
+by checking the CPU model contained `EPYC`. That is a brand, not a performance
+class: the same v0.6.1 code measures 51.2 µs/node on the EPYC 9V74 the ceilings
+were derived from and 66.1 µs/node on an EPYC 7763 allocated later. **v0.6.1's
+own released code fails its own ceiling on today's hardware.** A gate that
+answers differently on identical code is measuring the runner.
+
+Absolute figures are still published — always with the machine that produced
+them, because a performance number without its host is not a fact about
+anything — and gate nothing. The gate still recomputes every aggregate from the
+raw runs, still matches interpreter and runtime identity, and still refuses an
+incomplete trace: completeness is an invariant, never a measurement.
+
+See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
+`benchmarks/relative-v0.7.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -443,7 +470,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.1-epyc-py310.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.7.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-v0.7.0/*.json
 ```
 
 ## Native package surface
@@ -483,6 +511,11 @@ from vitruvyan_motus.compat import LegacyDecision
   nothing more;
 - a persisted artifact may be absent, or a prefix, but never
   self-contradicting;
+- `averify`, the asynchronous twin of the replay surface, so a node that is
+  both `async def` and `pure` is verifiable rather than refused;
+- performance gated on the ratio to the previous release, measured in one job
+  on one host, instead of an absolute ceiling that a change of runner could
+  pass or fail on its own;
 - three runnable examples, executed by the test suite on every commit.
 
 ## Shipped in 0.6
@@ -495,6 +528,32 @@ from vitruvyan_motus.compat import LegacyDecision
 - strict read/write declaration enforcement;
 - additive trace schema 1.1;
 - executable performance regression gate.
+
+## Known limitations
+
+Recorded here rather than left for you to find, because a project whose thesis
+is honest evidence should not be coy about its own.
+
+- **Fan-out is not implemented.** Execution is single-lane: one node at a time.
+  A declared concurrent topology has no representation in GraphSpec v1 or trace
+  schema v1, deliberately, and adding it is a schema change rather than a
+  feature ([`guarantees.md` §5](contract/guarantees.md)).
+- **`resume` drives new work synchronously**, so a resumed segment cannot
+  contain an `async def` node. `averify` landed in 0.7; `aresume` did not.
+- **A required sink's refusal does not reach the caller** on `run_cancelled`
+  and `run_failed(route_miss)` — the artifact is an honest truncated prefix and
+  the session is told, but the caller is not
+  ([#32](https://github.com/vitruvyan/motus/issues/32)). It is left open
+  because the obvious answers are each wrong in a different way, and the two
+  readings of the contract disagree.
+- **A supervisor closing a `StreamDriver` still races a reader** at roughly 6
+  escapes per 300 trials. Before 0.7 the same probe gave 325 escapes and 163
+  wedged runs, so this is an incomplete fix rather than a regression, and the
+  number is published rather than described.
+- **Nobody outside this repository has run Motus.** Every benchmark is a
+  synthetic graph, every test was written by its author, and the performance
+  claims are relative measurements on CI runners. That is the largest unknown
+  here and no amount of internal review substitutes for it.
 
 ## Future direction
 
