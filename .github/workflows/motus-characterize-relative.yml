@@ -1,0 +1,94 @@
+name: Motus relative characterization
+
+# Two source trees, one harness, one machine, interleaved. The absolute gate
+# this supports compared a candidate against a ceiling derived from a specific
+# host and checked only that the CPU model said "EPYC" -- and an EPYC 7763
+# measured 29% slower than the EPYC 9V74 the ceiling came from. A gate that
+# answers differently on identical code is measuring the runner, not the code.
+#
+# `schedule` is the cumulative arm: the same comparison against the declared
+# anchor release, run periodically, so per-release regressions that each fit
+# inside the budget cannot accumulate unremarked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: The previous release to measure against
+        required: true
+        default: v0.6.1
+      anchor_ref:
+        description: An older release, for cumulative drift (optional)
+        required: false
+        default: ""
+      pairs:
+        description: Interleaved measurement rounds per subject (>= 5)
+        required: false
+        default: "5"
+  schedule:
+    # Monday 04:17 UTC. Off the hour, because shared runners are busiest there.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  relative:
+    name: relative-characterization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0   # the baseline and anchor refs must be reachable
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+
+      - name: Resolve the refs this run compares
+        id: refs
+        run: |
+          BASELINE="${{ github.event.inputs.baseline_ref }}"
+          ANCHOR="${{ github.event.inputs.anchor_ref }}"
+          PAIRS="${{ github.event.inputs.pairs }}"
+          # The scheduled arm takes no inputs, so it declares its own subjects.
+          [ -z "$BASELINE" ] && BASELINE=v0.6.1
+          [ -z "$PAIRS" ] && PAIRS=5
+          if [ "${{ github.event_name }}" = "schedule" ]; then ANCHOR=v0.6.0; fi
+          echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
+          echo "anchor=$ANCHOR"     >> "$GITHUB_OUTPUT"
+          echo "pairs=$PAIRS"       >> "$GITHUB_OUTPUT"
+
+      - name: Check out the subjects beside the candidate
+        run: |
+          git worktree add --detach /tmp/baseline "${{ steps.refs.outputs.baseline }}"
+          if [ -n "${{ steps.refs.outputs.anchor }}" ]; then
+            git worktree add --detach /tmp/anchor "${{ steps.refs.outputs.anchor }}"
+          fi
+
+      - name: Measure both trees with the candidate's harness
+        run: |
+          ANCHOR_ARGS=""
+          if [ -n "${{ steps.refs.outputs.anchor }}" ]; then
+            ANCHOR_ARGS="--anchor-src /tmp/anchor/src --anchor-ref ${{ steps.refs.outputs.anchor }}"
+          fi
+          python benchmarks/collect_relative_baseline.py \
+            --baseline-src /tmp/baseline/src \
+            --baseline-ref "${{ steps.refs.outputs.baseline }}" \
+            --candidate-src src \
+            --candidate-ref "${{ github.ref_name }}" \
+            --pairs "${{ steps.refs.outputs.pairs }}" \
+            $ANCHOR_ARGS \
+            > benchmarks/relative-latest.json
+
+      - name: Report the ratios this job measured
+        run: python benchmarks/check_relative_baseline.py benchmarks/relative-latest.json
+
+      - name: Upload the raw relative evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: motus-relative-${{ github.ref_name }}
+          path: benchmarks/relative-latest.json
+          if-no-files-found: error
+          retention-days: 90
