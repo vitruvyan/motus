@@ -35,9 +35,12 @@ SPEC = GraphSpec.from_dict({
     "version": "1.0.0",
     "entry": "assess",
     "nodes": [
-        # A declared write set is optional -- but when you declare one, the
-        # runtime checks it against what actually happened and fails the node
-        # if they disagree. Decisions count as writes, like facts do.
+        # A declared read/write set is optional -- but declaring one is
+        # all-or-nothing: the runtime checks it against everything the node
+        # actually did, and a node that touched anything you left out fails.
+        # A partial declaration is worse than none, because none is not
+        # checked and a partial one fails (node-protocol.md §3.2). Decisions
+        # count as writes, like facts do.
         {"name": "assess", "effect_class": "pure",
          "writes_declared": ["amount", "risk"]},
         {"name": "approve", "effect_class": "pure"},

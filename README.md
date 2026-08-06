@@ -279,6 +279,12 @@ print(result.status, result.succeeded)
 print(result.trace.to_json())
 ```
 
+`reads_declared` / `writes_declared` are optional, and declaring them is
+all-or-nothing: the runtime checks a declaration against everything the node
+actually read or wrote, so a node that touches anything it left out fails. A
+partial declaration is worse than none — none is not checked; a partial one is,
+and it fails (`node-protocol.md` §3.2).
+
 Nodes may have either `node(state)` or `node(state, ctx)` shape. Use
 `RunContext` when a reproducible run needs time, randomness, generated
 identifiers, or explicit effect evidence.
