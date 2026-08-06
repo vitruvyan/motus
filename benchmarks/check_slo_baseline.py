@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - exercised by the CI command itself
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = ROOT / "benchmarks" / "baseline-v0.4.0-epyc-py310.json"
-DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.6.1-epyc-py310.json"
+DEFAULT_CANDIDATE = ROOT / "benchmarks" / "candidate-v0.7.0-epyc-py310.json"
 DEFAULT_GUARANTEES = ROOT / "contract" / "guarantees.md"
 MIN_RUNS = 5
 MOTUS_CANDIDATE_TOLERANCE = 0.25
