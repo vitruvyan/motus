@@ -23,26 +23,60 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import statistics
 import sys
 from pathlib import Path
 
-# Per-release budget. Derived from measured job-to-job variation of the ratio
-# on the reference runner class, not chosen to accommodate a result: see
-# ADR-012, which records the observations and the derivation. A release that
-# needs more than this is not refused by arithmetic — it is refused until
-# somebody explains it, which is the point.
-RELEASE_BUDGET = 0.15
+# Per-release budget. Five times the +/-2 point job-to-job variation measured
+# on the reference runner class (ADR-012 records the three observations and the
+# derivation). Not chosen by trying it against a release: 0.7.0 does not fit it
+# on one metric, and is recorded as a named exception rather than accommodated
+# by a wider number. A release that needs more than this is not refused by
+# arithmetic -- it is refused until somebody explains it, which is the point.
+RELEASE_BUDGET = 0.10
 
 # Cumulative budget, checked by the scheduled arm against the declared anchor.
 # Deliberately less than the sum of successive release budgets: a sequence of
 # regressions that each fit inside RELEASE_BUDGET must not be able to walk the
 # runtime somewhere nobody agreed to go.
-CUMULATIVE_BUDGET = 0.25
+CUMULATIVE_BUDGET = 0.20
 
 GATED_LABELS = {
     "realistic_1000_us_per_node_min": "Per-node overhead",
     "noop_100_overhead_ms": "100-node no-op",
     "to_dict_min_ms_realistic": "Trace materialization",
+}
+
+# Sampling and the decision rule, in one place because a gate whose statistic
+# is implicit can be argued with after the fact (ADR-012 section 2):
+#
+#   within a job   each subject's figure is the MEDIAN across >= MIN_PAIRS
+#                  interleaved rounds; each round is itself min-of-samples
+#                  under the ADR-006 method (2 warmups, >= 7 samples, gc.collect)
+#   job ratio      candidate median / baseline median, per metric
+#   release figure the CANONICAL value is the MEDIAN of the job ratios across
+#                  >= MIN_JOBS independent dispatches
+#   decision       the canonical value is compared to the budget. Individual
+#                  jobs are observations, never verdicts: the runner varies 55%
+#                  between them and a single job is a coin toss.
+MIN_PAIRS = 5
+MIN_JOBS = 3
+
+# Machine-enforced, scoped, and expiring by construction. Keyed on the baseline
+# ref, the candidate's own declared version and the metric, so an exception
+# granted to one release cannot silently cover another: 0.8.0 does not match
+# this key and is measured under the full budget.
+#
+#   (baseline_ref, candidate_version, metric) -> (ceiling, authority, why)
+DECLARED_EXCEPTIONS = {
+    ("v0.6.1", "0.7.0", "noop_100_overhead_ms"): (
+        0.13,
+        "ADR-012",
+        "the executor's node-invocation inversion adds a generator round trip "
+        "and one allocation per node; on nodes that do no work that cost is "
+        "the entire measurement. Deferred with a hypothesis to falsify, not "
+        "accommodated by a wider budget.",
+    ),
 }
 
 
@@ -101,72 +135,149 @@ def validate(document: dict) -> None:
     require(len(interpreters) == 1, f"subjects were measured on {interpreters}")
 
 
-def rows(document: dict, which: str, budget: float) -> list[tuple[str, float, bool]]:
-    ratios = document.get("ratios", {}).get(which)
-    if not ratios:
-        return []
-    out = []
-    for key, label in GATED_LABELS.items():
-        if key not in ratios:
+def canonical(documents: list[dict], which: str) -> dict[str, float]:
+    """The release's figure for each metric: the median across jobs.
+
+    A single job is an observation. The absolute measurement moves 55 % between
+    identical jobs on this runner class, so a verdict taken from one of them is
+    a verdict about which host GitHub allocated.
+    """
+    out: dict[str, float] = {}
+    for key in GATED_LABELS:
+        ratios = [
+            float(document.get("ratios", {}).get(which, {})[key])
+            for document in documents
+            if key in document.get("ratios", {}).get(which, {})
+        ]
+        if not ratios:
             continue
-        ratio = float(ratios[key])
-        require(math.isfinite(ratio) and ratio > 0, f"{key}: ratio must be positive and finite")
-        out.append((label, ratio, ratio <= 1 + budget))
+        for ratio in ratios:
+            require(
+                math.isfinite(ratio) and ratio > 0,
+                f"{key}: every job ratio must be positive and finite",
+            )
+        out[key] = statistics.median(ratios)
     return out
 
 
-def report(document: dict, *, strict_cumulative: bool = False) -> int:
-    validate(document)
-    subjects = document["subjects"]
-    environment = document["env"]
+def _exception_for(documents: list[dict], key: str):
+    baseline = documents[0]["subjects"]["baseline"]["ref"]
+    version = documents[0]["subjects"]["candidate"]["runtime"].split("/", 1)[-1]
+    return DECLARED_EXCEPTIONS.get((baseline, version, key))
 
+
+def report(documents: list[dict]) -> int:
+    for document in documents:
+        validate(document)
+    require(
+        len({d["subjects"]["baseline"]["ref"] for d in documents}) == 1
+        and len({d["subjects"]["candidate"]["runtime"] for d in documents}) == 1,
+        "every job must compare the same pair of subjects",
+    )
+
+    first = documents[0]["subjects"]
     print("Relative characterization")
-    print(f"  measured on : {environment['cpu_model']} / Python {environment['python']}")
-    print(f"  baseline    : {subjects['baseline']['ref']} ({subjects['baseline']['runtime']})")
-    print(f"  candidate   : {subjects['candidate']['ref']} ({subjects['candidate']['runtime']})")
-    print(f"  rounds      : {document['pairs']} interleaved per subject")
+    print(f"  baseline    : {first['baseline']['ref']} ({first['baseline']['runtime']})")
+    print(f"  candidate   : {first['candidate']['ref']} ({first['candidate']['runtime']})")
+    print(f"  jobs        : {len(documents)} independent dispatches")
+    for index, document in enumerate(documents, 1):
+        environment = document["env"]
+        print(
+            f"    job {index}: {environment['cpu_model']} / "
+            f"Python {environment['python']} / {document['pairs']} rounds per subject"
+        )
     print()
+
+    if len(documents) < MIN_JOBS:
+        print(
+            f"Relative baseline gate: FAIL\n  {len(documents)} job(s); "
+            f"at least {MIN_JOBS} independent dispatches are required before a "
+            "release figure is canonical",
+            file=sys.stderr,
+        )
+        return 1
 
     failures: list[str] = []
 
-    print(f"Release budget (+{RELEASE_BUDGET:.0%} over {subjects['baseline']['ref']})")
-    for label, ratio, ok in rows(document, "candidate_over_baseline", RELEASE_BUDGET):
-        print(f"  {'PASS' if ok else 'FAIL':4}  {label:24} {(ratio - 1) * 100:+6.1f}%")
-        if not ok:
-            failures.append(f"{label} {(ratio - 1) * 100:+.1f}% exceeds +{RELEASE_BUDGET:.0%}")
-
-    cumulative = rows(document, "candidate_over_anchor", CUMULATIVE_BUDGET)
-    if cumulative:
-        anchor = subjects.get("anchor", {}).get("ref", "anchor")
+    def section(which: str, budget: float, title: str) -> None:
+        values = canonical(documents, which)
+        if not values:
+            return
+        print(title)
+        for key, label in GATED_LABELS.items():
+            if key not in values:
+                continue
+            ratio = values[key]
+            per_job = [
+                document["ratios"][which][key] for document in documents
+                if key in document.get("ratios", {}).get(which, {})
+            ]
+            ceiling, note = budget, ""
+            granted = _exception_for(documents, key) if which == "candidate_over_baseline" else None
+            if granted and granted[0] > budget:
+                ceiling = granted[0]
+                note = f"  <- {granted[1]} exception, ceiling +{ceiling:.0%}"
+            ok = ratio <= 1 + ceiling
+            spread = f"[{min(per_job) - 1:+.1%} .. {max(per_job) - 1:+.1%}]"
+            print(
+                f"  {'PASS' if ok else 'FAIL':4}  {label:24} "
+                f"{(ratio - 1) * 100:+6.1f}%  across jobs {spread}{note}"
+            )
+            if not ok:
+                failures.append(
+                    f"{label} {(ratio - 1) * 100:+.1f}% exceeds +{ceiling:.0%}"
+                )
         print()
-        print(f"Cumulative budget (+{CUMULATIVE_BUDGET:.0%} over {anchor})")
-        for label, ratio, ok in cumulative:
-            print(f"  {'PASS' if ok else 'FAIL':4}  {label:24} {(ratio - 1) * 100:+6.1f}%")
-            if not ok and strict_cumulative:
-                failures.append(f"cumulative {label} {(ratio - 1) * 100:+.1f}%")
-            elif not ok:
-                failures.append(f"cumulative {label} {(ratio - 1) * 100:+.1f}%")
 
-    print()
-    print("Absolute figures — recorded, not gated")
-    for name in ("baseline", "candidate"):
-        summary = subjects[name]["summary"]
-        print(
-            f"  {subjects[name]['ref']:16} "
-            f"per-node {summary['realistic_1000_us_per_node_min']['median_across_runs']:7.2f} us   "
-            f"no-op100 {summary['noop_100_overhead_ms']['median_across_runs']:6.3f} ms"
+    section(
+        "candidate_over_baseline",
+        RELEASE_BUDGET,
+        f"Release budget (+{RELEASE_BUDGET:.0%} over {first['baseline']['ref']}) "
+        "— canonical value is the median across jobs",
+    )
+    anchor = first.get("anchor", {}).get("ref")
+    if anchor:
+        section(
+            "candidate_over_anchor",
+            CUMULATIVE_BUDGET,
+            f"Cumulative budget (+{CUMULATIVE_BUDGET:.0%} over anchor {anchor})",
         )
 
-    diagnostics = document.get("diagnostics", {}).get("paired_ratio", {})
-    if diagnostics:
+    print("Absolute figures — recorded with their host, never gated")
+    for index, document in enumerate(documents, 1):
+        subjects = document["subjects"]
+        print(
+            f"  job {index} on {document['env']['cpu_model'][:34]:36} "
+            f"{subjects['baseline']['ref']} "
+            f"{subjects['baseline']['summary']['realistic_1000_us_per_node_min']['median_across_runs']:6.2f} us"
+            f"  ->  candidate "
+            f"{subjects['candidate']['summary']['realistic_1000_us_per_node_min']['median_across_runs']:6.2f} us"
+        )
+
+    print()
+    print("Measurement quality — how much of the above is the machine")
+    for key, label in GATED_LABELS.items():
+        spreads = [
+            (document.get("diagnostics", {}).get("paired_ratio", {}).get(key) or {}).get("spread_pct")
+            for document in documents
+        ]
+        spreads = [value for value in spreads if value is not None]
+        if not spreads:
+            continue
+        worst = max(spreads)
+        flag = "  <- wider than the effect being measured" if worst > 20 else ""
+        print(f"  {label:24} worst paired spread {worst:5.1f}%{flag}")
+
+    granted_any = [
+        (key, _exception_for(documents, key)) for key in GATED_LABELS
+        if _exception_for(documents, key)
+    ]
+    if granted_any:
         print()
-        print("Measurement quality — how much of the above is the machine")
-        for key, label in GATED_LABELS.items():
-            entry = diagnostics.get(key) or {}
-            spread = entry.get("spread_pct")
-            if spread is not None:
-                note = "  <- wider than the effect being measured" if spread > 20 else ""
-                print(f"  {label:24} paired spread {spread:5.1f}%{note}")
+        print("Declared exceptions applied to this release")
+        for key, (ceiling, authority, why) in granted_any:
+            print(f"  {GATED_LABELS[key]} — ceiling +{ceiling:.0%}, {authority}")
+            print(f"    {why}")
 
     print()
     if failures:
@@ -180,15 +291,17 @@ def report(document: dict, *, strict_cumulative: bool = False) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("document", type=Path)
     parser.add_argument(
-        "--advisory",
-        action="store_true",
-        help="print the report and always exit 0 (used while a budget is being derived)",
+        "documents", type=Path, nargs="+",
+        help=f"one relative-characterization document per job; {MIN_JOBS}+ required",
+    )
+    parser.add_argument(
+        "--advisory", action="store_true",
+        help="print the report and always exit 0 (a single job cannot be a verdict)",
     )
     args = parser.parse_args(argv)
     try:
-        status = report(load(args.document))
+        status = report([load(path) for path in args.documents])
     except GateError as exc:
         print(f"Relative baseline gate: FAIL\n{exc}", file=sys.stderr)
         return 1

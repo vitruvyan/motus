@@ -54,7 +54,8 @@ jobs:
           # The scheduled arm takes no inputs, so it declares its own subjects.
           [ -z "$BASELINE" ] && BASELINE=v0.6.1
           [ -z "$PAIRS" ] && PAIRS=5
-          if [ "${{ github.event_name }}" = "schedule" ]; then ANCHOR=v0.6.0; fi
+          # The cumulative anchor is declared by ADR-012 and moves only by ADR.
+          if [ "${{ github.event_name }}" = "schedule" ]; then ANCHOR=v0.6.1; fi
           echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
           echo "anchor=$ANCHOR"     >> "$GITHUB_OUTPUT"
           echo "pairs=$PAIRS"       >> "$GITHUB_OUTPUT"
@@ -88,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: motus-relative-${{ github.ref_name }}
+          name: motus-relative-${{ github.run_id }}   # ref_name may contain '/'
           path: benchmarks/relative-latest.json
           if-no-files-found: error
           retention-days: 90
