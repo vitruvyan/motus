@@ -429,6 +429,16 @@ class Runtime:
             extra = sorted(set(self._nodes) - declared)
             raise ValueError(f"node registry must match GraphSpec; missing={missing}, extra={extra}")
         self._uses_context = {name: _accepts_context(node) for name, node in self._nodes.items()}
+        # Computed once, beside `_uses_context`, and for the same reason: this
+        # is a property of the callable, and the callable does not change
+        # between runs. `_refresh_identity` re-derives node config on every
+        # `_start` because `motus_config()` legitimately varies — but whether a
+        # node is `async def` cannot. Asking per node per run cost 4.8 us of
+        # `inspect` work each time, which on a 1000-node graph is 72% of a 24%
+        # per-node regression the SLO gate refused. Measured, not guessed.
+        self._async_nodes = frozenset(
+            name for name, node in self._nodes.items() if _is_async_node(node)
+        )
         self._declarations = self._plan.declarations
         self._identity_cache: dict[
             str,
@@ -493,7 +503,7 @@ class Runtime:
                 constraints.append(("partial", f"node:{name}:opaque_config"))
             if unavailable:
                 constraints.append(("partial", f"node:{name}:source_unavailable"))
-            if _is_async_node(self._nodes[name]):
+            if name in self._async_nodes:
                 # An async node is executable but not verify-replayable:
                 # `ReplayEngine.verify` and `resume` drive nodes
                 # synchronously. Invariant IV requires replay capability to be
