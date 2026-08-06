@@ -1,0 +1,90 @@
+# Agents in this repository
+
+Motus is a contract-first codebase with an unusually heavy verification
+practice: a normative `contract/`, frozen corpora, an executable validator, a
+performance gate that compares releases, and adversarial review before merges.
+Most of that work is repetitive and mechanical. Some of it is not, and the
+difference is worth money.
+
+## The routing rule
+
+**Match the model to the reasoning the task actually needs, not to the
+importance of the code it touches.** Running the test suite against the
+runtime's most delicate file is still just running the test suite.
+
+| tier | agent | what it is for |
+|---|---|---|
+| `haiku` | **`motus-verifier`** | Running things and reporting what broke. The suite, the gates, the frozen-path guard, the examples, README/API consistency. Dispatch it freely — it is cheap, and it exists so that nobody spends a reasoning model reading green pytest output. |
+| `sonnet` | **`motus-implementer`** | Changes whose shape is already decided: a named fix, a stated property to test, docs brought in line with code. It is instructed to stop and say so if the task turns out not to be decided after all. |
+| `haiku` | **`motus-issue-auditor`** | Checking whether open issues still describe the code truthfully. Not a tracker — `gh issue list` already lists. This catches issues that went stale in silence, which is a thing no command does. |
+| `opus` | **`motus-adversary`** | Breaking new code. Diagnosing an unexplained failure. Anything where the answer is not known in advance and being wrong is expensive. |
+
+Decisions about the contract, the ADRs and the architecture stay with the
+session lead. They are not delegated, because the failure mode is not a bug —
+it is a wrong decision recorded as if it were right.
+
+## Where the tokens actually go
+
+Two lessons from the 0.7 cycle, both measured:
+
+**Verification dominates by volume.** The suite ran dozens of times in a single
+session. A reasoning model reading `534 passed` is pure waste; that is exactly
+what `motus-verifier` is for, and why it is instructed to report anomalies
+rather than output.
+
+**Adversarial review dominates by value.** Every round found real defects in
+code written hours earlier — including in the fixes made for the round before.
+That is the one place to spend the expensive model without hesitating.
+
+**Documents rot in pieces.** A long issue with six findings gets fixed a piece
+at a time; comments record what closed and nobody rewrites the body. Issue #32
+spent a day asserting, as current fact, two things that were already false.
+That is what `motus-issue-auditor` is for, and it is why issues here should
+carry one question rather than six.
+
+The economy is not "use cheap models". It is **stop paying for reasoning where
+none is required, so you can afford it where it is.**
+
+### It paid for itself on its first run
+
+`motus-verifier`, dispatched once as a smoke test, found that the README listed
+`NodeConfigurationError` in the public surface while the package did not export
+it — a false promise introduced the day before, by me, while *correcting* that
+same list. 19k tokens on the cheapest tier. `motus-implementer` then fixed it
+with a test and a mutation probe for another 19k.
+
+Neither task needed a reasoning model. Both needed doing.
+
+## Skills
+
+- **`adversarial-round`** — how a hostile round is run and how findings are
+  processed. Includes the rule that has mattered most: do not merge while the
+  round is still running.
+- **`release`** — the release act, which ADR-006 and ADR-012 make into one
+  coupled operation. Encodes the failures that have actually happened.
+- **`adr`** — the ADR house style, including the parts that make these
+  documents worth reading: numbers instead of adjectives, the cost you are
+  accepting, wrong turns recorded, and guesses labelled as guesses.
+
+## Rules no agent may break
+
+These come from `.github/copilot-instructions.md` and hold for every agent and
+every model tier:
+
+- **Authority order**: ADR-001 → `contract/` → frozen corpora → implementation.
+  When implementation and contract disagree, the implementation is wrong.
+- **Never edit** `tests/contract/` or `tests/compat/`. CI enforces this from
+  the trusted base branch.
+- **Never weaken, skip or delete an assertion** to make something pass.
+- **No new runtime dependencies.** The package declares zero, and that is a
+  claim the packaging tests check against a real built wheel.
+- **Every fix carries a test that fails without it**, proved by neutering the
+  fix and watching the test fail. Five tests in the 0.7 cycle passed for the
+  wrong reason and only this caught them.
+
+## One habit worth keeping
+
+**Suspect your own tests first.** The recurring failure in this project has not
+been bad code — it has been tests written against the implementation just
+produced rather than against the property that should hold. They pass, they
+look like coverage, and they are not.

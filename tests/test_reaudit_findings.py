@@ -138,3 +138,13 @@ def test_motus_config_failure_is_a_typed_pre_run_error() -> None:
         runtime.run(run_id="config-error")
     assert isinstance(raised.value.cause, RuntimeError)
     assert runtime.trace is None
+
+
+def test_node_configuration_error_is_importable_from_the_package_root() -> None:
+    # contract/node-protocol.md:186 names this as a failure a caller encounters;
+    # a caller who only imports the package root (as the README's public-surface
+    # listing promises) must be able to catch it without reaching into vitruvyan_motus.errors.
+    import vitruvyan_motus
+
+    assert vitruvyan_motus.NodeConfigurationError is NodeConfigurationError
+    assert "NodeConfigurationError" in vitruvyan_motus.__all__
