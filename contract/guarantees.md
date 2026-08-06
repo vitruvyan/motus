@@ -126,10 +126,24 @@ not a current product claim.
 | Motus positive superlinear accumulation at n = 1000 | < 10% | 3% | 77% ratio spread |
 | Motus trace completeness | 100% — no sampling, ever | 100%; 3,002 records | — |
 
-The common 25% tolerance produces hard ceilings of 56.25 us/node, 4.0625 ms,
-1.875x serialization, and <12.5% positive superlinearity. The checker
-recomputes the measured values and refuses a different interpreter, runtime,
-CPU class, incomplete trace, or modified aggregate.
+**These rows are recorded measurements on a stated host, not ceilings**
+(ADR-012). The "Target" column is retained as the design intent it always was;
+nothing is gated on it. The reason is measured: the same v0.6.1 code, unchanged,
+produces 51.2 us/node on the EPYC 9V74 above and 66.1 us/node on an EPYC 7763
+allocated later — so a ceiling derived from one host, guarded by a check that
+the CPU model contains "EPYC", refuses code it previously accepted. A gate that
+answers differently on identical code is measuring the runner.
+
+The checker still recomputes every aggregate from the raw runs, and still
+refuses a different interpreter, an incomplete trace or a modified aggregate.
+It no longer refuses a candidate for missing a target.
+
+**What a release is gated on is the ratio to the release before it**, both
+halves measured in the same job on the same host, interleaved — see ADR-012 for
+the sampling rule, the per-release and cumulative budgets, the declared anchor,
+and the canonical statistic. Absolute figures continue to be published, always
+with the machine that produced them, because a performance number without its
+host is not a fact about anything.
 
 ## 4. Terraveler compatibility surface (frozen)
 

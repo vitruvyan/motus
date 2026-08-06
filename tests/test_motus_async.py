@@ -871,3 +871,54 @@ async def test_averify_refuses_an_async_generator_node():
 
     with pytest.raises(ReplayUnsupported):
         await ReplayEngine(bundle).averify({"compute": streaming})
+
+
+def test_node_asyncness_is_settled_once_and_not_re_derived_per_run():
+    """`_refresh_identity` re-derives node config on every `_start`, because
+    `motus_config()` legitimately varies between runs. Whether a node is
+    `async def` cannot: it is a property of the callable, and the registry is
+    fixed at construction.
+
+    Asking anyway cost 4.8 microseconds of `inspect` work per node per run.
+    On a 1000-node graph that was 72% of a 24% per-node regression — enough
+    for the SLO gate to refuse the release characterization, which is how it
+    was found. A correctness-shaped test rather than a timing one: timings
+    flake, and this is the property that makes the hoist safe.
+    """
+    from vitruvyan_motus import runtime as runtime_module
+
+    calls: list[object] = []
+    original = runtime_module._is_async_node
+
+    def counting(node):
+        calls.append(node)
+        return original(node)
+
+    runtime_module._is_async_node = counting
+    try:
+        instance = Runtime(LINEAR, {"a": aclassify, "b": areview})
+        during_construction = len(calls)
+        calls.clear()
+        asyncio.run(instance.arun(State.empty("hoisted")))
+        asyncio.run(instance.arun(State.empty("hoisted-again")))
+    finally:
+        runtime_module._is_async_node = original
+
+    assert during_construction == 2, "every node is examined exactly once, at construction"
+    assert calls == [], (
+        f"the async predicate ran {len(calls)} more times across two runs; it is "
+        "a constant of the registry and must be settled once"
+    )
+
+
+@pytest.mark.asyncio
+async def test_hoisting_did_not_lose_the_async_replay_constraint():
+    """The hoist must not cost the thing the predicate is there for."""
+    runtime = Runtime(LINEAR, {"a": aclassify, "b": areview})
+    result = await runtime.arun(
+        State.empty("constraint"), replay=ReplayStatus.declared("full")
+    )
+
+    constraints = result.trace.records[-1]["replay"]["constraints"]
+    assert "node:a:async" in constraints
+    assert "node:b:async" in constraints

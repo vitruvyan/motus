@@ -1,0 +1,1123 @@
+{
+  "diagnostics": {
+    "paired_ratio": {
+      "noop_100_overhead_ms": {
+        "median": 1.116207560886686,
+        "samples": [
+          0.5601091637434652,
+          1.124402424819801,
+          1.0706046944647554,
+          1.1448067997742803,
+          1.116207560886686
+        ],
+        "spread_pct": 104.38994286810343
+      },
+      "realistic_1000_us_per_node_min": {
+        "median": 1.0652884607203774,
+        "samples": [
+          1.0610318011958007,
+          1.0915063315536888,
+          1.0506430220527903,
+          1.076308002112135,
+          1.0652884607203774
+        ],
+        "spread_pct": 3.8893619091533216
+      },
+      "to_dict_min_ms_realistic": {
+        "median": 1.0064908275726916,
+        "samples": [
+          1.015391516465669,
+          0.9982739360878362,
+          1.0064908275726916,
+          1.009986508610953,
+          1.0038918106617472
+        ],
+        "spread_pct": 1.7147177502114808
+      }
+    },
+    "within_subject_spread_pct": {
+      "baseline": {
+        "noop_100_overhead_ms": 103.85308410541161,
+        "realistic_1000_us_per_node_min": 2.3239643664459244,
+        "to_dict_min_ms_realistic": 1.0472335224581295
+      },
+      "candidate": {
+        "noop_100_overhead_ms": 3.017724537347059,
+        "realistic_1000_us_per_node_min": 2.3225903191522415,
+        "to_dict_min_ms_realistic": 1.3140720368281238
+      }
+    }
+  },
+  "env": {
+    "cpu_model": "AMD EPYC 7763 64-Core Processor",
+    "machine": "x86_64",
+    "platform_system": "Linux",
+    "python": "3.10.12"
+  },
+  "kind": "motus-relative-characterization",
+  "pairs": 5,
+  "ratios": {
+    "candidate_over_baseline": {
+      "noop_100_overhead_ms": 1.1229004176954902,
+      "realistic_1000_us_per_node_min": 1.072486855679349,
+      "to_dict_min_ms_realistic": 1.0064908275726916
+    }
+  },
+  "schema": 1,
+  "subjects": {
+    "baseline": {
+      "ref": "v0.6.1",
+      "runs": [
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 12.583999996707007,
+              "min_us": 12.011999999117506
+            },
+            "1000": {
+              "median_us": 51.59599999871034,
+              "min_us": 51.03499999847827
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 8.735911999998791,
+              "min_ms": 8.41223700000171,
+              "overhead_us_per_node_median": 87.23328000002084,
+              "overhead_us_per_node_min": 84.00225000002592
+            },
+            "1000": {
+              "median_ms": 45.74192799999821,
+              "min_ms": 40.60455799999829,
+              "overhead_us_per_node_median": 45.6903319999995,
+              "overhead_us_per_node_min": 40.553522999999814
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.37478499999844,
+              "min_ms": 6.315243999999609,
+              "us_per_node_median": 63.74784999998439,
+              "us_per_node_min": 63.1524399999961
+            },
+            "1000": {
+              "median_ms": 62.93589200000582,
+              "min_ms": 62.6918250000017,
+              "us_per_node_median": 62.93589200000582,
+              "us_per_node_min": 62.69182500000171
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9927062992341322,
+            "t1000_vs_10x_t100_realistic": 0.9927062992341322
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0013330000001587905,
+              "cached_to_json_min_ms": 0.0007719999999267202,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.350447000000429,
+              "json_dumps_min_ms": 10.265668000002393,
+              "to_dict_median_ms": 18.61208400000436,
+              "to_dict_min_ms": 18.46386500000108,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.0022640000025830886,
+              "cached_to_json_min_ms": 0.001792999995586797,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 10.932492999998544,
+              "json_dumps_min_ms": 10.812246000000414,
+              "to_dict_median_ms": 20.76166899999521,
+              "to_dict_min_ms": 20.574256000003288,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              3.50048828125,
+              0.97119140625,
+              0.3310546875
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.6.1"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 5.891000000701752,
+              "min_us": 5.7999999967250915
+            },
+            "1000": {
+              "median_us": 49.21200000040926,
+              "min_us": 48.921999997730836
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.237308000000439,
+              "min_ms": 4.1542319999976485,
+              "overhead_us_per_node_median": 42.314169999997375,
+              "overhead_us_per_node_min": 41.484320000009234
+            },
+            "1000": {
+              "median_ms": 39.41616499999867,
+              "min_ms": 39.21089199999983,
+              "overhead_us_per_node_median": 39.36695299999826,
+              "overhead_us_per_node_min": 39.1619700000021
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.351011999996103,
+              "min_ms": 6.294386000000429,
+              "us_per_node_median": 63.51011999996104,
+              "us_per_node_min": 62.9438600000043
+            },
+            "1000": {
+              "median_ms": 62.1079280000032,
+              "min_ms": 61.26797900000014,
+              "us_per_node_median": 62.1079280000032,
+              "us_per_node_min": 61.26797900000013
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9733749884420174,
+            "t1000_vs_10x_t100_realistic": 0.9733749884420174
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011930000027859933,
+              "cached_to_json_min_ms": 0.0008419999986131188,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.43139800000148,
+              "json_dumps_min_ms": 10.331381000000306,
+              "to_dict_median_ms": 18.674316000002023,
+              "to_dict_min_ms": 18.459275000004993,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.001973999999904663,
+              "cached_to_json_min_ms": 0.0015829999995276012,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 11.127134000005867,
+              "json_dumps_min_ms": 10.972783999996238,
+              "to_dict_median_ms": 21.165084000003276,
+              "to_dict_min_ms": 20.758791000005772,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              3.115234375,
+              0.97216796875,
+              0.3388671875
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.6.1"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.603000002769477,
+              "min_us": 6.231000000411768
+            },
+            "1000": {
+              "median_us": 54.07100000098808,
+              "min_us": 50.324999996576025
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.3160529999966,
+              "min_ms": 4.283482000005279,
+              "overhead_us_per_node_median": 43.09449999993831,
+              "overhead_us_per_node_min": 42.77251000004867
+            },
+            "1000": {
+              "median_ms": 40.90747700000463,
+              "min_ms": 40.48407299999468,
+              "overhead_us_per_node_median": 40.853406000003645,
+              "overhead_us_per_node_min": 40.433747999998104
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.4846040000006155,
+              "min_ms": 6.393814000006159,
+              "us_per_node_median": 64.84604000000616,
+              "us_per_node_min": 63.93814000006159
+            },
+            "1000": {
+              "median_ms": 62.63828099999813,
+              "min_ms": 62.42064300000294,
+              "us_per_node_median": 62.63828099999812,
+              "us_per_node_min": 62.42064300000293
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9762661691432188,
+            "t1000_vs_10x_t100_realistic": 0.9762661691432188
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011109999960012829,
+              "cached_to_json_min_ms": 0.000810999999600881,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.47692000000211,
+              "json_dumps_min_ms": 10.399083999999448,
+              "to_dict_median_ms": 18.80353300000337,
+              "to_dict_min_ms": 18.701331000002597,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.0020940000027280803,
+              "cached_to_json_min_ms": 0.0016030000011824086,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 10.901115000002903,
+              "json_dumps_min_ms": 10.817758000001731,
+              "to_dict_median_ms": 20.7819580000006,
+              "to_dict_min_ms": 20.593675999997174,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.94580078125,
+              0.97265625,
+              0.3427734375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.6.1"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.18099999627475,
+              "min_us": 5.921999999713989
+            },
+            "1000": {
+              "median_us": 50.996000005909536,
+              "min_us": 50.774999998282055
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.139820999995436,
+              "min_ms": 4.12664699999965,
+              "overhead_us_per_node_median": 41.33639999999161,
+              "overhead_us_per_node_min": 41.20724999999936
+            },
+            "1000": {
+              "median_ms": 40.14741499999985,
+              "min_ms": 39.62608700000203,
+              "overhead_us_per_node_median": 40.09641899999394,
+              "overhead_us_per_node_min": 39.57531200000375
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.307975000005683,
+              "min_ms": 6.268170999994993,
+              "us_per_node_median": 63.07975000005683,
+              "us_per_node_min": 62.68170999994992
+            },
+            "1000": {
+              "median_ms": 62.519727000001524,
+              "min_ms": 62.022224000003234,
+              "us_per_node_median": 62.51972700000153,
+              "us_per_node_min": 62.022224000003234
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9894788128794313,
+            "t1000_vs_10x_t100_realistic": 0.9894788128794313
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0014529999958767803,
+              "cached_to_json_min_ms": 0.0008020000024089313,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.387586999996756,
+              "json_dumps_min_ms": 10.342151999999771,
+              "to_dict_median_ms": 18.576475999999786,
+              "to_dict_min_ms": 18.47671899999881,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.0022539999946502576,
+              "cached_to_json_min_ms": 0.0018129999972416044,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 11.063563999996973,
+              "json_dumps_min_ms": 10.918041000010703,
+              "to_dict_median_ms": 20.826069000001723,
+              "to_dict_min_ms": 20.68801100000428,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.78955078125,
+              0.97314453125,
+              0.3466796875
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.6.1"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 7.28399999161411,
+              "min_us": 7.113999998864529
+            },
+            "1000": {
+              "median_us": 62.708000001521214,
+              "min_us": 61.9460000024219
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.229022000004079,
+              "min_ms": 4.161095000000614,
+              "overhead_us_per_node_median": 42.21738000012465,
+              "overhead_us_per_node_min": 41.539810000017496
+            },
+            "1000": {
+              "median_ms": 39.857287000003794,
+              "min_ms": 39.65783299999259,
+              "overhead_us_per_node_median": 39.79457900000227,
+              "overhead_us_per_node_min": 39.59588699999017
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.360063000002469,
+              "min_ms": 6.294179999997596,
+              "us_per_node_median": 63.600630000024694,
+              "us_per_node_min": 62.94179999997595
+            },
+            "1000": {
+              "median_ms": 62.214354999994725,
+              "min_ms": 61.35091800000225,
+              "us_per_node_median": 62.21435499999473,
+              "us_per_node_min": 61.35091800000225
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9747245550655635,
+            "t1000_vs_10x_t100_realistic": 0.9747245550655635
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011429999915435474,
+              "cached_to_json_min_ms": 0.0009320000060597522,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 9.975476000008143,
+              "json_dumps_min_ms": 9.7979930000065,
+              "to_dict_median_ms": 18.633933999993246,
+              "to_dict_min_ms": 18.37132199999303,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.0020339999906582307,
+              "cached_to_json_min_ms": 0.0015029999929083715,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 10.987431999993191,
+              "json_dumps_min_ms": 10.885410000000206,
+              "to_dict_median_ms": 20.585240000002614,
+              "to_dict_min_ms": 20.543650999997,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.64599609375,
+              0.9736328125,
+              0.3505859375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.6.1"
+          }
+        }
+      ],
+      "runtime": "vitruvyan-motus/0.6.1",
+      "summary": {
+        "json_dumps_min_ms_realistic": {
+          "max_across_runs": 10.972783999996238,
+          "median_across_runs": 10.885410000000206,
+          "min_across_runs": 10.812246000000414,
+          "samples": [
+            10.812246000000414,
+            10.972783999996238,
+            10.817758000001731,
+            10.918041000010703,
+            10.885410000000206
+          ],
+          "spread_pct": 1.4847793880736564
+        },
+        "noop_100_overhead_median_ms": {
+          "max_across_runs": 87.23328000002084,
+          "median_across_runs": 42.314169999997375,
+          "min_across_runs": 41.33639999999161,
+          "samples": [
+            87.23328000002084,
+            42.314169999997375,
+            43.09449999993831,
+            41.33639999999161,
+            42.21738000012465
+          ],
+          "spread_pct": 111.03260080713014
+        },
+        "noop_100_overhead_ms": {
+          "max_across_runs": 84.00225000002592,
+          "median_across_runs": 41.539810000017496,
+          "min_across_runs": 41.20724999999936,
+          "samples": [
+            84.00225000002592,
+            41.484320000009234,
+            42.77251000004867,
+            41.20724999999936,
+            41.539810000017496
+          ],
+          "spread_pct": 103.85308410541161
+        },
+        "realistic_1000_us_per_node_median": {
+          "max_across_runs": 62.93589200000582,
+          "median_across_runs": 62.51972700000153,
+          "min_across_runs": 62.1079280000032,
+          "samples": [
+            62.93589200000582,
+            62.1079280000032,
+            62.63828099999812,
+            62.51972700000153,
+            62.21435499999473
+          ],
+          "spread_pct": 1.333105171376158
+        },
+        "realistic_1000_us_per_node_min": {
+          "max_across_runs": 62.69182500000171,
+          "median_across_runs": 62.022224000003234,
+          "min_across_runs": 61.26797900000013,
+          "samples": [
+            62.69182500000171,
+            61.26797900000013,
+            62.42064300000293,
+            62.022224000003234,
+            61.35091800000225
+          ],
+          "spread_pct": 2.3239643664459244
+        },
+        "superlinearity_t1000_over_10x_t100": {
+          "max_across_runs": 0.9927062992341322,
+          "median_across_runs": 0.9762661691432188,
+          "min_across_runs": 0.9733749884420174,
+          "samples": [
+            0.9927062992341322,
+            0.9733749884420174,
+            0.9762661691432188,
+            0.9894788128794313,
+            0.9747245550655635
+          ],
+          "spread_pct": 1.9860085806248706
+        },
+        "to_dict_min_ms_realistic": {
+          "max_across_runs": 20.758791000005772,
+          "median_across_runs": 20.593675999997174,
+          "min_across_runs": 20.543650999997,
+          "samples": [
+            20.574256000003288,
+            20.758791000005772,
+            20.593675999997174,
+            20.68801100000428,
+            20.543650999997
+          ],
+          "spread_pct": 1.0472335224581295
+        },
+        "window_growth_ratio_last_over_first": {
+          "max_across_runs": 0.9927062992341322,
+          "median_across_runs": 0.9762661691432188,
+          "min_across_runs": 0.9733749884420174,
+          "samples": [
+            0.9927062992341322,
+            0.9733749884420174,
+            0.9762661691432188,
+            0.9894788128794313,
+            0.9747245550655635
+          ],
+          "spread_pct": 1.9860085806248706
+        }
+      }
+    },
+    "candidate": {
+      "ref": "release/0.7.0",
+      "runs": [
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 7.134000000519336,
+              "min_us": 6.461999994655798
+            },
+            "1000": {
+              "median_us": 56.13500000123395,
+              "min_us": 55.663999994237656
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.777146999998649,
+              "min_ms": 4.711505000003058,
+              "overhead_us_per_node_median": 47.7001299999813,
+              "overhead_us_per_node_min": 47.05043000008402
+            },
+            "1000": {
+              "median_ms": 44.93349699999527,
+              "min_ms": 44.52628500000344,
+              "overhead_us_per_node_median": 44.87736199999404,
+              "overhead_us_per_node_min": 44.4706210000092
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.870724999998856,
+              "min_ms": 6.793120000004649,
+              "us_per_node_median": 68.70724999998856,
+              "us_per_node_min": 67.93120000004649
+            },
+            "1000": {
+              "median_ms": 66.81882299999842,
+              "min_ms": 66.51802000000373,
+              "us_per_node_median": 66.81882299999842,
+              "us_per_node_min": 66.51802000000373
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9791968933267513,
+            "t1000_vs_10x_t100_realistic": 0.9791968933267513
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011019999988093332,
+              "cached_to_json_min_ms": 0.0009220000052323485,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.497309999998095,
+              "json_dumps_min_ms": 10.273881999999901,
+              "to_dict_median_ms": 18.893138000002807,
+              "to_dict_min_ms": 18.81395999999569,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.002574999996340921,
+              "cached_to_json_min_ms": 0.0017429999985552058,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 11.12449299999696,
+              "json_dumps_min_ms": 10.971836999999596,
+              "to_dict_median_ms": 21.02017699999692,
+              "to_dict_min_ms": 20.89092499999623,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              3.2998046875,
+              0.9716796875,
+              0.3349609375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.7.0"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.181999999910204,
+              "min_us": 6.020999997247145
+            },
+            "1000": {
+              "median_us": 53.199999996422775,
+              "min_us": 52.847999995719874
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.777769000000376,
+              "min_ms": 4.670527999998342,
+              "overhead_us_per_node_median": 47.71587000000466,
+              "overhead_us_per_node_min": 46.645070000010946
+            },
+            "1000": {
+              "median_ms": 45.41380599999911,
+              "min_ms": 45.04170999999957,
+              "overhead_us_per_node_median": 45.36060600000269,
+              "overhead_us_per_node_min": 44.98886200000385
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.884900999999388,
+              "min_ms": 6.805042000003425,
+              "us_per_node_median": 68.84900999999388,
+              "us_per_node_min": 68.05042000003425
+            },
+            "1000": {
+              "median_ms": 67.60988399999945,
+              "min_ms": 66.87438699999859,
+              "us_per_node_median": 67.60988399999945,
+              "us_per_node_min": 66.87438699999859
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.982718210996566,
+            "t1000_vs_10x_t100_realistic": 0.982718210996566
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.001161999996668328,
+              "cached_to_json_min_ms": 0.0007709999962912661,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.599941999998919,
+              "json_dumps_min_ms": 10.450011000003201,
+              "to_dict_median_ms": 18.969860999995092,
+              "to_dict_min_ms": 18.816874999998845,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.0020439999985910617,
+              "cached_to_json_min_ms": 0.001623000002837216,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 11.117990999998995,
+              "json_dumps_min_ms": 10.924518999999577,
+              "to_dict_median_ms": 20.83779600000213,
+              "to_dict_min_ms": 20.722960000000512,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              3.2998046875,
+              0.9716796875,
+              0.3349609375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.7.0"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.552000002102432,
+              "min_us": 6.051999996259383
+            },
+            "1000": {
+              "median_us": 53.45999999661899,
+              "min_us": 53.30900000188876
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.633826999999258,
+              "min_ms": 4.585297000005539,
+              "overhead_us_per_node_median": 46.27274999997155,
+              "overhead_us_per_node_min": 45.7924500000928
+            },
+            "1000": {
+              "median_ms": 44.335396000001026,
+              "min_ms": 43.958851000006405,
+              "overhead_us_per_node_median": 44.28193600000441,
+              "overhead_us_per_node_min": 43.905542000004516
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.767733000003773,
+              "min_ms": 6.7116390000023785,
+              "us_per_node_median": 67.67733000003773,
+              "us_per_node_min": 67.11639000002378
+            },
+            "1000": {
+              "median_ms": 66.11638500000083,
+              "min_ms": 65.58181300000143,
+              "us_per_node_median": 66.11638500000083,
+              "us_per_node_min": 65.58181300000143
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9771355849141795,
+            "t1000_vs_10x_t100_realistic": 0.9771355849141795
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011019999988093332,
+              "cached_to_json_min_ms": 0.0010620000026051457,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.404334000000404,
+              "json_dumps_min_ms": 10.325766999997654,
+              "to_dict_median_ms": 18.818349999996542,
+              "to_dict_min_ms": 18.66440199999886,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.002375000001109129,
+              "cached_to_json_min_ms": 0.0014820000018289647,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 11.02899299999649,
+              "json_dumps_min_ms": 10.956127000000038,
+              "to_dict_median_ms": 20.91460599999806,
+              "to_dict_min_ms": 20.727346000001035,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.94580078125,
+              0.97265625,
+              0.3427734375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.7.0"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.351999999765212,
+              "min_us": 5.9509999985607465
+            },
+            "1000": {
+              "median_us": 51.747000000545995,
+              "min_us": 51.597000002345794
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.763520999993887,
+              "min_ms": 4.723384999998359,
+              "overhead_us_per_node_median": 47.57168999994121,
+              "overhead_us_per_node_min": 47.17433999999798
+            },
+            "1000": {
+              "median_ms": 46.078492999996,
+              "min_ms": 45.627217999999914,
+              "overhead_us_per_node_median": 46.026745999995455,
+              "overhead_us_per_node_min": 45.57562099999757
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.943326999994781,
+              "min_ms": 6.837629000003176,
+              "us_per_node_median": 69.43326999994781,
+              "us_per_node_min": 68.37629000003176
+            },
+            "1000": {
+              "median_ms": 67.21091200000018,
+              "min_ms": 66.75501599999478,
+              "us_per_node_median": 67.21091200000018,
+              "us_per_node_min": 66.75501599999478
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9762889446029286,
+            "t1000_vs_10x_t100_realistic": 0.9762889446029286
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0010720000034325494,
+              "cached_to_json_min_ms": 0.0008409999949776648,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.413311999997177,
+              "json_dumps_min_ms": 10.406980000006172,
+              "to_dict_median_ms": 18.611199999995165,
+              "to_dict_min_ms": 18.458082999998737,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.002936000001341199,
+              "cached_to_json_min_ms": 0.0019040000012182645,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 10.964565999998399,
+              "json_dumps_min_ms": 10.918058000001452,
+              "to_dict_median_ms": 20.99029099999683,
+              "to_dict_min_ms": 20.894611999999313,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.78955078125,
+              0.97314453125,
+              0.3466796875
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.7.0"
+          }
+        },
+        {
+          "1_baseline": {
+            "100": {
+              "median_us": 6.432000006384442,
+              "min_us": 6.242000011980053
+            },
+            "1000": {
+              "median_us": 51.19600000114133,
+              "min_us": 50.40400000666523
+            }
+          },
+          "2_runner_noop": {
+            "100": {
+              "median_ms": 4.752812999996081,
+              "min_ms": 4.642946999993569,
+              "overhead_us_per_node_median": 47.46380999989697,
+              "overhead_us_per_node_min": 46.36704999981589
+            },
+            "1000": {
+              "median_ms": 44.30035299999702,
+              "min_ms": 43.906905999989476,
+              "overhead_us_per_node_median": 44.249156999995876,
+              "overhead_us_per_node_min": 43.85650199998281
+            }
+          },
+          "3_runner_realistic": {
+            "100": {
+              "median_ms": 6.7786380000001145,
+              "min_ms": 6.72345499999949,
+              "us_per_node_median": 67.78638000000115,
+              "us_per_node_min": 67.2345499999949
+            },
+            "1000": {
+              "median_ms": 66.75520499999266,
+              "min_ms": 65.35642500000449,
+              "us_per_node_median": 66.75520499999266,
+              "us_per_node_min": 65.35642500000449
+            }
+          },
+          "4_scaling": {
+            "growth_ratio_w10_over_w1": 0.9720660731723415,
+            "t1000_vs_10x_t100_realistic": 0.9720660731723415
+          },
+          "6_serialization": {
+            "noop_1000": {
+              "cached_to_json_median_ms": 0.0011519999958409244,
+              "cached_to_json_min_ms": 0.0010010000011106968,
+              "events_len": 3002,
+              "facts_len": 0,
+              "json_dumps_median_ms": 10.441017999994529,
+              "json_dumps_min_ms": 10.318127000005006,
+              "to_dict_median_ms": 18.83195599999965,
+              "to_dict_min_ms": 18.67751700000042,
+              "violations_len": 0
+            },
+            "realistic_1000": {
+              "cached_to_json_median_ms": 0.002154000000587075,
+              "cached_to_json_min_ms": 0.0018140000008770585,
+              "events_len": 3002,
+              "facts_len": 1000,
+              "json_dumps_median_ms": 10.962433999992527,
+              "json_dumps_min_ms": 10.837050000006343,
+              "to_dict_median_ms": 20.76542800000425,
+              "to_dict_min_ms": 20.62360299999,
+              "violations_len": 0
+            }
+          },
+          "env": {
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
+            "gc_enabled_during_runs": true,
+            "loadavg": [
+              2.64599609375,
+              0.9736328125,
+              0.3505859375
+            ],
+            "machine": "x86_64",
+            "platform_release": "6.17.0-1020-azure",
+            "platform_system": "Linux",
+            "python": "3.10.12",
+            "repeats": 7,
+            "runtime": "vitruvyan-motus/0.7.0"
+          }
+        }
+      ],
+      "runtime": "vitruvyan-motus/0.7.0",
+      "summary": {
+        "json_dumps_min_ms_realistic": {
+          "max_across_runs": 10.971836999999596,
+          "median_across_runs": 10.924518999999577,
+          "min_across_runs": 10.837050000006343,
+          "samples": [
+            10.971836999999596,
+            10.924518999999577,
+            10.956127000000038,
+            10.918058000001452,
+            10.837050000006343
+          ],
+          "spread_pct": 1.243760986552372
+        },
+        "noop_100_overhead_median_ms": {
+          "max_across_runs": 47.71587000000466,
+          "median_across_runs": 47.57168999994121,
+          "min_across_runs": 46.27274999997155,
+          "samples": [
+            47.7001299999813,
+            47.71587000000466,
+            46.27274999997155,
+            47.57168999994121,
+            47.46380999989697
+          ],
+          "spread_pct": 3.118725383803625
+        },
+        "noop_100_overhead_ms": {
+          "max_across_runs": 47.17433999999798,
+          "median_across_runs": 46.645070000010946,
+          "min_across_runs": 45.7924500000928,
+          "samples": [
+            47.05043000008402,
+            46.645070000010946,
+            45.7924500000928,
+            47.17433999999798,
+            46.36704999981589
+          ],
+          "spread_pct": 3.017724537347059
+        },
+        "realistic_1000_us_per_node_median": {
+          "max_across_runs": 67.60988399999945,
+          "median_across_runs": 66.81882299999842,
+          "min_across_runs": 66.11638500000083,
+          "samples": [
+            66.81882299999842,
+            67.60988399999945,
+            66.11638500000083,
+            67.21091200000018,
+            66.75520499999266
+          ],
+          "spread_pct": 2.2588939186536026
+        },
+        "realistic_1000_us_per_node_min": {
+          "max_across_runs": 66.87438699999859,
+          "median_across_runs": 66.51802000000373,
+          "min_across_runs": 65.35642500000449,
+          "samples": [
+            66.51802000000373,
+            66.87438699999859,
+            65.58181300000143,
+            66.75501599999478,
+            65.35642500000449
+          ],
+          "spread_pct": 2.3225903191522415
+        },
+        "superlinearity_t1000_over_10x_t100": {
+          "max_across_runs": 0.982718210996566,
+          "median_across_runs": 0.9771355849141795,
+          "min_across_runs": 0.9720660731723415,
+          "samples": [
+            0.9791968933267513,
+            0.982718210996566,
+            0.9771355849141795,
+            0.9762889446029286,
+            0.9720660731723415
+          ],
+          "spread_pct": 1.0958244627817508
+        },
+        "to_dict_min_ms_realistic": {
+          "max_across_runs": 20.894611999999313,
+          "median_across_runs": 20.727346000001035,
+          "min_across_runs": 20.62360299999,
+          "samples": [
+            20.89092499999623,
+            20.722960000000512,
+            20.727346000001035,
+            20.894611999999313,
+            20.62360299999
+          ],
+          "spread_pct": 1.3140720368281238
+        },
+        "window_growth_ratio_last_over_first": {
+          "max_across_runs": 0.982718210996566,
+          "median_across_runs": 0.9771355849141795,
+          "min_across_runs": 0.9720660731723415,
+          "samples": [
+            0.9791968933267513,
+            0.982718210996566,
+            0.9771355849141795,
+            0.9762889446029286,
+            0.9720660731723415
+          ],
+          "spread_pct": 1.0958244627817508
+        }
+      }
+    }
+  }
+}
