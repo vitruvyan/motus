@@ -406,3 +406,49 @@ def test_a_publish_that_fails_is_not_reported_as_published(tmp_path):
     assert session.published is None, "nothing was published, and it must say so"
     for path in sink.artifacts:
         assert path.exists(), f"the sink named a file that is not there: {path}"
+
+
+def test_path_for_resolves_the_filename_an_integrator_cannot_reconstruct(tmp_path):
+    """A service records a run_id in its own audit log and later wants the
+    trace file. The filename is a sanitised, digest-suffixed form of the id, so
+    guessing `f"{run_id}.jsonl"` finds nothing — the first external integrator
+    lost time to exactly this. `path_for` resolves it through the same stem the
+    sink writes with."""
+    sink = JsonlTraceSink(tmp_path, fsync=False)
+    Runtime(
+        CHAIN, {"a": note, "b": passthrough, "c": passthrough},
+        sink=sink, durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).run(State.empty("audited"), run_id="order/4471")
+
+    produced = sink.artifacts[0]
+    predicted = sink.path_for("order/4471")
+
+    assert predicted == produced, (
+        "path_for did not resolve to the file the sink actually wrote"
+    )
+    assert predicted.exists()
+    # The bare-id guess the docstring warns against does not find it.
+    assert not (tmp_path / "order/4471.jsonl").exists()
+
+
+def test_path_for_selects_the_status_variant(tmp_path):
+    sink = JsonlTraceSink(tmp_path, fsync=False)
+    driver = sink  # not used; just exercising the pure predictor
+    complete = sink.path_for("r", status="complete")
+    partial = sink.path_for("r", status="partial")
+    pending = sink.path_for("r", status="pending")
+
+    assert complete.name.endswith(".jsonl") and not complete.name.endswith(
+        (".partial.jsonl", ".jsonl.part")
+    )
+    assert partial.name.endswith(".partial.jsonl")
+    assert pending.name.endswith(".jsonl.part")
+    # All three share the stem, differ only by extension.
+    stem = complete.name[: -len(".jsonl")]
+    assert partial.name == f"{stem}.partial.jsonl"
+    assert pending.name == f"{stem}.jsonl.part"
+
+    import pytest
+
+    with pytest.raises(ValueError, match="status must be one of"):
+        sink.path_for("r", status="nonsense")

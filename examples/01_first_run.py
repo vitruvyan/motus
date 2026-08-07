@@ -22,18 +22,25 @@ NOW = datetime(2026, 8, 6, tzinfo=timezone.utc)
 
 # ---------------------------------------------------------------- the spec
 
-# `effect_class` is a claim about what the node does, and the runtime holds it
-# to that claim. "pure" means: no outside world, same inputs give the same
-# answer — which is what makes a node re-executable during replay.
+# `effect_class` is a claim about what the node does. "pure" means: no outside
+# world, same inputs give the same answer — which is what makes a node
+# re-executable during replay. The runtime does NOT police this at run time (a
+# `pure` node that quietly calls the network still runs to completion); the
+# claim is what makes such a node re-executed during verify replay, where a
+# lie would show up as a mismatch. What the runtime *does* enforce at run time
+# is the read/write declaration below — see `assess`.
 SPEC = GraphSpec.from_dict({
     "schema_version": "1.0.0",
     "name": "triage",
     "version": "1.0.0",
     "entry": "assess",
     "nodes": [
-        # A declared write set is optional -- but when you declare one, the
-        # runtime checks it against what actually happened and fails the node
-        # if they disagree. Decisions count as writes, like facts do.
+        # A declared read/write set is optional -- but declaring one is
+        # all-or-nothing: the runtime checks it against everything the node
+        # actually did, and a node that touched anything you left out fails.
+        # A partial declaration is worse than none, because none is not
+        # checked and a partial one fails (node-protocol.md §3.2). Decisions
+        # count as writes, like facts do.
         {"name": "assess", "effect_class": "pure",
          "writes_declared": ["amount", "risk"]},
         {"name": "approve", "effect_class": "pure"},

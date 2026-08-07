@@ -211,10 +211,19 @@ class JsonlTraceSink:
     """Durable per-run JSONL files, one per run, in a directory.
 
     Each run becomes a document in the JSONL form ``contract/validate.py``
-    accepts: the trace header on line one, one record per line after it. A run
-    that reaches its terminal lands as ``<run>.jsonl``; one that is cut short
-    lands as ``<run>.partial.jsonl``; one whose process died mid-write is left
-    as ``<run>.jsonl.part``, since nothing ever declared it over.
+    accepts: the trace header on line one, one record per line after it.
+
+    The filename is a **sanitised, digest-suffixed** form of the run id, not the
+    run id verbatim — ``run_id`` is caller-supplied and may contain path
+    separators, so it is neither safe nor unique as a bare filename. A run named
+    ``"order/4471"`` lands as ``order_4471-<12 hex>.jsonl``. The suffix is a
+    short digest of the original id, so two ids that sanitise alike still get
+    distinct files. Use :meth:`path_for` rather than reconstructing the name;
+    the run id itself is always inside the file, in the header.
+
+    The extension states what the file is: ``.jsonl`` for a run that reached its
+    terminal, ``.partial.jsonl`` for one cut short, ``.jsonl.part`` for one
+    whose process died mid-write, since nothing ever declared it over.
 
     ``fsync`` defaults to True because that is what the ``synchronous``
     durability profile buys — ``guarantees.md`` invariant II is explicit that
@@ -238,6 +247,32 @@ class JsonlTraceSink:
         with self._lock:
             self._sessions.append(session)
         return session
+
+    def path_for(self, run_id: str, *, status: str = "complete") -> Path:
+        """Where a run *would* land, without reconstructing the digest by hand.
+
+        The integrator's need this answers: a service records a ``run_id`` in
+        its own audit log, and later wants the trace file for it. The filename
+        is not the run id, so guessing ``f"{run_id}.jsonl"`` finds nothing —
+        this resolves it through the same stem function the sink writes with.
+
+        ``status`` selects which of the three names: ``"complete"`` →
+        ``.jsonl``, ``"partial"`` → ``.partial.jsonl``, ``"pending"`` →
+        ``.jsonl.part``. This is the *predicted* path and does not touch the
+        disk; the file exists only if a run of that id finished in that state.
+
+        Exact for a unique ``run_id``. If the same id was written twice on this
+        sink, the later run carried a ``-2`` suffix (see :meth:`open_run`), and
+        for those you must read ``sessions``/``artifacts`` rather than predict.
+        """
+        suffix = {
+            "complete": ".jsonl",
+            "partial": ".partial.jsonl",
+            "pending": ".jsonl.part",
+        }
+        if status not in suffix:
+            raise ValueError(f"status must be one of {sorted(suffix)}, not {status!r}")
+        return self.directory / f"{_file_stem(run_id)}{suffix[status]}"
 
     @property
     def sessions(self) -> tuple[_JsonlRunSession, ...]:
