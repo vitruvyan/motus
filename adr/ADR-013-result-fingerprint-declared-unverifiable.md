@@ -1,8 +1,16 @@
 # ADR-013 — `result_fingerprint`: declared unverifiable, with a trigger and a tripwire
 
-- **Status:** PROPOSED
+- **Status:** SUPERSEDED by ADR-014 (2026-08-08), before acceptance
 - **Date:** 2026-08-06
 - **Authority:** founder direction, after the first external integration report
+
+> This ADR was never accepted. It proposed deferring the recipe until a named
+> trigger fired; while it sat in PROPOSED the founder answered the underlying
+> question instead, and the trigger it named — a consumer needing to compare
+> fingerprints across two producers — turned out to be written against a
+> purpose the product does not have. ADR-014 records what the field is a
+> fingerprint of. Everything below stands as the analysis that produced that
+> question, and its tripwire survives, retargeted.
 - **Depends on:** ADR-005 (0.6 replay), the trace v1 schema
 - **Amends:** `contract/trace.v1.schema.json` — the `result_fingerprint`
   property of `EffectReceipt` gains a `description`. Additive: no structure,

@@ -478,7 +478,8 @@ def test_trace_schema_1_0_rejects_resume_and_wrong_bundle_namespace():
 
 
 def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
-    """TRIPWIRE for ADR-013. Delete this test only when you close the gap.
+    """TRIPWIRE for ADR-014 (originally ADR-013). Delete this test only when
+    you close the gap, and only together with the schema.
 
     `result_fingerprint` has a format in trace.v1.schema.json and no recipe
     anywhere: nothing says what it is a fingerprint *of*, and `validate.py`
@@ -487,14 +488,18 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
     impossible. The first external integrator found this by having to invent
     the fingerprint's meaning in their own adapter.
 
-    ADR-013 declares the field unverifiable for now — honestly, as `receipt_id`
-    already is — rather than inventing a recipe with one consumer in the world.
-    The risk of that choice is doing it half-way: a recipe added to the code
-    without the contract following, or the reverse. This test is the machine
-    enforcement against that. It asserts the field is UNCHECKED today. The day
-    someone gives it a recipe, `validate.py` will reject the tamper below, this
-    test will fail, and the failure message points here — forcing ADR-013 to be
-    superseded rather than silently contradicted.
+    ADR-013 declared the field unverifiable rather than inventing a recipe with
+    one consumer in the world. ADR-014 supersedes it: the recipe is decided —
+    request and result bound together, salted per effect, for tamper evidence
+    rather than cross-producer comparison — and it lands in schema 1.1 under a
+    field named for what it covers, because the salt is a field 1.0 refuses.
+
+    So this 1.0 field keeps its 1.0 meaning and stays UNCHECKED, which is what
+    this test pins. The risk both ADRs guard against is doing it half-way: a
+    recipe added to the code without the contract following, or the reverse.
+    The day someone gives THIS field a recipe, `validate.py` will reject the
+    tamper below, this test will fail, and the message says where the recipe
+    actually belongs.
     """
     receipt = EffectReceipt("provider:42", result_fingerprint="effect:sha256:" + "a" * 64)
 
@@ -522,7 +527,9 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
     violations = validate.validate_trace(document, graph.to_dict())
     assert violations == [], (
         "validate.py now rejects a tampered result_fingerprint. If that is "
-        "intended, the field gained a recipe — supersede ADR-013, replace this "
+        "intended, the field gained a recipe — which ADR-014 says belongs in "
+        "schema 1.1 under a new name, not in this 1.0 field. Supersede "
+        "ADR-014, replace this "
         "tripwire with a test that asserts the tamper IS caught, and update the "
         "schema description. Do not simply delete this assertion."
     )

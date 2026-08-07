@@ -1379,7 +1379,7 @@
         "result_fingerprint": {
           "type": "string",
           "pattern": "^effect:sha256:[0-9a-f]{64}$",
-          "description": "Adapter-supplied fingerprint of the effect's result. Its FORMAT is fixed here; its SUBJECT is not — no recipe defines what the fingerprint is taken of, so two producers with the same result may stamp different values, and validate.py does not recompute it. Declared unverifiable, like receipt_id (ADR-013). Trigger to give it a recipe: the first consumer that needs to compare result fingerprints across two producers."
+          "description": "Adapter-supplied fingerprint of the effect's result. In schema 1.0 its FORMAT is fixed here and its SUBJECT is not: no recipe defines what the fingerprint is taken of, so two producers with the same result may stamp different values, and validate.py does not recompute it. Unverifiable in 1.0, like receipt_id. ADR-014 decides the recipe — request and result bound together, salted per effect, for tamper evidence rather than cross-producer comparison — and it lands in schema 1.1 under a field named for what it covers, because the salt is a field 1.0 refuses. A 1.0 value keeps the 1.0 meaning: this one is not redefined in place."
         }
       },
       "description": "Adapter-supplied effect evidence. Recorded by Motus, never upgraded into an exactly-once claim."
