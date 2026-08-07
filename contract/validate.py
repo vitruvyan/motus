@@ -2446,7 +2446,12 @@ def validate_jsonl(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="validate.py",
+        # Left to argparse rather than hardcoded: this program is now reached
+        # three ways — `python contract/validate.py` from a checkout,
+        # `python -m vitruvyan_motus.contract.validate` from an install, and
+        # the `motus-validate` command. Usage output that names only the first
+        # is wrong for the two a consumer actually has.
+        prog=None,
         description=(
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
             "trace T-rules, JSON document and JSONL stream forms."
