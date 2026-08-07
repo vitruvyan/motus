@@ -16,7 +16,7 @@ The trace is not reconstructed from logs after execution.
 
 > **Current release:** [Motus 0.7.0](https://github.com/vitruvyan/motus/releases/tag/v0.7.0)
 >
-> Apache-2.0 · dependency-free runtime · source release · not yet published on PyPI
+> Apache-2.0 · stdlib-only kernel · validator included · source release · not yet published on PyPI
 
 ## The problem
 
@@ -216,8 +216,29 @@ python -m venv .venv
 ```
 
 On Windows, use `.venv\Scripts\python.exe` in place of
-`.venv/bin/python`. The wheel contains only `vitruvyan_motus`, includes
-`py.typed`, and declares no runtime dependencies.
+`.venv/bin/python`. The wheel contains `vitruvyan_motus`, `py.typed`, and the
+contract validator with the two schemas it checks against.
+
+Two claims about dependencies, and they are not the same claim:
+
+- the **kernel** imports nothing outside the standard library — no LLM SDK, no
+  database driver, no agent framework — and a test proves it against a running
+  interpreter rather than against this sentence;
+- the **distribution** installs one thing, `jsonschema`, which the shipped
+  validator needs.
+
+The validator ships because a trace nobody can check is a log. It runs as
+`motus-validate` or as `python -m vitruvyan_motus.contract.validate`, in a
+process that need not be the one that produced the evidence:
+
+```console
+motus-validate trace run.json --spec graph.json
+motus-validate jsonl run.jsonl
+```
+
+The contract prose and the frozen conformance fixtures stay in this
+repository. The reader who needs those is already reading it; the validator is
+needed by everyone, without having to know it exists.
 
 ## Where to put your code
 
@@ -551,6 +572,12 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the two
+schemas — mapped in from `contract/`, which remains the authority (ADR-001),
+not copied. `validate_trace`, `validate_graphspec` and `validate_jsonl` are
+importable directly for a consumer who would rather check in-process than
+shell out.
 
 The native and legacy decision types are deliberately unambiguous:
 
