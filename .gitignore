@@ -23,3 +23,10 @@ ENV/
 *~
 .DS_Store
 .env
+
+# Adversarial-round scratch. Every hostile review writes its probes here —
+# ~130 files across seven rounds so far — and none of them is evidence: the
+# findings live in ADRs, issues and tests, which is where a reader looks. The
+# directory is untracked on purpose and was one `git add -A` away from being
+# committed wholesale.
+.attack/
