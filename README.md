@@ -219,6 +219,35 @@ On Windows, use `.venv\Scripts\python.exe` in place of
 `.venv/bin/python`. The wheel contains only `vitruvyan_motus`, includes
 `py.typed`, and declares no runtime dependencies.
 
+## Where to put your code
+
+Motus never sees your filesystem. `Runtime` receives a mapping of node names to
+callables; which module, package, or directory they came from is invisible to
+it, and no contract clause constrains it. What follows is a convention that has
+worked, not a rule — Motus cannot check it and does not try.
+
+```
+your_project/
+  graphs/
+    review/
+      spec.py       # the GraphSpec: nodes, effect classes, declarations, routes
+      nodes.py      # the functions that do the work
+    ingest/
+      spec.py
+      nodes.py
+```
+
+The split that earns its keep is **spec apart from nodes**. The spec is the
+file someone opens to learn what a graph is permitted to do — which steps
+exist, what each one may read and write, which effects it may perform, and
+where each branch can lead — without reading a line of logic. Keeping it in its
+own file makes the directory tree say the same thing the trace says.
+
+A node is an ordinary function. There is no base class to inherit and no
+registration step: a graph that calls a model is a node whose body calls a
+model, declared `recorded_effect` because it reaches outside. Motus has no
+notion of an agent, and needs none.
+
 ## Run something
 
 Three examples, each standalone and each printing what it did:
