@@ -656,3 +656,87 @@ def test_sink_open_refusal_prevents_logical_success():
     assert not any(
         record["kind"] == "run_completed" for record in caught.value.trace.records
     )
+
+
+def _seed_sensitive(state):
+    return (
+        state
+        .with_fact(Fact("income", 42000, "registry", NOW))
+        .with_fact(Fact("national_id", "BLDDVD80A01H501K", "registry", NOW))
+    )
+
+
+def _read_everything(state):
+    seen = {item["key"]: item["value"] for item in state.snapshot()["facts"]}
+    return state.with_fact(Fact("summary", sorted(seen), "test", NOW))
+
+
+def _summary_graph(reads_declared):
+    return _spec(
+        [
+            {
+                "name": "seed", "effect_class": "pure",
+                "reads_declared": [], "writes_declared": ["income", "national_id"],
+            },
+            {
+                "name": "summarise", "effect_class": "pure",
+                "reads_declared": reads_declared, "writes_declared": ["summary"],
+            },
+        ],
+        {"seed": {"kind": "next", "to": "summarise"}, "summarise": {"kind": "terminal"}},
+    )
+
+
+def test_snapshot_cannot_launder_a_read_of_the_whole_state():
+    """A loan file, and the failure mode that motivated the fix.
+
+    `summarise` declared it reads nothing, called `snapshot()`, and received
+    every fact in the file including the national id — which then appeared in
+    its output while the trace recorded `reads: []` and no violation. The run
+    completed. In a credit assessment that is the line that loses the audit:
+    the identifier is in the product and the evidence says nobody looked at it.
+
+    The declaration check was never broken. `snapshot()` simply did not report
+    to it, so there was nothing to compare against.
+    """
+    with pytest.raises(NodeFailed) as caught:
+        Runtime(
+            _summary_graph([]), {"seed": _seed_sensitive, "summarise": _read_everything}
+        ).run(State.empty("loan file"), run_id="undeclared")
+
+    transitions = [
+        record for record in caught.value.trace.records
+        if record["kind"] == "transition" and record["node"] == "summarise"
+    ]
+    assert [read["key"] for read in transitions[0]["reads"]] == [
+        "facts", "decisions", "rejections"
+    ]
+    assert [violation["kind"] for violation in transitions[0]["violations"]] == [
+        "undeclared_read", "undeclared_read", "undeclared_read"
+    ]
+
+
+def test_a_node_that_needs_the_whole_state_declares_the_collections_and_passes():
+    """The fix must not make a legitimate node impossible, only honest.
+
+    Summarising everything known so far is a real thing to want, and it is the
+    obvious shape for a node backed by a model. So reading the whole state stays
+    permitted — it just has to be declared, and once declared a reviewer reading
+    `reads_declared: ["facts", ...]` knows immediately that this node sees the
+    entire file. That is strictly more information than the old `[]`, which was
+    both smaller and false.
+    """
+    spec = _summary_graph(["facts", "decisions", "rejections"])
+    result = Runtime(
+        spec, {"seed": _seed_sensitive, "summarise": _read_everything}
+    ).run(State.empty("loan file"), run_id="declared")
+
+    assert result.status == "completed"
+    assert result.state.fact("summary") == ["income", "national_id"]
+
+    transitions = [
+        record for record in result.trace.records
+        if record["kind"] == "transition" and record["node"] == "summarise"
+    ]
+    assert transitions[0]["violations"] == []
+    _assert_clean(result, spec)

@@ -91,11 +91,32 @@ class NodeFailed(MotusError):
     by Milestone C2's real construction path, not by this class.
     """
 
-    def __init__(self, node: str, state: Any, trace: Any = None, cause: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        node: str,
+        state: Any,
+        trace: Any = None,
+        cause: BaseException | None = None,
+        *,
+        evidence: str = "not-required",
+    ) -> None:
         self.node = node
         self.state = state
         self.trace = trace
         self.cause = cause
+        self.evidence = evidence
+        """Whether this run's durable evidence is whole — see EvidenceStatus.
+
+        A node failure is raised, so there is no RunResult to carry it, and this
+        is the path where the gap bit hardest: a node raising while the sink also
+        refused produced a NodeFailed indistinguishable from one where the
+        evidence was written safely (#42). The primary cause stays NodeFailed —
+        that the model did not answer is the more important news than that the
+        archive was down — and this attribute is how the caller learns both.
+
+        Defaults to `not-required` for the compatibility bridge, which raises
+        NodeFailed with no sink behind it.
+        """
         super().__init__(f"node {node!r} failed")
 
 
@@ -114,6 +135,14 @@ class SinkFailed(MotusError):
     def __init__(self, trace: Any, cause: BaseException) -> None:
         self.trace = trace
         self.cause = cause
+        self.evidence = "incomplete"
+        """Constant, and present for symmetry with RunResult and NodeFailed.
+
+        This exception exists only because a required sink refused, so there is
+        no reachable state in which it means anything else. Carrying the field
+        anyway means a caller can read `.evidence` off whatever it caught
+        without first asking which exception it is holding.
+        """
         super().__init__(f"required trace sink failed: {cause}")
 
 

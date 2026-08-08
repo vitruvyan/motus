@@ -34,7 +34,7 @@ from vitruvyan_motus.observers import (
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Trace, _canonical_bytes, _strict_plain_json
 
-__all__ = ["Policy", "DurabilityProfile", "RunResult", "Runtime"]
+__all__ = ["Policy", "DurabilityProfile", "EvidenceStatus", "RunResult", "Runtime"]
 
 
 class Policy(str, Enum):
@@ -48,10 +48,53 @@ class DurabilityProfile(str, Enum):
     SYNCHRONOUS = "synchronous"
 
 
+class EvidenceStatus(str, Enum):
+    """What a run can say about its own durable evidence (#42).
+
+    Three states and not a boolean, because "no sink was configured" and "a sink
+    was configured and did not receive the terminal" are different facts, and a
+    caller that treats the first as a durability failure will refuse to act on
+    perfectly ordinary in-memory runs.
+
+    A `str` Enum, following `Policy` and `DurabilityProfile`, so a caller
+    comparing against the plain string keeps working.
+    """
+
+    PERSISTED = "persisted"
+    """A required sink accepted every record, terminal included."""
+
+    INCOMPLETE = "incomplete"
+    """A required sink refused something. What is stored is an honest prefix,
+    and a validator reading it reports T3/INCOMPLETE — but the run may still
+    have returned an ordinary `failed` or `cancelled` status, because the
+    primary cause is preserved rather than replaced."""
+
+    NOT_REQUIRED = "not-required"
+    """No sink was configured, so no durable evidence was promised."""
+
+
 @dataclass(frozen=True, slots=True)
 class RunResult:
     state: State
     trace: Trace
+    evidence: str = EvidenceStatus.NOT_REQUIRED.value
+    """Whether the durable evidence for this run is whole — see EvidenceStatus.
+
+    A plain `str`, never an enum member, and the same on `NodeFailed`,
+    `SinkFailed` and both stream drivers. `EvidenceStatus` is the vocabulary; the
+    value carried is data, exactly as `run.policy` in the trace header is
+    `"strict"` and not a `Policy`. An adversarial round found the enum on one
+    carrier and a plain string on the others, so `f"{x.evidence}"` printed
+    `EvidenceStatus.INCOMPLETE` or `incomplete` depending on which object the
+    caller happened to be holding.
+
+    Comparison against the enum still reads naturally, because `EvidenceStatus`
+    is a `str` Enum: `result.evidence == EvidenceStatus.PERSISTED` is True.
+
+    Defaulted so that constructing a `RunResult` by hand keeps working, and
+    defaulted to `not-required` because a result nobody's sink produced promised
+    nobody anything. A run driven by this module always carries the real value.
+    """
 
     _TERMINALS = ("run_completed", "run_failed", "run_cancelled")
 
@@ -221,6 +264,7 @@ class _RunHandle:
     trace: "Trace | None" = None
     state: State | None = None
     hub: "_ObservationHub | None" = None
+    evidence: str = "not-required"
     started: bool = False
     finished: bool = False
 
@@ -249,7 +293,7 @@ def _result_of(handle: _RunHandle) -> RunResult:
     """The result of the run this handle names, and of no other run."""
     if not handle.finished or handle.state is None or handle.trace is None:
         raise AssertionError("a finished run must publish its state and trace")
-    return RunResult(handle.state, handle.trace)
+    return RunResult(handle.state, handle.trace, handle.evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,6 +626,7 @@ class Runtime:
             _drive(machine, _invoke_sync),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
+            lambda: handle.evidence if handle.finished else None,
         )
         weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver
@@ -689,6 +734,7 @@ class Runtime:
             _adrive(machine, self._async_invoker()),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
+            lambda: handle.evidence if handle.finished else None,
         )
         weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver
@@ -796,10 +842,23 @@ class Runtime:
             # the Runtime is executing, which need not be this one any more.
             handle.trace = self._trace
             handle.state = self._state
-            handle.finished = True
             handle.hub = None
             if self._hub is not None:
                 self._hub.close()
+                # Read after close, so the caller is handed exactly what
+                # `finish(complete=...)` told the session — one fact, read
+                # twice, unable to disagree.
+                #
+                # Today the two points are equivalent and no test can tell them
+                # apart: a terminal record persists with force=True and so has
+                # always flushed by the time close() runs, and close() skips its
+                # flush entirely once a refusal is latched. A mutation probe that
+                # moved this line above close() stayed green, which is the honest
+                # status of this ordering — defensive, not load-bearing. It is
+                # written this way so it remains correct if terminals ever stop
+                # forcing their own flush.
+                handle.evidence = self._hub.evidence
+            handle.finished = True
             self._active_attempt = None
             with self._lifecycle_lock:
                 self._running = False
@@ -1077,7 +1136,10 @@ class Runtime:
                         replay=self._control.replay.to_dict(),
                     )
                     yield exposed(terminal)
-                    raise NodeFailed(current_node, self._state, self._trace, error) from error
+                    raise NodeFailed(
+                        current_node, self._state, self._trace, error,
+                        evidence=self._hub.evidence if self._hub is not None else "not-required",
+                    ) from error
                 # exploration: route using the unchanged committed state.
                 routed_activations += 1
                 break

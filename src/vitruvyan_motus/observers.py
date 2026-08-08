@@ -207,6 +207,27 @@ class _ObservationHub:
         self._run_sink: TraceRunSink | None = None
         self._saw_terminal = False
 
+    @property
+    def evidence(self) -> str:
+        """Whether this run's durable evidence is whole, and answerable to a caller.
+
+        `_saw_terminal` is the same fact `_signal_finish` hands the sink as
+        `complete=`, read from the other side. The session was always told; the
+        caller was not, on any terminal but `run_completed` — so a run whose
+        evidence had been refused returned a `RunResult` byte-identical to a
+        healthy one, and the only party still able to retry, alert or withhold
+        the decision was the only party that could not tell (#42).
+
+        `self.sink` is never cleared, unlike `_run_sink`, so the distinction
+        between "nothing durable was promised" and "something was promised and
+        is missing" survives `close()`. Collapsing those two into one boolean
+        would make the in-memory profile report a durability failure it never
+        offered — the same class of false statement in the other direction.
+        """
+        if self.sink is None:
+            return "not-required"
+        return "persisted" if self._saw_terminal else "incomplete"
+
     def bind(self, header: dict[str, Any]) -> None:
         """Open the required run-scoped session without losing its failure."""
         if self.sink is None:
@@ -385,7 +406,8 @@ class StreamDriver(Iterator[dict[str, Any]]):
     # the run it claimed, and a slotted class is not weak-referenceable by
     # default.
     __slots__ = (
-        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_evidence_getter",
+        "_requested",
         "_close_lock", "__weakref__",
     )
 
@@ -394,6 +416,7 @@ class StreamDriver(Iterator[dict[str, Any]]):
         iterator: Iterator[dict[str, Any]],
         cancel: Callable[[str], None],
         trace_getter: Callable[[], Any],
+        evidence_getter: Callable[[], str | None] = lambda: "not-required",
     ) -> None:
         self._iterator = iterator
         self._cancel = cancel
@@ -404,6 +427,7 @@ class StreamDriver(Iterator[dict[str, Any]]):
         # re-enters `close` on the very thread already holding this.
         self._close_lock = threading.RLock()
         self._trace_getter = trace_getter
+        self._evidence_getter = evidence_getter
 
     def __iter__(self) -> "StreamDriver":
         return self
@@ -426,6 +450,31 @@ class StreamDriver(Iterator[dict[str, Any]]):
     @property
     def trace(self) -> Any:
         return self._trace_getter()
+
+    @property
+    def evidence(self) -> str:
+        """Whether this run's durable evidence is whole — see EvidenceStatus.
+
+        The streaming surfaces are where a caller is most obviously still able
+        to act — it is inside the loop — and #42's first fix reached only
+        `run()`/`arun()`, so `stream()` consumers kept receiving a run whose
+        evidence had been destroyed with nothing to distinguish it from a
+        healthy one. An adversarial round found that; the value was already
+        computed and sitting one attribute away behind the driver.
+
+        Raises while the run is unfinished, following `RunResult.status`: a run
+        that has not reached a terminal has no durability answer, and returning
+        the initial `not-required` would be a lie for the whole duration of the
+        stream — the shape of defect this attribute exists to end.
+        """
+        answer = self._evidence_getter()
+        if answer is None:
+            raise ValueError(
+                "this run has not finished: its evidence is undecided until a "
+                "terminal record is written. Iterate to exhaustion, or close() "
+                "and read it then."
+            )
+        return answer
 
     def close(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:
@@ -489,7 +538,8 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     """
 
     __slots__ = (
-        "_iterator", "_cancel", "_closed", "_trace_getter", "_requested",
+        "_iterator", "_cancel", "_closed", "_trace_getter", "_evidence_getter",
+        "_requested",
         "__weakref__",
     )
 
@@ -498,12 +548,14 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
         iterator: AsyncIterator[dict[str, Any]],
         cancel: Callable[[str], None],
         trace_getter: Callable[[], Any],
+        evidence_getter: Callable[[], str | None] = lambda: "not-required",
     ) -> None:
         self._iterator = iterator
         self._cancel = cancel
         self._closed = False
         self._requested = False
         self._trace_getter = trace_getter
+        self._evidence_getter = evidence_getter
 
     def __aiter__(self) -> "AsyncStreamDriver":
         return self
@@ -526,6 +578,31 @@ class AsyncStreamDriver(AsyncIterator[dict[str, Any]]):
     @property
     def trace(self) -> Any:
         return self._trace_getter()
+
+    @property
+    def evidence(self) -> str:
+        """Whether this run's durable evidence is whole — see EvidenceStatus.
+
+        The streaming surfaces are where a caller is most obviously still able
+        to act — it is inside the loop — and #42's first fix reached only
+        `run()`/`arun()`, so `stream()` consumers kept receiving a run whose
+        evidence had been destroyed with nothing to distinguish it from a
+        healthy one. An adversarial round found that; the value was already
+        computed and sitting one attribute away behind the driver.
+
+        Raises while the run is unfinished, following `RunResult.status`: a run
+        that has not reached a terminal has no durability answer, and returning
+        the initial `not-required` would be a lie for the whole duration of the
+        stream — the shape of defect this attribute exists to end.
+        """
+        answer = self._evidence_getter()
+        if answer is None:
+            raise ValueError(
+                "this run has not finished: its evidence is undecided until a "
+                "terminal record is written. Iterate to exhaustion, or close() "
+                "and read it then."
+            )
+        return answer
 
     async def aclose(self, reason: str = "stream consumer stopped") -> None:
         if self._closed:

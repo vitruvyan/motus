@@ -209,7 +209,22 @@ class State:
         )
 
     def snapshot(self) -> dict[str, list[dict[str, Any]]]:
-        """Return the complete committed state as a portable wire snapshot."""
+        """Return the complete committed state as a portable wire snapshot.
+
+        Called from inside a node this is a read of all three collections, and
+        is recorded as three scans — not as the keys that happen to be present.
+        A declaration that varied with the data would not be a declaration: the
+        same node against a state with no decisions yet would need a different
+        one. So the reads describe what the code asked for, which is
+        everything, and `reads_declared` naming the three collections is how a
+        node that legitimately needs the whole state says so.
+
+        Called from the host `self._reads` is None and nothing is recorded,
+        which is correct: serialising state for storage or replay is not a node
+        reading it.
+        """
+        for collection in ("facts", "decisions", "rejections"):
+            self._note_scan(collection)
         out: dict[str, list[dict[str, Any]]] = {
             "facts": [], "decisions": [], "rejections": []
         }
@@ -302,9 +317,23 @@ class State:
             item for item in self._pending if item.collection == collection
         ]
 
-    def _scan(self, collection: str) -> tuple[Any, ...]:
+    def _note_scan(self, collection: str) -> None:
+        """Record that a whole collection was examined.
+
+        Every bulk read goes through here. It exists as its own method because
+        the two ways of reading a whole collection — the scan properties and
+        `snapshot()` — once disagreed: `snapshot()` returned the entire
+        committed state and recorded nothing, so a node could declare
+        `reads_declared: []`, read every fact including ones it had no business
+        seeing, and leave a trace saying it read nothing. One caller owning the
+        recording makes that particular drift structurally impossible rather
+        than a thing to remember.
+        """
         if self._reads is not None:
             self._reads.add(collection, {"kind": "scan", "collection": collection})
+
+    def _scan(self, collection: str) -> tuple[Any, ...]:
+        self._note_scan(collection)
         if collection == "events":
             return tuple(copy.deepcopy(item) for item in self._events)
         if len(self._pending):
