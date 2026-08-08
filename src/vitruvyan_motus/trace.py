@@ -404,12 +404,16 @@ class Trace:
         """
         previous = self._records[len(self._records) - 1] if len(self._records) else None
         prev_hash = previous["integrity"]["payload_hash"] if previous else None
-        payload = {key: value for key, value in record.items() if key != "integrity"}
+        # Hashed as it arrives, with its integrity block still {null, null} — the
+        # shape `_base` builds. Excluding the block by copying the record without
+        # it costs an allocation per record and buys nothing: what the digest
+        # must not cover is its own VALUE, and a constant null is not one. The
+        # object hashed is therefore a real record rather than a projection, and
+        # a validator recomputes it by nulling two fields rather than deleting a
+        # key.
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(record)).hexdigest()
         sealed = dict(record)
-        sealed["integrity"] = {
-            "payload_hash": "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest(),
-            "prev_hash": prev_hash,
-        }
+        sealed["integrity"] = {"payload_hash": digest, "prev_hash": prev_hash}
         return sealed
 
     def _append_runtime(self, record: dict[str, Any]) -> "Trace":

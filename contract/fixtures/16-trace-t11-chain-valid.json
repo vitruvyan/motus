@@ -36,7 +36,7 @@
         "name": "istruttoria",
         "version": "1.0.0",
         "graph_fingerprint": "graph:sha256:ba9178e98778857d0da0bf216542af0f25512ea6618d39f619e22583c8461c63",
-        "code_fingerprint": "code:sha256:e3969f2e7d1e8d910ac6590fd52a78dd3e0fe794b38fa79d838c4a20f5e99cfb",
+        "code_fingerprint": "code:sha256:6bd5b7ffa35a0df3294c8c594ebceb641d8798360ea73451647fc6f91fccc1e1",
         "spec_schema_version": "1.0.0"
       },
       "policy": "strict",
@@ -56,7 +56,7 @@
         "ts": "2026-08-08T00:00:00Z",
         "kind": "run_started",
         "integrity": {
-          "payload_hash": "sha256:02dcc0ad62e031a71e74aa1625658849f2fc9f78a23326b610daf4b7e9aa648f",
+          "payload_hash": "sha256:9db53eb0f4364b2c79e75493232e9e1865dc737456c60231714ad08dba183c25",
           "prev_hash": null
         },
         "intent": "istruttoria",
@@ -71,8 +71,8 @@
         "ts": "2026-08-08T00:00:00Z",
         "kind": "attempt_started",
         "integrity": {
-          "payload_hash": "sha256:381bd86681ea4ca2254f4f6124c981c7288f27b884c59e0b0cc1c4bc9e3b9fce",
-          "prev_hash": "sha256:02dcc0ad62e031a71e74aa1625658849f2fc9f78a23326b610daf4b7e9aa648f"
+          "payload_hash": "sha256:bff5b928f3fd3f80426af0280e5998625757e8694e23edd602783c4f057f96fc",
+          "prev_hash": "sha256:9db53eb0f4364b2c79e75493232e9e1865dc737456c60231714ad08dba183c25"
         },
         "node": "valuta",
         "attempt": 1
@@ -82,8 +82,8 @@
         "ts": "2026-08-08T00:00:00Z",
         "kind": "transition",
         "integrity": {
-          "payload_hash": "sha256:b53665bec836a37465f92ac13f2dd3f666eaf2f9ac1877772ed4f217e873b3b4",
-          "prev_hash": "sha256:381bd86681ea4ca2254f4f6124c981c7288f27b884c59e0b0cc1c4bc9e3b9fce"
+          "payload_hash": "sha256:0be16585a154c95bbad543ed03e9ee6c9ee291816f89e957a37f249039758fcd",
+          "prev_hash": "sha256:bff5b928f3fd3f80426af0280e5998625757e8694e23edd602783c4f057f96fc"
         },
         "node": "valuta",
         "attempt": 1,
@@ -119,8 +119,8 @@
         "ts": "2026-08-08T00:00:00Z",
         "kind": "routing",
         "integrity": {
-          "payload_hash": "sha256:669699468f0ec5b40551b31a9b4bd16f79b9f5e49bfb8a8b297d88aca1841b66",
-          "prev_hash": "sha256:b53665bec836a37465f92ac13f2dd3f666eaf2f9ac1877772ed4f217e873b3b4"
+          "payload_hash": "sha256:3f0fd17407960f3302668edac6bd5b00d970e293ffb276cb78723da5879a6d48",
+          "prev_hash": "sha256:0be16585a154c95bbad543ed03e9ee6c9ee291816f89e957a37f249039758fcd"
         },
         "after": "valuta",
         "on": "esito",
@@ -155,8 +155,8 @@
         "ts": "2026-08-08T00:00:00Z",
         "kind": "run_completed",
         "integrity": {
-          "payload_hash": "sha256:a48bd5ba56ce0a00833bab20f3417e579de19d5f142f222d6c948b93d092be17",
-          "prev_hash": "sha256:669699468f0ec5b40551b31a9b4bd16f79b9f5e49bfb8a8b297d88aca1841b66"
+          "payload_hash": "sha256:3b1e954029041fc3c49d24fd9bfb97d729f976960146fefb62e326325a0c7593",
+          "prev_hash": "sha256:3f0fd17407960f3302668edac6bd5b00d970e293ffb276cb78723da5879a6d48"
         },
         "replay": {
           "capability": "none",

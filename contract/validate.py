@@ -1332,7 +1332,11 @@ def _trace_semantics(
         for i, record in enumerate(records):
             integrity = record.get("integrity") or {}
             actual = integrity.get("payload_hash")
-            payload = {k: val for k, val in record.items() if k != "integrity"}
+            # The digest covers the record with its integrity block NULLED, not
+            # removed: what a hash must not cover is its own value, and a
+            # constant null is not one. So the object hashed is a real record.
+            payload = dict(record)
+            payload["integrity"] = {"payload_hash": None, "prev_hash": None}
             computed = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
             if actual is None:
                 v.append(

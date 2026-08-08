@@ -535,7 +535,8 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
     # a recipe.
     previous = None
     for record in document["records"]:
-        payload = {k: v for k, v in record.items() if k != "integrity"}
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": None}
         digest = "sha256:" + hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":"),
                        ensure_ascii=False).encode("utf-8")
