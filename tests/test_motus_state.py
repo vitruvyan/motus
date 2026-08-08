@@ -164,3 +164,83 @@ def test_initial_collections_and_standard_metadata_are_schema_safe():
         State.empty(metadata=[])
     with pytest.raises(TypeError, match="'actor' must be a string"):
         State.empty(metadata={"actor": 123})
+
+
+def test_snapshot_from_inside_a_node_is_a_bulk_read_and_is_recorded_as_one():
+    """The defect this pins, and it made the contract's central claim false.
+
+    `snapshot()` returned the entire committed state and recorded nothing. So a
+    node could declare `reads_declared: []`, read every fact — including ones it
+    had no business seeing — and leave behind a trace stating it read nothing.
+    The README's promise is that the trace describes *what each node read and
+    wrote*; that was untrue for any node using this method.
+
+    It was never a missing mechanism. `_scan` already recorded a bulk read
+    correctly, so the same state had two doors into the same room and only one
+    had a guard. Both now go through `_note_scan`.
+
+    Three scans are recorded, not the keys present, because `snapshot()` asks
+    for all three collections regardless of what is in them. Recording only the
+    non-empty ones would make the required declaration depend on the data — the
+    same node would need a different one against a state with no decisions yet,
+    and a declaration that varies with the data is not a declaration.
+    """
+    state = State.new(
+        "intent",
+        facts=[Fact("salary", 120000, "hr", NOW)],
+        decisions=[Decision("route", "approve", NOW, "why")],
+    )._attempt_view(Trace({}).log)
+
+    out = state.snapshot()
+
+    # The read was real: the value is in the caller's hands.
+    assert [item["key"] for item in out["facts"]] == ["salary"]
+    assert out["facts"][0]["value"] == 120000
+
+    origins = [read["origin"] for read in state._reads_wire()]
+    assert origins == [
+        {"kind": "scan", "collection": "facts"},
+        {"kind": "scan", "collection": "decisions"},
+        {"kind": "scan", "collection": "rejections"},
+    ]
+
+
+def test_snapshot_and_the_scan_property_record_an_identical_read():
+    """The property that keeps the two doors from drifting apart again.
+
+    Asserting each side's absolute output would let them diverge one edit at a
+    time while both tests stayed green. What matters is that reading every fact
+    is recorded the same way whichever surface was used, so this compares them.
+    """
+    def fresh():
+        return State.new(
+            "intent", facts=[Fact("salary", 120000, "hr", NOW)]
+        )._attempt_view(Trace({}).log)
+
+    def facts_read(state):
+        return [
+            read for read in state._reads_wire()
+            if read["origin"].get("collection") == "facts"
+        ]
+
+    via_property = fresh()
+    assert len(via_property.facts) == 1
+
+    via_snapshot = fresh()
+    via_snapshot.snapshot()
+
+    assert facts_read(via_property) == facts_read(via_snapshot)
+    assert facts_read(via_snapshot) != []
+
+
+def test_snapshot_from_the_host_records_nothing():
+    """Serialising state for storage or replay is not a node reading it.
+
+    `_reads` is None outside an attempt, so the host path must stay silent —
+    otherwise every `to_jsonl` and every resume would invent reads that no node
+    performed, which is the same class of lie in the opposite direction.
+    """
+    state = State.new("intent", facts=[Fact("salary", 120000, "hr", NOW)])
+    assert state._reads is None
+    assert state.snapshot()["facts"][0]["key"] == "salary"
+    assert state._reads is None
