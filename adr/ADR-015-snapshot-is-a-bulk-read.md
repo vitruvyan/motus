@@ -128,6 +128,43 @@ declaration; in six months it is a migration. The founder's call was explicit.
 - Terraveler must be told. Any node calling `snapshot()` needs its declaration
   updated in the same change. The delivery route is likely PyPI, which is #49.
 
+## It also breaks traces already archived, and that is accepted
+
+An adversarial round found what §4 above did not say. The break is not only to
+callers: **`verify()` now accuses an already-archived trace of a divergence that
+never happened.**
+
+Same trace, same node source, verified with each version:
+
+```
+con 0.7.0     verify() -> OK, verificati: (('riassunto', 3),)
+col ramo      verify() SOLLEVA ReplayMismatch:
+              verify replay diverged at node 'riassunto', record 3, field reads
+```
+
+Replay re-executes the `pure` node under the new recording rule, gets three scan
+reads where the archived trace has none, and compares with `!=`. The message
+names the node and the field, so a reader takes it for tampering or code drift.
+Neither occurred; only Motus's recording rule changed.
+
+For a product whose thesis is checkable evidence this is the worst shape of
+failure — **a false accusation** — and it cannot be made selective: the trace
+header carries `schema_version` and `graph.spec_schema_version`, no Motus
+version, so `verify()` has no way to know it is looking at an older trace.
+
+**Founder decision, 2026-08-08: accepted.** Archived traces are deleted. The
+project is in development and certifies nothing, so there is no evidence whose
+loss costs anything.
+
+Worth stating because it expires: **this is the last window in which that is
+true.** The first real deployment closes it permanently. That is an argument for
+making the breaking changes now, together, rather than discovering later that
+each one needs its own migration.
+
+What the round exposed underneath is the durable finding: **nothing in the suite
+verifies an archived trace against a later version.** F3 is unlikely to be the
+only instance of what that would catch.
+
 ## Not this ADR
 
 **#45 is a different defect with a similar silhouette**, and conflating them

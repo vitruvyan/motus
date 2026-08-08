@@ -77,8 +77,19 @@ class EvidenceStatus(str, Enum):
 class RunResult:
     state: State
     trace: Trace
-    evidence: str = EvidenceStatus.NOT_REQUIRED
+    evidence: str = EvidenceStatus.NOT_REQUIRED.value
     """Whether the durable evidence for this run is whole — see EvidenceStatus.
+
+    A plain `str`, never an enum member, and the same on `NodeFailed`,
+    `SinkFailed` and both stream drivers. `EvidenceStatus` is the vocabulary; the
+    value carried is data, exactly as `run.policy` in the trace header is
+    `"strict"` and not a `Policy`. An adversarial round found the enum on one
+    carrier and a plain string on the others, so `f"{x.evidence}"` printed
+    `EvidenceStatus.INCOMPLETE` or `incomplete` depending on which object the
+    caller happened to be holding.
+
+    Comparison against the enum still reads naturally, because `EvidenceStatus`
+    is a `str` Enum: `result.evidence == EvidenceStatus.PERSISTED` is True.
 
     Defaulted so that constructing a `RunResult` by hand keeps working, and
     defaulted to `not-required` because a result nobody's sink produced promised
@@ -282,7 +293,7 @@ def _result_of(handle: _RunHandle) -> RunResult:
     """The result of the run this handle names, and of no other run."""
     if not handle.finished or handle.state is None or handle.trace is None:
         raise AssertionError("a finished run must publish its state and trace")
-    return RunResult(handle.state, handle.trace, EvidenceStatus(handle.evidence))
+    return RunResult(handle.state, handle.trace, handle.evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -615,6 +626,7 @@ class Runtime:
             _drive(machine, _invoke_sync),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
+            lambda: handle.evidence if handle.finished else None,
         )
         weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver
@@ -722,6 +734,7 @@ class Runtime:
             _adrive(machine, self._async_invoker()),
             self._run_scoped_cancel(handle),
             lambda: handle.trace,
+            lambda: handle.evidence if handle.finished else None,
         )
         weakref.finalize(driver, _release_abandoned_run, weakref.ref(self), handle)
         return driver

@@ -107,14 +107,20 @@ The schema must say that sentence. The failure this ADR exists to prevent is a
 field that reads like proof and is not, and "the validator accepts the trace"
 must never be mistaken for "the fingerprint was checked".
 
-### 6. It lands with schema 1.1, alongside the chain
+### 6. It lands with a schema revision, alongside the chain
 
-The salt is a new field, so this is a schema change, and schema 1.0 refuses
-those by construction — the same clause that keeps `payload_hash` null until
-1.1 ships "the algorithm, the chain validator and an unambiguous activation
-indicator".
+The salt is a new field, so this is a schema change.
 
-Both #51 and #52 therefore need 1.1. They answer different questions — the
+**Correction, 2026-08-08.** This section originally said the change "needs
+schema 1.1", and that was wrong: Motus has emitted `schema_version: "1.1.0"`
+since 0.6, and the schema accepts both 1.0.0 and 1.1.0 without the validator
+branching on either. The version number was raised and its content never
+supplied — `payload_hash` is typed null for every accepted version, so a 1.1.0
+trace is forbidden a hash by the same schema whose prose said 1.1 was where
+hashes become possible. That prose is now corrected.
+
+What this decision needs is therefore a schema *revision* that ships its own
+version number, not a version that already exists. Both #51 and #52 need it. They answer different questions — the
 chain asks *was this trace altered*, the fingerprint asks *does this archived
 interaction match the trace* — and neither substitutes for the other, but they
 share an activation event and should be planned as one.

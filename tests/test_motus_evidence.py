@@ -636,3 +636,123 @@ def test_the_caller_and_the_sink_are_told_the_same_thing(profile, fail_on):
     expected = EvidenceStatus.PERSISTED if sink.complete else EvidenceStatus.INCOMPLETE
     assert result.evidence == expected
     assert (result.evidence == EvidenceStatus.PERSISTED) is (fail_on is None)
+
+
+def test_evidence_is_a_plain_string_on_every_carrier():
+    """Four carriers, one type. An adversarial round found two.
+
+    `RunResult` carried an `EvidenceStatus` while the exceptions carried plain
+    strings, so `f"{x.evidence}"` printed `EvidenceStatus.INCOMPLETE` on one and
+    `incomplete` on the other — for the same fact, decided by which object the
+    caller happened to catch. `EvidenceStatus` is the vocabulary; the value is
+    data, as `run.policy` in the header is `"strict"` and not a `Policy`.
+    """
+    carriers = []
+
+    result, _ = _run(MISS, {"a": decide("no")})
+    carriers.append(("RunResult", result.evidence))
+
+    caught, _ = _run(CHAIN, {"a": passthrough, "b": passthrough},
+                     fail_on="run_completed")
+    carriers.append(("SinkFailed", caught.evidence))
+
+    def explode(state: State) -> State:
+        raise RuntimeError("boom")
+
+    failed, _ = _run(CHAIN, {"a": explode, "b": passthrough})
+    carriers.append(("NodeFailed", failed.evidence))
+
+    sink = RecordingSink(commit_first=False)
+    driver = Runtime(
+        MISS, {"a": decide("no")}, sink=sink,
+        durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).stream(State.empty("evidence"), run_id="r1")
+    for _ in driver:
+        pass
+    carriers.append(("StreamDriver", driver.evidence))
+
+    for name, value in carriers:
+        assert type(value) is str, f"{name} carries {type(value).__name__}"
+        assert f"{value}" == value, f"{name} formats as {value!r}"
+    assert {value for _, value in carriers} <= {e.value for e in EvidenceStatus}
+
+
+def test_the_streaming_surfaces_report_evidence_too():
+    """#42's first fix reached `run()`/`arun()` and stopped there.
+
+    `stream()` is where the caller is most obviously still able to act — it is
+    inside the loop — and it received a run whose evidence had been destroyed
+    with nothing to tell it apart from a healthy one. The value was already
+    computed and sitting one attribute away behind the driver.
+    """
+    def drive(fail_on):
+        sink = RecordingSink(fail_on=fail_on, commit_first=False)
+        driver = Runtime(
+            MISS, {"a": decide("no")}, sink=sink,
+            durability_profile=DurabilityProfile.SYNCHRONOUS,
+            clock=lambda: FIXED, identity=lambda: "fixed",
+        ).stream(State.empty("evidence"), run_id="r1")
+        for _ in driver:
+            pass
+        return driver
+
+    healthy, refused = drive(None), drive("run_failed")
+
+    assert healthy.trace.to_jsonl() == refused.trace.to_jsonl()
+    assert healthy.evidence == EvidenceStatus.PERSISTED
+    assert refused.evidence == EvidenceStatus.INCOMPLETE
+
+
+def test_an_unfinished_stream_has_no_evidence_answer_and_says_so():
+    """Following `RunResult.status`, which raises rather than inventing one.
+
+    Returning the initial `not-required` mid-stream would be a lie for the whole
+    duration of the run — the shape of defect this attribute exists to end.
+    """
+    driver = Runtime(
+        CHAIN, {"a": passthrough, "b": passthrough},
+        sink=RecordingSink(commit_first=False),
+        durability_profile=DurabilityProfile.SYNCHRONOUS,
+    ).stream(State.empty("evidence"), run_id="r1")
+
+    next(driver)
+    with pytest.raises(ValueError, match="has not finished"):
+        driver.evidence
+
+    for _ in driver:
+        pass
+    assert driver.evidence == EvidenceStatus.PERSISTED
+
+
+def test_the_async_stream_reports_evidence_identically():
+    async def drive(fail_on):
+        sink = RecordingSink(fail_on=fail_on, commit_first=False)
+        driver = Runtime(
+            MISS, {"a": decide("no")}, sink=sink,
+            durability_profile=DurabilityProfile.SYNCHRONOUS,
+        ).astream(State.empty("evidence"), run_id="r1")
+        async for _ in driver:
+            pass
+        return driver.evidence
+
+    assert asyncio.run(drive(None)) == EvidenceStatus.PERSISTED
+    assert asyncio.run(drive("run_failed")) == EvidenceStatus.INCOMPLETE
+
+
+def test_a_node_failure_with_no_sink_behind_it_reports_not_required():
+    """Pins `NodeFailed`'s default, which the compatibility bridge relies on.
+
+    Flipping that default to `persisted` failed zero tests when an adversarial
+    round tried it. The value is correct — the legacy runner has no sink — but
+    nothing stopped it drifting into a claim that evidence was written by a
+    component that never had anywhere to write it.
+    """
+    def explode(state: State) -> State:
+        raise RuntimeError("boom")
+
+    failed, evidence = _run(CHAIN, {"a": explode, "b": passthrough}, sink=False)
+    assert isinstance(failed, NodeFailed)
+    assert evidence == EvidenceStatus.NOT_REQUIRED
+
+    bare = NodeFailed("legacy", None)
+    assert bare.evidence == EvidenceStatus.NOT_REQUIRED
