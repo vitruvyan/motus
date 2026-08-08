@@ -1378,6 +1378,53 @@ def _trace_semantics(
                         )
                     )
 
+    # T12 — the interaction fingerprint travels with its salt, or not at all.
+    # The digest is meaningless to a verifier without the salt that prefixed its
+    # material, and a salt alone describes nothing.  Neither is checkable here:
+    # the covered material is deliberately NOT in the trace, which is the whole
+    # point of the field — it binds a trace to an archive held elsewhere.  So
+    # what a validator CAN enforce is that the pair is complete, and it must
+    # say plainly that a clean validation never means the fingerprint was
+    # checked.  Enforcing only what is enforceable, and publishing which, is the
+    # difference between a narrow guarantee and a misleading one.
+    #
+    # 1.x carries neither field: `result_fingerprint` is the 1.x shape and is
+    # not redefined in place, because a 1.x value means what 1.x said it meant.
+    for i, record in enumerate(records):
+        for j, effect in enumerate(record.get("effects") or []):
+            receipt = effect.get("receipt") or {}
+            digest = receipt.get("interaction_fingerprint")
+            salt = receipt.get("fingerprint_salt")
+            path = f"$.records[{i}].effects[{j}].receipt"
+            if version != "2.0.0" and (digest is not None or salt is not None):
+                v.append(
+                    Violation(
+                        "T12",
+                        path,
+                        f"interaction_fingerprint and fingerprint_salt are 2.0.0 "
+                        f"fields; schema {version} carries result_fingerprint",
+                    )
+                )
+                continue
+            if digest is not None and salt is None:
+                v.append(
+                    Violation(
+                        "T12",
+                        f"{path}.fingerprint_salt",
+                        "interaction_fingerprint is present without its salt; a "
+                        "verifier holding the archive cannot recompute the digest "
+                        "without the salt that prefixed its material",
+                    )
+                )
+            if salt is not None and digest is None:
+                v.append(
+                    Violation(
+                        "T12",
+                        f"{path}.interaction_fingerprint",
+                        "fingerprint_salt is present with no fingerprint to salt",
+                    )
+                )
+
     if not records:
         # Only reachable through the JSONL path (the JSON document form pins
         # minItems 1): a stream that ends right after its header.
