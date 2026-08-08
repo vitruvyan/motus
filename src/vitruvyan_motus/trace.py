@@ -305,7 +305,7 @@ class Trace:
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:
             raise ValueError("trace document requires schema_version, run and records")
-        if plain["schema_version"] not in ("1.0.0", "1.1.0"):
+        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0"):
             raise ValueError("unsupported trace schema version")
         if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
             raise TypeError("trace run must be an object and records an array")
@@ -380,11 +380,63 @@ class Trace:
             self._run, self._records.append(isolated), self._schema_version
         )
 
+    def _seal(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Return this record sealed into the integrity chain.
+
+        Sealing is separate from appending, and it has to be: the sink is
+        handed the record BEFORE the trace appends it, so sealing at append
+        time put real hashes in memory and null ones in the artifact. Two
+        accounts of one run that disagree is worse than neither having a chain.
+        `_store` seals once, at the top, and the same sealed dict goes to the
+        sink and to the trace.
+
+        The chain needs no state of its own: the previous hash is already in the
+        previous record. A trace carries its own chain and can be re-checked
+        from nothing but itself, which is what makes an offline validator
+        possible.
+
+        The digest covers the record WITHOUT its own integrity block — a hash
+        cannot cover itself — over the canonical object form, never over
+        encoding bytes, so a trace re-encoded as JSONL or as a document hashes
+        identically. The first record's `prev_hash` is null: it has no
+        predecessor, and inventing a genesis value would be a constant that
+        looks like evidence.
+        """
+        previous = self._records[len(self._records) - 1] if len(self._records) else None
+        prev_hash = previous["integrity"]["payload_hash"] if previous else None
+        payload = {key: value for key, value in record.items() if key != "integrity"}
+        sealed = dict(record)
+        sealed["integrity"] = {
+            "payload_hash": "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest(),
+            "prev_hash": prev_hash,
+        }
+        return sealed
+
     def _append_runtime(self, record: dict[str, Any]) -> "Trace":
         """Append a record already built from validated runtime primitives."""
         return Trace._from_parts(
             self._run, self._records.append(record), self._schema_version
         )
+
+    @property
+    def root(self) -> str | None:
+        """The hash covering this whole trace, or None if it has no terminal.
+
+        Deliberately not a stored field. The terminal record's `payload_hash`
+        already covers the terminal, which chains the record before it, and so
+        on to the first — so the root is derived, and a second copy of it could
+        only ever disagree with the first.
+
+        An unfinished trace has no root, and that is the honest answer rather
+        than a partial one: anchoring a prefix would publish a value that a
+        later complete trace contradicts.
+        """
+        if not len(self._records):
+            return None
+        last = self._records[len(self._records) - 1]
+        if last["kind"] not in ("run_completed", "run_failed", "run_cancelled"):
+            return None
+        return last["integrity"]["payload_hash"]
 
     def to_dict(self) -> dict[str, Any]:
         # A document materialization is deliberately cold: callers receive an

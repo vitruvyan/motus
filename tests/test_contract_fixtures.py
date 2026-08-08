@@ -185,6 +185,7 @@ ADVERTISED_RULES = {
     "R1", "R2", "R3", "R4", "R5", "R8", "R11", "R12",
     # Trace record coherence
     "T1", "T2", "T3", "T3/INCOMPLETE", "T4", "T5", "T6", "T7", "T8", "T9", "T10",
+    "T11",
     # Execution state machine
     "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11",
     # Spec binding

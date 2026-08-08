@@ -1310,6 +1310,74 @@ def _trace_semantics(
                 )
             )
 
+    # T11 — the integrity chain.  Each record's payload_hash is sha256 over the
+    # canonical object form of that record WITHOUT its own integrity block (a
+    # hash cannot cover itself), and prev_hash is the preceding record's
+    # payload_hash.  The first record has no predecessor and carries null.
+    #
+    # The SCHEMA VERSION IS THE ACTIVATION INDICATOR, and there is deliberately
+    # no second flag: a separate "chained: true" could disagree with the hashes
+    # actually present, and a reader would have to decide which to believe.
+    # 2.0.0 requires the chain; 1.x forbids it, so an unverified hash cannot
+    # ride in an old trace and be mistaken for tamper evidence.
+    #
+    # Recomputation is the whole point.  A chain that is only checked for
+    # SHAPE — non-null, right length — proves nothing at all: an editor who
+    # changes a record can recompute the shape trivially.  What they cannot do
+    # is recompute the rest of the chain without also holding whatever anchored
+    # its root.
+    version = doc.get("schema_version")
+    if version == "2.0.0":
+        expected_prev = None
+        for i, record in enumerate(records):
+            integrity = record.get("integrity") or {}
+            actual = integrity.get("payload_hash")
+            payload = {k: val for k, val in record.items() if k != "integrity"}
+            computed = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
+            if actual is None:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.payload_hash",
+                        "schema 2.0.0 requires an integrity chain; this record "
+                        "carries null, which is the 1.x shape",
+                    )
+                )
+            elif actual != computed:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.payload_hash",
+                        f"payload_hash does not match the record: declared "
+                        f"{actual}, recomputed {computed}",
+                    )
+                )
+            if integrity.get("prev_hash") != expected_prev:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.prev_hash",
+                        f"prev_hash is {integrity.get('prev_hash')!r}; the chain "
+                        f"requires {expected_prev!r}"
+                        + (" (the first record has no predecessor)" if i == 0 else ""),
+                    )
+                )
+            expected_prev = actual
+    elif version in ("1.0.0", "1.1.0"):
+        for i, record in enumerate(records):
+            integrity = record.get("integrity") or {}
+            for field in ("payload_hash", "prev_hash"):
+                if integrity.get(field) is not None:
+                    v.append(
+                        Violation(
+                            "T11",
+                            f"$.records[{i}].integrity.{field}",
+                            f"schema {version} carries no integrity chain, so "
+                            f"{field} must be null; a hash here is unverified "
+                            "and must not be able to pass for tamper evidence",
+                        )
+                    )
+
     if not records:
         # Only reachable through the JSONL path (the JSON document form pins
         # minItems 1): a stream that ends right after its header.

@@ -894,12 +894,18 @@ class Runtime:
 
     def _store(self, record: dict[str, Any], *, terminal: bool = False, force: bool = False) -> dict[str, Any]:
         assert self._trace is not None and self._hub is not None
+        # Seal FIRST, so the sink and the trace receive the identical dict. The
+        # sink is handed the record before the trace appends it, so sealing at
+        # append time wrote real hashes to memory and null ones to the artifact.
+        record = self._trace._seal(record)
         if terminal:
             try:
                 self._hub.persist(record, force=True)
             except BaseException as exc:
                 if record["kind"] == "run_completed":
-                    failure = self._sink_failure_record(record["seq"], None, exc)
+                    failure = self._trace._seal(
+                        self._sink_failure_record(record["seq"], None, exc)
+                    )
                     self._hub.best_effort(failure)
                     self._replace_trace(self._trace._append_runtime(failure))
                     self._hub.notify(failure)
@@ -914,8 +920,10 @@ class Runtime:
         try:
             self._hub.persist(record, force=force)
         except BaseException as exc:
-            failure = self._sink_failure_record(
-                self._control.next_seq(), record.get("seq"), exc  # type: ignore[union-attr]
+            failure = self._trace._seal(
+                self._sink_failure_record(
+                    self._control.next_seq(), record.get("seq"), exc  # type: ignore[union-attr]
+                )
             )
             # Once a record was refused, the persisted stream remains the
             # last valid prefix.  Appending a later best-effort terminal would
