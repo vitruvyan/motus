@@ -498,6 +498,28 @@ success. If the required sink itself
 fails, the final failure record is necessarily best-effort because the
 component responsible for persisting it is unavailable.
 
+Which is why every outcome answers a second question, separately from whether
+the run succeeded:
+
+```python
+result = runtime.run(state, run_id="r1")
+if result.evidence != "persisted":
+    # the run has an outcome; its durable account does not
+```
+
+`RunResult.evidence`, and the same attribute on `NodeFailed` and `SinkFailed`,
+is one of `persisted`, `incomplete`, or `not-required` — no sink was configured,
+so nothing durable was promised. It is deliberately not folded into the status.
+A node that raised while the archive was also down has two facts to report, and
+the more important one is the node: replacing it would tell a caller its
+archive is unavailable while hiding that its model never answered.
+
+`incomplete` means what is stored is an honest prefix, and a validator reading
+that artifact reports `T3/INCOMPLETE`. The sink was always told, through
+`finish(complete=False)`; the caller — the only party still able to retry, alert
+or withhold the result — was not, on any terminal but `run_completed`. Both are
+now read from the same fact, after the final flush, so they cannot disagree.
+
 ## Performance profile
 
 **A release is gated on how much slower it is than the release before it**, not
@@ -560,7 +582,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 
 - topology: `GraphSpec`, `NodeDecl`, `Transition`, `TransitionKind`,
   `CompiledPlan`;
-- execution: `Runtime`, `Policy`, `DurabilityProfile`, `RunResult`;
+- execution: `Runtime`, `Policy`, `DurabilityProfile`, `EvidenceStatus`,
+  `RunResult`;
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;

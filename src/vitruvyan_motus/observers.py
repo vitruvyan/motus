@@ -207,6 +207,27 @@ class _ObservationHub:
         self._run_sink: TraceRunSink | None = None
         self._saw_terminal = False
 
+    @property
+    def evidence(self) -> str:
+        """Whether this run's durable evidence is whole, and answerable to a caller.
+
+        `_saw_terminal` is the same fact `_signal_finish` hands the sink as
+        `complete=`, read from the other side. The session was always told; the
+        caller was not, on any terminal but `run_completed` — so a run whose
+        evidence had been refused returned a `RunResult` byte-identical to a
+        healthy one, and the only party still able to retry, alert or withhold
+        the decision was the only party that could not tell (#42).
+
+        `self.sink` is never cleared, unlike `_run_sink`, so the distinction
+        between "nothing durable was promised" and "something was promised and
+        is missing" survives `close()`. Collapsing those two into one boolean
+        would make the in-memory profile report a durability failure it never
+        offered — the same class of false statement in the other direction.
+        """
+        if self.sink is None:
+            return "not-required"
+        return "persisted" if self._saw_terminal else "incomplete"
+
     def bind(self, header: dict[str, Any]) -> None:
         """Open the required run-scoped session without losing its failure."""
         if self.sink is None:

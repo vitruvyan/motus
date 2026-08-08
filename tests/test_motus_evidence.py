@@ -12,8 +12,11 @@ from typing import Any
 
 import pytest
 
+from datetime import datetime, timezone
+
 from vitruvyan_motus import (
-    DurabilityProfile, GraphSpec, Runtime, SinkFailed, State,
+    Decision, DurabilityProfile, EvidenceStatus, GraphSpec, NodeFailed, Runtime,
+    SinkFailed, State,
 )
 
 CHAIN_DOC: dict[str, Any] = {
@@ -428,3 +431,208 @@ def test_the_shipped_sink_implements_the_whole_shape():
     gc.collect()
 
     assert abandoned._runs[-1].complete is False
+
+
+# --- #42: the caller learns whether the evidence was written -----------------
+
+MISS_DOC: dict[str, Any] = {
+    "schema_version": "1.0.0",
+    "name": "evidence",
+    "version": "1.0.0",
+    "entry": "a",
+    "nodes": [{"name": "a", "effect_class": "pure"}],
+    "transitions": {"a": {"kind": "route", "on": "verdict", "map": {"yes": "END"}}},
+}
+MISS = GraphSpec.from_dict(dict(MISS_DOC))
+
+LIMIT_DOC: dict[str, Any] = {
+    "schema_version": "1.0.0",
+    "name": "evidence",
+    "version": "1.0.0",
+    "entry": "a",
+    "max_transitions": 2,
+    "nodes": [{"name": "a", "effect_class": "pure"}],
+    "transitions": {
+        "a": {"kind": "route", "on": "verdict", "map": {"again": "a"}, "default": "END"}
+    },
+}
+LIMIT = GraphSpec.from_dict(dict(LIMIT_DOC))
+
+FIXED = datetime(2026, 8, 8, tzinfo=timezone.utc)
+
+
+def decide(value: str):
+    def node(state: State) -> State:
+        return state.with_decision(Decision("verdict", value, FIXED))
+    return node
+
+
+def _run(spec, nodes, *, fail_on=None, sink=True, **kwargs):
+    """Run once, returning (outcome, evidence) whether it returned or raised."""
+    used = RecordingSink(fail_on=fail_on, commit_first=False) if sink else None
+    runtime = Runtime(
+        spec, nodes, sink=used,
+        durability_profile=(
+            DurabilityProfile.SYNCHRONOUS if sink else DurabilityProfile.IN_MEMORY
+        ),
+        clock=lambda: FIXED, identity=lambda: "fixed",
+        **kwargs,
+    )
+    try:
+        result = runtime.run(State.empty("evidence"), run_id="r1")
+        return result, result.evidence
+    except (SinkFailed, NodeFailed) as exc:
+        return exc, exc.evidence
+
+
+def test_a_healthy_run_with_a_sink_reports_its_evidence_persisted():
+    result, evidence = _run(CHAIN, {"a": passthrough, "b": passthrough})
+    assert result.status == "completed"
+    assert evidence == EvidenceStatus.PERSISTED
+    assert evidence == "persisted", "the str Enum must compare against the plain string"
+
+
+def test_a_run_with_no_sink_promised_nothing_and_says_so():
+    """`not-required` and `incomplete` must not collapse into one boolean.
+
+    An in-memory run persisted nothing and failed nothing. A caller that reads a
+    durability failure here would refuse to act on every ordinary local run.
+    """
+    result, evidence = _run(CHAIN, {"a": passthrough, "b": passthrough}, sink=False)
+    assert result.status == "completed"
+    assert evidence == EvidenceStatus.NOT_REQUIRED
+
+
+@pytest.mark.parametrize(
+    "label, spec, nodes, refused_terminal",
+    [
+        ("route_miss", MISS, {"a": decide("no")}, "run_failed"),
+        ("transition_limit", LIMIT, {"a": decide("again")}, "run_failed"),
+    ],
+)
+def test_the_silent_terminals_now_tell_the_caller(label, spec, nodes, refused_terminal):
+    """#42's core: three terminals reported a refusal to nobody who could act.
+
+    Only `run_completed` raised `SinkFailed`. On every other terminal the primary
+    cause is deliberately preserved — a node that failed is more important news
+    than an archive that is down — and the consequence was that `run()` returned
+    a result identical to a healthy one. The status is still the primary cause;
+    `evidence` is the second fact, carried alongside rather than instead.
+    """
+    healthy, healthy_evidence = _run(spec, nodes)
+    refused, refused_evidence = _run(spec, nodes, fail_on=refused_terminal)
+
+    assert healthy.status == refused.status == "failed"
+    assert healthy_evidence == EvidenceStatus.PERSISTED
+    assert refused_evidence == EvidenceStatus.INCOMPLETE
+
+
+def test_two_runs_whose_traces_are_byte_identical_are_told_apart_by_evidence():
+    """The measurement that made #42 undeniable, kept as a regression.
+
+    With the clock and identity fixed, a healthy run and one whose evidence was
+    destroyed produced the same 2783 bytes of trace, the same final state and the
+    same status. Nothing the caller could reach distinguished them. Asserting the
+    traces are *still* identical is the point: the fix does not smuggle the fact
+    into the artifact — that needs schema 1.1 — it puts it on the result.
+    """
+    healthy, healthy_evidence = _run(MISS, {"a": decide("no")})
+    refused, refused_evidence = _run(MISS, {"a": decide("no")}, fail_on="run_failed")
+
+    assert healthy.trace.to_jsonl() == refused.trace.to_jsonl()
+    assert healthy.state.snapshot() == refused.state.snapshot()
+    assert healthy.status == refused.status
+    assert healthy_evidence != refused_evidence
+
+
+def test_a_node_failure_and_a_refused_sink_are_both_reported():
+    """The path with no RunResult to carry the news.
+
+    A node raising while the sink also refuses used to produce a `NodeFailed`
+    indistinguishable from one whose evidence was safely written. `NodeFailed`
+    stays the exception — losing that the model did not answer would be a worse
+    trade — and now carries the durability fact too.
+    """
+    def explode(state: State) -> State:
+        raise RuntimeError("the model did not answer")
+
+    healthy, healthy_evidence = _run(CHAIN, {"a": explode, "b": passthrough})
+    refused, refused_evidence = _run(
+        CHAIN, {"a": explode, "b": passthrough}, fail_on="run_failed"
+    )
+
+    assert isinstance(healthy, NodeFailed) and isinstance(refused, NodeFailed)
+    assert healthy.node == refused.node == "a"
+    assert healthy_evidence == EvidenceStatus.PERSISTED
+    assert refused_evidence == EvidenceStatus.INCOMPLETE
+
+
+def test_sink_failed_carries_the_same_field_so_one_read_serves_every_outcome():
+    """`SinkFailed` can only mean `incomplete`, and says it anyway.
+
+    A caller should be able to read `.evidence` off whatever it caught without
+    first asking which exception it is holding.
+    """
+    caught, evidence = _run(CHAIN, {"a": passthrough, "b": passthrough},
+                            fail_on="run_completed")
+    assert isinstance(caught, SinkFailed)
+    assert evidence == EvidenceStatus.INCOMPLETE
+
+
+def test_the_async_surface_reports_evidence_identically():
+    """Invariant I: one execution semantics across both surfaces.
+
+    A durability fact the sync caller can read and the async caller cannot would
+    be exactly the asymmetry that invariant forbids.
+    """
+    async def drive(fail_on):
+        sink = RecordingSink(fail_on=fail_on, commit_first=False)
+        runtime = Runtime(
+            MISS, {"a": decide("no")}, sink=sink,
+            durability_profile=DurabilityProfile.SYNCHRONOUS,
+            clock=lambda: FIXED, identity=lambda: "fixed",
+        )
+        result = await runtime.arun(State.empty("evidence"), run_id="r1")
+        return result.status, result.evidence
+
+    assert asyncio.run(drive(None)) == ("failed", EvidenceStatus.PERSISTED)
+    assert asyncio.run(drive("run_failed")) == ("failed", EvidenceStatus.INCOMPLETE)
+
+
+class FinishingSink(RecordingSink):
+    """A sink that implements the optional `finish`, so both sides can be read."""
+
+    def __init__(self, *, fail_on: str | None = None) -> None:
+        super().__init__(fail_on=fail_on, commit_first=False)
+        self.complete: bool | None = None
+
+    def finish(self, *, complete: bool) -> None:
+        self.complete = complete
+
+
+@pytest.mark.parametrize("profile", list(DurabilityProfile))
+@pytest.mark.parametrize("fail_on", [None, "run_failed"])
+def test_the_caller_and_the_sink_are_told_the_same_thing(profile, fail_on):
+    """The invariant that makes `evidence` worth reading, across every profile.
+
+    `finish(complete=)` already told the session whether its artifact was whole;
+    #42 was that nobody told the caller. Two independent reports of one fact can
+    drift, so this asserts they cannot: the value is read after `close()`, which
+    is what performs the buffered profile's final flush and then signals the
+    session from the same `_saw_terminal`.
+
+    The in-memory profile is included on purpose. It accepts a sink, so a refusal
+    there is a real refusal and must be reported as one — treating "in-memory" as
+    "nothing was promised" would let the weakest profile hide the failure.
+    """
+    sink = FinishingSink(fail_on=fail_on)
+    runtime = Runtime(
+        MISS, {"a": decide("no")}, sink=sink, durability_profile=profile,
+        clock=lambda: FIXED, identity=lambda: "fixed", flush_interval_ms=0,
+    )
+    result = runtime.run(State.empty("evidence"), run_id="r1")
+
+    assert sink.complete is not None, "the session must be told before the caller reads"
+    expected = EvidenceStatus.PERSISTED if sink.complete else EvidenceStatus.INCOMPLETE
+    assert result.evidence == expected
+    assert (result.evidence == EvidenceStatus.PERSISTED) is (fail_on is None)
