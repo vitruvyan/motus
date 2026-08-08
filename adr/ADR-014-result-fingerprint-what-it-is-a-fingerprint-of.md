@@ -82,10 +82,44 @@ defeats the reason it was kept out. `redact` exists in this codebase precisely
 because that concern is real; a fingerprint that quietly undoes it would be a
 worse leak than an obvious one, because nobody would look for it.
 
-A per-effect random salt, recorded beside the receipt, closes it. The intended
-verifier holds the archive and the trace and can recompute; a holder of the
-trace alone can enumerate nothing. **The salt costs the intended verifier
-nothing, because the intended verifier was never the one guessing.**
+A per-effect random salt, recorded beside the receipt, is the decision. **But it
+has to be described for what it actually does, because the obvious description
+is wrong and I wrote it first.**
+
+An earlier draft of this section said "a holder of the trace alone can enumerate
+nothing." That is false. The salt is *recorded in the trace*, so a holder of the
+trace has the digest and the salt together and can go on guessing exactly as
+before. **A published salt is not a secret**, and a sentence in an ADR about
+tamper evidence that overstates a protection is the same defect this ADR exists
+to prevent, one level up.
+
+What a recorded salt does buy, precisely:
+
+- **domain separation.** Two runs holding the same interaction produce different
+  digests, so nobody can correlate the archive across runs by comparing
+  fingerprints, or confirm that two traces cover the same question. This is the
+  property the field needs most, and the one it genuinely gets.
+- **no precomputation.** A table built once against a corpus of likely questions
+  is worthless, because every effect carries its own salt. Each effect must be
+  attacked separately, at full cost.
+
+What it does **not** buy is confidentiality of a guessable input. That needs a
+key held outside the trace — an HMAC rather than a plain digest — and the price
+is real: only key-holders could verify, which forecloses the case of an auditor
+holding the archive and the trace and nothing else. That is the case this recipe
+exists for.
+
+The reason a recorded salt is nevertheless sufficient for the motivating
+deployment is **decision 1, not this one**: the digest covers request and result
+*bound together*, and the result is a long free-text answer. Guessing the pair
+means guessing the answer, which is not feasible. The binding earns its keep
+twice — once against the swapped request, once here.
+
+**Where it is not sufficient, and a deployment must be told.** An effect whose
+request and result are both low-entropy — `user_id=1234` → `approved` — is
+guessable pair and all, and a recorded salt changes nothing about that. Such a
+deployment needs the keyed variant and should choose it knowingly. Adding a key
+later is a far smaller change than discovering the digest was never confidential.
 
 This is stated as the technical consequence of the decided purpose, not as a
 preference. A deployment that genuinely wants the trace alone to be checkable
@@ -152,7 +186,14 @@ gets chosen for the wrong shape.
   forcing the schema and the validator to move together — which is the whole
   reason ADR-013 built it.
 - One decision is deferred deliberately and named: the successor field's name,
-  to the ADR that writes the 1.1 schema.
+  to the ADR that writes the schema revision.
+- **A second deferral, added 2026-08-08:** whether the digest is keyed. The
+  recorded salt is the default and is enough where the result is high-entropy,
+  which is every case in front of us. A deployment whose request *and* result
+  are both guessable needs an HMAC, and that trades the auditor-with-the-archive
+  case for confidentiality. Not decided here because no such deployment exists
+  yet, and because the recipe accepts a key as a later addition rather than a
+  rewrite.
 - Nothing in the shipped runtime changes today. 544 tests, the frozen corpora
   and every fixture are untouched by this ADR.
 
