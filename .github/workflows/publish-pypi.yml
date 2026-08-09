@@ -1,0 +1,112 @@
+name: Publish to PyPI
+
+# Trusted Publishing: PyPI verifies this workflow's OIDC identity and issues a
+# short-lived token for the upload. No API token is stored in this repository,
+# nothing is copied through a person, and every publication is a run anyone
+# with access can read. For a project whose whole claim is checkable evidence,
+# a long-lived secret pasted into settings would be the wrong shape.
+#
+# Fires on a PUBLISHED release, not on a tag push: the release note is where a
+# Motus version states its own regression (ADR-012, ADR-018), and a version on
+# PyPI whose note does not exist yet would be a version nobody can assess.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build the distribution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+
+      - name: Build the wheel and the sdist
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Refuse a distribution whose version is not the tag
+        # ADR-006 couples the version string to committed evidence. A wheel
+        # built from a tree whose __version__ has drifted from the tag would
+        # publish evidence for one version under the name of another.
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          BUILT=$(ls dist/*.whl | sed -E 's/.*vitruvyan_motus-([^-]+)-.*/\1/')
+          echo "tag=$TAG built=$BUILT"
+          test "$TAG" = "$BUILT"
+
+      - name: Prove the built wheel runs a graph and catches a tamper
+        # Publishing an artifact nobody executed is how a broken wheel reaches
+        # an index. This installs what is about to be uploaded, into a clean
+        # interpreter, and makes the shipped validator refuse an edited trace.
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install --quiet dist/*.whl
+          /tmp/clean/bin/python - <<'PY'
+          from datetime import datetime, timezone
+          from vitruvyan_motus import Decision, Fact, GraphSpec, Runtime, State
+          NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+          SPEC = GraphSpec.from_dict({
+              "schema_version": "1.0.0", "name": "smoke", "version": "1.0.0",
+              "entry": "assess",
+              "nodes": [{"name": "assess", "effect_class": "pure"},
+                        {"name": "approve", "effect_class": "pure"}],
+              "transitions": {"assess": {"kind": "route", "on": "risk",
+                                         "map": {"low": "approve"},
+                                         "default": "approve"},
+                              "approve": {"kind": "terminal"}},
+          })
+          result = Runtime(SPEC, {
+              "assess": lambda s: s.with_decision(Decision("risk", "low", NOW)),
+              "approve": lambda s: s.with_fact(Fact("outcome", "ok", "policy", NOW)),
+          }).run(State.empty(), run_id="smoke")
+          assert result.status == "completed", result.status
+          open("/tmp/smoke.trace.json", "w").write(result.trace.to_json())
+          PY
+          /tmp/clean/bin/motus-validate trace /tmp/smoke.trace.json
+          python - <<'PY'
+          import json
+          d = json.load(open("/tmp/smoke.trace.json"))
+          for r in d["records"]:
+              if r["kind"] == "transition" and r["writes"]["decisions"]:
+                  r["writes"]["decisions"][0]["value"] = "high"
+                  break
+          json.dump(d, open("/tmp/tampered.trace.json", "w"))
+          PY
+          if /tmp/clean/bin/motus-validate trace /tmp/tampered.trace.json; then
+            echo "the shipped validator accepted an edited trace"; exit 1
+          fi
+          echo "the shipped validator refused the edited trace, as it must"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distribution
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/vitruvyan-motus
+    permissions:
+      id-token: write        # the whole point: OIDC instead of a stored token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distribution
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
