@@ -172,12 +172,30 @@ verdict."* The defensible number is the median of job ratios across at least
 three dispatches, produced by the project's own interleaved harness. That
 measurement is what the pull request exists to obtain.
 
-If it confirms we are well over budget, the choice is between writing down why a
-**deliberate capability's** cost is not the accidental regression that gate was
-built to catch, and holding the chain until the runtime has headroom. **What
-must not happen is widening the budget quietly**: ADR-012 names that
+It confirmed we are well over budget. Measured with that harness, three runs,
+median of job ratios, against `main`:
+
+```
+noop_100_overhead_ms             1.955      budget 1.10
+realistic_1000_us_per_node_min   1.690      budget 1.10
+to_dict_min_ms_realistic         1.329      budget 1.10
+```
+
+Optimisation was attempted before an exception was asked for, and is recorded in
+*The cost* above: the best available is 1.955 on the synthetic metric, down from
+2.462, and almost nothing on the realistic one.
+
+**Founder decision, 2026-08-09: declared, not accommodated.** The three ratios
+go into ADR-012's own `DECLARED_EXCEPTIONS`, keyed to the 0.8.0 release, each
+with the reason and a hypothesis to falsify — the mechanism ADR-012 provides for
+exactly this, and the opposite of widening the budget. ADR-012 names that
 "re-baselining under a different name", and not bending our own rules is the
 entire product.
+
+The version bump itself is not in this change. A release's identity is coupled
+to characterization evidence produced on the reference runner class, which is a
+CI artifact and cannot be written here; the exceptions are declared in advance
+so the release does not have to invent them under time pressure.
 
 The gate measures a 100-node graph of no-op nodes, which is deliberately the case
 where the chain costs most relative to work done and matters least in practice —

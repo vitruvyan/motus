@@ -77,6 +77,33 @@ DECLARED_EXCEPTIONS = {
         "the entire measurement. Deferred with a hypothesis to falsify, not "
         "accommodated by a wider budget.",
     ),
+    ("v0.7.0", "0.8.0", "noop_100_overhead_ms"): (
+        1.60,
+        "ADR-017",
+        "the integrity chain. Every record is canonicalised and hashed, and on "
+        "nodes that do no work that cost is most of the measurement. Declared "
+        "rather than accommodated: this is the price of a deliberate "
+        "capability, not an accidental regression, and the number is the best "
+        "achieved after optimisation, not the first one measured. The "
+        "hypothesis to falsify is that no cheaper canonical form exists — four "
+        "were tried and recorded in ADR-017, including one that measured "
+        "SLOWER.",
+    ),
+    ("v0.7.0", "0.8.0", "realistic_1000_us_per_node_min"): (
+        0.80,
+        "ADR-017",
+        "the integrity chain, on the realistic graph: +65 microseconds per "
+        "node. Invisible against a node that calls a model, and a doubling of "
+        "the engine on pure computation. Stated here because the gate measures "
+        "the second and deployments live in the first, and pretending "
+        "otherwise is how a budget stops meaning anything.",
+    ),
+    ("v0.7.0", "0.8.0", "to_dict_min_ms_realistic"): (
+        0.45,
+        "ADR-017",
+        "the integrity chain, at trace materialisation. The smallest of the "
+        "three because this metric already serialises.",
+    ),
 }
 
 
