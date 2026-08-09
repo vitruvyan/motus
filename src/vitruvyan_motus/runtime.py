@@ -776,13 +776,17 @@ class Runtime:
             if self._running:
                 raise RuntimeError("a Runtime instance cannot execute overlapping runs")
             # `_has_started` is the latch ADR-008 §1 uses to refuse an idle
-            # cancellation on a Runtime that has already executed. It is raised
-            # here, before the checks below can still reject the call — so what
-            # it found must be recoverable if this start never becomes a run.
+            # cancellation on a Runtime that has already executed, and the
+            # queued reason is spent here. Both are taken before the checks
+            # below can still reject the call, so both must be recoverable if
+            # this start never becomes a run. `queued` is non-None only when
+            # `was_started` is False — `cancel()` queues nothing once the latch
+            # is up — which is why the rollback needs no condition.
             was_started = self._has_started
+            queued = self._pending_cancel_reason
             self._running = True
             self._has_started = True
-            self._cancel_reason = self._pending_cancel_reason
+            self._cancel_reason = queued
             self._pending_cancel_reason = None
             # The new run's identity is published in the same critical section
             # that claims `_running`. Assigning it later — after the controller,
@@ -858,6 +862,12 @@ class Runtime:
                 copy_yields=copy_yields, start_node=start_node, handle=handle,
             )
         except BaseException:
+            # Ordered as `_managed_execute`'s `finally` orders it: the attempt
+            # is cleared while the claim still holds. Written after the release
+            # it is an unsynchronised cross-run store — it lands in whichever
+            # run has since begun, and blanks the `active_attempt` that a
+            # `run_cancelled` must name, which the validator refuses under T6.
+            self._active_attempt = None
             with self._lifecycle_lock:
                 self._running = False
                 # A start that raised wrote no header, ran no node and handed
@@ -869,13 +879,13 @@ class Runtime:
                 # HAD executed must still refuse to queue, or the failed start
                 # reopens the leak into a later unrelated run that §1 closed.
                 self._has_started = was_started
-                if not was_started:
-                    # Whatever bound during this window never took effect: the
-                    # reason queued before the call, or one a concurrent caller
-                    # lodged against the run while `_running` was up.
-                    self._pending_cancel_reason = self._cancel_reason
+                # Exactly what the claim took, and nothing else. By now
+                # `_cancel_reason` may instead hold a request a concurrent
+                # caller bound to THIS start; re-queueing that one would aim it
+                # at a later, unrelated run and record its reason as that run's
+                # own — and would displace the reason the operator had queued.
+                self._pending_cancel_reason = queued
                 self._cancel_reason = None
-            self._active_attempt = None
             raise
 
     def _managed_execute(
