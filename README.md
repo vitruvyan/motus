@@ -14,17 +14,37 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.7.0](https://github.com/vitruvyan/motus/releases/tag/v0.7.0)
-> · **0.8.0 is on `main`, untagged and deliberately so.**
+> **Current release:** [Motus 0.8.1](https://github.com/vitruvyan/motus/releases/tag/v0.8.1)
+> · `pip install vitruvyan-motus`
 >
-> Apache-2.0 · stdlib-only kernel · validator included · source release · not yet published on PyPI
+> Apache-2.0 · stdlib-only kernel · validator included
 
-0.8.0 adds the integrity chain and **does not pass its own cumulative
-performance gate**: +82.6 % per-node against a +20 % budget measured from
-v0.6.1. The per-release arm accepts a declared exception for it; the cumulative
-arm accepts none, by construction — it is the one gate built not to be waived,
-and it is doing its job. Rather than weaken it to publish a tag, the code ships
-on `main` and the tag waits for the runtime to earn the room back.
+0.8.1 **still does not pass its own cumulative performance gate**, and ships
+under ADR-018 rather than by weakening it. Every failing ratio, measured
+against the v0.6.1 anchor across three independent dispatches:
+
+| metric | cumulative | budget |
+|---|---:|---:|
+| Per-node overhead | **+84.4 %** | +20 % |
+| 100-node no-op | **+123.2 %** | +20 % |
+| Trace materialization | **+25.2 %** | +20 % |
+
+The cost is the integrity chain (ADR-017), paid in 0.8.0 and unchanged here:
+0.8.1 against 0.8.0 is +0.3 %, −1.5 % and −0.4 %, inside the per-release budget
+with no exception declared. On the 100-node no-op the paired spread is 106 %
+— wider than the effect — so on that metric the measurement cannot answer, and
+says so rather than pretending.
+
+**And against a real request it is not visible.** ADR-012 pre-registered the
+test — executor share of run wall-clock, under 1 % — before any measurement
+existed. Measured on 2026-08-09 against a live `api_graph` service with a real
+user query: **3.1 ms**, which is 0.017 % of that request and **0.070 %** of the
+fastest response the service gave all day. That figure is an upper bound: it
+contains the consumer's own node code, not only Motus.
+
+Both things are true and neither cancels the other. The engine is genuinely
+twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
+nodes are pure computation will pay that in full. Issue #38 stays open.
 
 ## The problem
 
@@ -211,12 +231,21 @@ Relevant primary sources:
 Motus alone is not a compliance system. A regulated deployment still needs
 the appropriate persistent `TraceSink`, retention policy, access controls,
 security controls, clock governance, privacy measures, review procedures, and
-any legally required signatures or validated storage. The current release
-does not activate cryptographic hash-chain integrity.
+any legally required signatures or validated storage. Since 0.8.0 the trace
+carries a cryptographic hash chain and a per-trace root (ADR-017); what it does
+NOT carry is an **anchor** — a root published where the operator cannot rewrite
+it — and without one the chain proves internal consistency, not immutability
+(issue #51).
 
 ## Install for development
 
-Motus is not yet published on PyPI. Install it from a checkout:
+Motus is on PyPI. Install it the ordinary way:
+
+```console
+pip install vitruvyan-motus
+```
+
+To work on Motus itself, from a checkout:
 
 ```console
 python -m venv .venv
@@ -578,7 +607,7 @@ raw runs, still matches interpreter and runtime identity, and still refuses an
 incomplete trace: completeness is an invariant, never a measurement.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.8.0/` for the committed observations.
+`benchmarks/relative-0.8.1/` for the committed observations.
 
 ## Contract and verification
 
@@ -594,8 +623,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.0-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.8.0/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.1-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.8.1/*.json
 ```
 
 ## Native package surface
