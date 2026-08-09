@@ -19,7 +19,7 @@ If `.venv` is missing, say so and stop; do not create one.
 
 ```
 .venv/bin/python -m pytest -q
-.venv/bin/python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.0-epyc-py310.json
+.venv/bin/python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.1-epyc-py310.json
 .venv/bin/python tools/check_frozen_paths.py origin/main HEAD
 for f in examples/*.py; do .venv/bin/python "$f" >/dev/null; done
 ```
