@@ -63,9 +63,7 @@ become false.
 
 Each record's `payload_hash` is sha256 over the canonical object form of that
 record **without its own integrity block** — a hash cannot cover itself — and
-`prev_hash` is the preceding record's `payload_hash`. The first record's is
-null: it has no predecessor, and a genesis constant would look like evidence
-while carrying none.
+`prev_hash` is the preceding record's `payload_hash`.
 
 **The chain starts at the header, not at the first record.** An automated
 reviewer found that chaining records alone left `run_id`, `policy`, `metadata`

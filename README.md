@@ -15,8 +15,16 @@ The trace is not reconstructed from logs after execution.
 **The trace is part of the execution itself.**
 
 > **Current release:** [Motus 0.7.0](https://github.com/vitruvyan/motus/releases/tag/v0.7.0)
+> · **0.8.0 is on `main`, untagged and deliberately so.**
 >
 > Apache-2.0 · stdlib-only kernel · validator included · source release · not yet published on PyPI
+
+0.8.0 adds the integrity chain and **does not pass its own cumulative
+performance gate**: +82.6 % per-node against a +20 % budget measured from
+v0.6.1. The per-release arm accepts a declared exception for it; the cumulative
+arm accepts none, by construction — it is the one gate built not to be waived,
+and it is doing its job. Rather than weaken it to publish a tag, the code ships
+on `main` and the tag waits for the runtime to earn the room back.
 
 ## The problem
 
@@ -526,21 +534,35 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.7.0 against v0.6.1 — three independent dispatches, canonical value is the
+0.8.0 against v0.7.0 — three independent dispatches, canonical value is the
 median of the job ratios:
 
-| metric | canonical | across jobs |
-|---|---:|---:|
-| per-node overhead | **+5.7 %** | +5.6 … +7.2 % |
-| 100-node no-op overhead | **+10.2 %** | +8.0 … +12.3 % |
-| trace materialization | **+0.3 %** | −0.1 … +0.6 % |
+| metric | canonical | across jobs | ceiling |
+|---|---:|---:|---:|
+| per-node overhead | **+70.3 %** | +58.3 … +72.6 % | +78 % |
+| 100-node no-op overhead | **+97.3 %** | +81.4 … +98.5 % | +105 % |
+| trace materialization | **+25.6 %** | +23.1 … +30.7 % | +35 % |
 
-The no-op row exceeds the +10 % per-release budget and ships as a scoped,
-machine-enforced exception that expires by construction — the same
-measurements labelled `0.8.0` fail the gate. It is deferred on a *stated
-hypothesis*, that executor overhead is negligible against real work, which is
-[due for falsification](https://github.com/vitruvyan/motus/issues/38) rather
-than assumed.
+**Every row exceeds the +10 % per-release budget, and the reason is the
+integrity chain**: 0.8.0 hashes every record, and on nodes that do no work that
+cost is most of the measurement. In absolute terms it is **+65 microseconds per
+node** — invisible against a node that calls a model, a doubling of the engine
+on pure computation.
+
+They ship as scoped, machine-enforced exceptions keyed on
+`(v0.7.0, 0.8.0, metric)` with ADR-017 behind them, and each ceiling is set just
+above the measured range rather than at a round number, so a later regression
+cannot hide inside the allowance. Optimisation was attempted **before** an
+exception was asked for; four approaches are recorded in ADR-017, including one
+that measured *slower*.
+
+A release that publishes its own regression is worth more than one that implies
+there wasn't one.
+
+0.7.0 against v0.6.1, for comparison: per-node **+5.7 %**, 100-node no-op
+**+10.2 %** (a scoped exception, [due for
+falsification](https://github.com/vitruvyan/motus/issues/38)), trace
+materialization **+0.3 %**.
 
 **Why the change.** The previous ceilings came from one host and were guarded
 by checking the CPU model contained `EPYC`. That is a brand, not a performance
@@ -556,7 +578,7 @@ raw runs, still matches interpreter and runtime identity, and still refuses an
 incomplete trace: completeness is an invariant, never a measurement.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-v0.7.0/` for the committed observations.
+`benchmarks/relative-0.8.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -572,8 +594,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.7.0-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-v0.7.0/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.8.0/*.json
 ```
 
 ## Native package surface
