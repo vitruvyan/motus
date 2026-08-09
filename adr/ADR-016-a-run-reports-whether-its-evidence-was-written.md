@@ -1,7 +1,10 @@
 # ADR-016 — a run reports whether its evidence was written
 
-- **Status:** ACCEPTED — founder, 2026-08-09
+- **Status:** ACCEPTED
 - **Date:** 2026-08-08
+- **Accepted:** 2026-08-09 by the founder, after an independent adversarial round found the
+  first version reached run() and arun() and left both streaming surfaces
+  carrying nothing
 - **Authority:** founder decision, 2026-08-08, choosing option 1 of three after
   the CTO reproduced all four terminal paths
 - **Closes:** #42

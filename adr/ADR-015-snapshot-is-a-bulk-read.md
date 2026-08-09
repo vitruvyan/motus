@@ -1,7 +1,10 @@
 # ADR-015 — `State.snapshot()` is a bulk read, and is recorded as one
 
-- **Status:** ACCEPTED — founder, 2026-08-09
+- **Status:** ACCEPTED
 - **Date:** 2026-08-08
+- **Accepted:** 2026-08-09 by the founder, having accepted with it that traces already
+  archived stop verifying — the project certifies nothing yet, and this is the
+  last window in which that answer is available
 - **Authority:** founder decision, 2026-08-08, after a hostile round found the
   defect and the CTO reproduced it on a credit-assessment graph
 - **Amends:** no contract text. §3.1a and §3.2 of `contract/node-protocol.md`
