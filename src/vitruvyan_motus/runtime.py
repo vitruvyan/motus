@@ -556,6 +556,16 @@ class Runtime:
         rows: list[list[str]] = []
         constraints: list[tuple[str, str]] = []
         changed = not self._identity_cache
+        # Staged, not written through. `_node_identity_parts` runs consumer
+        # code and a node that raises aborts the loop before the fingerprint
+        # below is recomputed. Committing rows as they are computed would leave
+        # the nodes already visited cached against the OLD fingerprint — and on
+        # the next start they compare equal to their own cache, `changed` stays
+        # False, and the fingerprint is never recomputed again. The header would
+        # then record configuration the run did not use, which node-protocol.md
+        # §"motus_config" forbids in the same words it uses to require this
+        # method. A refresh that raises must leave identity as it found it.
+        staged: dict[str, tuple[Any, Any, list[str], bool]] = {}
         for declaration in self._declarations.values():
             name = declaration.name
             try:
@@ -569,7 +579,7 @@ class Runtime:
             else:
                 qualified, source_hash, _ = static
                 row = [name, qualified, source_hash, _config_fingerprint(material)]
-                self._identity_cache[name] = (static, material, row, opaque)
+                staged[name] = (static, material, row, opaque)
                 changed = True
             rows.append(row)
             if opaque:
@@ -583,7 +593,9 @@ class Runtime:
                 # an explicit recorded property, so a run containing one may
                 # not silently keep a `full` claim it cannot honour.
                 constraints.append(("partial", f"node:{name}:async"))
+        # Past the last statement that can raise: commit the whole refresh.
         current_constraints = tuple(constraints)
+        self._identity_cache.update(staged)
         if changed or current_constraints != self._identity_constraints:
             self._code_fingerprint = (
                 "code:sha256:" + hashlib.sha256(_canonical_bytes(rows)).hexdigest()

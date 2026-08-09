@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus.context import ReplayStatus
-from vitruvyan_motus.errors import NodeFailed, SinkFailed
+from vitruvyan_motus.errors import NodeConfigurationError, NodeFailed, SinkFailed
 from vitruvyan_motus.graph import GraphSpec
 from vitruvyan_motus.observers import InMemoryTraceSink
 from vitruvyan_motus.runtime import (
@@ -733,6 +733,118 @@ def test_redacted_metadata_and_jsonl_remain_validator_clean():
     )
     assert violations == []
     assert reassembled == document
+
+
+class _MutableConfig:
+    """A node whose configuration is mutable, which is the case ADR-008 §4
+    evaluates `motus_config()` at every run start to keep honest."""
+
+    def __init__(self, threshold):
+        self.threshold = threshold
+
+    def motus_config(self):
+        return {"threshold": self.threshold}
+
+    def __call__(self, state):
+        return state
+
+
+class _ConfigThatCanRefuse(_MutableConfig):
+    def __init__(self):
+        super().__init__(0)
+        self.armed = False
+
+    def motus_config(self):
+        if self.armed:
+            raise RuntimeError("configuration source unavailable")
+        return {"threshold": self.threshold}
+
+
+def test_a_refused_start_leaves_the_code_fingerprint_recomputable():
+    """A refresh that raises must leave identity exactly as it found it.
+
+    `_refresh_identity` walks the declarations in order and used to commit each
+    node's new material into `_identity_cache` as it went, recomputing the
+    fingerprint only after the loop.  A node that raised part-way -- ADR-008 §4
+    puts a `motus_config()` failure exactly there -- left the nodes already
+    visited cached against the OLD fingerprint.  On every later start they then
+    compared equal to their own cache, `changed` stayed False, and the
+    fingerprint was never recomputed again: the header recorded configuration
+    the run did not use, for the life of the Runtime.
+
+    Nothing downstream can catch this.  SB2 makes `code_fingerprint` the one
+    identity a validator cannot recompute offline, so the runtime's honesty at
+    run start is the whole of the guarantee.
+    """
+    first = _MutableConfig(1)
+    second = _ConfigThatCanRefuse()
+    spec = _spec(
+        [{"name": "first", "effect_class": "pure"}, {"name": "second", "effect_class": "pure"}],
+        {"first": {"kind": "next", "to": "second"}, "second": {"kind": "terminal"}},
+    )
+    runtime = Runtime(spec, {"first": first, "second": second})
+
+    before = runtime.run(run_id="before").trace.run["graph"]["code_fingerprint"]
+
+    first.threshold = 2
+    second.armed = True
+    with pytest.raises(NodeConfigurationError):
+        runtime.run(run_id="refused")
+
+    second.armed = False
+    after = runtime.run(run_id="after").trace.run["graph"]["code_fingerprint"]
+
+    assert after != before, (
+        "the refused start left the identity cache half committed, and the "
+        "fingerprint now describes configuration the run did not use"
+    )
+
+    control = Runtime(spec, {"first": _MutableConfig(1), "second": _ConfigThatCanRefuse()})
+    control_before = control.run(run_id="control-before").trace.run["graph"]["code_fingerprint"]
+    control.nodes["first"].threshold = 2
+    control_after = control.run(run_id="control-after").trace.run["graph"]["code_fingerprint"]
+    assert control_before == before and control_after == after, (
+        "the same config change without a refused start produces a different "
+        "fingerprint pair -- the test is not comparing what it claims to"
+    )
+
+
+def test_an_unchanged_configuration_is_not_refingerprinted_every_run(monkeypatch):
+    """Staging the refresh must still commit it.
+
+    Dropping the commit altogether keeps every correctness test green -- the
+    fingerprint is simply recomputed from scratch on every start, which is
+    right by accident. What it loses is the cache's whole purpose, and it loses
+    it silently: `_refresh_identity` runs on the hot path of every run.
+    """
+    import vitruvyan_motus.runtime as runtime_module
+
+    calls = []
+    real = runtime_module._config_fingerprint
+
+    def counted(material):
+        calls.append(material)
+        return real(material)
+
+    monkeypatch.setattr(runtime_module, "_config_fingerprint", counted)
+
+    node = _MutableConfig(1)
+    spec = _spec([{"name": "first", "effect_class": "pure"}], {"first": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"first": node})
+
+    runtime.run(run_id="first-run")
+    after_first = len(calls)
+    runtime.run(run_id="second-run")
+
+    assert len(calls) == after_first, (
+        "an unchanged configuration was fingerprinted again: the staged "
+        f"refresh is never committed ({len(calls) - after_first} extra calls)"
+    )
+    assert set(runtime._identity_cache) == {"first"}
+
+    node.threshold = 2
+    runtime.run(run_id="third-run")
+    assert len(calls) > after_first, "a changed configuration was not refingerprinted"
 
 
 def test_runtime_configuration_cannot_diverge_from_recorded_fingerprints():
