@@ -14,9 +14,17 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.8.0](https://github.com/vitruvyan/motus/releases/tag/v0.8.0)
+> **Current release:** [Motus 0.7.0](https://github.com/vitruvyan/motus/releases/tag/v0.7.0)
+> · **0.8.0 is on `main`, untagged and deliberately so.**
 >
 > Apache-2.0 · stdlib-only kernel · validator included · source release · not yet published on PyPI
+
+0.8.0 adds the integrity chain and **does not pass its own cumulative
+performance gate**: +82.6 % per-node against a +20 % budget measured from
+v0.6.1. The per-release arm accepts a declared exception for it; the cumulative
+arm accepts none, by construction — it is the one gate built not to be waived,
+and it is doing its job. Rather than weaken it to publish a tag, the code ships
+on `main` and the tag waits for the runtime to earn the room back.
 
 ## The problem
 
