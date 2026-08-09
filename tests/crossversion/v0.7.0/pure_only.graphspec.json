@@ -1,0 +1,34 @@
+{
+  "entry": "seed",
+  "name": "xv-pure-only",
+  "nodes": [
+    {
+      "effect_class": "pure",
+      "name": "seed",
+      "writes_declared": [
+        "n"
+      ]
+    },
+    {
+      "effect_class": "pure",
+      "name": "double",
+      "reads_declared": [
+        "n"
+      ],
+      "writes_declared": [
+        "doubled"
+      ]
+    }
+  ],
+  "schema_version": "1.0.0",
+  "transitions": {
+    "double": {
+      "kind": "terminal"
+    },
+    "seed": {
+      "kind": "next",
+      "to": "double"
+    }
+  },
+  "version": "1.0.0"
+}

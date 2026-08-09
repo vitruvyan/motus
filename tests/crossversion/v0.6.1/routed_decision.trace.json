@@ -1,0 +1,199 @@
+{
+  "records": [
+    {
+      "initial_state": {
+        "decisions": [],
+        "facts": [],
+        "rejections": []
+      },
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "intent": "",
+      "kind": "run_started",
+      "seq": 1,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "classify",
+      "seq": 2,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "pure",
+      "effects": [],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "classify",
+      "outcome": "returned",
+      "reads": [],
+      "seq": 3,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [
+          {
+            "key": "branch",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": "big"
+          }
+        ],
+        "facts": [],
+        "rejections": []
+      }
+    },
+    {
+      "after": "classify",
+      "candidates": [
+        {
+          "condition": {
+            "key": "big",
+            "kind": "map"
+          },
+          "taken": true,
+          "target": "big_path"
+        },
+        {
+          "condition": {
+            "key": "small",
+            "kind": "map"
+          },
+          "taken": false,
+          "target": "small_path"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": "branch",
+      "origin": {
+        "index": 0,
+        "kind": "transition",
+        "seq": 3
+      },
+      "outcome": "matched",
+      "selected": "big_path",
+      "seq": 4,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": "big"
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "big_path",
+      "seq": 5,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "pure",
+      "effects": [],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "big_path",
+      "outcome": "returned",
+      "reads": [],
+      "seq": 6,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [],
+        "facts": [
+          {
+            "key": "label",
+            "source": "big_path",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": "big"
+          }
+        ],
+        "rejections": []
+      }
+    },
+    {
+      "after": "big_path",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "taken": true,
+          "target": "END"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "seq": 7,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": null
+    },
+    {
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "run_completed",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "seq": 8,
+      "ts": "2026-08-04T12:00:00Z"
+    }
+  ],
+  "run": {
+    "created_ts": "2026-08-04T12:00:00Z",
+    "durability_profile": "in-memory",
+    "graph": {
+      "code_fingerprint": "code:sha256:7b31fc22b2b7d5b659333c2d37492ad752106c9d91c633dced9ca12ebd6d6216",
+      "graph_fingerprint": "graph:sha256:05215dd9cdfb482159ad9eebf320752ebb842fbd24f69c143a50f953d2aa15e0",
+      "name": "xv-routed-decision",
+      "spec_schema_version": "1.0.0",
+      "version": "1.0.0"
+    },
+    "metadata": {},
+    "policy": "strict",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "run_id": "xv-v0.6.1-routed_decision"
+  },
+  "schema_version": "1.1.0"
+}

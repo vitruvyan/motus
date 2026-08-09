@@ -1,0 +1,197 @@
+{
+  "records": [
+    {
+      "initial_state": {
+        "decisions": [],
+        "facts": [],
+        "rejections": []
+      },
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "intent": "",
+      "kind": "run_started",
+      "seq": 1,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "seed",
+      "seq": 2,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "pure",
+      "effects": [],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "seed",
+      "outcome": "returned",
+      "reads": [],
+      "seq": 3,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [],
+        "facts": [
+          {
+            "key": "n",
+            "source": "seed",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": 10
+          }
+        ],
+        "rejections": []
+      }
+    },
+    {
+      "after": "seed",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "taken": true,
+          "target": "double"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "double",
+      "seq": 4,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": null
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "double",
+      "seq": 5,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "pure",
+      "effects": [],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "double",
+      "outcome": "returned",
+      "reads": [
+        {
+          "key": "n",
+          "origin": {
+            "collection": "facts",
+            "index": 0,
+            "kind": "transition",
+            "seq": 3
+          }
+        }
+      ],
+      "seq": 6,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [],
+        "facts": [
+          {
+            "key": "doubled",
+            "source": "double",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": 20
+          }
+        ],
+        "rejections": []
+      }
+    },
+    {
+      "after": "double",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "taken": true,
+          "target": "END"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "seq": 7,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": null
+    },
+    {
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "run_completed",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "seq": 8,
+      "ts": "2026-08-04T12:00:00Z"
+    }
+  ],
+  "run": {
+    "created_ts": "2026-08-04T12:00:00Z",
+    "durability_profile": "in-memory",
+    "graph": {
+      "code_fingerprint": "code:sha256:3bc514a38388f9d0e3a58fcb283adfa9e3f674ea6542ba7b1ef63f0fac44f984",
+      "graph_fingerprint": "graph:sha256:4d8168413f6f33aaef45184f9dff57451333a997ab5cf99ed0181303fe8dc936",
+      "name": "xv-pure-only",
+      "spec_schema_version": "1.0.0",
+      "version": "1.0.0"
+    },
+    "metadata": {},
+    "policy": "strict",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "run_id": "xv-v0.7.0-pure_only"
+  },
+  "schema_version": "1.1.0"
+}

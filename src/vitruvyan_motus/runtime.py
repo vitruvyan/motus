@@ -134,7 +134,20 @@ def _config_material(node: Callable[..., Any]) -> tuple[tuple[str, Any], bool]:
             return ("value", _strict_plain_json(config())), False
         return ("marker", "opaque"), True
     target = inspect.unwrap(node)
-    if inspect.isfunction(target) and target.__closure__ is None and "<locals>" not in target.__qualname__:
+    if inspect.isfunction(target) and target.__closure__ is None:
+        # `__closure__ is None` is the interpreter's own statement that this
+        # function captured nothing, and that is the whole question: a callable
+        # with no captured state has no configuration to fingerprint.
+        #
+        # This condition used to also require "<locals>" not in __qualname__,
+        # which marked a nested `def` capturing NOTHING as `opaque_config` while
+        # a module-level `def` with identical behaviour reported `none`. The
+        # recipe in node-protocol.md §6.3 names closures over non-JSON state and
+        # instances without `motus_config()`; it never says "lexically nested,
+        # regardless of capture". No comment explained the extra clause, no ADR
+        # discussed it, and no test exercised it — so it was a stricter rule
+        # than the contract, applied silently, and every graph built by a
+        # factory function inherited a false constraint from it.
         return ("marker", "none"), False
     if inspect.ismethod(target) and target.__self__ is not None:
         config = getattr(target.__self__, "motus_config", None)

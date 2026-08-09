@@ -1,0 +1,42 @@
+{
+  "entry": "classify",
+  "name": "xv-routed-decision",
+  "nodes": [
+    {
+      "effect_class": "pure",
+      "name": "classify"
+    },
+    {
+      "effect_class": "pure",
+      "name": "big_path",
+      "writes_declared": [
+        "label"
+      ]
+    },
+    {
+      "effect_class": "pure",
+      "name": "small_path",
+      "writes_declared": [
+        "label"
+      ]
+    }
+  ],
+  "schema_version": "1.0.0",
+  "transitions": {
+    "big_path": {
+      "kind": "terminal"
+    },
+    "classify": {
+      "kind": "route",
+      "map": {
+        "big": "big_path",
+        "small": "small_path"
+      },
+      "on": "branch"
+    },
+    "small_path": {
+      "kind": "terminal"
+    }
+  },
+  "version": "1.0.0"
+}

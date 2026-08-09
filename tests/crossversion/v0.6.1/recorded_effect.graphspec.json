@@ -1,0 +1,34 @@
+{
+  "entry": "fetch",
+  "name": "xv-recorded-effect",
+  "nodes": [
+    {
+      "effect_class": "recorded_effect",
+      "name": "fetch",
+      "writes_declared": [
+        "payload"
+      ]
+    },
+    {
+      "effect_class": "pure",
+      "name": "summarize",
+      "reads_declared": [
+        "payload"
+      ],
+      "writes_declared": [
+        "summary"
+      ]
+    }
+  ],
+  "schema_version": "1.0.0",
+  "transitions": {
+    "fetch": {
+      "kind": "next",
+      "to": "summarize"
+    },
+    "summarize": {
+      "kind": "terminal"
+    }
+  },
+  "version": "1.0.0"
+}

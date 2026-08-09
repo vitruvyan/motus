@@ -740,3 +740,80 @@ def test_a_node_that_needs_the_whole_state_declares_the_collections_and_passes()
     ]
     assert transitions[0]["violations"] == []
     _assert_clean(result, spec)
+
+
+def _nested_capturing_nothing():
+    """A factory whose product captures no state at all."""
+    def node(state):
+        return state.with_fact(Fact("nested", True, "test", NOW))
+    return node
+
+
+def _module_level_equivalent(state):
+    return state.with_fact(Fact("nested", True, "test", NOW))
+
+
+def test_a_nested_function_that_captures_nothing_is_not_opaque():
+    """Two functions with identical behaviour reported different capability.
+
+    `_config_material` asks whether a callable carries CONFIGURATION worth
+    fingerprinting. `__closure__ is None` is the interpreter's own statement
+    that a function captured nothing, which answers that question completely.
+
+    It used to also require the qualified name to be free of `<locals>`, so a
+    `def` returned by a factory — capturing nothing — reported
+    `node:<name>:opaque_config` while the module-level twin reported none. The
+    recipe in node-protocol.md §6.3 names closures over non-JSON state and
+    instances without `motus_config()`; it never says "lexically nested". The
+    extra clause was stricter than the contract, undocumented, and untested, and
+    graph-builder factories are the single most common shape in real code — so
+    the false constraint was not rare, it was the norm.
+    """
+    spec = _spec(
+        [{"name": "n", "effect_class": "pure", "writes_declared": ["nested"]}],
+        {"n": {"kind": "terminal"}},
+    )
+
+    def constraints_for(node):
+        result = Runtime(spec, {"n": node}).run(
+            State.empty("nesting"), run_id="r1",
+            replay=ReplayStatus.declared("full", ()),
+        )
+        terminal = [
+            record for record in result.trace.records
+            if record["kind"].startswith("run_")
+        ][-1]
+        return [
+            constraint for constraint in terminal["replay"]["constraints"]
+            if "opaque_config" in constraint
+        ]
+
+    assert constraints_for(_module_level_equivalent) == []
+    assert constraints_for(_nested_capturing_nothing()) == []
+
+
+def test_a_nested_function_that_does_capture_is_still_opaque():
+    """The fix must not open the gate it narrowed.
+
+    A closure over real configuration still has configuration this runtime
+    cannot fingerprint, and still earns the constraint. Asserting only the
+    negative case would let a later edit delete the whole branch and stay green.
+    """
+    def factory(threshold):
+        def node(state):
+            return state.with_fact(Fact("nested", threshold, "test", NOW))
+        return node
+
+    spec = _spec(
+        [{"name": "n", "effect_class": "pure", "writes_declared": ["nested"]}],
+        {"n": {"kind": "terminal"}},
+    )
+    result = Runtime(spec, {"n": factory(7)}).run(
+        State.empty("nesting"), run_id="r1",
+        replay=ReplayStatus.declared("full", ()),
+    )
+    terminal = [
+        record for record in result.trace.records
+        if record["kind"].startswith("run_")
+    ][-1]
+    assert "node:n:opaque_config" in terminal["replay"]["constraints"]
