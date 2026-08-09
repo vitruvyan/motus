@@ -50,17 +50,32 @@ unchanged, which is the only reason the result below is worth anything.
 user query. The harness is `e2e/pipeline_query.py`; the service was the
 deployed one, not a stub.
 
+**Release and host, which `guarantees.md` §3 requires and condition 2 below
+repeats.** Motus at `64bea3f` — `main` after PR #68, the tree that becomes
+0.8.1. Host: AMD EPYC Processor (with IBPB), Linux 6.8.0-124, CPython 3.12.3.
+This measurement is 0.8.1 evidence and may not be inherited by any later
+release, per decision 4.
+
 ```
-request, end to end   :  6492.8 ms
-of which the pipeline :  6489.1 ms
-of which Motus        :     3.7 ms   =  0.057 %
+request, end to end                        :  6492.8 ms
+of which the awaited service               :  6489.1 ms
+of which everything else                   :     3.7 ms   =  0.057 %
 ```
 
-Six runs. The pipeline's own latency varied between 4 447 ms and 57 958 ms for
-the identical query; Motus's share never approached the threshold. The trace
+**The third line is an upper bound on Motus, not a measurement of it.** It
+contains the consumer's own node code — `json.loads` over the service's
+response body, the construction of fifteen Facts — because the harness times
+the network call and the whole run, and attributes the difference to "not the
+service". Motus's true share is smaller than 0.057 %, by an amount not
+separated here. The bound is stated in the direction that can only weaken the
+argument, which is the only direction it may be stated in.
+
+Six runs. The service's own latency varied between 4 447 ms and 57 958 ms for
+the identical query; the bound never approached the threshold. The trace
 validated clean on every run, schema 2.0.0, integrity chain present.
 
-**H1 survives, by a factor of 17 against its own pre-registered criterion.**
+**H1 survives, by a factor of 17 against its own pre-registered criterion, on
+an upper bound.**
 
 ### What the measurement does not say
 
@@ -68,15 +83,27 @@ ADR-012 attached a second clause to the falsification — *"or if it grows with
 graph size, which the no-op profile cannot tell us"* — and this measurement
 does not test it. The graph had five nodes.
 
-The growth is not mysterious, though, and it can be stated as an inequality
-rather than a hope. At 0.8.0's measured 116 µs per realistic node, the
-executor's share stays under 1 % while
+An earlier draft of this ADR answered it with an inequality, `nodes × 116 µs <
+0.01 × wall-clock`, and gave boundaries of 560 and 43 nodes. **That was wrong
+and it is withdrawn.** Measuring it on the host above rather than asserting it:
 
-    nodes × 116 µs  <  0.01 × wall-clock
+| graph | cost of `run()` |
+|---|---:|
+| 5 pure nodes, nothing written | 0.53 ms |
+| 5 pure nodes, 15 facts written | 0.78 ms |
+| 5 pure nodes, 40 facts written | 1.04 ms |
+| 200 pure nodes, nothing written | 19.40 ms |
 
-which is **560 nodes** for a 6.5-second request, and **43 nodes** for a
-500-millisecond one. A consumer outside that envelope is outside H1, and the
-number it must check is its own, not this one.
+Two things follow, and the second is the one that kills the formula. Node count
+alone is roughly linear at 97 µs per node **for nodes that write nothing** —
+and the moment they write, the cost follows the payload instead: the same
+five-node graph doubles between 0 and 40 facts without gaining a node. A trace
+is a record of what happened, so a graph that records more costs more, and no
+function of node count can bound that.
+
+**So the envelope is not stated, because it is not measured.** What is measured
+is one point: this graph, this payload, this host, 0.057 %. A consumer must
+take its own number, and decision 4 requires exactly that of every release.
 
 And the workload measured is I/O-bound: the node awaited a service that took
 seconds. A consumer whose nodes are pure computation gets the full doubling
@@ -105,13 +132,20 @@ measured anything.
 A release MAY ship with the cumulative arm failing **if and only if all four
 hold**:
 
-1. the **per-release** arm passes, exceptions declared per ADR-012 §3;
+1. the **per-release** arm passes, with any exception declared the way ADR-012
+   §"0.7.0 does not fit the budget it is setting" requires — a row in
+   `DECLARED_EXCEPTIONS` in `check_relative_baseline.py`, keyed on the release
+   and carrying its reason (ADR-012 §3 is about absolute figures and does not
+   govern exceptions);
 2. a **real-workload measurement** is published for that release — one graph, a
    real consumer, executor share of run wall-clock, with the method and the
    host;
 3. that share is **under 1 %**, the criterion ADR-012 pre-registered;
-4. the README carries **both** figures — the failing ratio and the measured
-   share — in the same paragraph, so neither can be read without the other.
+4. the README carries **every failing cumulative ratio** — all of them, not the
+   mildest — alongside the measured share, in the same paragraph, so neither
+   can be read without the other. For 0.8.x that is three numbers, and a README
+   that printed only `+20.3 %` while omitting `+121.6 %` would satisfy a
+   singular reading of this rule and defeat it.
 
 Absent a real consumer, condition 2 cannot be met and the exemption does not
 exist. This is deliberately stricter than what 0.8.0 shipped under: 0.8.0 went
