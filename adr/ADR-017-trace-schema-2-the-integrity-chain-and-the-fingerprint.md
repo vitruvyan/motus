@@ -67,6 +67,25 @@ record **without its own integrity block** — a hash cannot cover itself — an
 null: it has no predecessor, and a genesis constant would look like evidence
 while carrying none.
 
+**The chain starts at the header, not at the first record.** An automated
+reviewer found that chaining records alone left `run_id`, `policy`, `metadata`
+and `graph.code_fingerprint` outside the root: all four could be rewritten, the
+terminal's `payload_hash` did not move, and the validator passed the result
+clean. Reproduced before believing it:
+
+```
+run_id  : originale -> un-altro-run
+policy  : strict -> exploration
+radice invariata: True
+il validatore: NIENTE — passa pulito
+```
+
+An anchor over that root proves a sequence of records existed and says nothing
+about **whose** run they were, under **which** policy, of **which** graph — in a
+product whose whole claim is the anchored root, that is a hole in the claim
+rather than a detail. So the header's digest is the first record's `prev_hash`,
+and `prev_hash` is never null: a null first link is the same hole with a name.
+
 The previous hash is already in the previous record, so the chain needs no
 accumulator. **A trace therefore carries its own chain and is re-checkable from
 nothing but itself**, which is what makes an offline validator possible at all.

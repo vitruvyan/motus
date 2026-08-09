@@ -533,7 +533,10 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
     # editor who can also re-seal the chain still passes. That is exactly the
     # gap ADR-014 documents, and exactly why the chain is not a substitute for
     # a recipe.
-    previous = None
+    previous = "sha256:" + hashlib.sha256(
+        json.dumps({"schema_version": document["schema_version"], "run": document["run"]},
+                   sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     for record in document["records"]:
         payload = dict(record)
         payload["integrity"] = {"payload_hash": None, "prev_hash": None}

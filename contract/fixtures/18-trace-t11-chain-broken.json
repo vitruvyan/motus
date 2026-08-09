@@ -60,7 +60,7 @@
         "kind": "run_started",
         "integrity": {
           "payload_hash": "sha256:9db53eb0f4364b2c79e75493232e9e1865dc737456c60231714ad08dba183c25",
-          "prev_hash": null
+          "prev_hash": "sha256:32f51ffc074070601c30d3dd0f3585ee8a98bea69a9e0a389fb51cc158dbe5e3"
         },
         "intent": "istruttoria",
         "initial_state": {

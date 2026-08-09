@@ -12,7 +12,9 @@ from vitruvyan_motus.context import ReplayStatus
 from vitruvyan_motus.errors import NodeFailed, SinkFailed
 from vitruvyan_motus.graph import GraphSpec
 from vitruvyan_motus.observers import InMemoryTraceSink
-from vitruvyan_motus.runtime import DurabilityProfile, Policy, Runtime
+from vitruvyan_motus.runtime import (
+    DurabilityProfile, Policy, Runtime, _config_fingerprint, _config_material,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import Decision, Fact, Rejection, redact
 
@@ -817,3 +819,55 @@ def test_a_nested_function_that_does_capture_is_still_opaque():
         if record["kind"].startswith("run_")
     ][-1]
     assert "node:n:opaque_config" in terminal["replay"]["constraints"]
+
+
+def test_default_arguments_are_configuration_and_are_fingerprinted():
+    """The hole the previous fix opened, and why it is not closed by reverting.
+
+    A function's configuration lives in exactly two places it can carry without
+    a closure: `__defaults__` and `__kwdefaults__`. `def node(state, *,
+    threshold=x)` keeps x there while `__closure__` stays None, so a factory can
+    produce two nodes that behave differently and capture nothing.
+
+    Removing the `<locals>` clause — a rule stricter than the contract — let both
+    report `none` and share one configuration fingerprint. A false constraint is
+    noise. A false IDENTITY is the defect class this project exists to prevent:
+    two graphs that do different things claiming the same `code_fingerprint`.
+
+    So defaults are fingerprinted the way a partial's arguments are, which is
+    what the qualname check had been accidentally standing in for — and unlike
+    that check, this distinguishes the nodes rather than refusing to look.
+    """
+    def factory(threshold):
+        def node(state, *, threshold=threshold):
+            return state.with_fact(Fact("t", threshold, "test", NOW))
+        return node
+
+    def positional_factory(threshold):
+        def node(state, threshold=threshold):
+            return state.with_fact(Fact("t", threshold, "test", NOW))
+        return node
+
+    def fingerprint(node):
+        material, _ = _config_material(node)
+        return _config_fingerprint(material)
+
+    assert fingerprint(factory(7)) != fingerprint(factory(99))
+    assert fingerprint(positional_factory(1)) != fingerprint(positional_factory(2))
+    assert fingerprint(factory(7)) == fingerprint(factory(7))
+
+
+def test_defaults_that_are_not_json_are_honestly_opaque():
+    """Fingerprinting configuration requires configuration that reduces to JSON.
+
+    A default that does not is not identifiable, and saying `none` about it
+    would be the same false identity in a quieter form.
+    """
+    def factory(handle):
+        def node(state, *, handle=handle):
+            return state
+        return node
+
+    material, opaque = _config_material(factory(object()))
+    assert opaque is True
+    assert material == ("marker", "opaque")

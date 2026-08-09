@@ -53,7 +53,7 @@
         "kind": "run_started",
         "integrity": {
           "payload_hash": "sha256:452b7d5299a5f54cd011f41beb9a00bd80b19d546d7573c5aa9adbd2c1ba024b",
-          "prev_hash": null
+          "prev_hash": "sha256:12beed8684ed3f525540b17279593e861009b72affa299be5968be500e66585a"
         },
         "intent": "consulto",
         "initial_state": {

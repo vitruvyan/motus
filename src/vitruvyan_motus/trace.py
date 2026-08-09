@@ -402,8 +402,21 @@ class Trace:
         predecessor, and inventing a genesis value would be a constant that
         looks like evidence.
         """
-        previous = self._records[len(self._records) - 1] if len(self._records) else None
-        prev_hash = previous["integrity"]["payload_hash"] if previous else None
+        # The header is the first record's predecessor, not nothing. Chaining
+        # records alone left run_id, policy, metadata and graph.code_fingerprint
+        # outside the root entirely: they could all be rewritten and the root —
+        # the value an anchor publishes — did not move, and the validator passed
+        # clean. Anchoring that root would have proved a sequence of records
+        # existed while saying nothing about WHOSE run they were, under WHICH
+        # policy, of WHICH graph.
+        #
+        # So the chain starts at the header. `prev_hash` is never null: a null
+        # first link would be the same hole with a name.
+        if len(self._records):
+            prev_hash = self._records[len(self._records) - 1]["integrity"]["payload_hash"]
+        else:
+            header = {"schema_version": self._schema_version, "run": self._run}
+            prev_hash = "sha256:" + hashlib.sha256(_canonical_bytes(header)).hexdigest()
         # Hashed as it arrives, with its integrity block still {null, null} — the
         # shape `_base` builds. Excluding the block by copying the record without
         # it costs an allocation per record and buys nothing: what the digest

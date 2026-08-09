@@ -1195,6 +1195,11 @@ def _execution_violations(
     return v
 
 
+def document_version_header(doc: dict) -> str:
+    """The schema version as the header carries it, for the chain's first link."""
+    return doc.get("schema_version")
+
+
 def _trace_semantics(
     doc: dict, spec: dict | None, expect_complete: bool
 ) -> list[Violation]:
@@ -1328,7 +1333,18 @@ def _trace_semantics(
     # its root.
     version = doc.get("schema_version")
     if version == "2.0.0":
-        expected_prev = None
+        # The chain starts at the HEADER, so the first record's prev_hash is the
+        # header's digest and never null. Without this the header sat outside
+        # the root: run_id, policy, metadata and graph.code_fingerprint could all
+        # be rewritten, the terminal's payload_hash did not move, and this
+        # validator passed the result clean. An anchor over that root proves a
+        # sequence of records existed and says nothing about whose run it was.
+        expected_prev = "sha256:" + hashlib.sha256(
+            canonical_json({
+                "schema_version": document_version_header(doc),
+                "run": doc.get("run") or {},
+            })
+        ).hexdigest()
         for i, record in enumerate(records):
             integrity = record.get("integrity") or {}
             actual = integrity.get("payload_hash")
@@ -1363,7 +1379,9 @@ def _trace_semantics(
                         f"$.records[{i}].integrity.prev_hash",
                         f"prev_hash is {integrity.get('prev_hash')!r}; the chain "
                         f"requires {expected_prev!r}"
-                        + (" (the first record has no predecessor)" if i == 0 else ""),
+                        + (" (the first record's predecessor is the HEADER; a "
+                           "header outside the chain can be rewritten without "
+                           "moving the root)" if i == 0 else ""),
                     )
                 )
             expected_prev = actual

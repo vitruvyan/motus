@@ -1,6 +1,9 @@
 {
   "artifact": "trace",
-  "expect": "valid",
+  "expect": "invalid",
+  "layer": "semantic",
+  "rule": "T11",
+  "reason_contains": "the first record's predecessor is the HEADER",
   "spec": {
     "schema_version": "1.0.0",
     "name": "istruttoria",
@@ -39,7 +42,7 @@
         "code_fingerprint": "code:sha256:6bd5b7ffa35a0df3294c8c594ebceb641d8798360ea73451647fc6f91fccc1e1",
         "spec_schema_version": "1.0.0"
       },
-      "policy": "strict",
+      "policy": "exploration",
       "durability_profile": "in-memory",
       "replay": {
         "capability": "none",
