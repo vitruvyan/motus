@@ -1,6 +1,6 @@
 # ADR-014 — `result_fingerprint`: what it is a fingerprint of
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED — founder, 2026-08-09
 - **Date:** 2026-08-08
 - **Authority:** founder decision, 2026-08-07, after three adversarial rounds
   against the first external integration

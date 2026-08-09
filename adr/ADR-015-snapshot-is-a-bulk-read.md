@@ -1,6 +1,6 @@
 # ADR-015 — `State.snapshot()` is a bulk read, and is recorded as one
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED — founder, 2026-08-09
 - **Date:** 2026-08-08
 - **Authority:** founder decision, 2026-08-08, after a hostile round found the
   defect and the CTO reproduced it on a credit-assessment graph

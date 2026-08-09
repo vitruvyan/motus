@@ -1,6 +1,6 @@
 # ADR-016 — a run reports whether its evidence was written
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED — founder, 2026-08-09
 - **Date:** 2026-08-08
 - **Authority:** founder decision, 2026-08-08, choosing option 1 of three after
   the CTO reproduced all four terminal paths
