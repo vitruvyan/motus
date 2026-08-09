@@ -1,7 +1,8 @@
 # ADR-018 — H1 measured: the executor's share of a real request
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-09
+- **Accepted:** 2026-08-09 by the founder
 - **Authority:** founder decision to publish Motus on PyPI, which the cumulative gate currently blocks
 - **Depends on:** ADR-012, ADR-017
 - **Amends:** ADR-012 §"The reason for deferring is a hypothesis" (H1 is now measured, and the ADR said it would be amended to say so) and ADR-012 §4 (what a cumulative FAIL entails — **not** its budget, its anchor or its arithmetic, none of which change)
