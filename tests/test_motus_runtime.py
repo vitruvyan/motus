@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -325,6 +326,245 @@ def test_pre_run_cancellation_is_consumed_without_executing_a_node():
     assert completed.status == "completed"
     assert executed == ["node"]
     _assert_clean(completed, spec)
+
+
+def test_a_queued_cancellation_survives_a_start_that_never_began_a_run():
+    """FA-002: `_start` latches the lifecycle before it can still fail.
+
+    The claim is entered under the lock -- `_has_started` up, the queued reason
+    consumed into `_cancel_reason` -- and only afterwards does the body run the
+    checks that reject the call.  A rejected `run_id` therefore spent the
+    Runtime's one queued cancellation on a run that wrote no header, executed
+    no node and returned no result.
+
+    The caller lodges the request ONCE, as a signal handler does.  Re-lodging
+    it here would let the fix be deleted with this test still green: the second
+    request satisfies every assertion below on its own.
+    """
+    executed = []
+
+    def node(state):
+        executed.append("node")
+        return state
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    assert runtime.cancel("shutdown before start") is True
+
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    cancelled = runtime.run(run_id="after-the-refused-start")
+    assert cancelled.status == "cancelled"
+    assert executed == []
+    terminal = cancelled.trace.records[-1]
+    assert terminal["reason"] == "shutdown before start"
+    _assert_clean(cancelled, spec)
+
+
+def test_a_refused_start_does_not_lock_the_caller_out_of_cancelling():
+    """The other half of the same loss, and the one the caller can feel.
+
+    `_has_started` staying up after a start that never ran made ADR-008 §1 read
+    the Runtime as used, so every later `cancel()` returned False and there was
+    no way back for a caller who had just been told True.
+    """
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": lambda state: state})
+
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    assert runtime.cancel("lodged after the refusal") is True
+    assert runtime.run(run_id="honours-it").status == "cancelled"
+
+
+def test_a_failed_start_does_not_reopen_the_queue_on_a_used_runtime():
+    """The direction that must NOT change, and the reason the latch cannot be
+    blanked.
+
+    Rolling `_has_started` back to False unconditionally would let a Runtime
+    that has already executed accept a queued cancellation again -- exactly the
+    leak into "a later unrelated run" that ADR-008 §1 closed.  The failed start
+    must restore the flag it found, not clear it.
+    """
+    def node(state):
+        return state
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    assert runtime.run(run_id="a-real-run").status == "completed"
+
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    assert runtime.cancel("idle, after a used runtime") is False
+    assert runtime.run(run_id="unaffected").status == "completed"
+
+
+class _CancelsWhileTheStartIsClaimed:
+    """A node whose configuration cancels the run being started.
+
+    `_refresh_identity` evaluates `motus_config()` inside `_start`, after the
+    claim and before the `run_id` check, so this reaches the window a
+    concurrent caller reaches -- deterministically, on one thread.  ADR-008 §4
+    puts user code there by design; it is not an artificial hook.
+    """
+
+    def __init__(self, runtime_box, reason):
+        self._box = runtime_box
+        self._reason = reason
+        self.armed = False
+
+    def motus_config(self):
+        if self.armed:
+            self.armed = False
+            self._box[0].cancel(self._reason)
+        return {"armed": False}
+
+    def __call__(self, state):
+        return state
+
+
+def test_a_cancel_bound_to_a_start_that_never_ran_is_not_retargeted_later():
+    """Restoring `_cancel_reason` rather than what the claim took retargets it.
+
+    A request the API reported as bound to THIS start becomes, on rollback, a
+    queue entry -- and the next run is cancelled by it and records its reason
+    as that run's own.  The trace then states, as a fact about run C, a reason
+    that was a fact about run A.  Only the reason the claim consumed may go
+    back into the queue.
+    """
+    box = []
+    node = _CancelsWhileTheStartIsClaimed(box, "abort the start that is claimed")
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    box.append(runtime)
+
+    node.armed = True
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    later = runtime.run(run_id="a-different-run")
+    assert later.status == "completed", (
+        "a cancellation bound to a start that never ran was aimed at a later run"
+    )
+    assert [record["kind"] for record in later.trace.records].count("run_cancelled") == 0
+    _assert_clean(later, spec)
+
+
+def test_a_cancel_bound_during_a_failed_start_does_not_displace_the_queued_one():
+    """The lost update inside the same window.
+
+    An operator queues a shutdown; a supervisor cancels during the doomed start
+    and overwrites `_cancel_reason`.  Re-queueing THAT value destroys the
+    operator's request and attributes the next run's cancellation to a cause
+    that was never about it.
+    """
+    box = []
+    node = _CancelsWhileTheStartIsClaimed(box, "supervisor: driver closed")
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    box.append(runtime)
+
+    assert runtime.cancel("operator: shutdown SIGTERM") is True
+    node.armed = True
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    cancelled = runtime.run(run_id="the-first-run-that-begins")
+    assert cancelled.status == "cancelled"
+    assert cancelled.trace.records[-1]["reason"] == "operator: shutdown SIGTERM"
+    _assert_clean(cancelled, spec)
+
+
+class _ParkTheRollbackAfterItFreesTheClaim:
+    """The lifecycle lock, holding the failed start open past its own release.
+
+    The rollback frees the claim and only then clears `_active_attempt`.  A
+    store ordered after that release is unsynchronised: it lands in whichever
+    run has since begun.  Parking the release turns an interleaving measured at
+    4 in 2000 rounds (`sys.setswitchinterval(5e-6)`) into a certain one.
+    """
+
+    __slots__ = ("_inner", "_exits", "_gate")
+
+    def __init__(self, inner, gate) -> None:
+        self._inner = inner
+        self._gate = gate
+        self._exits: dict[str, int] = {}
+
+    def __enter__(self):
+        return self._inner.__enter__()
+
+    def __exit__(self, *exc):
+        result = self._inner.__exit__(*exc)
+        name = threading.current_thread().name
+        count = self._exits[name] = self._exits.get(name, 0) + 1
+        if name == "doomed-start" and count == 2:   # 1 is the claim, 2 the rollback
+            self._gate.wait(10)
+        return result
+
+
+def test_a_failed_start_cannot_blank_a_later_runs_active_attempt():
+    """The rollback must not write to the Runtime after freeing it.
+
+    Every participant here is doing what the contract blesses: ADR-008 §4 puts
+    `motus_config()` failure inside the claim, and guarantees.md §6 permits a
+    listener holding the Runtime to call its cancellation surface.  The stray
+    store lands between the attempt being opened and the runtime reading it for
+    `run_cancelled`, and the trace that results is one the project's OWN
+    validator refuses under T6 -- an unclosed `attempt_started` followed by a
+    `run_cancelled` that does not name it.
+    """
+    gate = threading.Event()
+    box: dict[str, Runtime] = {}
+
+    def listener(record):
+        if record["kind"] == "attempt_started":
+            box["runtime"].cancel("cancelled by a listener holding the Runtime")
+            gate.set()
+            time.sleep(0.2)          # the window the stray store must land in
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": lambda state: state}, listeners=(listener,))
+    box["runtime"] = runtime
+    runtime._lifecycle_lock = _ParkTheRollbackAfterItFreesTheClaim(
+        runtime._lifecycle_lock, gate
+    )
+
+    landed: list = []
+
+    def doomed_start() -> None:
+        with pytest.raises(ValueError):
+            runtime.run(run_id="x" * 201)
+
+    def the_run_that_follows() -> None:
+        while True:
+            try:
+                landed.append(runtime.run(run_id="the-run-that-follows"))
+                return
+            except RuntimeError:                # the claim is not free yet
+                time.sleep(0.001)
+
+    doomed = threading.Thread(target=doomed_start, name="doomed-start")
+    following = threading.Thread(target=the_run_that_follows, name="the-run")
+    doomed.start()
+    time.sleep(0.05)
+    following.start()
+    doomed.join(15)
+    following.join(15)
+
+    assert gate.is_set(), "the window was never opened"
+    assert landed, "the following run never completed"
+    result = landed[0]
+    assert result.status == "cancelled"
+    terminal = result.trace.records[-1]
+    assert terminal["kind"] == "run_cancelled"
+    assert terminal["active_attempt"] == {"node": "node", "attempt": 1}, (
+        "a failed start blanked the attempt a later run was cancelled inside"
+    )
+    _assert_clean(result, spec)
 
 
 def test_listener_failure_is_non_intervening_and_isolated():
