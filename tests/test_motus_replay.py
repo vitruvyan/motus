@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 
 import pytest
@@ -523,6 +524,28 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
             record["effects"][0]["receipt"]["result_fingerprint"] = (
                 "effect:sha256:" + "b" * 64
             )
+
+    # Re-seal the integrity chain over the edited records. Since schema 2.0.0
+    # the chain catches EVERY alteration, this one included — so without this
+    # step the tripwire would fire on a T11 violation and read as though the
+    # fingerprint had gained a recipe. It has not. What this test pins is
+    # narrower and still true: nothing recomputes the fingerprint ITSELF, so an
+    # editor who can also re-seal the chain still passes. That is exactly the
+    # gap ADR-014 documents, and exactly why the chain is not a substitute for
+    # a recipe.
+    previous = "sha256:" + hashlib.sha256(
+        json.dumps({"schema_version": document["schema_version"], "run": document["run"]},
+                   sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    for record in document["records"]:
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+        digest = "sha256:" + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        record["integrity"] = {"payload_hash": digest, "prev_hash": previous}
+        previous = digest
 
     violations = validate.validate_trace(document, graph.to_dict())
     assert violations == [], (

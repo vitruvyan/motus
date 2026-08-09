@@ -1,0 +1,207 @@
+{
+  "records": [
+    {
+      "initial_state": {
+        "decisions": [],
+        "facts": [],
+        "rejections": []
+      },
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "intent": "",
+      "kind": "run_started",
+      "seq": 1,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "fetch",
+      "seq": 2,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET xv-corpus fixture",
+          "receipt": {
+            "receipt_id": "provider:xv-corpus-1",
+            "result_fingerprint": "effect:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "status": "completed"
+          }
+        }
+      ],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "fetch",
+      "outcome": "returned",
+      "reads": [],
+      "seq": 3,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [],
+        "facts": [
+          {
+            "key": "payload",
+            "source": "fetch",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": "fixture-data"
+          }
+        ],
+        "rejections": []
+      }
+    },
+    {
+      "after": "fetch",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "taken": true,
+          "target": "summarize"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "summarize",
+      "seq": 4,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": null
+    },
+    {
+      "attempt": 1,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "attempt_started",
+      "node": "summarize",
+      "seq": 5,
+      "ts": "2026-08-04T12:00:00Z"
+    },
+    {
+      "attempt": 1,
+      "context_draws": [],
+      "disposition": "commit",
+      "effect_class": "pure",
+      "effects": [],
+      "error": null,
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "transition",
+      "node": "summarize",
+      "outcome": "returned",
+      "reads": [
+        {
+          "key": "payload",
+          "origin": {
+            "collection": "facts",
+            "index": 0,
+            "kind": "transition",
+            "seq": 3
+          }
+        }
+      ],
+      "seq": 6,
+      "ts": "2026-08-04T12:00:00Z",
+      "violations": [],
+      "writes": {
+        "decisions": [],
+        "facts": [
+          {
+            "key": "summary",
+            "source": "summarize",
+            "ts": "2026-08-04T12:00:00Z",
+            "value": "len=12"
+          }
+        ],
+        "rejections": []
+      }
+    },
+    {
+      "after": "summarize",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "taken": true,
+          "target": "END"
+        }
+      ],
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "routing",
+      "on": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "seq": 7,
+      "ts": "2026-08-04T12:00:00Z",
+      "value": null
+    },
+    {
+      "integrity": {
+        "payload_hash": null,
+        "prev_hash": null
+      },
+      "kind": "run_completed",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "seq": 8,
+      "ts": "2026-08-04T12:00:00Z"
+    }
+  ],
+  "run": {
+    "created_ts": "2026-08-04T12:00:00Z",
+    "durability_profile": "in-memory",
+    "graph": {
+      "code_fingerprint": "code:sha256:d7fa762bc2bde5530c3445b43c271641bc993b4123e15c143c0973779f4fa0c5",
+      "graph_fingerprint": "graph:sha256:09cd9c8090ab6345b854cd6ea294d2e284de28b8238a34e885c3f4d19aa6994a",
+      "name": "xv-recorded-effect",
+      "spec_schema_version": "1.0.0",
+      "version": "1.0.0"
+    },
+    "metadata": {},
+    "policy": "strict",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "run_id": "xv-v0.6.1-recorded_effect"
+  },
+  "schema_version": "1.1.0"
+}

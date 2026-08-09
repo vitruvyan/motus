@@ -134,8 +134,37 @@ def _config_material(node: Callable[..., Any]) -> tuple[tuple[str, Any], bool]:
             return ("value", _strict_plain_json(config())), False
         return ("marker", "opaque"), True
     target = inspect.unwrap(node)
-    if inspect.isfunction(target) and target.__closure__ is None and "<locals>" not in target.__qualname__:
-        return ("marker", "none"), False
+    if inspect.isfunction(target) and target.__closure__ is None:
+        # A function's configuration lives in exactly two places it can carry
+        # without a closure: its default arguments. `def node(state, *,
+        # threshold=x)` stores x in `__kwdefaults__` while `__closure__` stays
+        # None, so a factory can produce two nodes that behave differently and
+        # capture nothing.
+        #
+        # This branch first required "<locals>" not in __qualname__, which was
+        # a rule stricter than the contract — it marked a nested `def` capturing
+        # NOTHING as opaque — and I removed it. That opened this hole: two nodes
+        # with different thresholds both reported `none` and shared one
+        # configuration fingerprint. A false constraint is noise; a false
+        # IDENTITY is the class of defect this project exists to prevent, so the
+        # narrower rule is not restored — defaults are read instead, which is
+        # what the qualname check was accidentally standing in for.
+        #
+        # They are fingerprinted exactly as a partial's arguments are, for the
+        # same reason: they are configuration, and configuration that reduces
+        # to strict JSON is identifiable. Defaults that do not reduce are
+        # honestly opaque.
+        defaults = list(target.__defaults__ or ())
+        keyword_defaults = target.__kwdefaults__ or {}
+        if not defaults and not keyword_defaults:
+            return ("marker", "none"), False
+        try:
+            material = _strict_plain_json(
+                {"defaults": defaults, "kwdefaults": keyword_defaults}
+            )
+        except (TypeError, ValueError):
+            return ("marker", "opaque"), True
+        return ("value", material), False
     if inspect.ismethod(target) and target.__self__ is not None:
         config = getattr(target.__self__, "motus_config", None)
         if callable(config):
@@ -894,12 +923,18 @@ class Runtime:
 
     def _store(self, record: dict[str, Any], *, terminal: bool = False, force: bool = False) -> dict[str, Any]:
         assert self._trace is not None and self._hub is not None
+        # Seal FIRST, so the sink and the trace receive the identical dict. The
+        # sink is handed the record before the trace appends it, so sealing at
+        # append time wrote real hashes to memory and null ones to the artifact.
+        record = self._trace._seal(record)
         if terminal:
             try:
                 self._hub.persist(record, force=True)
             except BaseException as exc:
                 if record["kind"] == "run_completed":
-                    failure = self._sink_failure_record(record["seq"], None, exc)
+                    failure = self._trace._seal(
+                        self._sink_failure_record(record["seq"], None, exc)
+                    )
                     self._hub.best_effort(failure)
                     self._replace_trace(self._trace._append_runtime(failure))
                     self._hub.notify(failure)
@@ -914,8 +949,10 @@ class Runtime:
         try:
             self._hub.persist(record, force=force)
         except BaseException as exc:
-            failure = self._sink_failure_record(
-                self._control.next_seq(), record.get("seq"), exc  # type: ignore[union-attr]
+            failure = self._trace._seal(
+                self._sink_failure_record(
+                    self._control.next_seq(), record.get("seq"), exc  # type: ignore[union-attr]
+                )
             )
             # Once a record was refused, the persisted stream remains the
             # last valid prefix.  Appending a later best-effort terminal would

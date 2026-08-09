@@ -1195,6 +1195,11 @@ def _execution_violations(
     return v
 
 
+def document_version_header(doc: dict) -> str:
+    """The schema version as the header carries it, for the chain's first link."""
+    return doc.get("schema_version")
+
+
 def _trace_semantics(
     doc: dict, spec: dict | None, expect_complete: bool
 ) -> list[Violation]:
@@ -1309,6 +1314,138 @@ def _trace_semantics(
                     "the run",
                 )
             )
+
+    # T11 — the integrity chain.  Each record's payload_hash is sha256 over the
+    # canonical object form of that record WITHOUT its own integrity block (a
+    # hash cannot cover itself), and prev_hash is the preceding record's
+    # payload_hash.  The first record has no predecessor and carries null.
+    #
+    # The SCHEMA VERSION IS THE ACTIVATION INDICATOR, and there is deliberately
+    # no second flag: a separate "chained: true" could disagree with the hashes
+    # actually present, and a reader would have to decide which to believe.
+    # 2.0.0 requires the chain; 1.x forbids it, so an unverified hash cannot
+    # ride in an old trace and be mistaken for tamper evidence.
+    #
+    # Recomputation is the whole point.  A chain that is only checked for
+    # SHAPE — non-null, right length — proves nothing at all: an editor who
+    # changes a record can recompute the shape trivially.  What they cannot do
+    # is recompute the rest of the chain without also holding whatever anchored
+    # its root.
+    version = doc.get("schema_version")
+    if version == "2.0.0":
+        # The chain starts at the HEADER, so the first record's prev_hash is the
+        # header's digest and never null. Without this the header sat outside
+        # the root: run_id, policy, metadata and graph.code_fingerprint could all
+        # be rewritten, the terminal's payload_hash did not move, and this
+        # validator passed the result clean. An anchor over that root proves a
+        # sequence of records existed and says nothing about whose run it was.
+        expected_prev = "sha256:" + hashlib.sha256(
+            canonical_json({
+                "schema_version": document_version_header(doc),
+                "run": doc.get("run") or {},
+            })
+        ).hexdigest()
+        for i, record in enumerate(records):
+            integrity = record.get("integrity") or {}
+            actual = integrity.get("payload_hash")
+            # The digest covers the record with its integrity block NULLED, not
+            # removed: what a hash must not cover is its own value, and a
+            # constant null is not one. So the object hashed is a real record.
+            payload = dict(record)
+            payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+            computed = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
+            if actual is None:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.payload_hash",
+                        "schema 2.0.0 requires an integrity chain; this record "
+                        "carries null, which is the 1.x shape",
+                    )
+                )
+            elif actual != computed:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.payload_hash",
+                        f"payload_hash does not match the record: declared "
+                        f"{actual}, recomputed {computed}",
+                    )
+                )
+            if integrity.get("prev_hash") != expected_prev:
+                v.append(
+                    Violation(
+                        "T11",
+                        f"$.records[{i}].integrity.prev_hash",
+                        f"prev_hash is {integrity.get('prev_hash')!r}; the chain "
+                        f"requires {expected_prev!r}"
+                        + (" (the first record's predecessor is the HEADER; a "
+                           "header outside the chain can be rewritten without "
+                           "moving the root)" if i == 0 else ""),
+                    )
+                )
+            expected_prev = actual
+    elif version in ("1.0.0", "1.1.0"):
+        for i, record in enumerate(records):
+            integrity = record.get("integrity") or {}
+            for field in ("payload_hash", "prev_hash"):
+                if integrity.get(field) is not None:
+                    v.append(
+                        Violation(
+                            "T11",
+                            f"$.records[{i}].integrity.{field}",
+                            f"schema {version} carries no integrity chain, so "
+                            f"{field} must be null; a hash here is unverified "
+                            "and must not be able to pass for tamper evidence",
+                        )
+                    )
+
+    # T12 — the interaction fingerprint travels with its salt, or not at all.
+    # The digest is meaningless to a verifier without the salt that prefixed its
+    # material, and a salt alone describes nothing.  Neither is checkable here:
+    # the covered material is deliberately NOT in the trace, which is the whole
+    # point of the field — it binds a trace to an archive held elsewhere.  So
+    # what a validator CAN enforce is that the pair is complete, and it must
+    # say plainly that a clean validation never means the fingerprint was
+    # checked.  Enforcing only what is enforceable, and publishing which, is the
+    # difference between a narrow guarantee and a misleading one.
+    #
+    # 1.x carries neither field: `result_fingerprint` is the 1.x shape and is
+    # not redefined in place, because a 1.x value means what 1.x said it meant.
+    for i, record in enumerate(records):
+        for j, effect in enumerate(record.get("effects") or []):
+            receipt = effect.get("receipt") or {}
+            digest = receipt.get("interaction_fingerprint")
+            salt = receipt.get("fingerprint_salt")
+            path = f"$.records[{i}].effects[{j}].receipt"
+            if version != "2.0.0" and (digest is not None or salt is not None):
+                v.append(
+                    Violation(
+                        "T12",
+                        path,
+                        f"interaction_fingerprint and fingerprint_salt are 2.0.0 "
+                        f"fields; schema {version} carries result_fingerprint",
+                    )
+                )
+                continue
+            if digest is not None and salt is None:
+                v.append(
+                    Violation(
+                        "T12",
+                        f"{path}.fingerprint_salt",
+                        "interaction_fingerprint is present without its salt; a "
+                        "verifier holding the archive cannot recompute the digest "
+                        "without the salt that prefixed its material",
+                    )
+                )
+            if salt is not None and digest is None:
+                v.append(
+                    Violation(
+                        "T12",
+                        f"{path}.interaction_fingerprint",
+                        "fingerprint_salt is present with no fingerprint to salt",
+                    )
+                )
 
     if not records:
         # Only reachable through the JSONL path (the JSON document form pins

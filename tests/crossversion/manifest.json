@@ -1,0 +1,64 @@
+[
+  {
+    "graph_spec": "v0.6.1/pure_only.graphspec.json",
+    "nodes": {
+      "double": "double",
+      "seed": "seed"
+    },
+    "scenario": "pure_only",
+    "trace": "v0.6.1/pure_only.trace.json",
+    "version": "v0.6.1"
+  },
+  {
+    "graph_spec": "v0.6.1/routed_decision.graphspec.json",
+    "nodes": {
+      "big_path": "big_path",
+      "classify": "classify",
+      "small_path": "small_path"
+    },
+    "scenario": "routed_decision",
+    "trace": "v0.6.1/routed_decision.trace.json",
+    "version": "v0.6.1"
+  },
+  {
+    "graph_spec": "v0.6.1/recorded_effect.graphspec.json",
+    "nodes": {
+      "fetch": "fetch",
+      "summarize": "summarize"
+    },
+    "scenario": "recorded_effect",
+    "trace": "v0.6.1/recorded_effect.trace.json",
+    "version": "v0.6.1"
+  },
+  {
+    "graph_spec": "v0.7.0/pure_only.graphspec.json",
+    "nodes": {
+      "double": "double",
+      "seed": "seed"
+    },
+    "scenario": "pure_only",
+    "trace": "v0.7.0/pure_only.trace.json",
+    "version": "v0.7.0"
+  },
+  {
+    "graph_spec": "v0.7.0/routed_decision.graphspec.json",
+    "nodes": {
+      "big_path": "big_path",
+      "classify": "classify",
+      "small_path": "small_path"
+    },
+    "scenario": "routed_decision",
+    "trace": "v0.7.0/routed_decision.trace.json",
+    "version": "v0.7.0"
+  },
+  {
+    "graph_spec": "v0.7.0/recorded_effect.graphspec.json",
+    "nodes": {
+      "fetch": "fetch",
+      "summarize": "summarize"
+    },
+    "scenario": "recorded_effect",
+    "trace": "v0.7.0/recorded_effect.trace.json",
+    "version": "v0.7.0"
+  }
+]

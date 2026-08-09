@@ -20,8 +20,25 @@ def node(state: State, ctx: RunContext) -> State: ...
 
 1.2. A node MUST return a state derived from the one it received. It MUST NOT
 mutate the received state, any value previously read from it, or any shared
-module-level object as a way of passing information. **Enforcement in 0.5 is
-structural, not deferred**: (a) values are isolated at the write boundary —
+module-level object as a way of passing information.
+
+**Three of these are enforced structurally. The fourth is prohibited and not
+enforced, and this clause used to claim otherwise.** Passing information
+through a shared module-level object touches nothing the runtime observes: the
+node reads no state, so there is no read to record and nothing to compare a
+declaration against. Motus cannot see it, and no mechanism described below
+detects it. In Python nothing could without inspecting node bodies, which this
+runtime does not do and does not promise to.
+
+Saying so costs a sentence and buys the only thing that matters here: a reader
+who believes an unenforced prohibition is enforced will design around a guard
+that is not there. Verify-replay narrows it — a `pure` node fed a side channel
+that is empty or different at replay time diverges — but a channel that
+survives to replay time, a table or a file or a warm cache, produces no
+divergence at all. A narrow guarantee that holds is worth more than a broad one
+that does not.
+
+What *is* structural, and is: (a) values are isolated at the write boundary —
 the runtime stores its own copy, so a node mutating the object it wrote
 afterwards mutates only its own garbage; (b) reads return values a node
 cannot use to reach the stored ones (a fresh copy or an immutable view —
@@ -30,8 +47,11 @@ the contract); (c) the returned state's lineage is checked on commit — it
 must extend the input state's history (prefix preservation, an O(1)
 structural check), so a node cannot truncate history, substitute prior
 values, or return a foreign state. Verify-replay (0.6) additionally catches
-behavioral impurity; it is a second net, not the first defense — retroactive
-corruption of recorded evidence is impossible by construction in 0.5.
+behavioral impurity *that manifests as a different answer*; it is a second net,
+not the first defense, and it is not a purity analyser — a node reading the
+system clock or an environment variable is re-executed, returns the same value,
+and is reported verified. Retroactive corruption of recorded evidence is
+impossible by construction in 0.5.
 
 1.3. A node MUST NOT retain the received state, the returned state, or the
 RunContext beyond the call. What a node wants remembered, it writes as a fact.
@@ -164,7 +184,11 @@ declared node in declaration order, the four-element JSON array
 alone does not identify behavior for partials, bound methods, class
 instances or closures:
 
-- a plain module-level function contributes `"none"`;
+- a function that captured nothing contributes `"none"` — the test is the
+  interpreter's own `__closure__ is None`, and it is deliberately not narrowed
+  to module-level functions: a `def` returned by a graph-builder factory
+  captures nothing and has no configuration to fingerprint, and treating it as
+  opaque put a false constraint on the most common shape real code takes;
 - a `functools.partial` contributes the fingerprint of its canonical-JSON
   args/keywords (which MUST therefore be strict JSON values);
 - a callable instance contributes the fingerprint of its `motus_config()`
@@ -178,6 +202,25 @@ The fingerprint is the SHA-256 of the canonical JSON encoding
 (contract/README.md) of the list of those arrays. Nodes whose source is
 unavailable (C extensions, REPL) contribute `"unavailable"` as source_hash
 with the same downgrade rule.
+
+**What `replay_capability` does and does not mean.** It reports whether this
+runtime can RE-IDENTIFY each node's configuration, and nothing wider. The name
+invites a stronger reading — *can this run be reproduced* — and that reading is
+wrong in both directions, so both are stated here rather than left to be
+discovered:
+
+- `full` is not a purity certificate. `motus_config()` is an ATTESTATION by the
+  class author, taken at its word (§6.4). A callable that provides it and reads
+  a module-level object reports `full`, because nothing inspects what
+  `__call__` does. §1.2 says why nothing can.
+- `partial` is not an accusation. It says one node's configuration could not be
+  reduced to a JSON value, which is a limit of this fingerprinting recipe and
+  not a finding about the node.
+
+Nothing in the runtime or the validator refuses a run for its capability: it is
+recorded so a reader can judge, and rule T10 only enforces that it never
+improves over a run. A field that reads as a verdict and is a description must
+say which it is.
 
 `motus_config()` is an attestation method, not an event hook. A callable that
 provides it MUST make it pure, total, cheap and strict-JSON-valued. The runtime

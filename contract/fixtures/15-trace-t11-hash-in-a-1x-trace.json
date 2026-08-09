@@ -2,8 +2,8 @@
   "artifact": "trace",
   "expect": "invalid",
   "layer": "schema",
-  "rule": "SCHEMA",
-  "reason_contains": "is not of type 'null'",
+  "rule": "T11",
+  "reason_contains": "carries no integrity chain",
   "spec": null,
   "instance": {
     "schema_version": "1.0.0",
@@ -59,7 +59,7 @@
         "ts": "2026-08-03T10:00:03Z",
         "kind": "transition",
         "integrity": {
-          "payload_hash": "4d0c48f3bdba0bc302ccc46b15cf9e3ca1e7e2f8783f00f20471a047e1f1b166",
+          "payload_hash": "sha256:4d0c48f3bdba0bc302ccc46b15cf9e3ca1e7e2f8783f00f20471a047e1f1b166",
           "prev_hash": null
         },
         "node": "solo",

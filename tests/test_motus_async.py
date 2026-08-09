@@ -126,6 +126,13 @@ def _comparable(trace) -> dict:
     document["run"]["graph"]["code_fingerprint"] = "<pinned>"
     for record in document["records"]:
         record.pop("ts")
+        # The integrity chain is DERIVED from the record, timestamps included,
+        # so two runs whose timestamps legitimately differ have legitimately
+        # different hashes. Normalising it here is not weakening the assertion:
+        # the chain is not one of the state machine's decisions, and that a
+        # chain over identical records IS identical is pinned by the contract
+        # fixtures, which hash a fixed document.
+        record.pop("integrity")
         # Replay constraints derived from node IDENTITY are registry
         # properties, not driver properties — exactly like code_fingerprint.
         # An async node is executable but not verify-replayable, so it earns a
