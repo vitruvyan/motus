@@ -1,7 +1,10 @@
 # ADR-014 — `result_fingerprint`: what it is a fingerprint of
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-08
+- **Accepted:** 2026-08-09 by the founder, after the salt section was corrected: an earlier
+  draft claimed a holder of the trace alone could enumerate nothing, which is
+  false because the salt is recorded in the trace
 - **Authority:** founder decision, 2026-08-07, after three adversarial rounds
   against the first external integration
 - **Supersedes:** ADR-013. Its context stands and its tripwire survives; its
