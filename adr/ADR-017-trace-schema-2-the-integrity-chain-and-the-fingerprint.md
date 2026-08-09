@@ -1,6 +1,6 @@
 # ADR-017 — trace schema 2.0.0: the integrity chain, and the fingerprint it does not replace
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED — founder, 2026-08-09
 - **Date:** 2026-08-08
 - **Authority:** founder decisions, 2026-08-08 — one schema revision rather than
   several; seals always rather than on request
