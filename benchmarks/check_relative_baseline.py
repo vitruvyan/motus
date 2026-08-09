@@ -78,7 +78,7 @@ DECLARED_EXCEPTIONS = {
         "accommodated by a wider budget.",
     ),
     ("v0.7.0", "0.8.0", "noop_100_overhead_ms"): (
-        1.60,
+        1.05,
         "ADR-017",
         "the integrity chain. Every record is canonicalised and hashed, and on "
         "nodes that do no work that cost is most of the measurement. Declared "
@@ -90,7 +90,7 @@ DECLARED_EXCEPTIONS = {
         "SLOWER.",
     ),
     ("v0.7.0", "0.8.0", "realistic_1000_us_per_node_min"): (
-        0.80,
+        0.78,
         "ADR-017",
         "the integrity chain, on the realistic graph: +65 microseconds per "
         "node. Invisible against a node that calls a model, and a doubling of "
@@ -99,7 +99,7 @@ DECLARED_EXCEPTIONS = {
         "otherwise is how a budget stops meaning anything.",
     ),
     ("v0.7.0", "0.8.0", "to_dict_min_ms_realistic"): (
-        0.45,
+        0.35,
         "ADR-017",
         "the integrity chain, at trace materialisation. The smallest of the "
         "three because this metric already serialises.",
