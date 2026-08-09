@@ -327,6 +327,63 @@ def test_pre_run_cancellation_is_consumed_without_executing_a_node():
     _assert_clean(completed, spec)
 
 
+def test_a_queued_cancellation_survives_a_start_that_never_began_a_run():
+    """FA-002: `_start` latches the lifecycle before it can still fail.
+
+    The claim is entered under the lock -- `_has_started` up, the queued reason
+    consumed into `_cancel_reason` -- and only afterwards does the body run the
+    checks that reject the call.  A rejected `run_id` therefore spent the
+    Runtime's one queued cancellation on a run that wrote no header, executed
+    no node and returned no result.  Worse than losing it: `_has_started` stayed
+    up, so ADR-008 §1 then refused to re-queue and the caller had no way back.
+
+    A start that raised is not a run the caller can be told to have had.
+    """
+    executed = []
+
+    def node(state):
+        executed.append("node")
+        return state
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    assert runtime.cancel("shutdown before start") is True
+
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    # Either the queued request is still binding, or the caller may lodge it
+    # again.  Losing it silently AND refusing the retry is the defect.
+    assert runtime.cancel("shutdown, again") is True
+
+    cancelled = runtime.run(run_id="after-the-refused-start")
+    assert cancelled.status == "cancelled"
+    assert executed == []
+    _assert_clean(cancelled, spec)
+
+
+def test_a_failed_start_does_not_reopen_the_queue_on_a_used_runtime():
+    """The other side of the same latch, and the reason it cannot be blanked.
+
+    Rolling `_has_started` back to False unconditionally would let a Runtime
+    that has already executed accept a queued cancellation again -- exactly the
+    leak into "a later unrelated run" that ADR-008 §1 closed.  The failed start
+    must restore the flag it found, not clear it.
+    """
+    def node(state):
+        return state
+
+    spec = _spec([{"name": "node", "effect_class": "pure"}], {"node": {"kind": "terminal"}})
+    runtime = Runtime(spec, {"node": node})
+    assert runtime.run(run_id="a-real-run").status == "completed"
+
+    with pytest.raises(ValueError):
+        runtime.run(run_id="x" * 201)
+
+    assert runtime.cancel("idle, after a used runtime") is False
+    assert runtime.run(run_id="unaffected").status == "completed"
+
+
 def test_listener_failure_is_non_intervening_and_isolated():
     calls = []
 

@@ -775,6 +775,11 @@ class Runtime:
         with self._lifecycle_lock:
             if self._running:
                 raise RuntimeError("a Runtime instance cannot execute overlapping runs")
+            # `_has_started` is the latch ADR-008 §1 uses to refuse an idle
+            # cancellation on a Runtime that has already executed. It is raised
+            # here, before the checks below can still reject the call — so what
+            # it found must be recoverable if this start never becomes a run.
+            was_started = self._has_started
             self._running = True
             self._has_started = True
             self._cancel_reason = self._pending_cancel_reason
@@ -855,6 +860,20 @@ class Runtime:
         except BaseException:
             with self._lifecycle_lock:
                 self._running = False
+                # A start that raised wrote no header, ran no node and handed
+                # the caller an exception instead of a result. Leaving the
+                # latch up would spend the Runtime's one queued cancellation on
+                # a run that never existed, and — because ADR-008 §1 then reads
+                # the Runtime as used — refuse to let the caller lodge it again.
+                # Restore what was found rather than clearing: a Runtime that
+                # HAD executed must still refuse to queue, or the failed start
+                # reopens the leak into a later unrelated run that §1 closed.
+                self._has_started = was_started
+                if not was_started:
+                    # Whatever bound during this window never took effect: the
+                    # reason queued before the call, or one a concurrent caller
+                    # lodged against the run while `_running` was up.
+                    self._pending_cancel_reason = self._cancel_reason
                 self._cancel_reason = None
             self._active_attempt = None
             raise
