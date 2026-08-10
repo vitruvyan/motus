@@ -340,14 +340,21 @@ notion of an agent, and needs none.
 
 ## Run something
 
-Four examples, each standalone and each printing what it did:
+Six examples, each standalone and each printing what it did:
 
 ```console
 python examples/01_first_run.py          # a graph, a run, and the trace it left
 python examples/02_durable_evidence.py   # write evidence to disk, then check it without trusting the writer
 python examples/03_async_and_streaming.py # async nodes, live records, stopping mid-run
 python examples/04_parameterised_nodes.py # configure a node without forfeiting replay
+python examples/05_how_a_node_reports.py # raise, Rejection or Decision -- and why only one of them is a bug
+python examples/06_effects_and_receipts.py # declaring what you touched, and the safe restart it buys
 ```
+
+Read 05 before writing your first node. The mistake that costs most in a first
+integration is treating "the check did not pass" as an error: it is a result,
+and a node that raises for it throws the run away instead of recording what it
+concluded.
 
 The second one is the one to read if you only read one. It writes a run to a
 file, validates that file from a **separate process** using only the published
