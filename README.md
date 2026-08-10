@@ -243,6 +243,32 @@ trace and resealed it by the published recipe left that value untouched. Traces
 from those versions are valid, replayable evidence and are **not anchorable**;
 the validator says so when it reads one.
 
+### The root, for whoever anchors it
+
+The root is **the terminal record's `integrity.payload_hash`** — derived, never
+stored twice, and stated normatively in rule T11 of `contract/trace.v1.schema.json`.
+Every record carries `prev_hash` of its predecessor and the first record's
+predecessor is the header itself, so that one value commits to the whole run:
+records, run id, policy, metadata and `graph.code_fingerprint` alike. Anchoring
+anything larger buys nothing and is more fragile.
+
+```python
+root = result.trace.records[-1]["integrity"]["payload_hash"]
+# 'sha256:1ca0f5f6…' — 71 characters, not 64
+```
+
+The value **names its hash function**: a digest that does not say what produced
+it cannot be recomputed. That costs seven characters, which matters when the
+carrier is sized — a TRON memo holds 100, leaving 29 for a namespace prefix.
+Budget from the string, not from the digest.
+
+Motus ships no anchor and holds no chain credentials, and will not: the
+repository provides the socket. What an anchor implementation owes its users,
+learned from one that runs in production, is a `verify()` that re-reads from the
+chain rather than trusting the receipt's own copy of the payload — a local file
+that certifies itself certifies nothing. Issue #51 is where that interface is
+being designed.
+
 ## Install for development
 
 Motus is on PyPI. Install it the ordinary way:
@@ -314,12 +340,13 @@ notion of an agent, and needs none.
 
 ## Run something
 
-Three examples, each standalone and each printing what it did:
+Four examples, each standalone and each printing what it did:
 
 ```console
 python examples/01_first_run.py          # a graph, a run, and the trace it left
 python examples/02_durable_evidence.py   # write evidence to disk, then check it without trusting the writer
 python examples/03_async_and_streaming.py # async nodes, live records, stopping mid-run
+python examples/04_parameterised_nodes.py # configure a node without forfeiting replay
 ```
 
 The second one is the one to read if you only read one. It writes a run to a
@@ -505,6 +532,48 @@ an incomplete trace. Persisted history is never rewritten. Resume fails closed
 for graph mismatches, inconsistent routing, ambiguous boundaries, and external
 effects without both a non-empty idempotency key and a completed adapter
 receipt. Motus never claims exactly-once delivery.
+
+### Parameterising a node without losing replay
+
+Replay capability reports whether the runtime can **re-identify each node's
+configuration**, and nothing wider. A real graph is parameterised — a
+connection string, a ruleset version, a cache — and the obvious Python for that
+is a factory closing over a config object. That is the one shape Motus cannot
+re-identify: a closure's captured state is not a JSON value, so the run is
+recorded as `partial` with the constraint `node:<name>:opaque_config` rather
+than claiming a reproducibility it cannot honour.
+
+Two shapes it can re-identify (node-protocol.md §6):
+
+```python
+# 1. a partial over strict-JSON keywords
+node = functools.partial(check, ruleset_version="1.4.0", source_root=ROOT)
+
+# 2. a callable instance that attests its own configuration
+class Check:
+    def motus_config(self) -> dict:      # pure, total, cheap, strict-JSON
+        return asdict(self.config)
+    def __call__(self, state): ...
+```
+
+Either way the configuration is fingerprinted into `graph.code_fingerprint`, so
+two runs under different rules carry different fingerprints and a reader can
+tell them apart. `python examples/04_parameterised_nodes.py` prints all three
+shapes side by side.
+
+Neither shape is a purity certificate. `motus_config()` is an attestation by
+the class author, taken at its word; nothing inspects what `__call__` does, and
+§1.2 of the node protocol says why nothing can. Equally, `partial` is not an
+accusation: it says one node's configuration could not be reduced to a JSON
+value, which is a limit of this fingerprinting recipe and not a finding about
+the node. Nothing refuses a run for its capability — it is recorded so a reader
+can judge, and rule T10 only enforces that it never improves over a run.
+
+A capability is claimed before it is honoured: a run started without
+`replay=ReplayStatus.declared(...)` is `none` / `undeclared` whatever its nodes
+look like. Constraints you add to that declaration stay in the terminal record,
+so a graph whose nodes are all re-identifiable can still report `partial`
+because the caller said so.
 
 ## Observation and durability
 
