@@ -214,14 +214,189 @@ def test_a_3_0_0_trace_sealed_by_the_old_recipe_is_refused(tmp_path):
     assert "T11" in check.stdout
 
 
+# --------------------------------------------------------------------------
+# The three attacks an adversarial round found on the FIX, within a day of it
+# being written. Each one produced a root that agreed with a rewritten
+# document, and each is closed by deriving the root instead of reading it.
+# --------------------------------------------------------------------------
+
+def test_a_rewritten_header_with_a_stale_first_link_yields_no_root():
+    """The worst of the three: the same defect ADR-019 closed, one level up.
+
+    A digest covers the STRING that names its predecessor, not the predecessor.
+    So an editor rewrites the header, leaves records[0].prev_hash pointing at
+    the old header digest, reseals, and every hash recomputes perfectly while
+    the terminal digest does not move. Only recomputing the header ourselves
+    catches it.
+    """
+    document = _run().trace.to_dict()
+    original_root = _root_of(document)
+    document["run"]["policy"] = "exploration"
+    document["run"]["metadata"] = {"reviewer": "someone else"}
+
+    prev = document["records"][0]["integrity"]["prev_hash"]      # left stale
+    for record in document["records"]:
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": prev}
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+        record["integrity"] = {"payload_hash": digest, "prev_hash": prev}
+        prev = digest
+
+    assert _root_of(document) == original_root, (
+        "the forgery no longer reproduces — rewrite this test around the "
+        "attack that replaced it, do not delete it"
+    )
+    assert Trace.from_dict(document).root is None, (
+        "a rewritten header with a stale first link was handed a root: the "
+        "root is being read back instead of derived, and an anchor comparison "
+        "would agree with this document"
+    )
+
+
+def test_a_2_0_0_document_relabelled_3_0_0_yields_no_root():
+    document = _run().trace.to_dict()
+    document["schema_version"] = "2.0.0"
+    _reseal(document, bind_prev=False)
+    unanchorable = _root_of(document)
+
+    document["schema_version"] = "3.0.0"        # one edited string
+    assert _root_of(document) == unanchorable
+    assert Trace.from_dict(document).root is None
+
+
+def test_an_invented_chain_yields_no_root():
+    document = _run().trace.to_dict()
+    for record in document["records"]:
+        record["integrity"] = {"payload_hash": "sha256:" + "de" * 32,
+                               "prev_hash": "sha256:" + "de" * 32}
+    assert Trace.from_dict(document).root is None, (
+        "from_dict accepts any document; root must not repeat its claims"
+    )
+
+
+def test_the_version_guard_fails_closed():
+    """An allow-list, not a deny-list: a version nobody enumerated must not
+    be treated as chained just because it was not listed as unchained."""
+    document = _run().trace.to_dict()
+    for version in ("2.0.1", "3.0", "4.0.0", "3.0.0 "):
+        trace = Trace(document["run"], schema_version=version)
+        for record in document["records"]:
+            trace = trace._append_runtime(record)
+        assert trace.root is None, f"{version!r} was handed a root"
+
+
+def test_a_2_0_0_trace_sealed_by_the_3_0_0_recipe_still_gets_no_root():
+    """Where the allow-list earns its keep beyond the chain recomputation.
+
+    Deriving the root already refuses a well-formed 2.0.0 trace, because its
+    digests do not reproduce under the 3.0.0 recipe. But a writer that seals
+    2.0.0 records the NEW way produces a chain that would recompute — and its
+    root would still be worthless, because 2.0.0 is not the version whose
+    readers were promised a commitment. The version decides, not the shape.
+    """
+    document = _run().trace.to_dict()
+    document["schema_version"] = "2.0.0"
+    _reseal(document, bind_prev=True)               # the 3.0.0 recipe, on 2.0.0
+    assert Trace.from_dict(document).root is None
+
+
+def test_the_note_fires_on_the_jsonl_artifact_too(tmp_path):
+    """The artifact an integrator actually holds is the JSONL one — it is what
+    the only durable sink writes — so the half that was tested was the half
+    nobody's archive is in."""
+    document = _run().trace.to_dict()
+    document["schema_version"] = "2.0.0"
+    _reseal(document, bind_prev=False)
+    stream = tmp_path / "old.jsonl"
+    stream.write_text("\n".join(
+        [json.dumps({"schema_version": document["schema_version"], "run": document["run"]})]
+        + [json.dumps(r) for r in document["records"]]) + "\n", encoding="utf-8")
+
+    check = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "contract" / "validate.py"), "jsonl", str(stream)],
+        capture_output=True, text=True,
+    )
+    assert check.returncode == 0, check.stdout
+    assert "not an anchorable commitment" in check.stderr
+
+
 def test_the_root_survives_the_document_and_jsonl_encodings(tmp_path):
     """The root is over the canonical object form, so the carrier cannot move
-    it — an anchor published from a file must match one recomputed from a
-    stream of the same run."""
+    it: a root DERIVED from the JSONL stream alone must equal the one derived
+    from the document.
+
+    The earlier version of this test compared two reads of the same sealed
+    dict and could not have failed for the reason it named. This one rebuilds
+    a Trace from the stream and derives the root from it.
+    """
     sink = JsonlTraceSink(tmp_path, fsync=False)
     def check(state: State) -> State:
         return state.with_fact(Fact("verdict", "APPROVED", "curator", NOW))
     result = Runtime(SPEC, {"check": check}, sink=sink).run(
         State.empty("verdict on submission 4471"), run_id="sub-4471")
     lines = [json.loads(l) for l in sink.artifacts[0].read_text().splitlines()]
-    assert lines[-1]["integrity"]["payload_hash"] == result.trace.root
+    from_stream = Trace.from_dict({
+        "schema_version": lines[0]["schema_version"],
+        "run": lines[0]["run"],
+        "records": lines[1:],
+    })
+    assert from_stream.root is not None, "the stream's own chain does not verify"
+    assert from_stream.root == result.trace.root
+
+
+# --------------------------------------------------------------------------
+# Two ways a document could be evidence of more than one thing. Neither is
+# about the chain, and both defeat an anchor: a root proves nothing about a
+# file whose contents are not a single well-defined document.
+# --------------------------------------------------------------------------
+
+def test_a_document_with_a_repeated_member_is_refused(tmp_path):
+    """Two complete accounts of one run in one file, both well sealed.
+
+    Python, jq, node and jsonb all keep the last member; a human, `git diff`
+    and a first-wins reader see the first. The validator used to hash whichever
+    one its parser kept and reproduce the root exactly.
+    """
+    document = _run().trace.to_dict()
+    other = json.loads(json.dumps(document))
+    other["run"]["run_id"] = "sub-9999"
+    other["run"]["policy"] = "exploration"
+    twice = (
+        '{"schema_version":%s,"run":%s,"records":%s,"run":%s,"records":%s}' % (
+            json.dumps(document["schema_version"]),
+            json.dumps(other["run"]), json.dumps(other["records"]),
+            json.dumps(document["run"]), json.dumps(document["records"]),
+        )
+    )
+    artifact = tmp_path / "two-readings.json"
+    artifact.write_text(twice, encoding="utf-8")
+    check = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "contract" / "validate.py"), "trace", str(artifact)],
+        capture_output=True, text=True,
+    )
+    assert check.returncode == 1, check.stdout + check.stderr
+    assert "appears more than once" in check.stdout
+
+
+def test_a_lone_surrogate_fails_the_node_rather_than_the_run():
+    """It is a Python str, so every other J1 check admits it, and it has no
+    UTF-8 encoding, so it exploded inside the seal — out of run(), past
+    NodeFailed, leaving the sink holding a run with no terminal record.
+
+    `json.loads('"\\\\ud800"')` produces one silently, so any node parsing an
+    external payload can reach this without an attacker.
+    """
+    from vitruvyan_motus import NodeFailed
+
+    def bad(state: State) -> State:
+        return state.with_fact(Fact("verdict", "OK\ud800", "curator", NOW))
+
+    try:
+        Runtime(SPEC, {"check": bad}).run(State.empty("i"), run_id="sub-4471")
+    except NodeFailed as failure:
+        assert failure.trace is not None
+        assert failure.trace.records[-1]["kind"] == "run_failed", (
+            "the run must reach a terminal record, as it does for NaN and tuples"
+        )
+    else:
+        raise AssertionError("a lone surrogate was accepted into the trace")
