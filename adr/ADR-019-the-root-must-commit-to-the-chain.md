@@ -1,7 +1,10 @@
 # ADR-019 — the root must commit to the chain, and 2.0.0's does not
 
-- **Status:** PROPOSED — awaiting the founder
+- **Status:** ACCEPTED
 - **Date:** 2026-08-12
+- **Accepted:** 2026-08-12 by the founder, after an adversarial round of three
+  independent agents found the first version of this fix re-opened the same
+  defect one level up — see *Decision 3*
 - **Authority:** CTO, after reproducing the defect against a real 2.0.0 trace
 - **Supersedes in part:** ADR-017 §2, whose remedy does not achieve what it
   claims. This ADR keeps that section's *intent* and replaces its recipe.
