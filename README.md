@@ -29,7 +29,7 @@ against the v0.6.1 anchor across three independent dispatches:
 | 100-node no-op | **+123.2 %** | +20 % |
 | Trace materialization | **+25.2 %** | +20 % |
 
-The cost is the integrity chain (ADR-017), paid in 0.8.0 and unchanged here:
+The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0:
 0.8.1 against 0.8.0 is +0.3 %, −1.5 % and −0.4 %, inside the per-release budget
 with no exception declared. On the 100-node no-op the paired spread is 106 %
 — wider than the effect — so on that metric the measurement cannot answer, and
@@ -232,10 +232,16 @@ Motus alone is not a compliance system. A regulated deployment still needs
 the appropriate persistent `TraceSink`, retention policy, access controls,
 security controls, clock governance, privacy measures, review procedures, and
 any legally required signatures or validated storage. Since 0.8.0 the trace
-carries a cryptographic hash chain and a per-trace root (ADR-017); what it does
-NOT carry is an **anchor** — a root published where the operator cannot rewrite
-it — and without one the chain proves internal consistency, not immutability
-(issue #51).
+carries a cryptographic hash chain, and under trace schema 3.0.0 a per-trace
+**root** that commits to the whole run (ADR-019). What it does NOT carry is an **anchor** — a
+root published where the operator cannot rewrite it — and without one the chain
+proves internal consistency, not immutability (issue #51).
+
+The distinction is not academic, and this project got it wrong: the root shipped
+in 0.8.0 and 0.8.1 covered only the terminal record, so an editor who rewrote the
+trace and resealed it by the published recipe left that value untouched. Traces
+from those versions are valid, replayable evidence and are **not anchorable**;
+the validator says so when it reads one.
 
 ## Install for development
 
