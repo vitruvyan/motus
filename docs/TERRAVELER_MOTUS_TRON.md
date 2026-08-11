@@ -32,18 +32,32 @@ not verify.
 
 ### 1.1 Install
 
+> **Read this before installing anything.** The 0.8.1 you may already be running
+> writes traces whose root is **not anchorable**: under trace schema 2.0.0 the
+> terminal digest covered the terminal record alone, so an editor could rewrite
+> the run and reseal it by the published recipe with that value unmoved
+> (`vitruvyan/motus` ADR-019). Worse, with a fixed clock — which declared
+> reproducibility gives you — three unrelated runs shared one root.
+>
+> Those traces are still valid, replayable evidence. They are not something to
+> publish on a chain. **Phase 3 must not run until you are on trace schema
+> 3.0.0**, and phase 2 should not fill a root column before then either, because
+> every value it stores would have to be discarded. Phases 1 and 2 are otherwise
+> unaffected: the API, the `GraphState` shape and the import changes below are
+> identical.
+
 **Motus is not on PyPI yet.** Publication by Trusted Publishing is prepared but
 deliberately held (`vitruvyan/motus` PR #72, open on purpose). So install from
 the repository, pinned to a commit rather than to a moving branch:
 
 ```bash
-pip install "git+https://github.com/vitruvyan/motus@508fd52"
+pip install "git+https://github.com/vitruvyan/motus@<the ADR-019 merge commit>"
 ```
 
-`508fd52` is the tip of `main` and carries the 0.8.1 release; record it in your
-report. When 0.8.1 does reach PyPI that line becomes
-`pip install "vitruvyan-motus==0.8.1"` and nothing else here changes — the
-package is identical, only its provenance differs.
+Take that commit from the tip of `main` once the ADR-019 pull request has
+landed, and record it in your report — it is the first commit that emits trace
+schema 3.0.0. `508fd52`, the 0.8.1 release, is the version this document was
+first written against and is deliberately **not** the pin any more.
 
 Terraveler's Python side has **no `requirements.txt` and no `pyproject.toml`**
 today. Create one — `requirements.txt` at the repository root is enough —
@@ -148,6 +162,15 @@ column, whatever fits the Supabase schema. Two requirements:
 - store the **canonical JSONL**, not a re-serialisation of your own;
 - store the trace's **root** (`result.trace.root`) in its own column. Phase 3
   publishes that value and nothing else.
+
+  `trace.root` can return `None`, and when it does the column stays empty and
+  nothing is published. It means one of: the run has no terminal record, the
+  trace is below schema 3.0.0, or **its chain does not verify** — the property
+  recomputes the whole chain from the document rather than reading the field
+  back. Treat `None` as "this evidence is not anchorable", never as "use the
+  raw field instead": `records[-1]["integrity"]["payload_hash"]` returns a
+  string for a rewritten document too, and it is the string an anchor would
+  agree with. That is the entire reason the accessor exists.
 
 ### Verify before moving on
 

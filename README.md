@@ -245,17 +245,34 @@ the validator says so when it reads one.
 
 ### The root, for whoever anchors it
 
-The root is **the terminal record's `integrity.payload_hash`** — derived, never
-stored twice, and stated normatively in rule T11 of `contract/trace.v1.schema.json`.
-Every record carries `prev_hash` of its predecessor and the first record's
-predecessor is the header itself, so that one value commits to the whole run:
-records, run id, policy, metadata and `graph.code_fingerprint` alike. Anchoring
-anything larger buys nothing and is more fragile.
+The root is **`trace.root`**, and the emphasis is on the accessor rather than on
+the value. It is the terminal record's `integrity.payload_hash` — derived, never
+stored twice, stated normatively in rule T11 of `contract/trace.v1.schema.json`
+— but the property recomputes it from the document rather than reading it back,
+and that difference is the whole protection:
 
 ```python
-root = result.trace.records[-1]["integrity"]["payload_hash"]
-# 'sha256:1ca0f5f6…' — 71 characters, not 64
+root = result.trace.root          # 'sha256:1ca0f5f6…' — 71 characters, not 64
+if root is None:
+    ...                           # do not anchor anything
 ```
+
+**Do not reach past it.** `records[-1]["integrity"]["payload_hash"]` returns the
+string the document happens to carry, and there are three documents where that
+string is worthless: one sealed under 2.0.0, one relabelled from 2.0.0, and one
+whose header was rewritten while the first record's `prev_hash` was left stale —
+that last leaves every declared digest self-consistent and the terminal one
+unmoved. `trace.root` returns `None` for all three. The raw field returns a
+value for all three, and it is the value an anchor would agree with.
+
+`None` is an answer, not an error: the trace is unfinished, or below 3.0.0, or
+its chain does not verify. Anchor nothing and find out which.
+
+Under 3.0.0 that one value commits to the whole run — records, run id, policy,
+metadata and `graph.code_fingerprint` alike — with one stated exception:
+**numbers commit as parsed, at binary64 precision**, so a float in a trace
+commits to its IEEE-754 double rather than to the literal in the file. Anchoring
+anything larger than the root buys nothing and is more fragile.
 
 The value **names its hash function**: a digest that does not say what produced
 it cannot be recomputed. That costs seven characters, which matters when the
