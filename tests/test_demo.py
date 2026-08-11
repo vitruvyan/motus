@@ -38,14 +38,25 @@ def test_every_tamper_is_caught_on_the_trace_and_only_the_anchor_catches_the_las
     assert "nessuno" not in verdicts, (
         f"a tamper went unnoticed on the trace: {verdicts}"
     )
-    assert verdicts[-1] == "ancora", (
-        "the resealing editor was caught by the validator, which means either "
-        "the reseal is not faithful or the validator gained a check it cannot "
-        "have — a resealed trace is internally consistent by construction"
-    )
-    assert verdicts[:-1] == ["validatore"] * (len(verdicts) - 1)
 
-    # And the log is genuinely weaker, for the reason the demo states: it has
+    # Exactly one tamper is invisible to the validator and caught only by the
+    # anchor: the editor who reseals correctly. A resealed trace is internally
+    # consistent by construction, so if the validator started catching it,
+    # either the reseal is not faithful or the validator gained a check it
+    # cannot have.
+    by_anchor = [r for r, who in zip(data["results"], verdicts) if who == "ancora"]
+    assert len(by_anchor) == 1, [r["title"] for r in by_anchor]
+    assert "RISIGILLA" in by_anchor[0]["title"]
+
+    # And one where the validator does catch it but the RAW field does not
+    # move — the stale first link. That is the case that makes the accessor
+    # worth having: reaching past `trace.root` agrees with the anchor here.
+    stale = [r for r in data["results"] if r["raw_field_unmoved"] and r["new_root"] is None
+             and r["trace_caught"]]
+    assert stale, "the stale-header attack no longer reproduces"
+    assert all(r["new_root"] is None for r in stale)
+
+    # The log is genuinely weaker, for the reason the demo states: it has
     # per-row digests, so it catches payload edits and nothing structural.
     caught = [r["log_caught"] for r in data["results"]]
     assert caught.count(True) == 3, caught

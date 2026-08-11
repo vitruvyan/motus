@@ -34,7 +34,7 @@ from vitruvyan_motus import (  # noqa: E402
     Decision, DurabilityProfile, EffectClass, EffectDescriptor, EffectReceipt,
     Fact, GraphSpec, JsonlTraceSink, ReplayStatus, Runtime, State,
 )
-from vitruvyan_motus.trace import Trace  # noqa: E402
+from vitruvyan_motus.trace import Trace, _canonical_bytes  # noqa: E402
 
 T0 = datetime(2026, 8, 12, 9, 14, 0, tzinfo=timezone.utc)
 
@@ -202,6 +202,24 @@ def reseal(document: dict) -> dict:
     return trace.to_dict()
 
 
+def reseal_stale_header(document: dict) -> dict:
+    """Reseal, but leave the first link pointing at the OLD header digest.
+
+    The subtlest of the seven, and the one that says why an anchor holder must
+    recompute rather than compare. Every declared digest recomputes; the chain
+    reads as internally perfect; and the terminal digest does not move, because
+    a digest covers the STRING naming its predecessor and not the predecessor.
+    """
+    prev = document["records"][0]["integrity"]["prev_hash"]
+    for record in document["records"]:
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": prev}
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+        record["integrity"] = {"payload_hash": digest, "prev_hash": prev}
+        prev = digest
+    return document
+
+
 def _tampers():
     def flip_verdict_trace(d):
         for record in d["records"]:
@@ -245,6 +263,10 @@ def _tampers():
          lambda rows: rows.insert(3, copy.deepcopy(rows[3])), False),
         ("Ribalta il verdetto E RISIGILLA", "l'attaccante conosce il contratto e rifa' ogni hash",
          flip_verdict_trace, flip_verdict_log, True),
+        ("Riscrive l'intestazione, link stantio",
+         "cambia la policy e lascia il primo prev_hash dov'era: ogni hash torna",
+         lambda d: d["run"].__setitem__("policy", "exploration"),
+         lambda rows: None, "stale"),
     ]
 
 
@@ -260,10 +282,20 @@ def run_demo() -> dict:
     for title, detail, on_trace, on_log, resealing in _tampers():
         edited_doc = json.loads(json.dumps(document))
         on_trace(edited_doc)
-        if resealing:
+        if resealing == "stale":
+            edited_doc = reseal_stale_header(edited_doc)
+        elif resealing:
             edited_doc = reseal(edited_doc)
         trace_ok, trace_msg = check_trace(edited_doc, workspace, "tampered")
-        new_root = (edited_doc["records"][-1]["integrity"]["payload_hash"]
+        # Derived, never read back. The raw field is what the tampered document
+        # CLAIMS its root is, and for two of the tampers below it claims the
+        # published value exactly. `Trace.root` recomputes the chain from the
+        # document and answers None when the claim is not earned.
+        try:
+            new_root = Trace.from_dict(edited_doc).root
+        except (ValueError, TypeError):
+            new_root = None
+        raw_root = (edited_doc["records"][-1]["integrity"]["payload_hash"]
                     if edited_doc["records"] else None)
 
         edited_rows = copy.deepcopy(rows)
@@ -280,6 +312,7 @@ def run_demo() -> dict:
             "log_caught": not log_ok, "log_msg": log_msg,
             "trace_caught": not trace_ok, "trace_msg": trace_msg,
             "root_moved": new_root != root,
+            "raw_field_unmoved": raw_root == root,
             "new_root": new_root,
         })
     return {
@@ -303,6 +336,14 @@ def _who_caught(result: dict) -> tuple[str, str]:
     is internally perfect. That is why the root is published and the chain is not.
     """
     if result["trace_caught"]:
+        if result["raw_field_unmoved"] and result["new_root"] is None:
+            # The chain reads as internally perfect and the raw field still
+            # carries the published value: anyone comparing that field to the
+            # anchor sees agreement. Only running the validator, or asking
+            # `trace.root` — which recomputes — disagrees.
+            return "validatore", (
+                "il campo grezzo non si muove: chi lo confronta con l'ancora "
+                "vede accordo. trace.root risponde None")
         return "validatore", result["trace_msg"]
     if result["root_moved"]:
         return "ancora", "la traccia e' coerente, ma la root non e' piu' quella pubblicata"
