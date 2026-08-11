@@ -1,0 +1,642 @@
+{
+  "generated_by": "demo/attack_this_run.py (vitruvyan/motus)",
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "sub-4471",
+    "graph": {
+      "name": "verdict-desk",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:70dec639ca862c641d8de2b9ff3dc6eed8ae5d94be3610aa90dbf3dc5f4b2471",
+      "code_fingerprint": "code:sha256:e4fc7b8a2ebc2f25683f953345bf7bb4150d0e8291fe077458a3a4d176385d3f",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "synchronous",
+    "replay": {
+      "capability": "partial",
+      "constraints": [
+        "node:retrieve:external_source"
+      ]
+    },
+    "metadata": {
+      "desk": "cti",
+      "reviewer": "r-118"
+    },
+    "created_ts": "2026-08-11T23:57:42.026626Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "root": "sha256:0a2810b9fc394a43a20812e7b98f5221f59d9418cb30c65163f2e9fc5bd2af08",
+  "record_count": 14,
+  "citations": [
+    {
+      "doc": "SOC-2024-0871.pdf",
+      "page": 4,
+      "tlp": "TLP:AMBER"
+    },
+    {
+      "doc": "CERT-EU-ADV-2026-11.pdf",
+      "page": 1,
+      "tlp": "TLP:CLEAR"
+    },
+    {
+      "doc": "internal-IR-4471.pdf",
+      "page": 12,
+      "tlp": "TLP:RED"
+    }
+  ],
+  "baseline": {
+    "log": "accepted: every row's digest matches its payload",
+    "trace": "accepted"
+  },
+  "timeline": [
+    {
+      "event_type": "run_started",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:00+00:00",
+      "event_id": "evt-0001",
+      "causation_id": null
+    },
+    {
+      "event_type": "attempt_started",
+      "source": "retrieve",
+      "created_at": "2026-08-12T09:14:00.120000+00:00",
+      "event_id": "evt-0002",
+      "causation_id": "evt-0001"
+    },
+    {
+      "event_type": "transition",
+      "source": "retrieve",
+      "created_at": "2026-08-12T09:14:00.240000+00:00",
+      "event_id": "evt-0003",
+      "causation_id": "evt-0002"
+    },
+    {
+      "event_type": "routing",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:00.360000+00:00",
+      "event_id": "evt-0004",
+      "causation_id": "evt-0003"
+    },
+    {
+      "event_type": "attempt_started",
+      "source": "classify",
+      "created_at": "2026-08-12T09:14:00.480000+00:00",
+      "event_id": "evt-0005",
+      "causation_id": "evt-0004"
+    },
+    {
+      "event_type": "transition",
+      "source": "classify",
+      "created_at": "2026-08-12T09:14:00.600000+00:00",
+      "event_id": "evt-0006",
+      "causation_id": "evt-0005"
+    },
+    {
+      "event_type": "routing",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:00.720000+00:00",
+      "event_id": "evt-0007",
+      "causation_id": "evt-0006"
+    },
+    {
+      "event_type": "attempt_started",
+      "source": "decide",
+      "created_at": "2026-08-12T09:14:00.840000+00:00",
+      "event_id": "evt-0008",
+      "causation_id": "evt-0007"
+    },
+    {
+      "event_type": "transition",
+      "source": "decide",
+      "created_at": "2026-08-12T09:14:00.960000+00:00",
+      "event_id": "evt-0009",
+      "causation_id": "evt-0008"
+    },
+    {
+      "event_type": "routing",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:01.080000+00:00",
+      "event_id": "evt-0010",
+      "causation_id": "evt-0009"
+    },
+    {
+      "event_type": "attempt_started",
+      "source": "seal",
+      "created_at": "2026-08-12T09:14:01.200000+00:00",
+      "event_id": "evt-0011",
+      "causation_id": "evt-0010"
+    },
+    {
+      "event_type": "transition",
+      "source": "seal",
+      "created_at": "2026-08-12T09:14:01.320000+00:00",
+      "event_id": "evt-0012",
+      "causation_id": "evt-0011"
+    },
+    {
+      "event_type": "routing",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:01.440000+00:00",
+      "event_id": "evt-0013",
+      "causation_id": "evt-0012"
+    },
+    {
+      "event_type": "run_completed",
+      "source": "runner",
+      "created_at": "2026-08-12T09:14:01.560000+00:00",
+      "event_id": "evt-0014",
+      "causation_id": "evt-0013"
+    }
+  ],
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-11T23:57:42.027455Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:42ff941ac2bb5b48479e42408d9d180d5e860a099e52905f482ef6dff8704d59",
+        "prev_hash": "sha256:e8232ab0a6599b2ae7c174c64b92bcb73f53293f6ce2051c071d5d15a9fa4c0c"
+      },
+      "intent": "release verdict on submission 4471",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-11T23:57:42.027611Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:87ec0cb7765c9376e6dae0f11edd7662a14b01f15c071994f6e5efd29ffc983a",
+        "prev_hash": "sha256:42ff941ac2bb5b48479e42408d9d180d5e860a099e52905f482ef6dff8704d59"
+      },
+      "node": "retrieve",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-11T23:57:42.027999Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:a828e378bc719df4ee0b2b74437db5558e3370e6be524a5c94c5283099d834ff",
+        "prev_hash": "sha256:87ec0cb7765c9376e6dae0f11edd7662a14b01f15c071994f6e5efd29ffc983a"
+      },
+      "node": "retrieve",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "citations",
+            "value": [
+              {
+                "doc": "SOC-2024-0871.pdf",
+                "page": 4,
+                "tlp": "TLP:AMBER"
+              },
+              {
+                "doc": "CERT-EU-ADV-2026-11.pdf",
+                "page": 1,
+                "tlp": "TLP:CLEAR"
+              },
+              {
+                "doc": "internal-IR-4471.pdf",
+                "page": 12,
+                "tlp": "TLP:RED"
+              }
+            ],
+            "source": "corpus",
+            "ts": "2026-08-12T09:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET vault://corpus?q=CVE-2026-3311",
+          "idempotency_key": "corpus-4471",
+          "receipt": {
+            "receipt_id": "vault:read:88213",
+            "status": "completed"
+          }
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-11T23:57:42.028200Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:daf01c79e9586223ab8d608435aad19b927c48a1fdacedea80206e4f9699cd4a",
+        "prev_hash": "sha256:a828e378bc719df4ee0b2b74437db5558e3370e6be524a5c94c5283099d834ff"
+      },
+      "after": "retrieve",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "classify",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "classify",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-11T23:57:42.028325Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:36841e6abe8a40832505ba340e0b616c9a20f673fe223489dc9bfe14abebff40",
+        "prev_hash": "sha256:daf01c79e9586223ab8d608435aad19b927c48a1fdacedea80206e4f9699cd4a"
+      },
+      "node": "classify",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-11T23:57:42.028556Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:a8b6217ba2fde687970883b1ee113103811053ca49320343ee672e6f986919b4",
+        "prev_hash": "sha256:36841e6abe8a40832505ba340e0b616c9a20f673fe223489dc9bfe14abebff40"
+      },
+      "node": "classify",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "citations",
+          "origin": {
+            "kind": "transition",
+            "seq": 3,
+            "collection": "facts",
+            "index": 0
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "tlp_ceiling",
+            "value": "TLP:RED",
+            "source": "classifier",
+            "ts": "2026-08-12T09:14:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "releasable",
+            "value": "yes",
+            "ts": "2026-08-12T09:14:00Z",
+            "reason": "3 sources, ceiling TLP:RED"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-11T23:57:42.028747Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:9267d88621fb56b1888dd43e96c4503132b02819c3cfd384b1ced5b03e0c6684",
+        "prev_hash": "sha256:a8b6217ba2fde687970883b1ee113103811053ca49320343ee672e6f986919b4"
+      },
+      "after": "classify",
+      "on": "releasable",
+      "value": "yes",
+      "origin": {
+        "kind": "transition",
+        "seq": 6,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "decide",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "yes"
+          },
+          "target": "decide",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "seal",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-11T23:57:42.028930Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:7abdbb6d124fec7b61e216deecb04894870db86a7faa92ac332f5eb98d15fc78",
+        "prev_hash": "sha256:9267d88621fb56b1888dd43e96c4503132b02819c3cfd384b1ced5b03e0c6684"
+      },
+      "node": "decide",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-11T23:57:42.029066Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:4d1f06613a69108c1670674d411ab7faf783beaa78c5cdc5aaaa4b5ee234b968",
+        "prev_hash": "sha256:7abdbb6d124fec7b61e216deecb04894870db86a7faa92ac332f5eb98d15fc78"
+      },
+      "node": "decide",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "verdict",
+            "value": "APPROVED",
+            "source": "curator",
+            "ts": "2026-08-12T09:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-11T23:57:42.029186Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:3b2048e0e816a2815244d1b52353d7080e389e184c8de081a0cb84b7525e9afd",
+        "prev_hash": "sha256:4d1f06613a69108c1670674d411ab7faf783beaa78c5cdc5aaaa4b5ee234b968"
+      },
+      "after": "decide",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "seal",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "seal",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-11T23:57:42.029270Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:fc092462f0deb2acf17be1e81f941d4a32ca6ce1e4cefbf69e5ff7535cf5d666",
+        "prev_hash": "sha256:3b2048e0e816a2815244d1b52353d7080e389e184c8de081a0cb84b7525e9afd"
+      },
+      "node": "seal",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-11T23:57:42.029411Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:6e10d73b7e44b21e6e77503265f7a299f7d9ef288a883411c1cb68d671c04e05",
+        "prev_hash": "sha256:fc092462f0deb2acf17be1e81f941d4a32ca6ce1e4cefbf69e5ff7535cf5d666"
+      },
+      "node": "seal",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "external_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "sealed",
+            "value": true,
+            "source": "vault",
+            "ts": "2026-08-12T09:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "external_effect",
+          "description": "POST vault://seal/4471",
+          "idempotency_key": "seal-4471",
+          "receipt": {
+            "receipt_id": "vault:seal:99017",
+            "status": "completed"
+          }
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-11T23:57:42.029555Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:3af56dc58c451f48891b6561078d271fafaeca3046f382d3402d8d28523ce927",
+        "prev_hash": "sha256:6e10d73b7e44b21e6e77503265f7a299f7d9ef288a883411c1cb68d671c04e05"
+      },
+      "after": "seal",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-11T23:57:42.029684Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:0a2810b9fc394a43a20812e7b98f5221f59d9418cb30c65163f2e9fc5bd2af08",
+        "prev_hash": "sha256:3af56dc58c451f48891b6561078d271fafaeca3046f382d3402d8d28523ce927"
+      },
+      "replay": {
+        "capability": "partial",
+        "constraints": [
+          "node:retrieve:external_source"
+        ]
+      }
+    }
+  ],
+  "tampers": [
+    {
+      "title": "Ribalta il verdetto",
+      "detail": "APPROVED diventa REJECTED",
+      "log": {
+        "caught": true,
+        "message": "evt-0009: payload_hash does not match the payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Declassifica una fonte",
+      "detail": "la citazione TLP:RED diventa TLP:CLEAR",
+      "log": {
+        "caught": true,
+        "message": "evt-0003: payload_hash does not match the payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Cancella un passo",
+      "detail": "il passo che ha classificato le fonti sparisce",
+      "log": {
+        "caught": true,
+        "message": "evt-0005: causation_id names an event that is not here"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Riscrive di chi e' la run",
+      "detail": "run_id sub-4471 diventa sub-0000",
+      "log": {
+        "caught": false,
+        "message": "accepted: every row's digest matches its payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Cambia la policy",
+      "detail": "strict diventa exploration: gli errori non fermano piu' la run",
+      "log": {
+        "caught": false,
+        "message": "accepted: every row's digest matches its payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Duplica un passo",
+      "detail": "un passo compare due volte",
+      "log": {
+        "caught": false,
+        "message": "accepted: every row's digest matches its payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    },
+    {
+      "title": "Ribalta il verdetto E RISIGILLA",
+      "detail": "l'attaccante conosce il contratto e rifa' ogni hash",
+      "log": {
+        "caught": false,
+        "message": "accepted: every row's digest matches its payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "ancora",
+        "message": "la traccia e' coerente, ma la root non e' piu' quella pubblicata",
+        "raw_field_unmoved": false,
+        "derived_root": "sha256:8aa33bb1be7e4e4e61e7ef0b0fc32a444d08209e95a7eff0db0705781b93450f"
+      }
+    },
+    {
+      "title": "Riscrive l'intestazione, link stantio",
+      "detail": "cambia la policy e lascia il primo prev_hash dov'era: ogni hash torna",
+      "log": {
+        "caught": false,
+        "message": "accepted: every row's digest matches its payload"
+      },
+      "trace": {
+        "caught": true,
+        "caught_by": "validatore",
+        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "raw_field_unmoved": true,
+        "derived_root": null
+      }
+    }
+  ],
+  "totals": {
+    "log": 3,
+    "trace": 8,
+    "of": 8
+  }
+}

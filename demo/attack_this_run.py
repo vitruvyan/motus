@@ -521,15 +521,68 @@ fare e' rimettere a posto una root gia' pubblicata altrove.</p>
 """
 
 
+def as_payload(data: dict) -> dict:
+    """The demo as data, for a front end that cannot run Python.
+
+    Motus is a Python runtime and the site is Next.js, so a browser cannot
+    produce this: it must be generated from a REAL run and shipped. Every
+    verdict here was emitted by contract/validate.py in a separate process —
+    none of it is written by hand, and `generated_by` records what produced it
+    so a reader can regenerate it rather than trust it.
+    """
+    results = []
+    for result in data["results"]:
+        who, why = _who_caught(result)
+        results.append({
+            "title": result["title"], "detail": result["detail"],
+            "log": {"caught": result["log_caught"], "message": result["log_msg"]},
+            "trace": {
+                "caught": who != "nessuno",
+                "caught_by": who,                      # validatore | ancora | nessuno
+                "message": why,
+                "raw_field_unmoved": result["raw_field_unmoved"],
+                "derived_root": result["new_root"],
+            },
+        })
+    return {
+        "generated_by": "demo/attack_this_run.py (vitruvyan/motus)",
+        "schema_version": data["document"]["schema_version"],
+        "run": data["document"]["run"],
+        "root": data["root"],
+        "record_count": data["records"],
+        "citations": CITATIONS,
+        "baseline": {"log": data["baseline_log"][1], "trace": data["baseline_trace"][1]},
+        "timeline": [
+            {"event_type": r["event_type"], "source": r["source"],
+             "created_at": r["created_at"], "event_id": r["event_id"],
+             "causation_id": r["causation_id"]}
+            for r in data["rows"]
+        ],
+        "records": data["document"]["records"],
+        "tampers": results,
+        "totals": {
+            "log": sum(1 for r in data["results"] if r["log_caught"]),
+            "trace": sum(1 for r in data["results"] if _who_caught(r)[0] != "nessuno"),
+            "of": len(data["results"]),
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--html", metavar="PATH", help="write the page here")
+    parser.add_argument("--json", metavar="PATH",
+                        help="write the data a web front end can render")
     args = parser.parse_args()
     data = run_demo()
     render_terminal(data)
     if args.html:
         Path(args.html).write_text(render_html(data), encoding="utf-8")
         print(f"pagina: {args.html}")
+    if args.json:
+        Path(args.json).write_text(json.dumps(as_payload(data), indent=2,
+                                              ensure_ascii=False), encoding="utf-8")
+        print(f"dati  : {args.json}")
 
 
 if __name__ == "__main__":
