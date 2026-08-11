@@ -1332,7 +1332,7 @@ def _trace_semantics(
     # is recompute the rest of the chain without also holding whatever anchored
     # its root.
     version = doc.get("schema_version")
-    if version == "2.0.0":
+    if version in ("2.0.0", "3.0.0"):
         # The chain starts at the HEADER, so the first record's prev_hash is the
         # header's digest and never null. Without this the header sat outside
         # the root: run_id, policy, metadata and graph.code_fingerprint could all
@@ -1348,11 +1348,23 @@ def _trace_semantics(
         for i, record in enumerate(records):
             integrity = record.get("integrity") or {}
             actual = integrity.get("payload_hash")
-            # The digest covers the record with its integrity block NULLED, not
+            # The digest covers the record with payload_hash NULLED, not
             # removed: what a hash must not cover is its own value, and a
             # constant null is not one. So the object hashed is a real record.
+            #
+            # THE RECIPE IS SELECTED BY VERSION (ADR-019). 3.0.0 takes the digest
+            # with prev_hash PRESENT, so each one commits to its predecessor and
+            # the terminal digest commits to the run. 2.0.0 nulled prev_hash too,
+            # which left the links uncovered: an editor could rewrite any record
+            # or the header, reseal by this same published recipe, pass this
+            # check, and the root did not move. 2.0.0 is not amended — a trace
+            # sealed under it is a truthful record and must keep validating —
+            # so its recipe survives here, and what it is worth is said below.
             payload = dict(record)
-            payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+            payload["integrity"] = {
+                "payload_hash": None,
+                "prev_hash": None if version == "2.0.0" else integrity.get("prev_hash"),
+            }
             computed = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
             if actual is None:
                 v.append(
@@ -1418,7 +1430,9 @@ def _trace_semantics(
             digest = receipt.get("interaction_fingerprint")
             salt = receipt.get("fingerprint_salt")
             path = f"$.records[{i}].effects[{j}].receipt"
-            if version != "2.0.0" and (digest is not None or salt is not None):
+            if version not in ("2.0.0", "3.0.0") and (
+                digest is not None or salt is not None
+            ):
                 v.append(
                     Violation(
                         "T12",
@@ -2658,8 +2672,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     expect_complete = not args.allow_incomplete
+    trace_doc: dict[str, Any] | None = None
     if args.artifact == "jsonl":
         violations, _doc = validate_jsonl(raw, spec=spec, expect_complete=expect_complete)
+        trace_doc = _doc
     else:
         try:
             doc = _loads_strict(raw)
@@ -2676,9 +2692,25 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_graphspec(doc)
         else:
             violations = validate_trace(doc, spec=spec, expect_complete=expect_complete)
+            trace_doc = doc if isinstance(doc, dict) else None
 
     for violation in violations:
         print(f"{violation.rule} {violation.path}: {violation.message}")
+
+    # A 2.0.0 trace is not malformed and this is not a violation: it is a
+    # truthful record of a real run and exits 0 like any other. What it does not
+    # have is an anchorable root — its digests do not cover prev_hash, so the
+    # terminal one covers the terminal record and not the run (ADR-019). The
+    # only place that fact is any use is beside the value, at the moment someone
+    # is deciding what to publish, so it is said here and on stderr, where it
+    # cannot be mistaken for a finding about the document.
+    if isinstance(trace_doc, dict) and trace_doc.get("schema_version") == "2.0.0":
+        print(
+            "note: schema 2.0.0 — this trace's root covers only its terminal "
+            "record.\n      It is not an anchorable commitment to the run "
+            "(ADR-019); re-run under\n      3.0.0 to obtain one.",
+            file=sys.stderr,
+        )
     return 1 if violations else 0
 
 

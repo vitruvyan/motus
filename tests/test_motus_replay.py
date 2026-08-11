@@ -537,15 +537,27 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
         json.dumps({"schema_version": document["schema_version"], "run": document["run"]},
                    sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
+    original_root = result.trace.root
     for record in document["records"]:
         payload = dict(record)
-        payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+        # Since 3.0.0 the digest is taken with prev_hash PRESENT (ADR-019); an
+        # editor resealing the chain must do the same or T11 catches them here.
+        payload["integrity"] = {"payload_hash": None, "prev_hash": previous}
         digest = "sha256:" + hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":"),
                        ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         record["integrity"] = {"payload_hash": digest, "prev_hash": previous}
         previous = digest
+
+    # And the reason this tripwire does not mean the fingerprint is unprotected
+    # in practice: resealing succeeds locally and MOVES THE ROOT. An editor
+    # passes this validator and fails against anything that published the value
+    # beforehand. Under 2.0.0 the root did not move, which is what ADR-019 fixed.
+    assert document["records"][-1]["integrity"]["payload_hash"] != original_root, (
+        "resealing an edited trace left the root where it was — the digests have "
+        "stopped covering prev_hash, and ADR-019's defect is back"
+    )
 
     violations = validate.validate_trace(document, graph.to_dict())
     assert violations == [], (

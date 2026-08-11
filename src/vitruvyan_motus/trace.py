@@ -21,6 +21,12 @@ __all__ = [
 
 T = TypeVar("T")
 
+# Schema versions whose digest recipe does NOT cover `prev_hash` (ADR-019).
+# Their per-record hashes are independent of the links between them, so the
+# terminal record's digest covers the terminal record and nothing else: it is
+# not a commitment to the run and must never be anchored as one.
+_UNBOUND_CHAIN_VERSIONS = frozenset({"1.0.0", "1.1.0", "2.0.0"})
+
 
 class _Missing:
     """Identity sentinel that remains itself across isolation boundaries."""
@@ -305,7 +311,7 @@ class Trace:
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:
             raise ValueError("trace document requires schema_version, run and records")
-        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0"):
+        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0"):
             raise ValueError("unsupported trace schema version")
         if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
             raise TypeError("trace run must be an object and records an array")
@@ -424,7 +430,19 @@ class Trace:
         # object hashed is therefore a real record rather than a projection, and
         # a validator recomputes it by nulling two fields rather than deleting a
         # key.
-        digest = "sha256:" + hashlib.sha256(_canonical_bytes(record)).hexdigest()
+        # ADR-019. Under 3.0.0 the digest is taken with `prev_hash` PRESENT, so
+        # each digest commits to its predecessor and the terminal one commits to
+        # the whole run. Under 2.0.0 the whole block was nulled, which left every
+        # digest independent of the link beside it: an editor could rewrite any
+        # record, reseal by the published recipe, and the root did not move.
+        # What a digest must not cover is its own value; `prev_hash` is not it.
+        payload = dict(record)
+        payload["integrity"] = (
+            {"payload_hash": None, "prev_hash": None}
+            if self._schema_version in _UNBOUND_CHAIN_VERSIONS
+            else {"payload_hash": None, "prev_hash": prev_hash}
+        )
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
         sealed = dict(record)
         sealed["integrity"] = {"payload_hash": digest, "prev_hash": prev_hash}
         return sealed
@@ -437,17 +455,26 @@ class Trace:
 
     @property
     def root(self) -> str | None:
-        """The hash covering this whole trace, or None if it has no terminal.
+        """The hash covering this whole trace, or None if there is not one.
 
-        Deliberately not a stored field. The terminal record's `payload_hash`
-        already covers the terminal, which chains the record before it, and so
-        on to the first — so the root is derived, and a second copy of it could
+        Deliberately not a stored field. Under 3.0.0 the terminal record's
+        `payload_hash` covers the terminal INCLUDING its `prev_hash`, which
+        commits to the record before it, and so on to the first and through it
+        to the header — so the root is derived, and a second copy of it could
         only ever disagree with the first.
 
-        An unfinished trace has no root, and that is the honest answer rather
-        than a partial one: anchoring a prefix would publish a value that a
-        later complete trace contradicts.
+        Three cases return None, and each is the honest answer:
+
+        - an unfinished trace has no root; anchoring a prefix would publish a
+          value that a later complete trace contradicts;
+        - a schema below 3.0.0 has no root at all. Its digests do not cover
+          `prev_hash`, so the terminal's hash covers one record rather than the
+          run: a caller would anchor a value that agrees with a rewritten
+          document (ADR-019). Returning it typed as a root, for an integrator to
+          hand to a chain, is the one thing this property must not do.
         """
+        if self._schema_version in _UNBOUND_CHAIN_VERSIONS:
+            return None
         if not len(self._records):
             return None
         last = self._records[len(self._records) - 1]
