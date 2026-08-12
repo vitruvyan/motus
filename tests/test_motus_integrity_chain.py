@@ -274,6 +274,19 @@ def test_an_invented_chain_yields_no_root():
     )
 
 
+@pytest.mark.parametrize("integrity", ["a-string", 42, [], None, True, 3.5])
+def test_a_malformed_integrity_block_yields_no_root_and_no_crash(integrity):
+    """`from_dict` accepts an unvalidated document, so `root` meets whatever is
+    in the file. Reaching `.get` on a string raised AttributeError out of a
+    property whose entire contract is to answer None when the document has not
+    earned a root — an anchor ingesting a malformed file must be told "do not
+    anchor this", never handed a crash to catch.
+    """
+    document = _run().trace.to_dict()
+    document["records"][0]["integrity"] = integrity
+    assert Trace.from_dict(document).root is None
+
+
 def test_the_version_guard_fails_closed():
     """An allow-list, not a deny-list: a version nobody enumerated must not
     be treated as chained just because it was not listed as unchained."""

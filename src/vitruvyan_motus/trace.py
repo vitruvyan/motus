@@ -530,7 +530,15 @@ class Trace:
         binds_prev = self._schema_version in _CHAIN_BINDS_PREV
         expected_prev = self._header_digest()
         for record in self._records:
-            integrity = record.get("integrity") or {}
+            # `record.get("integrity") or {}` reaches `.get` on whatever is
+            # there, and `from_dict` accepts an unvalidated document -- so a
+            # record whose integrity is a string raised AttributeError out of a
+            # property whose entire contract is to answer None when the
+            # document does not earn a root. An anchor ingesting a malformed
+            # file must be told "do not anchor this", not handed a crash.
+            integrity = record.get("integrity")
+            if not isinstance(integrity, dict):
+                return None
             if integrity.get("prev_hash") != expected_prev:
                 return None
             payload = dict(record)
