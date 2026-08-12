@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attack this run — Vitruvyan Motus</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#272e38;--ink:#e6edf3;--dim:#8b949e;
+--ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#58a6ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--dim);margin:0 0 32px;font-size:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+padding:20px 22px;margin-bottom:18px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;
+color:var(--dim);margin:0 0 14px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.kv .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.kv .v{font-size:15px;margin-top:3px}
+.qa{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.qa .q{color:var(--dim)}
+.seals{display:flex;gap:10px;flex-wrap:wrap}
+.seal{border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:13px}
+.seal.ok{border-color:#1f6f34;color:var(--ok)}
+.cite{display:flex;justify-content:space-between;padding:9px 0;
+border-bottom:1px solid var(--line);font-size:14px}
+.cite:last-child{border-bottom:0}
+.tlp{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;padding:2px 8px;border-radius:4px}
+.tlp-red{background:#3d1418;color:#ff7b72}
+.tlp-amber{background:#3a2a10;color:#e3b341}
+.tlp-clear{background:#12261a;color:#56d364}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.root{background:#0b1a2b;border:1px solid #1f4b7a;border-radius:8px;padding:14px 16px;
+word-break:break-all;color:#9cd2ff}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+color:var(--dim);font-weight:600;padding:9px 10px;border-bottom:1px solid var(--line)}
+td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
+tr:last-child td{border-bottom:0}
+.tamper{font-weight:600}
+.tamper span{display:block;font-weight:400;color:var(--dim);font-size:13px;margin-top:2px}
+.v{font-weight:600;white-space:nowrap}
+.v.bad{color:var(--bad)}.v.ok{color:var(--ok)}.v.warn{color:var(--warn)}
+.why{color:var(--dim);font-size:12.5px;margin-top:3px;font-family:ui-monospace,Menlo,monospace;
+word-break:break-word}
+.tot td{border-top:2px solid var(--line);font-weight:700}
+.note{color:var(--dim);font-size:13.5px;margin-top:14px}
+.hi{color:var(--ink)}
+details{margin-top:12px}summary{cursor:pointer;color:var(--dim);font-size:13px}
+pre{background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:14px;
+overflow-x:auto;font-size:12px;color:#c9d1d9}
+</style>
+<div class="wrap">
+<h1>Verdict on submission 4471</h1>
+<p class="sub">One decision recorded two ways, then tampered with 8 times.</p>
+
+<div class="card"><h2>The run</h2><div class="grid">
+<div class="kv"><div class="k">desk</div><div class="v">cti · reviewer r-118</div></div>
+<div class="kv"><div class="k">when</div><div class="v">12 Aug 2026, 09:14 UTC</div></div>
+<div class="kv"><div class="k">policy</div><div class="v">strict</div></div>
+<div class="kv"><div class="k">records</div><div class="v">14</div></div>
+</div></div>
+
+<div class="card"><h2>Question and answer</h2><div class="qa">
+<div><div class="q">request</div><div>May the advisory on CVE-2026-3311 be released to the client?</div></div>
+<div><div class="q">verdict</div><div><strong>APPROVED</strong> — TLP:RED classification threshold, release conditional on redaction</div></div>
+</div></div>
+
+<div class="card"><h2>Seals</h2><div class="seals">
+<span class="seal ok">TLP verified</span><span class="seal ok">Vault sealed</span>
+<span class="seal ok">Effects carry idempotency keys</span>
+<span class="seal ok">Replay: partial</span></div></div>
+
+<div class="card"><h2>Cited sources</h2><div class="cite"><span>SOC-2024-0871.pdf <span style="color:#8b949e">p. 4</span></span><span class="tlp tlp-amber">TLP:AMBER</span></div><div class="cite"><span>CERT-EU-ADV-2026-11.pdf <span style="color:#8b949e">p. 1</span></span><span class="tlp tlp-clear">TLP:CLEAR</span></div><div class="cite"><span>internal-IR-4471.pdf <span style="color:#8b949e">p. 12</span></span><span class="tlp tlp-red">TLP:RED</span></div></div>
+
+<div class="card"><h2>The root — the only thing you publish</h2>
+<div class="root mono">sha256:cb6829d3deffc3d518817d1d06c08cf4a7faa6755347df56983cd065b2468a92</div>
+<p class="note">Anchor it where you cannot rewrite it and it becomes the question
+no other line on this page can answer: <span class="hi">is this account still the
+one it was?</span></p></div>
+
+<div class="card"><h2>8 tamperings</h2>
+<table><thead><tr><th>tampering</th><th style="width:150px">event log</th>
+<th style="width:330px">Motus trace</th></tr></thead><tbody>
+<tr><td class="tamper">Flip the verdict<span>APPROVED becomes REJECTED</span></td><td><span class="v ok">caught</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Declassify a source<span>the TLP:RED citation becomes TLP:CLEAR</span></td><td><span class="v ok">caught</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Delete a step<span>the step that classified the sources disappears</span></td><td><span class="v ok">caught</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Rewrite whose run it is<span>run_id sub-4471 becomes sub-0000</span></td><td><span class="v bad">invisible</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Change the policy<span>strict becomes exploration: errors no longer stop the run</span></td><td><span class="v bad">invisible</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Duplicate a step<span>one step appears twice</span></td><td><span class="v bad">invisible</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr><tr><td class="tamper">Flip the verdict AND RESEAL<span>the attacker knows the contract and redoes every hash</span></td><td><span class="v bad">invisible</span></td><td><span class="v warn">caught</span><div class="why">by the anchor alone: the root is no longer the published one</div></td></tr><tr><td class="tamper">Rewrite the header, stale link<span>changes the policy and leaves the first prev_hash where it was: every hash recomputes</span></td><td><span class="v bad">invisible</span></td><td><span class="v ok">caught</span><div class="why">the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None</div></td></tr>
+<tr class="tot"><td>detected</td><td>3/8</td><td>8/8</td></tr>
+</tbody></table>
+<p class="note">The event log here is not a strawman: it carries a
+<code>payload_hash</code> on every row, which is the strongest thing such a table
+usually has, and it is credited with every catch it earns. It even catches the
+deletion — not by any digest, but because the row below the deleted one names it
+in <code>causation_id</code>, and that name now points at nothing. Repair that
+one field, which no hash covers, and the deletion becomes invisible. What the log
+has no value for is the <span class="hi">set</span>: no row commits to any other,
+so a rewritten header or a changed policy leaves nothing behind.</p>
+<p class="note"><span class="hi">Read the resealed row twice.</span> An attacker
+who knows the contract redoes every hash and passes <span class="hi">both</span>
+checks — the tampered trace is internally perfect. The one thing they cannot do
+is reach a root already published somewhere else. That row is the case for
+anchoring, and it is the only one the validator cannot win.</p>
+<p class="note">The last row is a different animal. The validator does catch it,
+but the <span class="hi">raw</span> terminal field still carries the published
+root — so anyone who compares that field to the anchor sees agreement.
+<code>trace.root</code> recomputes the whole chain from the document and answers
+<code>None</code>. That is why the root is an accessor and not a field you read.</p>
+<details><summary>the verdict is not this page's</summary>
+<pre>$ python contract/validate.py trace run.json --spec graph.json
+accepted</pre>
+<p class="note">A separate process, reading only the file and the published contract.</p>
+</details></div>
+
+<div class="card"><h2>The raw timeline</h2><div class="cite"><span>run_started <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:00+00:</span></div><div class="cite"><span>attempt_started <span style="color:#8b949e">retrieve</span></span><span class="mono" style="color:#8b949e">09:14:00.120</span></div><div class="cite"><span>transition <span style="color:#8b949e">retrieve</span></span><span class="mono" style="color:#8b949e">09:14:00.240</span></div><div class="cite"><span>routing <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:00.360</span></div><div class="cite"><span>attempt_started <span style="color:#8b949e">classify</span></span><span class="mono" style="color:#8b949e">09:14:00.480</span></div><div class="cite"><span>transition <span style="color:#8b949e">classify</span></span><span class="mono" style="color:#8b949e">09:14:00.600</span></div><div class="cite"><span>routing <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:00.720</span></div><div class="cite"><span>attempt_started <span style="color:#8b949e">decide</span></span><span class="mono" style="color:#8b949e">09:14:00.840</span></div><div class="cite"><span>transition <span style="color:#8b949e">decide</span></span><span class="mono" style="color:#8b949e">09:14:00.960</span></div><div class="cite"><span>routing <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:01.080</span></div><div class="cite"><span>attempt_started <span style="color:#8b949e">seal</span></span><span class="mono" style="color:#8b949e">09:14:01.200</span></div><div class="cite"><span>transition <span style="color:#8b949e">seal</span></span><span class="mono" style="color:#8b949e">09:14:01.320</span></div><div class="cite"><span>routing <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:01.440</span></div><div class="cite"><span>run_completed <span style="color:#8b949e">runner</span></span><span class="mono" style="color:#8b949e">09:14:01.560</span></div></div>
+</div></html>

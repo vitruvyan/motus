@@ -21,6 +21,13 @@ __all__ = [
 
 T = TypeVar("T")
 
+# Schema versions whose digest recipe DOES cover `prev_hash` (ADR-019), named
+# as an allow-list on purpose. The deny-list this replaced failed OPEN: any
+# version not in it — a typo, a future 4.0.0, a string an editor put in the
+# header — was treated as chained and got a root. A guard about what may be
+# anchored has to fail closed.
+_CHAIN_BINDS_PREV = frozenset({"3.0.0"})
+
 
 class _Missing:
     """Identity sentinel that remains itself across isolation boundaries."""
@@ -89,9 +96,37 @@ def _wire_timestamp(value: str | datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _encodable(text: str) -> str:
+    """Refuse a str that has no UTF-8 encoding (J1).
+
+    A lone surrogate is a Python `str` and passes every other J1 check, so it
+    reached the seal and raised UnicodeEncodeError out of `Runtime.run()` —
+    not NodeFailed, so the caller got no state and no trace, and the sink kept
+    a run with no terminal record. It is not an exotic input: `json.loads` of
+    an escaped `\\ud800` produces one silently, which is any node parsing an
+    external payload with a broken surrogate pair in it.
+
+    `isascii()` is a C-level flag check and answers for the overwhelming
+    majority of strings without encoding anything, so the cost of this on the
+    hot path is a branch.
+    """
+    if text.isascii():
+        return text
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(
+            "surrogates have no UTF-8 encoding and are not RFC 8259 JSON "
+            f"strings: {exc}"
+        ) from None
+    return text
+
+
 def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
     """Validate and isolate one RFC 8259 value without coercion."""
-    if value is None or isinstance(value, (str, bool, int)):
+    if isinstance(value, str):
+        return _encodable(value)
+    if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
@@ -102,6 +137,8 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("JSON object keys must be strings")
+        for key in value:
+            _encodable(key)
         if reserve_redacted and value.get("kind") == "redacted":
             raise ValueError("redacted values are reserved for redact()")
         return {
@@ -271,7 +308,8 @@ class _ChunkedLog(Generic[T]):
 class Trace:
     """A trace envelope backed by a persistent record log."""
 
-    __slots__ = ("_schema_version", "_run", "_records", "_view_cache", "_json_cache")
+    __slots__ = ("_schema_version", "_run", "_records", "_view_cache", "_json_cache",
+                 "_root_cache")
 
     def __init__(
         self, run: dict[str, Any], records: _ChunkedLog[dict[str, Any]] | None = None,
@@ -284,6 +322,7 @@ class Trace:
         self._records = _ChunkedLog() if records is None else records
         self._view_cache = None
         self._json_cache = None
+        self._root_cache = _MISSING
 
     @classmethod
     def _from_parts(
@@ -295,6 +334,7 @@ class Trace:
         instance._records = records
         instance._view_cache = None
         instance._json_cache = None
+        instance._root_cache = _MISSING
         return instance
 
     @classmethod
@@ -305,7 +345,7 @@ class Trace:
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:
             raise ValueError("trace document requires schema_version, run and records")
-        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0"):
+        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0"):
             raise ValueError("unsupported trace schema version")
         if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
             raise TypeError("trace run must be an object and records an array")
@@ -395,12 +435,13 @@ class Trace:
         from nothing but itself, which is what makes an offline validator
         possible.
 
-        The digest covers the record WITHOUT its own integrity block — a hash
-        cannot cover itself — over the canonical object form, never over
-        encoding bytes, so a trace re-encoded as JSONL or as a document hashes
-        identically. The first record's `prev_hash` is null: it has no
-        predecessor, and inventing a genesis value would be a constant that
-        looks like evidence.
+        The digest covers the record with its own `payload_hash` nulled and,
+        under 3.0.0, its `prev_hash` present — a hash cannot cover its own
+        value, and `prev_hash` is not it. Over the canonical object form, never
+        over encoding bytes, so a trace re-encoded as JSONL or as a document
+        hashes identically. The first record's `prev_hash` is the HEADER's
+        digest, not null: a null first link would leave the header outside the
+        chain, which is the hole ADR-017 found and ADR-019 finished closing.
         """
         # The header is the first record's predecessor, not nothing. Chaining
         # records alone left run_id, policy, metadata and graph.code_fingerprint
@@ -424,7 +465,19 @@ class Trace:
         # object hashed is therefore a real record rather than a projection, and
         # a validator recomputes it by nulling two fields rather than deleting a
         # key.
-        digest = "sha256:" + hashlib.sha256(_canonical_bytes(record)).hexdigest()
+        # ADR-019. Under 3.0.0 the digest is taken with `prev_hash` PRESENT, so
+        # each digest commits to its predecessor and the terminal one commits to
+        # the whole run. Under 2.0.0 the whole block was nulled, which left every
+        # digest independent of the link beside it: an editor could rewrite any
+        # record, reseal by the published recipe, and the root did not move.
+        # What a digest must not cover is its own value; `prev_hash` is not it.
+        payload = dict(record)
+        payload["integrity"] = (
+            {"payload_hash": None, "prev_hash": None}
+            if self._schema_version not in _CHAIN_BINDS_PREV
+            else {"payload_hash": None, "prev_hash": prev_hash}
+        )
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
         sealed = dict(record)
         sealed["integrity"] = {"payload_hash": digest, "prev_hash": prev_hash}
         return sealed
@@ -435,25 +488,105 @@ class Trace:
             self._run, self._records.append(record), self._schema_version
         )
 
-    @property
-    def root(self) -> str | None:
-        """The hash covering this whole trace, or None if it has no terminal.
+    def _header_digest(self) -> str:
+        return "sha256:" + hashlib.sha256(_canonical_bytes(
+            {"schema_version": self._schema_version, "run": self._run}
+        )).hexdigest()
 
-        Deliberately not a stored field. The terminal record's `payload_hash`
-        already covers the terminal, which chains the record before it, and so
-        on to the first — so the root is derived, and a second copy of it could
-        only ever disagree with the first.
+    def _derived_root(self) -> str | None:
+        """Recompute the chain and return the root it DERIVES, or None.
 
-        An unfinished trace has no root, and that is the honest answer rather
-        than a partial one: anchoring a prefix would publish a value that a
-        later complete trace contradicts.
+        Reading `records[-1].integrity.payload_hash` is not deriving it. Three
+        attacks live in that difference, and an adversarial round found all
+        three within a day of the chain being fixed:
+
+        - a document whose header was rewritten while `records[0].prev_hash`
+          was left stale. Every digest recomputes, the chain is internally
+          perfect, and the root does not move — because a digest covers the
+          STRING that names its predecessor, not the predecessor. Deriving the
+          root means hashing the header ourselves and refusing the document
+          when the first link does not match what we computed;
+        - a 2.0.0 document relabelled 3.0.0. One edited string used to turn an
+          unanchorable value into an anchorable-looking one;
+        - a document carrying any invented hash at all, which `from_dict`
+          accepts because loading is not verifying.
+
+        So this walks the chain, recomputing every digest under THIS version's
+        recipe, and hands back a value only if what the document declares is
+        what the document's own contents produce. Anything else returns None:
+        the caller anchors nothing rather than a decoration.
+
+        This is not a substitute for `contract/validate.py`, which checks the
+        forty other things a trace must be. It is the narrow question the
+        anchor asks — is this root really this document's? — answered by the
+        object that is about to hand the value over.
         """
         if not len(self._records):
             return None
         last = self._records[len(self._records) - 1]
         if last["kind"] not in ("run_completed", "run_failed", "run_cancelled"):
             return None
-        return last["integrity"]["payload_hash"]
+
+        binds_prev = self._schema_version in _CHAIN_BINDS_PREV
+        expected_prev = self._header_digest()
+        for record in self._records:
+            # `record.get("integrity") or {}` reaches `.get` on whatever is
+            # there, and `from_dict` accepts an unvalidated document -- so a
+            # record whose integrity is a string raised AttributeError out of a
+            # property whose entire contract is to answer None when the
+            # document does not earn a root. An anchor ingesting a malformed
+            # file must be told "do not anchor this", not handed a crash.
+            integrity = record.get("integrity")
+            if not isinstance(integrity, dict):
+                return None
+            if integrity.get("prev_hash") != expected_prev:
+                return None
+            payload = dict(record)
+            payload["integrity"] = {
+                "payload_hash": None,
+                "prev_hash": expected_prev if binds_prev else None,
+            }
+            digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+            if integrity.get("payload_hash") != digest:
+                return None
+            expected_prev = digest
+        return expected_prev
+
+    @property
+    def root(self) -> str | None:
+        """The hash covering this whole trace, or None if there is not one.
+
+        DERIVED, never read back: the value returned is recomputed from this
+        document's own contents, and disagreement with what the document
+        declares yields None. See `_derived_root` for the three attacks that
+        distinction stops.
+
+        Under 3.0.0 the terminal record's digest covers the terminal INCLUDING
+        its `prev_hash`, which commits to the record before it, and so on to
+        the first and — because the first link is recomputed here rather than
+        trusted — to the header, and so to `run_id`, `policy`, `metadata` and
+        `graph.code_fingerprint`.
+
+        None means "do not anchor anything", and it has four causes, each of
+        them the honest answer:
+
+        - the trace is unfinished. Anchoring a prefix publishes a value a later
+          complete trace contradicts;
+        - the schema is below 3.0.0. Its digests do not cover `prev_hash`, so
+          the terminal's hash covers one record rather than the run (ADR-019);
+        - the chain does not verify, so this document is not what it says;
+        - there are no records at all.
+        """
+        if self._root_cache is not _MISSING:
+            return self._root_cache
+        # Safe to memoize on the instance: a Trace is immutable and every
+        # append returns a new one, so no cached root can outlive its records.
+        if self._schema_version not in _CHAIN_BINDS_PREV:
+            root = None
+        else:
+            root = self._derived_root()
+        self._root_cache = root
+        return root
 
     def to_dict(self) -> dict[str, Any]:
         # A document materialization is deliberately cold: callers receive an

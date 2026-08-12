@@ -340,6 +340,62 @@ def test_resume_refuses_external_effect_without_completed_idempotent_receipt():
         )
 
 
+def test_a_write_declared_as_a_read_skips_the_resume_guard_entirely():
+    """The price of the node protocol's honesty requirement, made explicit.
+
+    `_assert_effect_safe` consults the node's DECLARATION, never the effect
+    class actually recorded at runtime, so a node that writes but declares
+    `recorded_effect` never meets the guard. An adversarial round found this
+    behaviour is real, intentional, correctly described in
+    `examples/06_effects_and_receipts.py` -- and covered by no test anywhere.
+
+    This pins it, so that if the guard ever starts consulting the recorded
+    class instead, the example's central argument fails here rather than in a
+    reader's head. It asserts the CURRENT contract, not a wish: §4.2 says the
+    runtime cannot always detect misclassification, and this is what that
+    sentence costs.
+    """
+    writes: list[str] = []
+
+    def store(state, ctx, *, declared):
+        writes.append("INSERT")
+        ctx.record_effect(EffectDescriptor(declared, "INSERT INTO ledger"))
+        return state.with_decision(Decision("next", "go", NOW))
+
+    def run_to_an_interrupted_write(effect_class, declared):
+        graph = spec(
+            [{"name": "store", "effect_class": effect_class},
+             {"name": "after", "effect_class": "pure"}],
+            {"store": {"kind": "next", "to": "after"},
+             "after": {"kind": "terminal"}},
+        )
+        node = lambda state, ctx: store(state, ctx, declared=declared)
+        complete = Runtime(graph, {"store": node, "after": lambda s: s}).run(
+            run_id=f"store-{effect_class}")
+        doc = complete.trace.to_dict()
+        stop = next(i for i, r in enumerate(doc["records"])
+                    if r["kind"] == "attempt_started" and r["node"] == "store")
+        doc["records"] = doc["records"][: stop + 1]
+        return graph, Trace.from_dict(doc), node
+
+    # declared honestly: the write may or may not have landed, so it refuses
+    graph, cut, node = run_to_an_interrupted_write(
+        "external_effect", EffectClass.EXTERNAL_EFFECT)
+    with pytest.raises(UnsafeResume, match="in-flight external effect"):
+        ReplayEngine(TraceBundle(graph, cut)).resume(
+            Runtime(graph, {"store": node, "after": lambda s: s}))
+
+    # the same write, calling itself a read: resumed, and executed again
+    writes.clear()
+    graph, cut, node = run_to_an_interrupted_write(
+        "recorded_effect", EffectClass.RECORDED_EFFECT)
+    writes.clear()
+    resumed = ReplayEngine(TraceBundle(graph, cut)).resume(
+        Runtime(graph, {"store": node, "after": lambda s: s}))
+    assert resumed.trace.run["resume"]["start_node"] == "store"
+    assert writes == ["INSERT"], "the write was not re-executed; the example's claim would be false"
+
+
 def test_resume_refuses_an_in_flight_external_attempt_with_unknown_outcome():
     def external(state):
         return state
@@ -537,15 +593,27 @@ def test_result_fingerprint_is_declared_unverifiable_and_this_pins_it():
         json.dumps({"schema_version": document["schema_version"], "run": document["run"]},
                    sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
+    original_root = result.trace.root
     for record in document["records"]:
         payload = dict(record)
-        payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+        # Since 3.0.0 the digest is taken with prev_hash PRESENT (ADR-019); an
+        # editor resealing the chain must do the same or T11 catches them here.
+        payload["integrity"] = {"payload_hash": None, "prev_hash": previous}
         digest = "sha256:" + hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":"),
                        ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         record["integrity"] = {"payload_hash": digest, "prev_hash": previous}
         previous = digest
+
+    # And the reason this tripwire does not mean the fingerprint is unprotected
+    # in practice: resealing succeeds locally and MOVES THE ROOT. An editor
+    # passes this validator and fails against anything that published the value
+    # beforehand. Under 2.0.0 the root did not move, which is what ADR-019 fixed.
+    assert document["records"][-1]["integrity"]["payload_hash"] != original_root, (
+        "resealing an edited trace left the root where it was — the digests have "
+        "stopped covering prev_hash, and ADR-019's defect is back"
+    )
 
     violations = validate.validate_trace(document, graph.to_dict())
     assert violations == [], (

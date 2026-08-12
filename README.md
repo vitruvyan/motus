@@ -29,7 +29,7 @@ against the v0.6.1 anchor across three independent dispatches:
 | 100-node no-op | **+123.2 %** | +20 % |
 | Trace materialization | **+25.2 %** | +20 % |
 
-The cost is the integrity chain (ADR-017), paid in 0.8.0 and unchanged here:
+The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0:
 0.8.1 against 0.8.0 is +0.3 %, −1.5 % and −0.4 %, inside the per-release budget
 with no exception declared. On the 100-node no-op the paired spread is 106 %
 — wider than the effect — so on that metric the measurement cannot answer, and
@@ -232,10 +232,59 @@ Motus alone is not a compliance system. A regulated deployment still needs
 the appropriate persistent `TraceSink`, retention policy, access controls,
 security controls, clock governance, privacy measures, review procedures, and
 any legally required signatures or validated storage. Since 0.8.0 the trace
-carries a cryptographic hash chain and a per-trace root (ADR-017); what it does
-NOT carry is an **anchor** — a root published where the operator cannot rewrite
-it — and without one the chain proves internal consistency, not immutability
-(issue #51).
+carries a cryptographic hash chain, and under trace schema 3.0.0 a per-trace
+**root** that commits to the whole run (ADR-019). What it does NOT carry is an **anchor** — a
+root published where the operator cannot rewrite it — and without one the chain
+proves internal consistency, not immutability (issue #51).
+
+The distinction is not academic, and this project got it wrong: the root shipped
+in 0.8.0 and 0.8.1 covered only the terminal record, so an editor who rewrote the
+trace and resealed it by the published recipe left that value untouched. Traces
+from those versions are valid, replayable evidence and are **not anchorable**;
+the validator says so when it reads one.
+
+### The root, for whoever anchors it
+
+The root is **`trace.root`**, and the emphasis is on the accessor rather than on
+the value. It is the terminal record's `integrity.payload_hash` — derived, never
+stored twice, stated normatively in rule T11 of `contract/trace.v1.schema.json`
+— but the property recomputes it from the document rather than reading it back,
+and that difference is the whole protection:
+
+```python
+root = result.trace.root          # 'sha256:1ca0f5f6…' — 71 characters, not 64
+if root is None:
+    ...                           # do not anchor anything
+```
+
+**Do not reach past it.** `records[-1]["integrity"]["payload_hash"]` returns the
+string the document happens to carry, and there are three documents where that
+string is worthless: one sealed under 2.0.0, one relabelled from 2.0.0, and one
+whose header was rewritten while the first record's `prev_hash` was left stale —
+that last leaves every declared digest self-consistent and the terminal one
+unmoved. `trace.root` returns `None` for all three. The raw field returns a
+value for all three, and it is the value an anchor would agree with.
+
+`None` is an answer, not an error: the trace is unfinished, or below 3.0.0, or
+its chain does not verify. Anchor nothing and find out which.
+
+Under 3.0.0 that one value commits to the whole run — records, run id, policy,
+metadata and `graph.code_fingerprint` alike — with one stated exception:
+**numbers commit as parsed, at binary64 precision**, so a float in a trace
+commits to its IEEE-754 double rather than to the literal in the file. Anchoring
+anything larger than the root buys nothing and is more fragile.
+
+The value **names its hash function**: a digest that does not say what produced
+it cannot be recomputed. That costs seven characters, which matters when the
+carrier is sized — a TRON memo holds 100, leaving 29 for a namespace prefix.
+Budget from the string, not from the digest.
+
+Motus ships no anchor and holds no chain credentials, and will not: the
+repository provides the socket. What an anchor implementation owes its users,
+learned from one that runs in production, is a `verify()` that re-reads from the
+chain rather than trusting the receipt's own copy of the payload — a local file
+that certifies itself certifies nothing. Issue #51 is where that interface is
+being designed.
 
 ## Install for development
 
@@ -308,13 +357,21 @@ notion of an agent, and needs none.
 
 ## Run something
 
-Three examples, each standalone and each printing what it did:
+Six examples, each standalone and each printing what it did:
 
 ```console
 python examples/01_first_run.py          # a graph, a run, and the trace it left
 python examples/02_durable_evidence.py   # write evidence to disk, then check it without trusting the writer
 python examples/03_async_and_streaming.py # async nodes, live records, stopping mid-run
+python examples/04_parameterised_nodes.py # configure a node without forfeiting replay
+python examples/05_how_a_node_reports.py # raise, Rejection or Decision -- and why only one of them is a bug
+python examples/06_effects_and_receipts.py # declaring what you touched, and the safe restart it buys
 ```
+
+Read 05 before writing your first node. The mistake that costs most in a first
+integration is treating "the check did not pass" as an error: it is a result,
+and a node that raises for it throws the run away instead of recording what it
+concluded.
 
 The second one is the one to read if you only read one. It writes a run to a
 file, validates that file from a **separate process** using only the published
@@ -499,6 +556,48 @@ an incomplete trace. Persisted history is never rewritten. Resume fails closed
 for graph mismatches, inconsistent routing, ambiguous boundaries, and external
 effects without both a non-empty idempotency key and a completed adapter
 receipt. Motus never claims exactly-once delivery.
+
+### Parameterising a node without losing replay
+
+Replay capability reports whether the runtime can **re-identify each node's
+configuration**, and nothing wider. A real graph is parameterised — a
+connection string, a ruleset version, a cache — and the obvious Python for that
+is a factory closing over a config object. That is the one shape Motus cannot
+re-identify: a closure's captured state is not a JSON value, so the run is
+recorded as `partial` with the constraint `node:<name>:opaque_config` rather
+than claiming a reproducibility it cannot honour.
+
+Two shapes it can re-identify (node-protocol.md §6):
+
+```python
+# 1. a partial over strict-JSON keywords
+node = functools.partial(check, ruleset_version="1.4.0", source_root=ROOT)
+
+# 2. a callable instance that attests its own configuration
+class Check:
+    def motus_config(self) -> dict:      # pure, total, cheap, strict-JSON
+        return asdict(self.config)
+    def __call__(self, state): ...
+```
+
+Either way the configuration is fingerprinted into `graph.code_fingerprint`, so
+two runs under different rules carry different fingerprints and a reader can
+tell them apart. `python examples/04_parameterised_nodes.py` prints all three
+shapes side by side.
+
+Neither shape is a purity certificate. `motus_config()` is an attestation by
+the class author, taken at its word; nothing inspects what `__call__` does, and
+§1.2 of the node protocol says why nothing can. Equally, `partial` is not an
+accusation: it says one node's configuration could not be reduced to a JSON
+value, which is a limit of this fingerprinting recipe and not a finding about
+the node. Nothing refuses a run for its capability — it is recorded so a reader
+can judge, and rule T10 only enforces that it never improves over a run.
+
+A capability is claimed before it is honoured: a run started without
+`replay=ReplayStatus.declared(...)` is `none` / `undeclared` whatever its nodes
+look like. Constraints you add to that declaration stay in the terminal record,
+so a graph whose nodes are all re-identifiable can still report `partial`
+because the caller said so.
 
 ## Observation and durability
 

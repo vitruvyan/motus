@@ -118,7 +118,25 @@ class Violation:
 # --------------------------------------------------------------------------- #
 
 
-class NonFiniteJSONError(ValueError):
+class StrictJSONError(ValueError):
+    """Text that Python parses and RFC 8259 strictness refuses (J1)."""
+
+
+class DuplicateKeyJSONError(StrictJSONError):
+    """An object with a repeated member name: a document with two readings.
+
+    RFC 8259 only SHOULD-s unique names, and every mainstream parser silently
+    keeps one — Python, jq, node, serde and jsonb all keep the last. That is
+    survivable for a log and fatal for evidence: a file can carry two complete
+    accounts of a run, this validator hashes the one its parser kept, and the
+    root reproduces exactly while a human reading the file, a first-wins reader
+    or `git diff` sees the other account. A trace is refused rather than
+    silently disambiguated, because which reading is "the" document is not a
+    question this program is entitled to answer.
+    """
+
+
+class NonFiniteJSONError(StrictJSONError):
     """A JSON text carried NaN, Infinity or -Infinity (refused per rule J1)."""
 
 
@@ -129,9 +147,24 @@ def _refuse_non_finite(token: str) -> Any:
     )
 
 
+def _refuse_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
+    seen: set[str] = set()
+    for key, _ in pairs:
+        if key in seen:
+            raise DuplicateKeyJSONError(
+                f"object member {key!r} appears more than once; this document "
+                "has more than one reading and cannot be evidence of one run"
+            )
+        seen.add(key)
+    return dict(pairs)
+
+
 def _loads_strict(text: str) -> Any:
-    """``json.loads`` that refuses NaN/Infinity/-Infinity (RFC 8259, J1)."""
-    return json.loads(text, parse_constant=_refuse_non_finite)
+    """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
+    names (RFC 8259, J1)."""
+    return json.loads(
+        text, parse_constant=_refuse_non_finite, object_pairs_hook=_refuse_duplicate_keys,
+    )
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:
@@ -1332,7 +1365,7 @@ def _trace_semantics(
     # is recompute the rest of the chain without also holding whatever anchored
     # its root.
     version = doc.get("schema_version")
-    if version == "2.0.0":
+    if version in ("2.0.0", "3.0.0"):
         # The chain starts at the HEADER, so the first record's prev_hash is the
         # header's digest and never null. Without this the header sat outside
         # the root: run_id, policy, metadata and graph.code_fingerprint could all
@@ -1348,19 +1381,31 @@ def _trace_semantics(
         for i, record in enumerate(records):
             integrity = record.get("integrity") or {}
             actual = integrity.get("payload_hash")
-            # The digest covers the record with its integrity block NULLED, not
+            # The digest covers the record with payload_hash NULLED, not
             # removed: what a hash must not cover is its own value, and a
             # constant null is not one. So the object hashed is a real record.
+            #
+            # THE RECIPE IS SELECTED BY VERSION (ADR-019). 3.0.0 takes the digest
+            # with prev_hash PRESENT, so each one commits to its predecessor and
+            # the terminal digest commits to the run. 2.0.0 nulled prev_hash too,
+            # which left the links uncovered: an editor could rewrite any record
+            # or the header, reseal by this same published recipe, pass this
+            # check, and the root did not move. 2.0.0 is not amended — a trace
+            # sealed under it is a truthful record and must keep validating —
+            # so its recipe survives here, and what it is worth is said below.
             payload = dict(record)
-            payload["integrity"] = {"payload_hash": None, "prev_hash": None}
+            payload["integrity"] = {
+                "payload_hash": None,
+                "prev_hash": None if version == "2.0.0" else integrity.get("prev_hash"),
+            }
             computed = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
             if actual is None:
                 v.append(
                     Violation(
                         "T11",
                         f"$.records[{i}].integrity.payload_hash",
-                        "schema 2.0.0 requires an integrity chain; this record "
-                        "carries null, which is the 1.x shape",
+                        f"schema {version} requires an integrity chain; this "
+                        "record carries null, which is the 1.x shape",
                     )
                 )
             elif actual != computed:
@@ -1418,7 +1463,9 @@ def _trace_semantics(
             digest = receipt.get("interaction_fingerprint")
             salt = receipt.get("fingerprint_salt")
             path = f"$.records[{i}].effects[{j}].receipt"
-            if version != "2.0.0" and (digest is not None or salt is not None):
+            if version not in ("2.0.0", "3.0.0") and (
+                digest is not None or salt is not None
+            ):
                 v.append(
                     Violation(
                         "T12",
@@ -2456,7 +2503,7 @@ def validate_jsonl(
     (header_index, header_line), record_lines = content[0], content[1:]
     try:
         header = _loads_strict(header_line)
-    except NonFiniteJSONError as exc:
+    except StrictJSONError as exc:
         # The line IS parseable JSON in Python's lax reading — the problem is
         # strictness, not brokenness: J1, not JSONL1.
         violations.append(
@@ -2494,7 +2541,7 @@ def validate_jsonl(
         is_final = position == total - 1
         try:
             obj = _loads_strict(line)
-        except NonFiniteJSONError as exc:
+        except StrictJSONError as exc:
             # Not crash truncation and not malformed JSON: the line parses in
             # Python's lax reading but carries a non-finite constant.  That is
             # a strictness violation — J1, never JSONL2, on any line.
@@ -2637,7 +2684,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.spec:
         try:
             spec = _loads_strict(Path(args.spec).read_text(encoding="utf-8"))
-        except NonFiniteJSONError as exc:
+        except StrictJSONError as exc:
             # Rule J1 applies to the spec input too; an unusable spec keeps
             # the established exit-2 semantics ("invalid --spec").
             print(f"J1 spec:$: {exc}")
@@ -2658,12 +2705,14 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     expect_complete = not args.allow_incomplete
+    trace_doc: dict[str, Any] | None = None
     if args.artifact == "jsonl":
         violations, _doc = validate_jsonl(raw, spec=spec, expect_complete=expect_complete)
+        trace_doc = _doc
     else:
         try:
             doc = _loads_strict(raw)
-        except NonFiniteJSONError as exc:
+        except StrictJSONError as exc:
             # A parseable-but-non-strict document is a CONTRACT violation
             # (J1), not an I/O problem: report it like any other violation
             # and exit 1.
@@ -2676,9 +2725,25 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_graphspec(doc)
         else:
             violations = validate_trace(doc, spec=spec, expect_complete=expect_complete)
+            trace_doc = doc if isinstance(doc, dict) else None
 
     for violation in violations:
         print(f"{violation.rule} {violation.path}: {violation.message}")
+
+    # A 2.0.0 trace is not malformed and this is not a violation: it is a
+    # truthful record of a real run and exits 0 like any other. What it does not
+    # have is an anchorable root — its digests do not cover prev_hash, so the
+    # terminal one covers the terminal record and not the run (ADR-019). The
+    # only place that fact is any use is beside the value, at the moment someone
+    # is deciding what to publish, so it is said here and on stderr, where it
+    # cannot be mistaken for a finding about the document.
+    if isinstance(trace_doc, dict) and trace_doc.get("schema_version") == "2.0.0":
+        print(
+            "note: schema 2.0.0 — this trace's root covers only its terminal "
+            "record.\n      It is not an anchorable commitment to the run "
+            "(ADR-019); re-run under\n      3.0.0 to obtain one.",
+            file=sys.stderr,
+        )
     return 1 if violations else 0
 
 
