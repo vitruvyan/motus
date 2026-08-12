@@ -92,10 +92,19 @@ def fetch(state: State, ctx) -> State:
     return state.with_fact(Fact("bytes", len(BODY), "archive.org", NOW))
 
 
-def make_store(*, receipted: bool):
+def make_store(*, receipted: bool, honest: bool = True):
+    """`honest=False` declares the write as a read, self-consistently.
+
+    `writes` counts how many times the body actually ran, because the point
+    below is not what the trace says -- it is that the INSERT is executed a
+    second time.
+    """
+    writes: list[str] = []
+
     def store(state: State, ctx) -> State:
+        writes.append("INSERT")
         ctx.record_effect(EffectDescriptor(
-            EffectClass.EXTERNAL_EFFECT,
+            EffectClass.EXTERNAL_EFFECT if honest else EffectClass.RECORDED_EFFECT,
             "INSERT INTO verdict_traces",
             # The key the external system deduplicates on. Yours to choose,
             # and meaningless unless the remote side honours it.
@@ -108,7 +117,23 @@ def make_store(*, receipted: bool):
         ))
         return state.with_decision(Decision("stored", "yes", NOW))
 
+    store.writes = writes            # type: ignore[attr-defined]
     return store
+
+
+# The same graph with one word changed, and the node's own descriptor changed
+# to match -- which is what a confused author actually writes, since nobody
+# declares a `recorded_effect` node whose descriptor says EXTERNAL_EFFECT. That
+# split version is caught immediately by a separate consistency check and never
+# reaches a resume at all, so it does NOT demonstrate the danger. This does.
+MISDECLARED = GraphSpec.from_dict({
+    **SPEC.to_dict(),
+    "nodes": [
+        {"name": "fetch", "effect_class": "recorded_effect"},
+        {"name": "store", "effect_class": "recorded_effect"},   # the mistake
+        {"name": "confirm", "effect_class": "pure"},
+    ],
+})
 
 
 def confirm(state: State) -> State:
@@ -121,8 +146,9 @@ def effects_of(trace: Trace) -> list[tuple[str, dict]]:
             for effect in r["effects"]]
 
 
-def _nodes(*, receipted: bool) -> dict:
-    return {"fetch": fetch, "store": make_store(receipted=receipted),
+def _nodes(*, receipted: bool, honest: bool = True) -> dict:
+    return {"fetch": fetch,
+            "store": make_store(receipted=receipted, honest=honest),
             "confirm": confirm}
 
 
@@ -181,9 +207,59 @@ def main() -> None:
         print("  was written, so it will not restart a run that might write it")
         print("  twice. Fail closed: the uncertainty is preserved, not resolved")
         print("  by assumption.")
-        print("\n  Had this node been declared `recorded_effect` -- the mistake")
-        print("  this example exists to prevent -- the resume would have gone")
-        print("  ahead in silence, and no test would have failed.")
+    # --- one word changed, and the guard stops existing -------------------
+    #
+    # This used to be a sentence printed at the end. It is executed now,
+    # because a warning nobody can reproduce is indistinguishable from a
+    # warning that is wrong -- and the first attempt at demonstrating it used a
+    # cut where the resume restarts AFTER the write, so nothing was written
+    # twice and the sentence would have been false.
+    #
+    # The cut that matters is DURING the write: the effect is in the trace and
+    # the run never moved on. Nobody, from outside, can say whether the row is
+    # there.
+
+    def cut_during_store(trace: Trace) -> Trace:
+        document = trace.to_dict()
+        records = document["records"]
+        # The attempt is in the trace and its transition is NOT: the node
+        # started, the process died, and nobody outside can say whether the
+        # row landed. Cutting after the transition instead would leave the
+        # resume restarting at `confirm`, which writes nothing twice and
+        # proves nothing -- that was the first version of this helper.
+        stop = next(i for i, r in enumerate(records)
+                    if r["kind"] == "attempt_started" and r["node"] == "store")
+        document["records"] = records[: stop + 1]
+        return Trace.from_dict(document)
+
+    print("\ninterrupted DURING the write, declared honestly:")
+    honest_run = Runtime(SPEC, _nodes(receipted=False), sink=InMemoryTraceSink()).run(
+        State.empty("fetch and store"), run_id="effects-inflight")
+    try:
+        ReplayEngine(TraceBundle(SPEC, cut_during_store(honest_run.trace))).resume(
+            Runtime(SPEC, _nodes(receipted=False), sink=InMemoryTraceSink()))
+    except UnsafeResume as refusal:
+        print(f"  refused       : {refusal}")
+
+    print("\nthe same interruption, with `store` declared `recorded_effect`:")
+    misdeclared = Runtime(MISDECLARED, _nodes(receipted=False, honest=False),
+                          sink=InMemoryTraceSink()).run(
+        State.empty("fetch and store"), run_id="effects-misdeclared")
+    again = _nodes(receipted=False, honest=False)
+    resumed = ReplayEngine(
+        TraceBundle(MISDECLARED, cut_during_store(misdeclared.trace))
+    ).resume(Runtime(MISDECLARED, again, sink=InMemoryTraceSink()))
+
+    print(f"  status        : {resumed.status}")
+    print(f"  restarted at  : {resumed.trace.run['resume']['start_node']}")
+    print(f"  INSERTs run   : {len(again['store'].writes)}"
+          f"  <- the row is written AGAIN")
+    print("\n  No refusal, no receipt asked for, no exception. The guard reads")
+    print("  the node's DECLARATION, never the effect it actually recorded, so")
+    print("  a write that calls itself a read is never checked at all. That is")
+    print("  the node protocol's honesty requirement stated as a price: Motus")
+    print("  cannot do better than trust you, and this is what it costs when")
+    print("  the declaration is wrong.")
 
 
 if __name__ == "__main__":
