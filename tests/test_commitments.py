@@ -481,6 +481,24 @@ def test_a_tenant_checkpoint_commits_to_the_set_of_writers():
     assert first.writers_missing_from(without) == ("w3",)
     assert without.writers_missing_from(first) == ()
 
+    # The count alone moving the digest proves nothing about the SET: the same
+    # NUMBER of writers, different writers, must also disagree. Dropping the
+    # heads from the digested body survived the first version of this test,
+    # which compared three writers against two.
+    swapped = TenantCheckpoint.over([head("w1"), head("w4"), head("w3")],
+                                    index=0, sealed_at=AT)
+    assert len(swapped.heads) == len(first.heads)
+    assert swapped.digest != first.digest
+
+    # And a writer whose own head moved must move the tenant digest too,
+    # otherwise the aggregate commits to names and not to evidence.
+    moved = CommitmentWindow(tenant="acme", writer_id="w2")
+    moved.append(_begin(0, writer="w2"))
+    moved.append(_begin(1, writer="w2"))
+    reheaded = TenantCheckpoint.over([head("w1"), moved.seal(AT), head("w3")],
+                                     index=0, sealed_at=AT)
+    assert reheaded.digest != first.digest
+
 
 def test_one_writer_cannot_appear_twice_in_a_round():
     w1 = _window(2).seal(AT)
