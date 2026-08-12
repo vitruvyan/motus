@@ -11,7 +11,8 @@ import json
 import pytest
 
 from vitruvyan_motus.commitlog import (
-    CommitmentLog, CommitmentLogFork, InclusionProof,
+    STORE_FORMAT, CommitmentLog, CommitmentLogBusy, CommitmentLogFork,
+    InclusionProof,
 )
 from vitruvyan_motus.commitments import (
     Checkpoint, CommitmentKind, merkle_root, verify_inclusion,
@@ -40,8 +41,9 @@ def test_a_begin_is_on_disk_when_begin_returns(tmp_path):
     log.begin("r1", at=AT, nonce="n1")
     path = log.directory / "window-000000.jsonl"
     stored = [json.loads(line) for line in path.read_text().splitlines() if line]
-    assert len(stored) == 1 and stored[0]["kind"] == "begin"
-    assert stored[0]["run_id"] == "r1"
+    assert len(stored) == 1 and stored[0]["c"]["kind"] == "begin"
+    assert stored[0]["c"]["run_id"] == "r1"
+    assert log.durable is True
     log.close()
 
 
@@ -57,6 +59,69 @@ def test_the_log_reopens_where_it_left_off(tmp_path):
     again.begin("r3", at=AT, nonce="n3")
     assert again.open_window.next_sequence == 5
     again.close()
+
+
+def test_a_second_holder_of_one_writers_chain_is_refused(tmp_path):
+    """CRITICAL, found by two independent agents. Two holders wrote two
+    commitments claiming sequence 0, and the chain then opened for nobody. A
+    supervisor restart with the old instance not yet dead is ordinary."""
+    first = _log(tmp_path)
+    with pytest.raises(CommitmentLogBusy, match="another holder"):
+        _log(tmp_path)
+    first.close()
+    second = _log(tmp_path)                 # released, so the next one may have it
+    second.close()
+
+
+def test_a_failed_write_leaves_nothing_in_memory(tmp_path):
+    """CRITICAL. The first version appended to the window and THEN did the I/O,
+    so a failed write left a phantom commitment that `seal()` hashed into a
+    checkpoint the file could never reproduce -- and every proof from that
+    window failed to verify with nothing raised anywhere."""
+    log = _log(tmp_path)
+    log.begin("r1", at=AT, nonce="n1")
+
+    handle = log._open_handle()
+    original = handle.write
+
+    def explode(_: str) -> int:
+        raise OSError(28, "No space left on device")
+
+    handle.write = explode                                  # type: ignore[method-assign]
+    with pytest.raises(OSError):
+        log.begin("r2", at=AT, nonce="n2")
+    handle.write = original                                 # type: ignore[method-assign]
+
+    log.begin("r3", at=AT, nonce="n3")
+    checkpoint = log.seal(AT)
+    assert checkpoint.count == 2, "the failed write entered the checkpoint"
+
+    proof = log.proof_for("r3", CommitmentKind.BEGIN, checkpoint.index)
+    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+    log.close()
+
+
+def test_a_torn_line_with_non_ascii_content_truncates_to_the_byte(tmp_path):
+    """CRITICAL. The first version measured the torn tail in CHARACTERS and
+    subtracted it from a length in BYTES. One `é` left a dangling byte and the
+    next restart could not parse the file at all, permanently."""
+    log = _log(tmp_path)
+    log.begin("北京客户-r1", at=AT, nonce="n1")
+    log.close()
+
+    path = log.directory / "window-000000.jsonl"
+    intact = path.read_bytes()
+    path.write_bytes(intact + '{"c":{"kind":"begin","run_id":"café-'.encode())
+
+    again = _log(tmp_path)
+    assert len(again.open_window) == 1
+    assert path.read_bytes() == intact, "the torn tail was not fully removed"
+    again.begin("r2", at=AT, nonce="n2")
+    again.close()
+
+    third = _log(tmp_path)                  # and the next restart still opens
+    assert len(third.open_window) == 2
+    third.close()
 
 
 def test_a_torn_trailing_line_is_a_write_nobody_saw_finish(tmp_path):
@@ -209,7 +274,8 @@ def test_a_directory_belonging_to_another_writer_is_refused(tmp_path):
 def test_the_verbatim_identity_is_stored_beside_the_sanitised_directory(tmp_path):
     log = _log(tmp_path, tenant="acme/prod", writer="worker #1")
     body = json.loads((log.directory / "identity.json").read_text())
-    assert body == {"tenant": "acme/prod", "writer_id": "worker #1"}
+    assert body == {"format": STORE_FORMAT, "tenant": "acme/prod",
+                    "writer_id": "worker #1"}
     assert "/" not in log.directory.name                # the stem is sanitised
     log.close()
 
@@ -225,6 +291,179 @@ def test_a_blank_tenant_or_writer_is_refused(tmp_path):
     for kwargs in ({"tenant": "  "}, {"writer_id": ""}):
         with pytest.raises(ValueError, match="names its"):
             CommitmentLog(tmp_path, **{"tenant": "acme", "writer_id": "w1", **kwargs})
+
+
+# -- what the round found, one test each ------------------------------------
+
+def test_the_witness_acknowledgement_survives_the_disk(tmp_path):
+    """HIGH. The ACK must stay OUT of the leaf digest -- it did not exist when
+    the witness signed it -- but that is a different question from storing it.
+    The first version answered both with no, which made EXECUTION_CONTINUITY
+    unprovable for every witnessed run, 100% of the time."""
+    from vitruvyan_motus.commitments import AssuranceMode, Commitment, WitnessAck
+
+    log = _log(tmp_path)
+    unwitnessed = Commitment(
+        kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1", sequence=0,
+        run_id="w-run", at=AT, nonce="wn")
+    ack = WitnessAck(witness_id="notary.example", commitment=unwitnessed.leaf,
+                     position=41, acknowledged_at=AT, signature="sig")
+    live = log.begin("w-run", at=AT, nonce="wn", witness=ack)
+    assert live.mode is AssuranceMode.WITNESSED
+    checkpoint = log.seal(AT)
+    log.close()
+
+    again = _log(tmp_path)
+    proof = again.proof_for("w-run", CommitmentKind.BEGIN, checkpoint.index)
+    assert proof.commitment.witness is not None
+    assert proof.commitment.witness.witness_id == "notary.example"
+    assert proof.commitment.mode is AssuranceMode.WITNESSED
+    assert proof.to_dict()["mode"] == "witnessed"
+    assert proof.to_dict()["witness"]["witness_id"] == "notary.example"
+    # and the ACK still does not move the leaf
+    assert proof.commitment.leaf == unwitnessed.leaf
+    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+    again.close()
+
+
+def test_one_run_cannot_have_two_commitments_of_a_kind(tmp_path):
+    """HIGH. Two ENDs for one run were both accepted and sealed, and
+    `proof_for` returned the first in file order with a proof that genuinely
+    verified -- a provable half of a self-contradiction, the other half
+    unreachable through any read API."""
+    log = _log(tmp_path)
+    log.begin("r1", at=AT, nonce="n1")
+    log.end("r1", root=ROOT, outcome="completed", at=AT, nonce="e1")
+    with pytest.raises(ValueError, match="already committed a end"):
+        log.end("r1", root="sha256:" + "b" * 64, outcome="cancelled", at=AT, nonce="e2")
+    with pytest.raises(ValueError, match="already committed a begin"):
+        log.begin("r1", at=AT, nonce="n2")
+    log.close()
+
+
+def test_a_window_edited_after_sealing_is_refused_not_proved(tmp_path):
+    """HIGH. Substituting one run id for another leaves count and range intact,
+    so the checkpoint file never changes -- and the first version handed back a
+    well-formed proof against a root the file no longer reproduces."""
+    log = _log(tmp_path)
+    _run(log, "real")
+    _run(log, "other")
+    checkpoint = log.seal(AT)
+    log.close()
+
+    path = log.directory / "window-000000.jsonl"
+    path.write_bytes(path.read_bytes().replace(b'"real"', b'"forged"'))
+
+    again = _log(tmp_path)
+    with pytest.raises(CommitmentLogFork, match="no longer reproduces"):
+        again.proof_for("forged", CommitmentKind.BEGIN, checkpoint.index)
+    with pytest.raises(CommitmentLogFork, match="no longer reproduces"):
+        again.check_against(checkpoint)
+    again.close()
+
+
+def test_the_chain_is_walked_and_a_broken_link_is_found(tmp_path):
+    log = _log(tmp_path)
+    _run(log, "r1"); first = log.seal(AT)
+    _run(log, "r2"); log.seal(AT)
+    assert log.verify_chain() == 2
+    log.close()
+
+    # an interior checkpoint replaced by a self-consistent forgery
+    forged = json.loads((log.directory / "checkpoint-000000.json").read_text())
+    forged["sealed_at"] = "2026-01-01T00:00:00Z"
+    (log.directory / "checkpoint-000000.json").write_text(json.dumps(forged))
+
+    again = _log(tmp_path)
+    with pytest.raises(CommitmentLogFork, match="links to"):
+        again.verify_chain()
+    again.close()
+
+
+def test_a_lost_checkpoint_is_a_fork_not_a_rewind(tmp_path):
+    """HIGH. Deleting one checkpoint made `_recover` silently reopen the older
+    window and re-issue a sequence a durable commitment in the NEXT window file
+    already held -- the module's own stated reason for existing."""
+    log = _log(tmp_path)
+    _run(log, "r1")
+    log.seal(AT)
+    log.begin("r2", at=AT, nonce="n2")
+    log.close()
+
+    (log.directory / "checkpoint-000000.json").unlink()
+    with pytest.raises(CommitmentLogFork, match="checkpoint was lost"):
+        _log(tmp_path)
+
+
+def test_a_half_written_checkpoint_is_present_and_refused(tmp_path):
+    """HIGH. Writing in place left a third state -- present and corrupt --
+    which no later open could recover from. It is written and renamed now, so
+    a crash leaves it absent or whole; a corrupt one is somebody else's doing
+    and is refused rather than crashed on."""
+    log = _log(tmp_path)
+    _run(log, "r1")
+    log.seal(AT)
+    log.close()
+
+    path = log.directory / "checkpoint-000000.json"
+    path.write_text(path.read_text()[: len(path.read_text()) // 2])
+    with pytest.raises(CommitmentLogFork, match="present and unreadable"):
+        _log(tmp_path)
+
+
+def test_a_checkpoint_is_never_written_over(tmp_path):
+    log = _log(tmp_path)
+    _run(log, "r1")
+    log.seal(AT)
+    log.close()
+
+    again = _log(tmp_path)
+    again.begin("r2", at=AT, nonce="n2")
+    (again.directory / "checkpoint-000001.json").write_text("{}")
+    with pytest.raises(CommitmentLogFork, match="already exists"):
+        again.seal(AT)
+    again.close()
+
+
+def test_a_name_that_is_not_nfc_is_refused_rather_than_forked(tmp_path):
+    """MEDIUM. Composed and decomposed `café` hash differently, so they opened
+    two permanent chains for one logical writer with no signal at all --
+    the one failure mode in this file that was silent."""
+    import unicodedata
+    decomposed = unicodedata.normalize("NFD", "café")
+    with pytest.raises(ValueError, match="NFC"):
+        CommitmentLog(tmp_path, tenant=decomposed, writer_id="w1", fsync=False)
+    composed = unicodedata.normalize("NFC", "café")
+    log = CommitmentLog(tmp_path, tenant=composed, writer_id="w1", fsync=False)
+    log.close()
+
+
+def test_the_directory_digest_is_wide_enough_to_mean_something(tmp_path):
+    """MEDIUM. A 48-bit digest collided in 18 seconds on one core, and the
+    consequence is a writer losing their identity rather than a trace losing a
+    filename suffix."""
+    from vitruvyan_motus.commitlog import _DIGEST_CHARS, _stem
+    assert _DIGEST_CHARS >= 32
+    assert len(_stem("acme").rsplit("-", 1)[1]) == _DIGEST_CHARS
+
+
+def test_an_unreadable_identity_is_refused_as_a_fork(tmp_path):
+    log = _log(tmp_path)
+    log.close()
+    (log.directory / "identity.json").write_text("{not json")
+    with pytest.raises(CommitmentLogFork, match="cannot be read"):
+        _log(tmp_path)
+
+
+def test_garbage_in_the_middle_of_a_window_is_refused_by_name(tmp_path):
+    log = _log(tmp_path)
+    _run(log, "r1")
+    log.close()
+    path = log.directory / "window-000000.jsonl"
+    lines = path.read_bytes().split(b"\n")
+    path.write_bytes(lines[0] + b"\nnot-json\n" + b"\n".join(lines[1:]))
+    with pytest.raises(CommitmentLogFork, match="line 2 is not a commitment"):
+        _log(tmp_path)
 
 
 # -- concurrency ------------------------------------------------------------
@@ -251,5 +490,5 @@ def test_concurrent_begins_never_share_a_sequence(tmp_path):
     stored = [json.loads(line) for line
               in (log.directory / "window-000000.jsonl").read_text().splitlines() if line]
     assert len(stored) == 120
-    assert sorted(s["sequence"] for s in stored) == list(range(120))
+    assert sorted(s["c"]["sequence"] for s in stored) == list(range(120))
     log.close()
