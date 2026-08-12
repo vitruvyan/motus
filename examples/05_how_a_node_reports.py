@@ -42,9 +42,13 @@ SPEC = GraphSpec.from_dict({
     "version": "1.0.0",
     "entry": "fetch",
     "nodes": [
-        # `external_effect` says this node touches the world. Replay never
-        # re-executes it: re-fetching to verify a trace is not verification.
-        {"name": "fetch", "effect_class": "external_effect"},
+        # A read of the outside world: the RESULT is the effect, and the
+        # archive is no different afterwards. `recorded_effect` -- not
+        # `external_effect`, which is for nodes that CHANGE something out
+        # there and therefore owe a receipt before a resume may restart them.
+        # Replay never re-executes it either way: re-fetching to verify a
+        # trace is not verification.
+        {"name": "fetch", "effect_class": "recorded_effect"},
         {"name": "check", "effect_class": "pure"},
         {"name": "publish", "effect_class": "pure"},
         {"name": "refuse", "effect_class": "pure"},
@@ -80,13 +84,23 @@ class Archive:
 def make_fetch(archive: Archive):
     def fetch(state: State) -> State:
         text = archive.get()
-        return state.with_fact(Fact("source_length", len(text), "archive.org", NOW))
+        # The text itself is CAPTURED into state, not left in a module global
+        # for the next node to reach for. That is what makes `check` honestly
+        # pure: its output depends on recorded reads and nothing else, so
+        # verify-replay re-executing it is a real test. A node that reads a
+        # global is pure only by declaration -- change the global, leave the
+        # body alone, and replay still agrees whenever the verdict happens to
+        # come out the same.
+        return (state
+                .with_fact(Fact("source", text, "archive.org", NOW))
+                .with_fact(Fact("source_length", len(text), "archive.org", NOW)))
     return fetch
 
 
 def check(state: State) -> State:
     quotation = state.metadata("quotation")
-    found = quotation in SOURCE
+    source = state.fact("source")                # what `fetch` recorded, not SOURCE
+    found = quotation in source
 
     if not found:
         # NOT an exception. The check ran, reached a conclusion, and the
@@ -94,7 +108,7 @@ def check(state: State) -> State:
         # a reader can see what was searched and how big the haystack was.
         state = state.with_rejection(Rejection(
             what="quotation", reason="not located in the source text", ts=NOW,
-            evidence={"searched_characters": len(SOURCE), "quotation": quotation},
+            evidence={"searched_characters": len(source), "quotation": quotation},
         ))
 
     return state.with_decision(Decision(

@@ -340,6 +340,62 @@ def test_resume_refuses_external_effect_without_completed_idempotent_receipt():
         )
 
 
+def test_a_write_declared_as_a_read_skips_the_resume_guard_entirely():
+    """The price of the node protocol's honesty requirement, made explicit.
+
+    `_assert_effect_safe` consults the node's DECLARATION, never the effect
+    class actually recorded at runtime, so a node that writes but declares
+    `recorded_effect` never meets the guard. An adversarial round found this
+    behaviour is real, intentional, correctly described in
+    `examples/06_effects_and_receipts.py` -- and covered by no test anywhere.
+
+    This pins it, so that if the guard ever starts consulting the recorded
+    class instead, the example's central argument fails here rather than in a
+    reader's head. It asserts the CURRENT contract, not a wish: §4.2 says the
+    runtime cannot always detect misclassification, and this is what that
+    sentence costs.
+    """
+    writes: list[str] = []
+
+    def store(state, ctx, *, declared):
+        writes.append("INSERT")
+        ctx.record_effect(EffectDescriptor(declared, "INSERT INTO ledger"))
+        return state.with_decision(Decision("next", "go", NOW))
+
+    def run_to_an_interrupted_write(effect_class, declared):
+        graph = spec(
+            [{"name": "store", "effect_class": effect_class},
+             {"name": "after", "effect_class": "pure"}],
+            {"store": {"kind": "next", "to": "after"},
+             "after": {"kind": "terminal"}},
+        )
+        node = lambda state, ctx: store(state, ctx, declared=declared)
+        complete = Runtime(graph, {"store": node, "after": lambda s: s}).run(
+            run_id=f"store-{effect_class}")
+        doc = complete.trace.to_dict()
+        stop = next(i for i, r in enumerate(doc["records"])
+                    if r["kind"] == "attempt_started" and r["node"] == "store")
+        doc["records"] = doc["records"][: stop + 1]
+        return graph, Trace.from_dict(doc), node
+
+    # declared honestly: the write may or may not have landed, so it refuses
+    graph, cut, node = run_to_an_interrupted_write(
+        "external_effect", EffectClass.EXTERNAL_EFFECT)
+    with pytest.raises(UnsafeResume, match="in-flight external effect"):
+        ReplayEngine(TraceBundle(graph, cut)).resume(
+            Runtime(graph, {"store": node, "after": lambda s: s}))
+
+    # the same write, calling itself a read: resumed, and executed again
+    writes.clear()
+    graph, cut, node = run_to_an_interrupted_write(
+        "recorded_effect", EffectClass.RECORDED_EFFECT)
+    writes.clear()
+    resumed = ReplayEngine(TraceBundle(graph, cut)).resume(
+        Runtime(graph, {"store": node, "after": lambda s: s}))
+    assert resumed.trace.run["resume"]["start_node"] == "store"
+    assert writes == ["INSERT"], "the write was not re-executed; the example's claim would be false"
+
+
 def test_resume_refuses_an_in_flight_external_attempt_with_unknown_outcome():
     def external(state):
         return state

@@ -147,9 +147,24 @@ Rules that are not negotiable:
 - **The trace records shapes, not text.** Counts, lengths, scores, source
   identifiers, boolean checks. Quotation text and draft bodies stay in the
   database. Terraveler already works this way and Motus is built for it.
-- Nodes that read the outside world (database, embedding service) declare
-  `effect_class: "external_effect"`. Nodes that only compute declare `"pure"`.
-  A false `"pure"` claim is caught later by verify-replay, so do not guess.
+- **The criterion is read or mutate, and nothing else.** Nodes that READ the
+  outside world — a `SELECT`, the embedding service, an HTTP GET — declare
+  `effect_class: "recorded_effect"`: the result is the effect, and repeating
+  it costs a round trip. Nodes that CHANGE something out there — an `INSERT`,
+  a message sent, a POST — declare `"external_effect"`, and resume will refuse
+  to restart them without a non-empty idempotency key and a completed receipt.
+  Nodes that only compute declare `"pure"`.
+
+  Getting this backwards in the safe direction — a read declared
+  `external_effect` — only blocks resumes that were safe. Backwards the other
+  way is the dangerous one and it is silent: a write declared
+  `recorded_effect` never meets the resume guard at all.
+- A false `"pure"` claim is **falsifiable** by verify-replay, which is not the
+  same as always caught. Replay re-executes the node and compares the result,
+  so a database, file or cache that answers the same way twice produces no
+  divergence and the node is reported verified. It catches the claim exactly
+  when the hidden dependency changes the observed result — treat it as a net,
+  not a proof, and do not lean on it while classifying.
 - Every verdict must be a recorded `Decision`, and the routing must be
   **on that decision**. A verdict that the graph took but did not record is the
   failure this whole exercise exists to prevent.
@@ -177,6 +192,12 @@ column, whatever fits the Supabase schema. Two requirements:
 Motus ships its own checker, installed with the package:
 
 ```bash
+# The artifact word must match how you stored it. Phase 2 above requires
+# canonical JSONL, and `trace` parses the whole file as ONE JSON value -- so
+# a correctly persisted trace fails this gate for the wrong reason.
+motus-validate jsonl path/to/verdict.trace.jsonl
+
+# Only if you kept a single-document copy instead:
 motus-validate trace path/to/verdict.trace.json
 ```
 
@@ -303,9 +324,17 @@ made to work is a scheme nobody can debug.
 
 ### Verify
 
-0. Assert the memo fits before you send: `VITRUVYAN_AUDIT:` is 16 characters
-   and a root is 64 hex, so 80 of the 100 allowed. Make that an assertion in
-   `anchor()`, not an assumption in this document.
+0. Assert the memo fits before you send. `VITRUVYAN_AUDIT:` is 16 characters
+   and a root is **71** — `sha256:` plus 64 hex — so **87** of the 100
+   allowed. Make that an assertion in `anchor()`, not an assumption in this
+   document.
+
+   **Publish the root whole, prefix included.** The one anchor Vitruvyan has
+   published carries the 64 hex characters with the algorithm stripped, which
+   leaves a verifier in 2034 guessing which function to recompute. Nothing
+   forced it — 87 fits — and code that accepts only 64 characters will either
+   reject `trace.root` outright or quietly strip the part that makes it
+   identifiable.
 1. Anchor a real verdict trace's root. Record the txid.
 2. Open the transaction on Nile Tronscan and read the memo with your own eyes.
 3. Call `verify()` and get `True`.
