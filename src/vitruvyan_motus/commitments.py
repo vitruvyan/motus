@@ -25,13 +25,14 @@ import hashlib
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from vitruvyan_motus.trace import _canonical_bytes
 
 __all__ = [
     "AssuranceMode", "CommitmentKind", "Commitment", "WitnessAck",
-    "AnchorReceipt", "Checkpoint", "CommitmentWindow",
+    "AnchorReceipt", "Checkpoint", "TenantCheckpoint", "CommitmentWindow",
     "Witness", "Anchor",
     "merkle_root", "merkle_path", "verify_merkle_path", "verify_inclusion",
 ]
@@ -49,6 +50,7 @@ _PREFIX = f"{_HASH}:"
 _LEAF = b"\x00"
 _NODE = b"\x01"
 _CHECKPOINT = b"\x02"
+_TENANT = b"\x03"
 
 
 def _digest(payload: bytes) -> str:
@@ -222,8 +224,14 @@ class Commitment:
         else:
             _require_text(self.outcome,
                           "an END's outcome -- it names why the run terminated")
-            if self.root is not None:
-                _require_digest(self.root, "committed root")
+            # `root=None` was accepted by the field default, so an END could
+            # say a run finished and point at nothing: a receipt built on it
+            # proves an outcome was CLAIMED, never which trace earned it.
+            # `Trace.root` returns a value for every terminal kind, so a run
+            # that ended has one; None means the document does not verify, and
+            # an END is the wrong place to paper that over.
+            _require_digest(self.root, "an END's root -- it binds the outcome "
+                                       "to the evidence that produced it")
         if self.witness is not None and self.witness.commitment != self.leaf:
             raise ValueError(
                 "this acknowledgement is for a different commitment: an ACK "
@@ -416,6 +424,87 @@ class Checkpoint:
         return _digest(_CHECKPOINT + _canonical_bytes(self.to_dict()))
 
 
+@dataclass(frozen=True, slots=True)
+class TenantCheckpoint:
+    """The set of writer heads a tenant observed, chained to the set before it.
+
+    A per-writer `Checkpoint` commits to one writer and nothing else, so a
+    writer could appear in one round and be absent from the next without any
+    retained writer's chain changing by a byte -- and the disappearance signal
+    ADR-021 decision 5 relies on would not exist. A round found the ADR
+    promising it and the code not providing it.
+
+    This is the aggregate that makes it real: the SET is committed, so dropping
+    a writer moves the digest. What it still cannot do is notice a writer that
+    was never declared -- that is `SYSTEM_COMPLETENESS`, conceded in ADR-020
+    and conceded again one level down here.
+    """
+
+    tenant: str
+    index: int
+    heads: dict[str, str]                     # writer_id -> Checkpoint.digest
+    sealed_at: str
+    previous: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.tenant, "a tenant checkpoint's tenant")
+        _require_text(self.sealed_at, "a tenant checkpoint's seal time")
+        _require_index(self.index, "tenant checkpoint index")
+        if self.previous is not None:
+            _require_digest(self.previous, "previous tenant checkpoint")
+        if not self.heads:
+            raise ValueError(
+                "a tenant checkpoint with no writers asserts that nobody ran, "
+                "which is the one thing this structure cannot support")
+        for writer, head in self.heads.items():
+            _require_text(writer, "a writer id in a tenant checkpoint")
+            _require_digest(head, f"the head for writer {writer!r}")
+
+    @classmethod
+    def over(cls, checkpoints: Sequence[Checkpoint], *, index: int,
+             sealed_at: str, previous: str | None = None) -> "TenantCheckpoint":
+        """Aggregate one round of per-writer checkpoints.
+
+        Refuses two checkpoints from one writer: which of them is the head is
+        exactly the ambiguity this object exists to remove.
+        """
+        if not checkpoints:
+            raise ValueError("a round with no checkpoints is not a round")
+        tenants = {c.tenant for c in checkpoints}
+        if len(tenants) != 1:
+            raise ValueError(f"one tenant per aggregate, got {sorted(tenants)}")
+        heads: dict[str, str] = {}
+        for checkpoint in checkpoints:
+            if checkpoint.writer_id in heads:
+                raise ValueError(
+                    f"writer {checkpoint.writer_id!r} appears twice in one "
+                    "round: which one is the head is undecidable")
+            heads[checkpoint.writer_id] = checkpoint.digest
+        return cls(tenant=tenants.pop(), index=index, heads=heads,
+                   sealed_at=sealed_at, previous=previous)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "tenant": self.tenant, "index": self.index,
+            "heads": dict(sorted(self.heads.items())),
+            "writer_count": len(self.heads),
+            "sealed_at": self.sealed_at, "previous": self.previous,
+        }
+
+    @property
+    def digest(self) -> str:
+        return _digest(_TENANT + _canonical_bytes(self.to_dict()))
+
+    def writers_missing_from(self, later: "TenantCheckpoint") -> tuple[str, ...]:
+        """Writers present here and absent from a later round.
+
+        Not a verdict. A writer stops for ordinary reasons -- a process
+        retired, a shard moved -- so this reports a question, never
+        suppression, for the same reason a BEGIN without an END does.
+        """
+        return tuple(sorted(set(self.heads) - set(later.heads)))
+
+
 @dataclass(slots=True)
 class CommitmentWindow:
     """Commitments accumulating between two checkpoints, for ONE writer.
@@ -432,6 +521,7 @@ class CommitmentWindow:
     _leaves: list[str] = field(default_factory=list, init=False)
     _commitments: list[Commitment] = field(default_factory=list, init=False)
     _resume_at: int = field(default=0, init=False)
+    _sealed: str | None = field(default=None, init=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -472,6 +562,13 @@ class CommitmentWindow:
         window permanently unsealable.
         """
         with self._lock:
+            if self._sealed is not None:
+                raise ValueError(
+                    "this window is sealed: appending after a seal and sealing "
+                    "again yields two checkpoints at one index sharing one "
+                    "previous link, which is a fork at a chain position "
+                    "dressed as a continuation. Open the next window with "
+                    "CommitmentWindow.following()")
             if commitment.tenant != self.tenant or commitment.writer_id != self.writer_id:
                 raise ValueError("this commitment belongs to another writer's chain")
             expected = self._next_sequence_locked()
@@ -511,22 +608,39 @@ class CommitmentWindow:
         return merkle_path(self.leaves, index)
 
     def seal(self, sealed_at: str) -> Checkpoint:
-        """Close the window. Refuses to seal nothing.
+        """Close the window, ONCE, from one snapshot taken under the lock.
 
         An empty checkpoint would assert that a writer produced no commitments
         in an interval, which is a claim this structure cannot support: silence
         and absence are the same shape here, and ADR-020 forbids reporting one
         as the other.
         """
-        if not self._leaves:
-            raise ValueError("an empty window is not evidence that nothing happened")
-        return Checkpoint(
-            tenant=self.tenant, writer_id=self.writer_id, index=self.index,
-            window_root=merkle_root(self.leaves), count=len(self._leaves),
-            first_sequence=self._commitments[0].sequence,
-            last_sequence=self._commitments[-1].sequence,
-            sealed_at=sealed_at, previous=self.previous,
-        )
+        with self._lock:
+            if self._sealed is not None:
+                raise ValueError("this window is already sealed")
+            if not self._leaves:
+                raise ValueError("an empty window is not evidence that nothing happened")
+            # ONE snapshot. Reading the root from `self.leaves` and then the
+            # count and terminal sequence from the live lists lets a concurrent
+            # append slip between them, and the checkpoint then passes its own
+            # range-vs-count check while claiming a leaf its root does not
+            # cover.
+            leaves = tuple(self._leaves)
+            first = self._commitments[0].sequence
+            last = self._commitments[-1].sequence
+            checkpoint = Checkpoint(
+                tenant=self.tenant, writer_id=self.writer_id, index=self.index,
+                window_root=merkle_root(leaves), count=len(leaves),
+                first_sequence=first, last_sequence=last,
+                sealed_at=sealed_at, previous=self.previous,
+            )
+            self._sealed = checkpoint.digest
+            return checkpoint
+
+    @property
+    def sealed(self) -> str | None:
+        """The digest this window sealed to, or None while it is still open."""
+        return self._sealed
 
 
 # --------------------------------------------------------------------------

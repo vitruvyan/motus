@@ -12,8 +12,8 @@ import pytest
 
 from vitruvyan_motus.commitments import (
     AnchorReceipt, AssuranceMode, Checkpoint, Commitment, CommitmentKind,
-    CommitmentWindow, WitnessAck, merkle_path, merkle_root, verify_inclusion,
-    verify_merkle_path,
+    CommitmentWindow, TenantCheckpoint, WitnessAck, merkle_path, merkle_root,
+    verify_inclusion, verify_merkle_path,
 )
 
 AT = "2026-08-12T09:14:00Z"
@@ -410,6 +410,89 @@ def test_a_checkpoint_cannot_seal_a_negative_range():
         Checkpoint(tenant="acme", writer_id="w1", index=0,
                    window_root="sha256:" + "c" * 64, count=5,
                    first_sequence=-10, last_sequence=-6, sealed_at=AT)
+
+
+# -- what the second round found -------------------------------------------
+
+def test_an_end_must_bind_its_outcome_to_evidence():
+    """`root` defaulted to None, so an END could say a run finished and point
+    at nothing. A receipt built on it proves an outcome was claimed, never
+    which trace earned it."""
+    with pytest.raises(ValueError, match="binds the outcome"):
+        Commitment(kind=CommitmentKind.END, tenant="acme", writer_id="w1",
+                   sequence=1, run_id="r", at=AT, nonce="n", outcome="completed")
+
+
+def test_a_sealed_window_refuses_further_commitments():
+    """Appending after a seal and sealing again gives two digests at one index
+    with one `previous` -- a fork at a chain position, dressed as a
+    continuation."""
+    w = _window(3)
+    w.seal(AT)
+    with pytest.raises(ValueError, match="sealed"):
+        w.append(_begin(3))
+    with pytest.raises(ValueError, match="already sealed"):
+        w.seal(AT)
+
+
+def test_sealing_takes_one_snapshot_under_the_lock():
+    """The root came from `self.leaves` while the count and the terminal
+    sequence were read from the live lists afterwards. A concurrent append
+    between them yields a checkpoint that passes its own range check while
+    claiming a leaf its root does not cover."""
+    import threading
+    w = CommitmentWindow(tenant="acme", writer_id="w1")
+    for i in range(50):
+        w.append(_begin(i))
+
+    sealed: list[Checkpoint] = []
+    def appender() -> None:
+        for i in range(50, 120):
+            try:
+                w.append(_begin(i))
+            except ValueError:
+                return                      # the window sealed under us
+    def sealer() -> None:
+        sealed.append(w.seal(AT))
+
+    t1, t2 = threading.Thread(target=appender), threading.Thread(target=sealer)
+    t1.start(); t2.start(); t1.join(); t2.join()
+
+    cp = sealed[0]
+    leaves = w.leaves[: cp.count]
+    assert merkle_root(leaves) == cp.window_root
+    assert cp.last_sequence - cp.first_sequence + 1 == cp.count
+
+
+def test_a_tenant_checkpoint_commits_to_the_set_of_writers():
+    """A per-writer checkpoint commits to one writer, so a writer could vanish
+    between rounds without any retained writer's chain changing by a byte --
+    and ADR-021's disappearance signal would not exist."""
+    def head(writer: str) -> Checkpoint:
+        w = CommitmentWindow(tenant="acme", writer_id=writer)
+        w.append(_begin(0, writer=writer))
+        return w.seal(AT)
+
+    first = TenantCheckpoint.over([head("w1"), head("w2"), head("w3")],
+                                  index=0, sealed_at=AT)
+    without = TenantCheckpoint.over([head("w1"), head("w2")],
+                                    index=0, sealed_at=AT)
+    assert first.digest != without.digest
+    assert first.writers_missing_from(without) == ("w3",)
+    assert without.writers_missing_from(first) == ()
+
+
+def test_one_writer_cannot_appear_twice_in_a_round():
+    w1 = _window(2).seal(AT)
+    other = CommitmentWindow(tenant="acme", writer_id="w1")
+    other.append(_begin(0))
+    with pytest.raises(ValueError, match="appears twice"):
+        TenantCheckpoint.over([w1, other.seal(AT)], index=0, sealed_at=AT)
+
+
+def test_a_round_with_no_writers_is_not_a_round():
+    with pytest.raises(ValueError, match="not a round"):
+        TenantCheckpoint.over([], index=0, sealed_at=AT)
 
 
 # -- the empty case, which must remain exactly today's Motus ---------------
