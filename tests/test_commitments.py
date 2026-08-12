@@ -12,7 +12,8 @@ import pytest
 
 from vitruvyan_motus.commitments import (
     AnchorReceipt, AssuranceMode, Checkpoint, Commitment, CommitmentKind,
-    CommitmentWindow, WitnessAck, merkle_path, merkle_root, verify_merkle_path,
+    CommitmentWindow, WitnessAck, merkle_path, merkle_root, verify_inclusion,
+    verify_merkle_path,
 )
 
 AT = "2026-08-12T09:14:00Z"
@@ -37,6 +38,11 @@ def _window(n: int) -> CommitmentWindow:
     for i in range(n):
         w.append(_begin(i))
     return w
+
+
+def _ack(commitment: Commitment) -> WitnessAck:
+    return WitnessAck(witness_id="w.example", commitment=commitment.leaf,
+                      position=7, acknowledged_at=AT, signature="sig")
 
 
 # -- a BEGIN precedes the outcome, and the type enforces it ----------------
@@ -74,18 +80,34 @@ def test_without_an_acknowledgement_a_commitment_is_local():
 
 
 def test_an_acknowledgement_raises_the_mode_and_nothing_else_does():
-    ack = WitnessAck(witness_id="w.example", position=7,
-                     acknowledged_at=AT, signature="sig")
-    assert _begin(0, witness=ack).mode is AssuranceMode.WITNESSED
+    assert _begin(0, witness=_ack(_begin(0))).mode is AssuranceMode.WITNESSED
 
 
 def test_the_witness_ack_is_not_inside_the_leaf_it_acknowledges():
     """A witness signs the commitment. If the commitment contained the
     signature, the leaf would depend on a value that did not exist when the
     witness saw it, and no acknowledgement could ever verify."""
-    ack = WitnessAck(witness_id="w.example", position=7,
-                     acknowledged_at=AT, signature="sig")
-    assert _begin(0).leaf == _begin(0, witness=ack).leaf
+    assert _begin(0).leaf == _begin(0, witness=_ack(_begin(0))).leaf
+
+
+def test_an_acknowledgement_for_another_commitment_is_refused():
+    """A round pasted one run's acknowledgement onto a fabricated run and got
+    WITNESSED for both. An ACK that does not name what it acknowledges cannot
+    be checked by anyone holding the witness's key, ever."""
+    with pytest.raises(ValueError, match="different commitment"):
+        _begin(1, witness=_ack(_begin(0)))
+
+
+def test_an_acknowledgement_must_name_a_commitment_at_all():
+    with pytest.raises(ValueError, match="acknowledged commitment"):
+        WitnessAck(witness_id="w", commitment="not-a-digest", position=0,
+                   acknowledged_at=AT, signature="sig")
+
+
+def test_a_blank_signature_is_not_an_acknowledgement():
+    with pytest.raises(ValueError, match="non-blank"):
+        WitnessAck(witness_id="w", commitment=_begin(0).leaf, position=0,
+                   acknowledged_at=AT, signature="   ")
 
 
 # -- the accumulator ------------------------------------------------------
@@ -148,14 +170,58 @@ def test_a_window_refuses_another_writers_commitment():
 def test_numbering_does_not_restart_at_a_window_boundary():
     """Otherwise '40 then 42' would be a statement about the window, and the
     window boundary is chosen by the operator."""
-    first = _window(4)
-    cp = first.seal(AT)
-    second = CommitmentWindow(tenant="acme", writer_id="w1",
-                              index=cp.index + 1, previous=cp.digest)
-    second.resume_at(cp.last_sequence + 1)
+    cp = _window(4).seal(AT)
+    second = CommitmentWindow.following(cp)
     assert second.next_sequence == 4
+    assert second.index == cp.index + 1 and second.previous == cp.digest
     second.append(_begin(4))
     assert len(second) == 1
+
+
+def test_a_continuing_window_cannot_be_built_by_hand():
+    """The HIGH finding of the first adversarial round. A hand-built window
+    with a copied `previous` starts numbering at zero again, so a sequence
+    already sealed can be re-issued -- at exactly the boundary where gap
+    detection is supposed to hold."""
+    cp = _window(4).seal(AT)
+    with pytest.raises(ValueError, match="following"):
+        CommitmentWindow(tenant="acme", writer_id="w1",
+                         index=cp.index + 1, previous=cp.digest)
+
+
+def test_a_resealed_sequence_cannot_be_reissued_in_the_next_window():
+    cp = _window(5).seal(AT)
+    second = CommitmentWindow.following(cp)
+    with pytest.raises(ValueError, match="out of order"):
+        second.append(_begin(0))
+
+
+def test_concurrent_appends_never_share_a_sequence_number():
+    """`append` was check-then-act with no lock. A round reproduced two
+    commitments claiming one sequence under a forced interleaving, which left
+    the window permanently unsealable."""
+    import threading
+    w = CommitmentWindow(tenant="acme", writer_id="w1")
+    errors: list[Exception] = []
+    start = threading.Barrier(8)
+
+    def worker(i: int) -> None:
+        start.wait()
+        for _ in range(20):
+            try:
+                w.append(_begin(w.next_sequence, tenant="acme"))
+            except ValueError as exc:      # lost the race for that number
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    sequences = [c.sequence for c in w._commitments]
+    assert sequences == sorted(set(sequences)), "a sequence number was issued twice"
+    w.seal(AT)                              # a poisoned window cannot be sealed
 
 
 # -- the checkpoint --------------------------------------------------------
@@ -207,9 +273,18 @@ def test_two_windows_differing_only_in_one_commitment_do_not_share_a_digest():
 def test_an_anchored_receipt_names_the_transaction_that_anchors_it():
     """A receipt that says 'anchored' and points at nothing is the one lie
     that ends an evaluation: the reader opens it and finds a 404."""
-    with pytest.raises(ValueError, match="names the transaction"):
+    with pytest.raises(ValueError, match="transaction reference"):
         AnchorReceipt(anchor_id="ots", network="bitcoin",
                       checkpoint="sha256:" + "e" * 64, state="anchored")
+
+
+def test_a_whitespace_reference_does_not_anchor_anything():
+    """`not reference` accepted three spaces, which is exactly the 404 the
+    guard exists to prevent."""
+    with pytest.raises(ValueError, match="transaction reference"):
+        AnchorReceipt(anchor_id="ots", network="bitcoin",
+                      checkpoint="sha256:" + "e" * 64, state="anchored",
+                      reference="   ")
 
 
 def test_a_pending_receipt_needs_no_reference():
@@ -222,6 +297,114 @@ def test_an_unknown_state_is_refused():
     with pytest.raises(ValueError, match="pending or anchored"):
         AnchorReceipt(anchor_id="x", network="n",
                       checkpoint="sha256:" + "e" * 64, state="verified")  # type: ignore[arg-type]
+
+
+def test_a_leaf_and_an_internal_node_live_in_different_domains():
+    """RFC 6962's construction, and the reason for it: a real internal node
+    must never be presentable as a leaf. This held before only because
+    canonical JSON starts with `{` -- a property of the encoder, not a
+    decision. Both domains are tagged now, and this pins it."""
+    import hashlib
+    from vitruvyan_motus.commitments import _LEAF, _NODE, _canonical_bytes
+
+    commitment = _begin(0)
+    assert commitment.leaf == "sha256:" + hashlib.sha256(
+        _LEAF + _canonical_bytes(commitment.to_dict())).hexdigest()
+
+    # No commitment's leaf can EVER equal an internal node, whatever the
+    # encoder does, because the two are hashed in tagged domains.
+    w = _window(3)
+    a, b, c = w.leaves
+    internal = "sha256:" + hashlib.sha256(
+        _NODE + a.encode() + b"\x00" + b.encode()).hexdigest()
+    assert internal not in w.leaves
+
+
+def test_the_raw_path_primitive_cannot_tell_a_leaf_from_a_node_and_says_so():
+    """A genuine internal node, offered with its own shorter path, recomputes
+    the root. The primitive has no way to know -- which is why a verifier must
+    recompute the leaf from the commitment instead of trusting a document."""
+    import hashlib
+    from vitruvyan_motus.commitments import _NODE
+
+    w = _window(3)
+    a, b, c = w.leaves
+    root = merkle_root(w.leaves)
+    internal = "sha256:" + hashlib.sha256(
+        _NODE + a.encode() + b"\x00" + b.encode()).hexdigest()
+
+    assert verify_merkle_path(internal, (("right", c),), root)      # the primitive is fooled
+    assert verify_inclusion(w._commitments[0], w.proof_for(0), root)
+    outsider = _begin(99)
+    assert not verify_inclusion(outsider, w.proof_for(0), root)
+
+
+def test_the_pair_hash_is_order_dependent_and_domain_tagged():
+    """Both mutations -- dropping the \x01 tag and dropping the \x00
+    separator -- survived the first suite. Nothing pinned the scheme at all."""
+    import hashlib
+    from vitruvyan_motus.commitments import _NODE, _pair
+
+    left, right = _begin(0).leaf, _begin(1).leaf
+    assert _pair(left, right) != _pair(right, left)
+    assert _pair(left, right) == "sha256:" + hashlib.sha256(
+        _NODE + left.encode() + b"\x00" + right.encode()).hexdigest()
+
+
+def test_a_path_element_with_an_unknown_side_is_refused_not_skipped():
+    """With `pass` instead of `return False` a malformed side SKIPS a level,
+    so whoever supplies the path chooses which levels count."""
+    w = _window(4)
+    root = merkle_root(w.leaves)
+    good = w.proof_for(1)
+    poisoned = ((good[0][0], good[0][1]), ("sideways", good[1][1]))
+    assert not verify_merkle_path(w.leaves[1], poisoned, root)
+
+
+def test_the_nonce_enters_the_digest():
+    """Removing `nonce` from to_dict() survived the first suite, so nothing
+    said whether the field did anything at all."""
+    a = Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                   sequence=0, run_id="r", at=AT, nonce="n0")
+    b = Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                   sequence=0, run_id="r", at=AT, nonce="n1")
+    assert a.leaf != b.leaf
+
+
+def test_a_digest_of_the_wrong_length_is_refused():
+    """`sha256:abc` passed. A root is 64 hex characters or it is not a root."""
+    with pytest.raises(ValueError, match="64 lowercase hex"):
+        _end(1, root="sha256:abc")
+
+
+def test_a_bool_is_not_a_sequence_number():
+    """`True` passes isinstance(x, int) and serialises as JSON `true`, so it
+    would enter a digest as a different type than every other sequence."""
+    with pytest.raises(ValueError, match="non-negative integer"):
+        Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                   sequence=True, run_id="r", at=AT, nonce="n")
+
+
+def test_blank_identity_fields_name_nothing():
+    """Five sites used `if not x`, which accepts three spaces."""
+    for blank in ({"tenant": "   "}, {"writer_id": "\t"}, {"run_id": " "},
+                  {"nonce": "  "}, {"at": " "}):
+        kwargs = {"kind": CommitmentKind.BEGIN, "tenant": "acme",
+                  "writer_id": "w1", "sequence": 0, "run_id": "r",
+                  "at": AT, "nonce": "n", **blank}
+        with pytest.raises(ValueError, match="non-blank"):
+            Commitment(**kwargs)
+    with pytest.raises(ValueError, match="non-blank"):
+        Commitment(kind=CommitmentKind.END, tenant="acme", writer_id="w1",
+                   sequence=0, run_id="r", at=AT, nonce="n", outcome="  ")
+
+
+def test_a_checkpoint_cannot_seal_a_negative_range():
+    """`Commitment` refuses a negative sequence; the raw Checkpoint did not."""
+    with pytest.raises(ValueError, match="non-negative integer"):
+        Checkpoint(tenant="acme", writer_id="w1", index=0,
+                   window_root="sha256:" + "c" * 64, count=5,
+                   first_sequence=-10, last_sequence=-6, sealed_at=AT)
 
 
 # -- the empty case, which must remain exactly today's Motus ---------------

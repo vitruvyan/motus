@@ -22,6 +22,7 @@ being wrong first (ADR-020 *Wrong turns*):
 from __future__ import annotations
 
 import hashlib
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -32,15 +33,50 @@ __all__ = [
     "AssuranceMode", "CommitmentKind", "Commitment", "WitnessAck",
     "AnchorReceipt", "Checkpoint", "CommitmentWindow",
     "Witness", "Anchor",
-    "merkle_root", "merkle_path", "verify_merkle_path",
+    "merkle_root", "merkle_path", "verify_merkle_path", "verify_inclusion",
 ]
 
 _HASH = "sha256"
 _PREFIX = f"{_HASH}:"
 
+# RFC 6962's construction, and for its reason: a leaf and an internal node are
+# hashed in SEPARATE domains, so no commitment's digest can ever equal a node
+# of any tree. An adversarial round found this held here already -- but by
+# ACCIDENT, because a leaf's preimage is canonical JSON and always starts with
+# `{` while an internal node's started with \x01. That is a property of the
+# encoder, not a decision, and a format that must verify in ten years cannot
+# rest on one.
+_LEAF = b"\x00"
+_NODE = b"\x01"
+_CHECKPOINT = b"\x02"
+
 
 def _digest(payload: bytes) -> str:
     return _PREFIX + hashlib.sha256(payload).hexdigest()
+
+
+def _require_text(value: Any, what: str) -> str:
+    """Present, a string, and not merely whitespace.
+
+    `if not value` accepts three spaces, which names nothing. A round found the
+    same hole at five sites: a tenant, a writer, a witness, a termination
+    reason and an anchor's transaction reference could each be blank-but-true.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{what} must be a non-blank string")
+    return value
+
+
+def _require_index(value: Any, what: str) -> int:
+    """A non-negative int -- and `bool` does not count as one here.
+
+    `True` passes `isinstance(x, int)` and serialises as JSON `true`, so a
+    sequence of `True` would enter a digest as a different TYPE than every
+    other sequence in the chain.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{what} must be a non-negative integer")
+    return value
 
 
 def _require_digest(value: str, what: str) -> str:
@@ -81,27 +117,37 @@ class CommitmentKind(str, Enum):
 class WitnessAck:
     """An independent party's statement that it already held a commitment.
 
+    ``commitment`` is the leaf digest this acknowledges, and it is REQUIRED. An
+    adversarial round found the first version named no commitment at all: an
+    acknowledgement obtained for one run could be pasted onto a fabricated one
+    and both reported WITNESSED. Motus does not verify the signature -- it may
+    hold no key -- but an acknowledgement that does not say WHAT it
+    acknowledges cannot be verified by anyone who does, ever, which makes it
+    decoration rather than evidence.
+
     ``independent`` is deliberately absent. Independence is a property of *who
     runs the witness*, which this process cannot determine and must not assert;
     a reader judges it from ``witness_id`` (ADR-021 decision 3).
     """
 
     witness_id: str
+    commitment: str
     position: int
     acknowledged_at: str
     signature: str
     algorithm: str = "ed25519"
 
     def __post_init__(self) -> None:
-        if not self.witness_id:
-            raise ValueError("a witness acknowledgement names its witness")
-        if self.position < 0:
-            raise ValueError("witness position is a non-negative index")
+        _require_text(self.witness_id, "a witness acknowledgement's witness_id")
+        _require_text(self.signature, "a witness acknowledgement's signature")
+        _require_text(self.acknowledged_at, "a witness acknowledgement's timestamp")
+        _require_digest(self.commitment, "the acknowledged commitment")
+        _require_index(self.position, "witness position")
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "witness_id": self.witness_id, "position": self.position,
-            "acknowledged_at": self.acknowledged_at,
+            "witness_id": self.witness_id, "commitment": self.commitment,
+            "position": self.position, "acknowledged_at": self.acknowledged_at,
             "algorithm": self.algorithm, "signature": self.signature,
         }
 
@@ -126,8 +172,11 @@ class AnchorReceipt:
     def __post_init__(self) -> None:
         if self.state not in ("pending", "anchored"):
             raise ValueError("an anchor receipt is pending or anchored")
-        if self.state == "anchored" and not self.reference:
-            raise ValueError("an anchored receipt names the transaction that anchors it")
+        if self.state == "anchored":
+            _require_text(self.reference,
+                          "an anchored receipt's transaction reference")
+        _require_text(self.anchor_id, "an anchor receipt's anchor_id")
+        _require_text(self.network, "an anchor receipt's network")
         _require_digest(self.checkpoint, "anchored checkpoint")
 
     def to_dict(self) -> dict[str, Any]:
@@ -161,18 +210,24 @@ class Commitment:
     witness: WitnessAck | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant or not self.writer_id:
-            raise ValueError("a commitment names its tenant and its writer")
-        if self.sequence < 0:
-            raise ValueError("sequence is a non-negative index")
+        _require_text(self.tenant, "a commitment's tenant")
+        _require_text(self.writer_id, "a commitment's writer_id")
+        _require_text(self.run_id, "a commitment's run_id")
+        _require_text(self.at, "a commitment's timestamp")
+        _require_text(self.nonce, "a commitment's nonce")
+        _require_index(self.sequence, "sequence")
         if self.kind is CommitmentKind.BEGIN:
             if self.root is not None or self.outcome is not None:
                 raise ValueError("a BEGIN precedes the outcome and cannot carry one")
         else:
-            if not self.outcome:
-                raise ValueError("an END names why the run terminated")
+            _require_text(self.outcome,
+                          "an END's outcome -- it names why the run terminated")
             if self.root is not None:
                 _require_digest(self.root, "committed root")
+        if self.witness is not None and self.witness.commitment != self.leaf:
+            raise ValueError(
+                "this acknowledgement is for a different commitment: an ACK "
+                "that does not name what it acknowledges is decoration")
 
     @property
     def mode(self) -> AssuranceMode:
@@ -181,6 +236,11 @@ class Commitment:
         QUALIFIED is never reached here: it needs an identity attestation and a
         qualified timestamp, neither of which this distribution produces.
         """
+        # __post_init__ binds the ACK to this commitment's leaf, so WITNESSED
+        # at least means "somebody acknowledged THIS". It does not mean the
+        # signature was checked -- Motus may hold no key, and ADR-020 records
+        # the mode rather than enforcing it. The binding is what gives a
+        # verifier that DOES hold the key something to check against.
         return AssuranceMode.WITNESSED if self.witness else AssuranceMode.LOCAL
 
     def to_dict(self) -> dict[str, Any]:
@@ -202,7 +262,7 @@ class Commitment:
 
     @property
     def leaf(self) -> str:
-        return _digest(_canonical_bytes(self.to_dict()))
+        return _digest(_LEAF + _canonical_bytes(self.to_dict()))
 
 
 # --------------------------------------------------------------------------
@@ -210,7 +270,7 @@ class Commitment:
 # --------------------------------------------------------------------------
 
 def _pair(left: str, right: str) -> str:
-    return _digest(b"\x01" + left.encode() + b"\x00" + right.encode())
+    return _digest(_NODE + left.encode() + b"\x00" + right.encode())
 
 
 def merkle_root(leaves: tuple[str, ...]) -> str:
@@ -261,6 +321,16 @@ def merkle_path(leaves: tuple[str, ...], index: int) -> tuple[tuple[str, str], .
 
 
 def verify_merkle_path(leaf: str, path: tuple[tuple[str, str], ...], root: str) -> bool:
+    """Recompute a root from a digest and a path. NOT a proof of leafhood.
+
+    This is the primitive and it cannot know what it was handed: a genuine
+    INTERNAL node of the same tree, offered with the shorter path belonging to
+    it, recomputes the root and returns True. That is not fixable inside this
+    function -- it has no way to tell -- and it is why a verifier must never
+    take a leaf digest out of an untrusted document. Use
+    :func:`verify_inclusion`, which recomputes the leaf from the commitment;
+    domain tagging then makes leafhood structural.
+    """
     current = leaf
     for side, sibling in path:
         if side == "left":
@@ -270,6 +340,20 @@ def verify_merkle_path(leaf: str, path: tuple[tuple[str, str], ...], root: str) 
         else:
             return False
     return current == root
+
+
+def verify_inclusion(
+    commitment: "Commitment", path: tuple[tuple[str, str], ...], root: str
+) -> bool:
+    """Is THIS commitment under that window root?
+
+    The leaf is recomputed from the commitment rather than accepted from the
+    caller, which is the whole difference from :func:`verify_merkle_path`. A
+    verifier that reads a leaf digest out of a receipt and checks a path
+    against it proves that *some* digest is in the tree -- not that the run in
+    front of it is.
+    """
+    return verify_merkle_path(commitment.leaf, path, root)
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,8 +378,17 @@ class Checkpoint:
 
     def __post_init__(self) -> None:
         _require_digest(self.window_root, "window root")
+        _require_text(self.tenant, "a checkpoint's tenant")
+        _require_text(self.writer_id, "a checkpoint's writer_id")
+        _require_text(self.sealed_at, "a checkpoint's seal time")
         if self.previous is not None:
             _require_digest(self.previous, "previous checkpoint")
+        _require_index(self.index, "checkpoint index")
+        # Sealed from real commitments these can never be negative, because
+        # Commitment refuses a negative sequence. The raw constructor did not
+        # say so, and a Checkpoint is exactly what somebody builds by hand.
+        _require_index(self.first_sequence, "first_sequence")
+        _require_index(self.last_sequence, "last_sequence")
         if self.count <= 0:
             raise ValueError("a checkpoint seals at least one commitment")
         if self.last_sequence - self.first_sequence + 1 != self.count:
@@ -320,7 +413,7 @@ class Checkpoint:
         which is the correction ADR-019 had to make to the trace chain: a digest
         that does not cover its own link leaves the link free to be restated.
         """
-        return _digest(_canonical_bytes(self.to_dict()))
+        return _digest(_CHECKPOINT + _canonical_bytes(self.to_dict()))
 
 
 @dataclass(slots=True)
@@ -339,18 +432,61 @@ class CommitmentWindow:
     _leaves: list[str] = field(default_factory=list, init=False)
     _commitments: list[Commitment] = field(default_factory=list, init=False)
     _resume_at: int = field(default=0, init=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """The public constructor makes a writer's FIRST window only.
+
+        A continuing window comes from :meth:`following`, which derives index,
+        link and next sequence from a real ``Checkpoint``. A round found the
+        first version let a caller build a window with a hand-written
+        ``previous`` and start numbering at zero again -- re-issuing a sequence
+        already sealed, or skipping a range, with nothing raised anywhere. The
+        boundary between windows is exactly where gap detection is supposed to
+        hold, so it is the one place a caller does not fill in by hand.
+        """
+        _require_text(self.tenant, "a window's tenant")
+        _require_text(self.writer_id, "a window's writer_id")
+        if self.previous is not None or self.index != 0:
+            raise ValueError(
+                "a continuing window is built with CommitmentWindow.following("
+                "checkpoint), which derives its link and its next sequence "
+                "from a real checkpoint")
+
+    @classmethod
+    def following(cls, checkpoint: Checkpoint) -> "CommitmentWindow":
+        """The next window for this writer, derived from the sealed one."""
+        window = cls(tenant=checkpoint.tenant, writer_id=checkpoint.writer_id)
+        window.index = checkpoint.index + 1
+        window.previous = checkpoint.digest
+        window._resume_at = checkpoint.last_sequence + 1
+        return window
 
     def append(self, commitment: Commitment) -> int:
-        if commitment.tenant != self.tenant or commitment.writer_id != self.writer_id:
-            raise ValueError("this commitment belongs to another writer's chain")
-        expected = self.next_sequence
-        if commitment.sequence != expected:
-            raise ValueError(
-                f"out of order: this chain expects sequence {expected}, "
-                f"the commitment claims {commitment.sequence}")
-        self._commitments.append(commitment)
-        self._leaves.append(commitment.leaf)
-        return len(self._leaves) - 1
+        """Append under a lock: check-then-act is a race without one.
+
+        ADR-021 decision 5 refuses a lock ACROSS writers, which would serialise
+        every run start in the deployment. Within one writer's own chain a lock
+        costs nothing and stops two concurrent starts claiming one sequence --
+        which a round reproduced under a forced interleaving, leaving the
+        window permanently unsealable.
+        """
+        with self._lock:
+            if commitment.tenant != self.tenant or commitment.writer_id != self.writer_id:
+                raise ValueError("this commitment belongs to another writer's chain")
+            expected = self._next_sequence_locked()
+            if commitment.sequence != expected:
+                raise ValueError(
+                    f"out of order: this chain expects sequence {expected}, "
+                    f"the commitment claims {commitment.sequence}")
+            self._commitments.append(commitment)
+            self._leaves.append(commitment.leaf)
+            return len(self._leaves) - 1
+
+    def _next_sequence_locked(self) -> int:
+        if self._commitments:
+            return self._commitments[-1].sequence + 1
+        return self._resume_at
 
     @property
     def next_sequence(self) -> int:
@@ -361,15 +497,8 @@ class CommitmentWindow:
         would stop meaning anything at exactly the boundary an operator can
         choose.
         """
-        if self._commitments:
-            return self._commitments[-1].sequence + 1
-        return self._resume_at
-
-    def resume_at(self, sequence: int) -> None:
-        """Continue a writer's numbering across a checkpoint boundary."""
-        if self._commitments:
-            raise ValueError("a window in progress cannot be renumbered")
-        self._resume_at = sequence
+        with self._lock:
+            return self._next_sequence_locked()
 
     def __len__(self) -> int:
         return len(self._leaves)
