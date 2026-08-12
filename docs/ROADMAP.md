@@ -72,6 +72,73 @@ and nobody decided it.
 
 ---
 
+## Phase 1b — the integration MCP
+
+*Days, in parallel with phase 1. Gated by nothing in the trust model: it touches
+no receipt, no anchor, and promises nothing about audit.*
+
+You install Motus, point your coding agent at the MCP, and start building
+without reading three hundred lines of prose.
+
+**Why this and not more documentation.** We have the measurement. Commit
+`24adb30` is titled *"two examples for the part of the protocol a first
+integration gets wrong"* — so the gap was known and the answer was two more
+examples. An automated reviewer then read those examples and the Terraveler
+brief and **inverted the effect classification twice in one pull request**
+(#77): it called a database write `recorded_effect` where the protocol says
+`external_effect`, and read-only calls the opposite. A protocol with
+classifications does not travel in prose. It travels by answering the concrete
+question somebody is holding.
+
+**The rule that makes it impossible to rot, and it goes in an ADR before any
+code:**
+
+> Every answer is derived from a source in the repository at call time, and
+> every answer cites that source. No prose lives in the server. A tool that
+> cannot cite `contract/node-protocol.md`, a schema, or an ADR must not exist.
+
+If the source changes the answer changes; if the source is deleted the tool
+fails instead of inventing. A test asserts that every advertised tool returns
+content that is actually in the repository — cheap, and it is what keeps this
+honest across releases. **A server of hand-written summaries would be a second
+source of truth, and in this project of all projects an MCP that lies about our
+own protocol demonstrates the opposite of the thesis.**
+
+**The surface.** Three of these execute rather than describe, which is the
+advantage only Motus has here — the validator already exists:
+
+- `motus_classify(description)` — *"I need to INSERT a row"* → `external_effect`,
+  with the receipt requirements and the citation. This is the tool that pays for
+  the whole thing, because it is the error we measured;
+- `motus_review_graph(spec)` — the real validator, on their `GraphSpec`, with
+  the rule that fired. Not advice: the verdict of the same code that will refuse
+  their graph at runtime;
+- `motus_review_node(source)` — a `pure` node reading a module-level global, an
+  effect node with no idempotency key;
+- `motus_explain(error)` — `DeclarationViolation`, `ReplayMismatch`,
+  `UnsafeResume`: what the runtime means and what usually causes it;
+- `motus_start_here()` — the shape of a Motus program in thirty lines;
+- `motus_where(intent)` — where this code goes.
+
+**Shipped as an optional extra**, `pip install vitruvyan-motus[mcp]`, no impact
+on the runtime — the same house rule as ADR-021 decision 1: off until asked for.
+
+**What it changes about the documentation.** The README does two jobs today —
+convince a human to care, and teach an implementer — which is why it is eight
+hundred lines and serves neither well. They separate: the README is what a human
+reads to decide; the MCP is what an agent uses to build.
+
+**Its first test is Terraveler**, who is integrating now. Handing them an MCP
+instead of a three-hundred-line brief is the strongest evidence we can get, and
+the brief is the document a review already found wrong in several places.
+
+**The failure mode to watch:** the MCP becoming the place where documentation
+gaps hide. A question the MCP answers well is evidence the *document* should
+answer it too. Tool usage is a defect report against the docs, never a
+replacement for them.
+
+---
+
 ## Phase 2 — the verifier, before any anchor exists
 
 *Weeks. Out of order it turns the product into a promise.*
@@ -193,4 +260,7 @@ one habit that would cost us the credibility the rest of this is built on.
 - **a witness that can block a run.** Refused in ADR-021 and it will be proposed
   again, reasonably, by somebody who wants a stronger guarantee;
 - **`SYSTEM_COMPLETENESS`**, promised by anybody in a meeting. It is conceded in
-  writing, permanently, and it is the property a buyer most wants.
+  writing, permanently, and it is the property a buyer most wants;
+- **an MCP that answers from memory instead of from source.** It would go stale
+  silently, and it would be *our* server misstating *our* protocol — the exact
+  shape of the thing this product exists to make impossible.
