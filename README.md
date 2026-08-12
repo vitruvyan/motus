@@ -14,33 +14,36 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.8.1](https://github.com/vitruvyan/motus/releases/tag/v0.8.1)
+> **Current release:** [Motus 0.9.0](https://github.com/vitruvyan/motus/releases/tag/v0.9.0)
 > · `pip install vitruvyan-motus`
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.8.1 **still does not pass its own cumulative performance gate**, and ships
+0.9.0 **still does not pass its own cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+84.4 %** | +20 % |
-| 100-node no-op | **+123.2 %** | +20 % |
-| Trace materialization | **+25.2 %** | +20 % |
+| Per-node overhead | **+90.4 %** | +20 % |
+| 100-node no-op | **+134.6 %** | +20 % |
+| Trace materialization | **+21.1 %** | +20 % |
 
 The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0:
-0.8.1 against 0.8.0 is +0.3 %, −1.5 % and −0.4 %, inside the per-release budget
-with no exception declared. On the 100-node no-op the paired spread is 106 %
-— wider than the effect — so on that metric the measurement cannot answer, and
-says so rather than pretending.
+0.9.0 against 0.8.1 is +2.7 %, +3.7 % and +0.4 %, inside the per-release budget
+with no exception declared. Unlike 0.8.1's, these measurements can answer — the
+worst paired spread is 5.1 %, narrower than every effect above it, so the
+figures are the code and not the machine.
 
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
-existed. Measured on 2026-08-09 against a live `api_graph` service with a real
-user query: **3.1 ms**, which is 0.017 % of that request and **0.070 %** of the
-fastest response the service gave all day. That figure is an upper bound: it
-contains the consumer's own node code, not only Motus.
+existed, and ADR-018 §4 requires it re-taken for every release: a share
+measured against 0.8.1 says nothing about 0.9.0. Measured on 2026-08-12 against
+a live `api_graph` service with three real user queries: **2.8, 2.9 and 3.6 ms**
+of Motus against requests of 50.9 s, 6.3 s and 24.5 s. The honest share is the
+worst cost over the fastest response — 3.6 ms of 6.3 s — which is **0.057 %**.
+That figure is an upper bound: it contains the consumer's own node code, not
+only Motus.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
@@ -662,8 +665,23 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.8.0 against v0.7.0 — three independent dispatches, canonical value is the
+0.9.0 against v0.8.1 — three independent dispatches, canonical value is the
 median of the job ratios:
+
+| metric | canonical | across jobs | budget |
+|---|---:|---:|---:|
+| per-node overhead | **+2.7 %** | +2.7 … +3.1 % | +10 % |
+| 100-node no-op overhead | **+3.7 %** | +3.1 … +4.0 % | +10 % |
+| trace materialization | **+0.4 %** | −0.8 … +2.1 % | +10 % |
+
+No exception is declared and none is needed: 0.9.0 adds a contract revision and
+a new module, and costs almost nothing to run. The worst paired spread across
+the three jobs is 5.1 %, narrower than every effect measured, so these figures
+are the code rather than the runner — which is not always true and is stated
+here because on 0.8.1's 100-node no-op it was not.
+
+The release that did not fit its budget was 0.8.0 against v0.7.0, and its
+exceptions stand:
 
 | metric | canonical | across jobs | ceiling |
 |---|---:|---:|---:|
@@ -705,8 +723,17 @@ anything — and gate nothing. The gate still recomputes every aggregate from th
 raw runs, still matches interpreter and runtime identity, and still refuses an
 incomplete trace: completeness is an invariant, never a measurement.
 
+**The absolute gate still depends on which runner it lands on.** Of three
+dispatches taken for this release, **two were discarded before any measurement
+was compared** — the host precondition wants an AMD EPYC and GitHub allocated
+two Intel Xeons ([issue #70](https://github.com/vitruvyan/motus/issues/70)).
+Discarding on architecture is not the same as retrying until a number is
+convenient — nothing was measured on the discarded hosts — but the ratio is
+recorded here rather than left implicit. The relative gate had no such problem:
+it measures both versions on the same host in the same job, which is the point.
+
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.8.1/` for the committed observations.
+`benchmarks/relative-0.9.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -722,8 +749,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.1-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.8.1/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.9.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.9.0/*.json
 ```
 
 ## Native package surface
