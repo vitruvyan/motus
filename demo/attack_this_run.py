@@ -246,25 +246,25 @@ def _tampers():
                     fact["value"][2]["tlp"] = "TLP:CLEAR"
 
     return [
-        ("Ribalta il verdetto", "APPROVED diventa REJECTED",
+        ("Flip the verdict", "APPROVED becomes REJECTED",
          flip_verdict_trace, flip_verdict_log, False),
-        ("Declassifica una fonte", "la citazione TLP:RED diventa TLP:CLEAR",
+        ("Declassify a source", "the TLP:RED citation becomes TLP:CLEAR",
          declassify_trace, declassify_log, False),
-        ("Cancella un passo", "il passo che ha classificato le fonti sparisce",
+        ("Delete a step", "the step that classified the sources disappears",
          lambda d: d["records"].pop(3), lambda rows: rows.pop(3), False),
-        ("Riscrive di chi e' la run", "run_id sub-4471 diventa sub-0000",
+        ("Rewrite whose run it is", "run_id sub-4471 becomes sub-0000",
          lambda d: d["run"].__setitem__("run_id", "sub-0000"),
          lambda rows: [r.__setitem__("trace_id", "sub-0000") for r in rows], False),
-        ("Cambia la policy", "strict diventa exploration: gli errori non fermano piu' la run",
+        ("Change the policy", "strict becomes exploration: errors no longer stop the run",
          lambda d: d["run"].__setitem__("policy", "exploration"),
          lambda rows: None, False),
-        ("Duplica un passo", "un passo compare due volte",
+        ("Duplicate a step", "one step appears twice",
          lambda d: d["records"].insert(3, copy.deepcopy(d["records"][3])),
          lambda rows: rows.insert(3, copy.deepcopy(rows[3])), False),
-        ("Ribalta il verdetto E RISIGILLA", "l'attaccante conosce il contratto e rifa' ogni hash",
+        ("Flip the verdict AND RESEAL", "the attacker knows the contract and redoes every hash",
          flip_verdict_trace, flip_verdict_log, True),
-        ("Riscrive l'intestazione, link stantio",
-         "cambia la policy e lascia il primo prev_hash dov'era: ogni hash torna",
+        ("Rewrite the header, stale link",
+         "changes the policy and leaves the first prev_hash where it was: every hash recomputes",
          lambda d: d["run"].__setitem__("policy", "exploration"),
          lambda rows: None, "stale"),
     ]
@@ -277,6 +277,13 @@ def run_demo() -> dict:
 
     baseline_log = check_log(copy.deepcopy(rows))
     baseline_trace = check_trace(copy.deepcopy(document), workspace, "pristine")
+    if not baseline_trace[0]:
+        raise SystemExit(
+            "the pristine trace does not validate, so no verdict below would "
+            "mean anything — a validator that cannot RUN also returns non-zero, "
+            f"and every tamper would read as caught. Reason: {baseline_trace[1]}")
+    if not baseline_log[0]:
+        raise SystemExit(f"the pristine event log does not check out: {baseline_log[1]}")
 
     results = []
     for title, detail, on_trace, on_log, resealing in _tampers():
@@ -308,7 +315,7 @@ def run_demo() -> dict:
         log_ok, log_msg = check_log(edited_rows)
 
         results.append({
-            "title": title, "detail": detail,
+            "title": title, "detail": detail, "reseal": resealing or None,
             "log_caught": not log_ok, "log_msg": log_msg,
             "trace_caught": not trace_ok, "trace_msg": trace_msg,
             "root_moved": new_root != root,
@@ -341,34 +348,34 @@ def _who_caught(result: dict) -> tuple[str, str]:
             # carries the published value: anyone comparing that field to the
             # anchor sees agreement. Only running the validator, or asking
             # `trace.root` — which recomputes — disagrees.
-            return "validatore", (
-                "il campo grezzo non si muove: chi lo confronta con l'ancora "
-                "vede accordo. trace.root risponde None")
-        return "validatore", result["trace_msg"]
+            return "validator", (
+                "the raw field does not move: anyone comparing it with the "
+                "anchor sees agreement. trace.root answers None")
+        return "validator", result["trace_msg"]
     if result["root_moved"]:
-        return "ancora", "la traccia e' coerente, ma la root non e' piu' quella pubblicata"
-    return "nessuno", "invisibile"
+        return "anchor", "the trace is consistent, but the root is no longer the published one"
+    return "nobody", "invisible"
 
 
 def render_terminal(data: dict) -> None:
-    print(f"\nuna run, {data['records']} record")
+    print(f"\none run, {data['records']} records")
     print(f"root  {data['root']}")
-    print(f"prova {data['artifact']}\n")
-    print(f"{'manomissione':38s} {'event log':>12s}   {'traccia Motus':>16s}")
-    print("-" * 72)
+    print(f"file  {data['artifact']}\n")
+    print(f"{'tampering':42s} {'event log':>12s}   {'Motus trace':>20s}")
+    print("-" * 78)
     for result in data["results"]:
         who, _ = _who_caught(result)
-        log = "beccata" if result["log_caught"] else "invisibile"
-        trace = "invisibile" if who == "nessuno" else f"beccata ({who})"
-        print(f"{result['title']:38s} {log:>12s}   {trace:>16s}")
-    print("-" * 72)
+        log = "caught" if result["log_caught"] else "invisible"
+        trace = "invisible" if who == "nobody" else f"caught ({who})"
+        print(f"{result['title']:42s} {log:>12s}   {trace:>20s}")
+    print("-" * 78)
     caught_log = sum(1 for r in data["results"] if r["log_caught"])
-    caught_trace = sum(1 for r in data["results"] if _who_caught(r)[0] != "nessuno")
+    caught_trace = sum(1 for r in data["results"] if _who_caught(r)[0] != "nobody")
     total = len(data["results"])
-    print(f"{'':38s} {f'{caught_log}/{total}':>12s}   {f'{caught_trace}/{total}':>16s}\n")
-    print("Il verdetto sulla traccia non lo da' questo programma: lo da'")
-    print("contract/validate.py, in un altro processo, leggendo solo il file")
-    print("e il contratto pubblicato.\n")
+    print(f"{'':42s} {f'{caught_log}/{total}':>12s}   {f'{caught_trace}/{total}':>20s}\n")
+    print("The verdict on the trace is not this program's: it comes from")
+    print("contract/validate.py, in another process, reading only the file")
+    print("and the published contract.\n")
 
 
 CSS = """
@@ -431,15 +438,15 @@ def render_html(data: dict) -> str:
     rows = []
     for result in data["results"]:
         who, why = _who_caught(result)
-        log_cell = ('<span class="v ok">beccata</span>' if result["log_caught"]
-                    else '<span class="v bad">invisibile</span>')
-        if who == "nessuno":
-            trace_cell = '<span class="v bad">invisibile</span>'
-        elif who == "ancora":
-            trace_cell = ('<span class="v warn">beccata</span>'
-                          '<div class="why">solo dall\'ancora: la root non e\' piu\' quella pubblicata</div>')
+        log_cell = ('<span class="v ok">caught</span>' if result["log_caught"]
+                    else '<span class="v bad">invisible</span>')
+        if who == "nobody":
+            trace_cell = '<span class="v bad">invisible</span>'
+        elif who == "anchor":
+            trace_cell = ('<span class="v warn">caught</span>'
+                          '<div class="why">by the anchor alone: the root is no longer the published one</div>')
         else:
-            trace_cell = ('<span class="v ok">beccata</span>'
+            trace_cell = ('<span class="v ok">caught</span>'
                           f'<div class="why">{e(why[:110])}</div>')
         rows.append(
             f'<tr><td class="tamper">{e(result["title"])}'
@@ -447,7 +454,7 @@ def render_html(data: dict) -> str:
             f'<td>{log_cell}</td><td>{trace_cell}</td></tr>'
         )
     caught_log = sum(1 for r in data["results"] if r["log_caught"])
-    caught_trace = sum(1 for r in data["results"] if _who_caught(r)[0] != "nessuno")
+    caught_trace = sum(1 for r in data["results"] if _who_caught(r)[0] != "nobody")
     total = len(data["results"])
 
     citations = "".join(
@@ -462,63 +469,97 @@ def render_html(data: dict) -> str:
         for r in data["rows"]
     )
     return f"""<!doctype html>
-<html lang="it"><meta charset="utf-8">
+<html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Attack this run — Vitruvyan Motus</title>
 <style>{CSS}</style>
 <div class="wrap">
-<h1>Verdetto su submission 4471</h1>
-<p class="sub">La stessa decisione registrata in due modi, e poi manomessa sette volte.</p>
+<h1>Verdict on submission 4471</h1>
+<p class="sub">One decision recorded two ways, then tampered with {total} times.</p>
 
-<div class="card"><h2>La run</h2><div class="grid">
-<div class="kv"><div class="k">desk</div><div class="v">cti · revisore r-118</div></div>
-<div class="kv"><div class="k">quando</div><div class="v">12 ago 2026, 09:14 UTC</div></div>
+<div class="card"><h2>The run</h2><div class="grid">
+<div class="kv"><div class="k">desk</div><div class="v">cti · reviewer r-118</div></div>
+<div class="kv"><div class="k">when</div><div class="v">12 Aug 2026, 09:14 UTC</div></div>
 <div class="kv"><div class="k">policy</div><div class="v">strict</div></div>
-<div class="kv"><div class="k">record</div><div class="v">{data['records']}</div></div>
+<div class="kv"><div class="k">records</div><div class="v">{data['records']}</div></div>
 </div></div>
 
-<div class="card"><h2>Domanda e risposta</h2><div class="qa">
-<div><div class="q">richiesta</div><div>Si puo' rilasciare il parere su CVE-2026-3311 al cliente?</div></div>
-<div><div class="q">verdetto</div><div><strong>APPROVED</strong> — soglia di classificazione TLP:RED, rilascio subordinato a espurgo</div></div>
+<div class="card"><h2>Question and answer</h2><div class="qa">
+<div><div class="q">request</div><div>May the advisory on CVE-2026-3311 be released to the client?</div></div>
+<div><div class="q">verdict</div><div><strong>APPROVED</strong> — TLP:RED classification threshold, release conditional on redaction</div></div>
 </div></div>
 
-<div class="card"><h2>Sigilli</h2><div class="seals">
-<span class="seal ok">TLP verificato</span><span class="seal ok">Vault sigillato</span>
-<span class="seal ok">Effetti con chiave di idempotenza</span>
+<div class="card"><h2>Seals</h2><div class="seals">
+<span class="seal ok">TLP verified</span><span class="seal ok">Vault sealed</span>
+<span class="seal ok">Effects carry idempotency keys</span>
 <span class="seal ok">Replay: partial</span></div></div>
 
-<div class="card"><h2>Fonti citate</h2>{citations}</div>
+<div class="card"><h2>Cited sources</h2>{citations}</div>
 
-<div class="card"><h2>La root — l'unica cosa che pubblichi</h2>
-<div class="root mono">{e(data['root'] or 'nessuna')}</div>
-<p class="note">Ancorala dove non puoi riscriverla e diventa la domanda a cui
-nessun'altra riga di questa pagina sa rispondere: <span class="hi">questo racconto
-e' ancora quello di allora?</span></p></div>
+<div class="card"><h2>The root — the only thing you publish</h2>
+<div class="root mono">{e(data['root'] or 'none')}</div>
+<p class="note">Anchor it where you cannot rewrite it and it becomes the question
+no other line on this page can answer: <span class="hi">is this account still the
+one it was?</span></p></div>
 
-<div class="card"><h2>Sette manomissioni</h2>
-<table><thead><tr><th>manomissione</th><th style="width:150px">event log</th>
-<th style="width:330px">traccia Motus</th></tr></thead><tbody>
+<div class="card"><h2>{total} tamperings</h2>
+<table><thead><tr><th>tampering</th><th style="width:150px">event log</th>
+<th style="width:330px">Motus trace</th></tr></thead><tbody>
 {''.join(rows)}
-<tr class="tot"><td>rilevate</td><td>{caught_log}/{total}</td><td>{caught_trace}/{total}</td></tr>
+<tr class="tot"><td>detected</td><td>{caught_log}/{total}</td><td>{caught_trace}/{total}</td></tr>
 </tbody></table>
-<p class="note">L'event log qui non e' uno spaventapasseri: ha un
-<code>payload_hash</code> per riga, che e' quanto di piu' forte una tabella del
-genere porta di solito. Cio' che non ha e' un valore che si impegni sull'<span
-class="hi">insieme</span>: nessuna riga copre le altre, quindi togliere una riga,
-riscrivere l'intestazione o cambiare la policy non lascia segno.</p>
-<p class="note">L'ultima riga e' l'unica che conta davvero. Un attaccante che
-conosce il contratto rifa' tutti gli hash e passa <span class="hi">entrambi</span>
-i controlli — la traccia manomessa e' internamente perfetta. Quello che non puo'
-fare e' rimettere a posto una root gia' pubblicata altrove.</p>
-<details><summary>il verdetto non lo da' questa pagina</summary>
+<p class="note">The event log here is not a strawman: it carries a
+<code>payload_hash</code> on every row, which is the strongest thing such a table
+usually has, and it is credited with every catch it earns. It even catches the
+deletion — not by any digest, but because the row below the deleted one names it
+in <code>causation_id</code>, and that name now points at nothing. Repair that
+one field, which no hash covers, and the deletion becomes invisible. What the log
+has no value for is the <span class="hi">set</span>: no row commits to any other,
+so a rewritten header or a changed policy leaves nothing behind.</p>
+<p class="note"><span class="hi">Read the resealed row twice.</span> An attacker
+who knows the contract redoes every hash and passes <span class="hi">both</span>
+checks — the tampered trace is internally perfect. The one thing they cannot do
+is reach a root already published somewhere else. That row is the case for
+anchoring, and it is the only one the validator cannot win.</p>
+<p class="note">The last row is a different animal. The validator does catch it,
+but the <span class="hi">raw</span> terminal field still carries the published
+root — so anyone who compares that field to the anchor sees agreement.
+<code>trace.root</code> recomputes the whole chain from the document and answers
+<code>None</code>. That is why the root is an accessor and not a field you read.</p>
+<details><summary>the verdict is not this page's</summary>
 <pre>$ python contract/validate.py trace run.json --spec graph.json
 {e(data['baseline_trace'][1])}</pre>
-<p class="note">Processo separato, solo il file e il contratto pubblicato.</p>
+<p class="note">A separate process, reading only the file and the published contract.</p>
 </details></div>
 
-<div class="card"><h2>Il timeline grezzo</h2>{timeline}</div>
+<div class="card"><h2>The raw timeline</h2>{timeline}</div>
 </div></html>
 """
+
+
+ANCHOR_RECEIPT = Path(__file__).resolve().parent / "out" / "anchor_receipt.json"
+
+
+def _anchor(root: str | None) -> dict:
+    """The receipt for the root's publication, or the shape of one.
+
+    Motus ships no anchor and this file does not become one: `demo/anchor_root.py`
+    publishes the root and writes the receipt here, and this only reads it. The
+    keys exist even when nothing has been published, so a front end renders a
+    pending state instead of discovering the field is missing.
+
+    The receipt is REFUSED unless its memo carries this run's root. A receipt
+    left over from an earlier run would otherwise be rendered beside a root it
+    does not commit to, which is the one thing an anchor must never do.
+    """
+    empty = {"network": None, "txid": None, "memo": None,
+             "explorer_url": None, "published_at": None, "block": None}
+    if not ANCHOR_RECEIPT.exists():
+        return empty
+    receipt = json.loads(ANCHOR_RECEIPT.read_text(encoding="utf-8"))
+    if not root or root not in (receipt.get("memo") or ""):
+        return empty
+    return {key: receipt.get(key) for key in empty}
 
 
 def as_payload(data: dict) -> dict:
@@ -535,10 +576,11 @@ def as_payload(data: dict) -> dict:
         who, why = _who_caught(result)
         results.append({
             "title": result["title"], "detail": result["detail"],
+            "reseal": result["reseal"],
             "log": {"caught": result["log_caught"], "message": result["log_msg"]},
             "trace": {
-                "caught": who != "nessuno",
-                "caught_by": who,                      # validatore | ancora | nessuno
+                "caught": who != "nobody",
+                "caught_by": who,                      # validator | anchor | nobody
                 "message": why,
                 "raw_field_unmoved": result["raw_field_unmoved"],
                 "derived_root": result["new_root"],
@@ -552,6 +594,7 @@ def as_payload(data: dict) -> dict:
         "record_count": data["records"],
         "citations": CITATIONS,
         "baseline": {"log": data["baseline_log"][1], "trace": data["baseline_trace"][1]},
+        "anchor": _anchor(data["root"]),
         "timeline": [
             {"event_type": r["event_type"], "source": r["source"],
              "created_at": r["created_at"], "event_id": r["event_id"],
@@ -562,7 +605,7 @@ def as_payload(data: dict) -> dict:
         "tampers": results,
         "totals": {
             "log": sum(1 for r in data["results"] if r["log_caught"]),
-            "trace": sum(1 for r in data["results"] if _who_caught(r)[0] != "nessuno"),
+            "trace": sum(1 for r in data["results"] if _who_caught(r)[0] != "nobody"),
             "of": len(data["results"]),
         },
     }
@@ -578,11 +621,11 @@ def main() -> None:
     render_terminal(data)
     if args.html:
         Path(args.html).write_text(render_html(data), encoding="utf-8")
-        print(f"pagina: {args.html}")
+        print(f"page: {args.html}")
     if args.json:
         Path(args.json).write_text(json.dumps(as_payload(data), indent=2,
                                               ensure_ascii=False), encoding="utf-8")
-        print(f"dati  : {args.json}")
+        print(f"data: {args.json}")
 
 
 if __name__ == "__main__":

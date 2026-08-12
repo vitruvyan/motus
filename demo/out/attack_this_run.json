@@ -22,13 +22,13 @@
       "desk": "cti",
       "reviewer": "r-118"
     },
-    "created_ts": "2026-08-11T23:57:42.026626Z",
+    "created_ts": "2026-08-12T10:27:47.941726Z",
     "sink": {
       "flush_interval_ms": 0,
       "chunk_records": 1
     }
   },
-  "root": "sha256:0a2810b9fc394a43a20812e7b98f5221f59d9418cb30c65163f2e9fc5bd2af08",
+  "root": "sha256:cb6829d3deffc3d518817d1d06c08cf4a7faa6755347df56983cd065b2468a92",
   "record_count": 14,
   "citations": [
     {
@@ -50,6 +50,14 @@
   "baseline": {
     "log": "accepted: every row's digest matches its payload",
     "trace": "accepted"
+  },
+  "anchor": {
+    "network": null,
+    "txid": null,
+    "memo": null,
+    "explorer_url": null,
+    "published_at": null,
+    "block": null
   },
   "timeline": [
     {
@@ -154,11 +162,11 @@
   "records": [
     {
       "seq": 1,
-      "ts": "2026-08-11T23:57:42.027455Z",
+      "ts": "2026-08-12T10:27:47.942658Z",
       "kind": "run_started",
       "integrity": {
-        "payload_hash": "sha256:42ff941ac2bb5b48479e42408d9d180d5e860a099e52905f482ef6dff8704d59",
-        "prev_hash": "sha256:e8232ab0a6599b2ae7c174c64b92bcb73f53293f6ce2051c071d5d15a9fa4c0c"
+        "payload_hash": "sha256:3a51b247148d1b472bb378bb54e790102f64bff4c17d27ded73886b38f3aa85b",
+        "prev_hash": "sha256:56316559ad946fc2c4d9a4f5d658bcee8fe369af37ab21bb8f042a014fcb0cc8"
       },
       "intent": "release verdict on submission 4471",
       "initial_state": {
@@ -169,22 +177,22 @@
     },
     {
       "seq": 2,
-      "ts": "2026-08-11T23:57:42.027611Z",
+      "ts": "2026-08-12T10:27:47.942866Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:87ec0cb7765c9376e6dae0f11edd7662a14b01f15c071994f6e5efd29ffc983a",
-        "prev_hash": "sha256:42ff941ac2bb5b48479e42408d9d180d5e860a099e52905f482ef6dff8704d59"
+        "payload_hash": "sha256:0ee09544dab87392b46326834b9809f53c8bb0202c29f96188bcb8cece9afd32",
+        "prev_hash": "sha256:3a51b247148d1b472bb378bb54e790102f64bff4c17d27ded73886b38f3aa85b"
       },
       "node": "retrieve",
       "attempt": 1
     },
     {
       "seq": 3,
-      "ts": "2026-08-11T23:57:42.027999Z",
+      "ts": "2026-08-12T10:27:47.943213Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:a828e378bc719df4ee0b2b74437db5558e3370e6be524a5c94c5283099d834ff",
-        "prev_hash": "sha256:87ec0cb7765c9376e6dae0f11edd7662a14b01f15c071994f6e5efd29ffc983a"
+        "payload_hash": "sha256:f23933f6a002091626d423b68914cf4cefe3432972eb28936fecab566543a40a",
+        "prev_hash": "sha256:0ee09544dab87392b46326834b9809f53c8bb0202c29f96188bcb8cece9afd32"
       },
       "node": "retrieve",
       "attempt": 1,
@@ -237,11 +245,11 @@
     },
     {
       "seq": 4,
-      "ts": "2026-08-11T23:57:42.028200Z",
+      "ts": "2026-08-12T10:27:47.943388Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:daf01c79e9586223ab8d608435aad19b927c48a1fdacedea80206e4f9699cd4a",
-        "prev_hash": "sha256:a828e378bc719df4ee0b2b74437db5558e3370e6be524a5c94c5283099d834ff"
+        "payload_hash": "sha256:3459483c1e5af89dfd8c971ec6337efe25cf52e68edcc3f7daa6ce00a63d07a2",
+        "prev_hash": "sha256:f23933f6a002091626d423b68914cf4cefe3432972eb28936fecab566543a40a"
       },
       "after": "retrieve",
       "on": null,
@@ -261,22 +269,22 @@
     },
     {
       "seq": 5,
-      "ts": "2026-08-11T23:57:42.028325Z",
+      "ts": "2026-08-12T10:27:47.943513Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:36841e6abe8a40832505ba340e0b616c9a20f673fe223489dc9bfe14abebff40",
-        "prev_hash": "sha256:daf01c79e9586223ab8d608435aad19b927c48a1fdacedea80206e4f9699cd4a"
+        "payload_hash": "sha256:8f71a9c21257f6215fc3b3b8193bf0f30b1d8d7f64ab13e60049aa1cf12556ac",
+        "prev_hash": "sha256:3459483c1e5af89dfd8c971ec6337efe25cf52e68edcc3f7daa6ce00a63d07a2"
       },
       "node": "classify",
       "attempt": 1
     },
     {
       "seq": 6,
-      "ts": "2026-08-11T23:57:42.028556Z",
+      "ts": "2026-08-12T10:27:47.943767Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:a8b6217ba2fde687970883b1ee113103811053ca49320343ee672e6f986919b4",
-        "prev_hash": "sha256:36841e6abe8a40832505ba340e0b616c9a20f673fe223489dc9bfe14abebff40"
+        "payload_hash": "sha256:d7f947267fcb7cc33bebfafe7b0d7aed0cbfd2b1dbf66e8bbf4cd010105f9a6f",
+        "prev_hash": "sha256:8f71a9c21257f6215fc3b3b8193bf0f30b1d8d7f64ab13e60049aa1cf12556ac"
       },
       "node": "classify",
       "attempt": 1,
@@ -320,11 +328,11 @@
     },
     {
       "seq": 7,
-      "ts": "2026-08-11T23:57:42.028747Z",
+      "ts": "2026-08-12T10:27:47.943896Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:9267d88621fb56b1888dd43e96c4503132b02819c3cfd384b1ced5b03e0c6684",
-        "prev_hash": "sha256:a8b6217ba2fde687970883b1ee113103811053ca49320343ee672e6f986919b4"
+        "payload_hash": "sha256:15e8a3f9028de1e53e087d5198b1dd611cb1eb20237bc06f177249642c0fe1e9",
+        "prev_hash": "sha256:d7f947267fcb7cc33bebfafe7b0d7aed0cbfd2b1dbf66e8bbf4cd010105f9a6f"
       },
       "after": "classify",
       "on": "releasable",
@@ -356,22 +364,22 @@
     },
     {
       "seq": 8,
-      "ts": "2026-08-11T23:57:42.028930Z",
+      "ts": "2026-08-12T10:27:47.944016Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:7abdbb6d124fec7b61e216deecb04894870db86a7faa92ac332f5eb98d15fc78",
-        "prev_hash": "sha256:9267d88621fb56b1888dd43e96c4503132b02819c3cfd384b1ced5b03e0c6684"
+        "payload_hash": "sha256:0fe6ffe37def117e535662bffce5769d89fdb62f17a4cdb8cb398719ec6319e4",
+        "prev_hash": "sha256:15e8a3f9028de1e53e087d5198b1dd611cb1eb20237bc06f177249642c0fe1e9"
       },
       "node": "decide",
       "attempt": 1
     },
     {
       "seq": 9,
-      "ts": "2026-08-11T23:57:42.029066Z",
+      "ts": "2026-08-12T10:27:47.944147Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:4d1f06613a69108c1670674d411ab7faf783beaa78c5cdc5aaaa4b5ee234b968",
-        "prev_hash": "sha256:7abdbb6d124fec7b61e216deecb04894870db86a7faa92ac332f5eb98d15fc78"
+        "payload_hash": "sha256:e5afb8894451df9dc405507114c0ba13d66e142a655ae75f0b5f6d02ce9111db",
+        "prev_hash": "sha256:0fe6ffe37def117e535662bffce5769d89fdb62f17a4cdb8cb398719ec6319e4"
       },
       "node": "decide",
       "attempt": 1,
@@ -398,11 +406,11 @@
     },
     {
       "seq": 10,
-      "ts": "2026-08-11T23:57:42.029186Z",
+      "ts": "2026-08-12T10:27:47.944249Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:3b2048e0e816a2815244d1b52353d7080e389e184c8de081a0cb84b7525e9afd",
-        "prev_hash": "sha256:4d1f06613a69108c1670674d411ab7faf783beaa78c5cdc5aaaa4b5ee234b968"
+        "payload_hash": "sha256:94a29cf0142683290ff397a447df6866b756705868480b297459abc6f4474d26",
+        "prev_hash": "sha256:e5afb8894451df9dc405507114c0ba13d66e142a655ae75f0b5f6d02ce9111db"
       },
       "after": "decide",
       "on": null,
@@ -422,22 +430,22 @@
     },
     {
       "seq": 11,
-      "ts": "2026-08-11T23:57:42.029270Z",
+      "ts": "2026-08-12T10:27:47.944341Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:fc092462f0deb2acf17be1e81f941d4a32ca6ce1e4cefbf69e5ff7535cf5d666",
-        "prev_hash": "sha256:3b2048e0e816a2815244d1b52353d7080e389e184c8de081a0cb84b7525e9afd"
+        "payload_hash": "sha256:4d4e70bd6991fbe15d3790121f125084cf4f2e7b72ddf326a8c0a99a11595596",
+        "prev_hash": "sha256:94a29cf0142683290ff397a447df6866b756705868480b297459abc6f4474d26"
       },
       "node": "seal",
       "attempt": 1
     },
     {
       "seq": 12,
-      "ts": "2026-08-11T23:57:42.029411Z",
+      "ts": "2026-08-12T10:27:47.944496Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:6e10d73b7e44b21e6e77503265f7a299f7d9ef288a883411c1cb68d671c04e05",
-        "prev_hash": "sha256:fc092462f0deb2acf17be1e81f941d4a32ca6ce1e4cefbf69e5ff7535cf5d666"
+        "payload_hash": "sha256:79c1084444936db2f4c0965d500c58d8144ed31756f5066352582160cfc9c2ff",
+        "prev_hash": "sha256:4d4e70bd6991fbe15d3790121f125084cf4f2e7b72ddf326a8c0a99a11595596"
       },
       "node": "seal",
       "attempt": 1,
@@ -474,11 +482,11 @@
     },
     {
       "seq": 13,
-      "ts": "2026-08-11T23:57:42.029555Z",
+      "ts": "2026-08-12T10:27:47.944593Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:3af56dc58c451f48891b6561078d271fafaeca3046f382d3402d8d28523ce927",
-        "prev_hash": "sha256:6e10d73b7e44b21e6e77503265f7a299f7d9ef288a883411c1cb68d671c04e05"
+        "payload_hash": "sha256:544d1b54d7cce501d74125d2aeb7b0b5a20c9345693cdac74d6cd4f42e2effd7",
+        "prev_hash": "sha256:79c1084444936db2f4c0965d500c58d8144ed31756f5066352582160cfc9c2ff"
       },
       "after": "seal",
       "on": null,
@@ -498,11 +506,11 @@
     },
     {
       "seq": 14,
-      "ts": "2026-08-11T23:57:42.029684Z",
+      "ts": "2026-08-12T10:27:47.944656Z",
       "kind": "run_completed",
       "integrity": {
-        "payload_hash": "sha256:0a2810b9fc394a43a20812e7b98f5221f59d9418cb30c65163f2e9fc5bd2af08",
-        "prev_hash": "sha256:3af56dc58c451f48891b6561078d271fafaeca3046f382d3402d8d28523ce927"
+        "payload_hash": "sha256:cb6829d3deffc3d518817d1d06c08cf4a7faa6755347df56983cd065b2468a92",
+        "prev_hash": "sha256:544d1b54d7cce501d74125d2aeb7b0b5a20c9345693cdac74d6cd4f42e2effd7"
       },
       "replay": {
         "capability": "partial",
@@ -514,121 +522,129 @@
   ],
   "tampers": [
     {
-      "title": "Ribalta il verdetto",
-      "detail": "APPROVED diventa REJECTED",
+      "title": "Flip the verdict",
+      "detail": "APPROVED becomes REJECTED",
+      "reseal": null,
       "log": {
         "caught": true,
         "message": "evt-0009: payload_hash does not match the payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Declassifica una fonte",
-      "detail": "la citazione TLP:RED diventa TLP:CLEAR",
+      "title": "Declassify a source",
+      "detail": "the TLP:RED citation becomes TLP:CLEAR",
+      "reseal": null,
       "log": {
         "caught": true,
         "message": "evt-0003: payload_hash does not match the payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Cancella un passo",
-      "detail": "il passo che ha classificato le fonti sparisce",
+      "title": "Delete a step",
+      "detail": "the step that classified the sources disappears",
+      "reseal": null,
       "log": {
         "caught": true,
         "message": "evt-0005: causation_id names an event that is not here"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Riscrive di chi e' la run",
-      "detail": "run_id sub-4471 diventa sub-0000",
+      "title": "Rewrite whose run it is",
+      "detail": "run_id sub-4471 becomes sub-0000",
+      "reseal": null,
       "log": {
         "caught": false,
         "message": "accepted: every row's digest matches its payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Cambia la policy",
-      "detail": "strict diventa exploration: gli errori non fermano piu' la run",
+      "title": "Change the policy",
+      "detail": "strict becomes exploration: errors no longer stop the run",
+      "reseal": null,
       "log": {
         "caught": false,
         "message": "accepted: every row's digest matches its payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Duplica un passo",
-      "detail": "un passo compare due volte",
+      "title": "Duplicate a step",
+      "detail": "one step appears twice",
+      "reseal": null,
       "log": {
         "caught": false,
         "message": "accepted: every row's digest matches its payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }
     },
     {
-      "title": "Ribalta il verdetto E RISIGILLA",
-      "detail": "l'attaccante conosce il contratto e rifa' ogni hash",
+      "title": "Flip the verdict AND RESEAL",
+      "detail": "the attacker knows the contract and redoes every hash",
+      "reseal": true,
       "log": {
         "caught": false,
         "message": "accepted: every row's digest matches its payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "ancora",
-        "message": "la traccia e' coerente, ma la root non e' piu' quella pubblicata",
+        "caught_by": "anchor",
+        "message": "the trace is consistent, but the root is no longer the published one",
         "raw_field_unmoved": false,
-        "derived_root": "sha256:8aa33bb1be7e4e4e61e7ef0b0fc32a444d08209e95a7eff0db0705781b93450f"
+        "derived_root": "sha256:32d4365566370597b583594d078ba186b8339e4ef778c285206e9d1aac104c9e"
       }
     },
     {
-      "title": "Riscrive l'intestazione, link stantio",
-      "detail": "cambia la policy e lascia il primo prev_hash dov'era: ogni hash torna",
+      "title": "Rewrite the header, stale link",
+      "detail": "changes the policy and leaves the first prev_hash where it was: every hash recomputes",
+      "reseal": "stale",
       "log": {
         "caught": false,
         "message": "accepted: every row's digest matches its payload"
       },
       "trace": {
         "caught": true,
-        "caught_by": "validatore",
-        "message": "il campo grezzo non si muove: chi lo confronta con l'ancora vede accordo. trace.root risponde None",
+        "caught_by": "validator",
+        "message": "the raw field does not move: anyone comparing it with the anchor sees agreement. trace.root answers None",
         "raw_field_unmoved": true,
         "derived_root": null
       }

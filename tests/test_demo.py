@@ -35,7 +35,7 @@ def test_every_tamper_is_caught_on_the_trace_and_only_the_anchor_catches_the_las
     assert data["root"] is not None, "a completed 3.0.0 run must have a root"
 
     verdicts = [_who_caught(r)[0] for r in data["results"]]
-    assert "nessuno" not in verdicts, (
+    assert "nobody" not in verdicts, (
         f"a tamper went unnoticed on the trace: {verdicts}"
     )
 
@@ -44,17 +44,25 @@ def test_every_tamper_is_caught_on_the_trace_and_only_the_anchor_catches_the_las
     # consistent by construction, so if the validator started catching it,
     # either the reseal is not faithful or the validator gained a check it
     # cannot have.
-    by_anchor = [r for r, who in zip(data["results"], verdicts) if who == "ancora"]
+    by_anchor = [r for r, who in zip(data["results"], verdicts) if who == "anchor"]
     assert len(by_anchor) == 1, [r["title"] for r in by_anchor]
-    assert "RISIGILLA" in by_anchor[0]["title"]
+    assert by_anchor[0]["reseal"] is True
 
     # And one where the validator does catch it but the RAW field does not
     # move — the stale first link. That is the case that makes the accessor
     # worth having: reaching past `trace.root` agrees with the anchor here.
-    stale = [r for r in data["results"] if r["raw_field_unmoved"] and r["new_root"] is None
-             and r["trace_caught"]]
-    assert stale, "the stale-header attack no longer reproduces"
-    assert all(r["new_root"] is None for r in stale)
+    # `raw_field_unmoved and new_root is None and trace_caught` alone matches
+    # every ordinary unresealed edit too, so it would stay green with this
+    # attack deleted. Identify the attack by what makes it the attack — the
+    # header was resealed with the first link left stale — and then assert the
+    # property, so the test fails if the attack stops reproducing OR stops
+    # being present.
+    stale = [r for r in data["results"] if r["reseal"] == "stale"]
+    assert len(stale) == 1, [r["title"] for r in stale]
+    only = stale[0]
+    assert only["raw_field_unmoved"], "the raw terminal field moved: this is not the attack"
+    assert only["new_root"] is None, "trace.root accepted a rewritten header"
+    assert only["trace_caught"], "the validator stopped catching the stale link"
 
     # The log is genuinely weaker, for the reason the demo states: it has
     # per-row digests, so it catches payload edits and nothing structural.
