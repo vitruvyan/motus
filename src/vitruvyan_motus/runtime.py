@@ -7,6 +7,7 @@ import functools
 import hashlib
 import inspect
 import json
+import sys
 import threading
 import weakref
 from dataclasses import dataclass
@@ -489,9 +490,21 @@ class Runtime:
         clock: Callable[[], Any] | None = None,
         identity: Callable[[], str] | None = None,
         random_source: Callable[[], float] | None = None,
+        commitments: Any = None,
+        witness: Any = None,
     ) -> None:
         if not isinstance(spec, GraphSpec):
             raise TypeError("spec must be GraphSpec")
+        # ADR-021 decision 1: unconfigured, this is bit-for-bit 0.8.1. Both are
+        # `Any` and both are inert when None — the module is not even imported
+        # unless an embedder passes one, which is what keeps Motus a library
+        # rather than a service that happens to be importable.
+        if witness is not None and commitments is None:
+            raise ValueError(
+                "a witness has nothing to acknowledge without a commitment "
+                "log: pass commitments= as well, or neither")
+        self._commitments = commitments
+        self._witness = witness
         self.spec = spec
         self._plan = spec.compiled
         self._graph_fingerprint = spec.graph_fingerprint
@@ -904,6 +917,18 @@ class Runtime:
         self, *, copy_yields: bool, start_node: str, handle: _RunHandle
     ) -> Iterator[dict[str, Any]]:
         handle.started = True
+        # BEGIN and END live in ONE function on purpose. `_start` would be the
+        # obvious home for the first, but the generator it returns may never be
+        # advanced — a `stream()` driver created and dropped — and a BEGIN
+        # written there would stand alone forever for a run that did not
+        # execute a single node. Here they pair, and the only thing that can
+        # separate them is a crash, which is exactly what BEGIN-without-END is
+        # supposed to mean.
+        #
+        # This raises if the commitment cannot be made durable, and the run
+        # then does not execute. That is the point of the first phase: a run
+        # whose BEGIN can vanish has no execution continuity to prove.
+        self._commit_begin(handle)
         try:
             yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:
@@ -929,10 +954,65 @@ class Runtime:
                 # forcing their own flush.
                 handle.evidence = self._hub.evidence
             handle.finished = True
+            self._commit_end(handle)
             self._active_attempt = None
             with self._lifecycle_lock:
                 self._running = False
                 self._cancel_reason = None
+
+    def _commit_begin(self, handle: _RunHandle) -> None:
+        """Durably commit that this run is about to execute, or do nothing."""
+        if self._commitments is None:
+            return
+        assert self._control is not None and self._trace is not None
+        self._commitments.begin(
+            self._trace.run["run_id"],
+            at=self._control.timestamp(),
+            nonce=self._control.kernel_uuid(),
+            ask=self._witness,
+        )
+
+    def _commit_end(self, handle: _RunHandle) -> None:
+        """Bind this run's outcome to the evidence that produced it.
+
+        Written on every terminal path, because a BEGIN without an END is only
+        a signal if it is rare — and if ordinary failures produced the same
+        shape as suppression, it would be noise (ADR-020 decision 3).
+
+        A trace with no derived root gets no END, and that is not an omission:
+        `Trace.root` answers None when the document has not earned one, and an
+        END exists to bind an outcome TO evidence. There is nothing to bind to,
+        so the run is reported by its absence — as an execution that left no
+        completion, never as suppression.
+
+        A failure here does not mask the run's own exception. The missing END
+        is itself the record of what happened, and raising over an in-flight
+        error would replace a diagnosis with a symptom.
+        """
+        if self._commitments is None:
+            return
+        trace = handle.trace
+        if trace is None:
+            return
+        root = trace.root
+        if root is None:
+            return
+        records = trace.records
+        outcome = records[-1]["kind"] if records else "unknown"
+        # Read BEFORE the try. Inside an `except` block `sys.exc_info()` names
+        # the exception being handled, so asking there always answers "one is
+        # in flight" and the raise below never fires. This ran green until a
+        # test asked for the other half of the rule.
+        in_flight = sys.exc_info()[0] is not None
+        try:
+            self._commitments.end(
+                trace.run["run_id"], root=root, outcome=outcome,
+                at=self._control.timestamp() if self._control else "",
+                nonce=self._control.kernel_uuid() if self._control else "",
+            )
+        except BaseException:
+            if not in_flight:
+                raise
 
     def _replace_trace(self, trace: Trace) -> None:
         self._trace = trace

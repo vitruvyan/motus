@@ -60,10 +60,11 @@ except ImportError:                                    # pragma: no cover
     fcntl = None                                       # type: ignore[assignment]
 
 from vitruvyan_motus.commitments import (
-    Checkpoint, Commitment, CommitmentKind, CommitmentWindow, WitnessAck,
-    merkle_path, merkle_root,
+    Checkpoint, Commitment, CommitmentKind, CommitmentWindow, Witness,
+    WitnessAck, merkle_path, merkle_root,
 )
 from vitruvyan_motus.errors import MotusError
+from vitruvyan_motus.trace import _canonical_bytes
 
 __all__ = ["CommitmentLog", "CommitmentLogFork", "CommitmentLogBusy",
            "InclusionProof", "STORE_FORMAT"]
@@ -402,10 +403,20 @@ class CommitmentLog:
                 "self-contradictory, and a proof would silently pick one")
 
         witness: WitnessAck | None = fields.pop("witness", None)
+        ask: Witness | None = fields.pop("ask", None)
         commitment = Commitment(
             kind=kind, tenant=self.tenant, writer_id=self.writer_id,
             sequence=self._window.next_sequence, run_id=run_id,
             witness=witness, **fields)
+
+        if ask is not None and witness is None:
+            acknowledged = _ask_witness(ask, commitment)
+            if acknowledged is not None:
+                witness = acknowledged
+                commitment = Commitment(
+                    kind=kind, tenant=self.tenant, writer_id=self.writer_id,
+                    sequence=commitment.sequence, run_id=run_id,
+                    witness=witness, **fields)
 
         line = json.dumps(
             {"c": commitment.to_dict(),
@@ -422,16 +433,33 @@ class CommitmentLog:
         return commitment
 
     def begin(self, run_id: str, *, at: str, nonce: str,
-              witness: WitnessAck | None = None) -> Commitment:
+              witness: WitnessAck | None = None,
+              ask: Witness | None = None) -> Commitment:
         """Commit that a run is ABOUT to execute.
 
         Durable when this returns, provided the log was opened with
         ``fsync=True`` — which is the default, and which :attr:`durable`
         reports.
+
+        ``ask`` is a witness to consult. It is called with the canonical bytes
+        of this commitment, **before the commitment is written**, because an
+        acknowledgement obtained afterwards would say nothing about whether the
+        commitment preceded its own outcome.
+
+        The call happens while this writer's lock is held, and that cost is
+        real: one writer's begins serialise behind the witness's deadline. It
+        is inherent rather than incidental — the sequence number must be
+        assigned, witnessed and written without another begin interleaving, or
+        two runs are witnessed at one position. The answer to more throughput
+        is more writers (ADR-021 decision 5), not a shorter deadline.
+
+        Anything the witness does other than return an acknowledgement —
+        `None`, a timeout, an exception — leaves the run at `LOCAL` and does
+        not stop it (ADR-021 decision 3).
         """
         with self._lock:
             return self._append(CommitmentKind.BEGIN, run_id, at=at,
-                                nonce=nonce, witness=witness)
+                                nonce=nonce, witness=witness, ask=ask)
 
     def end(self, run_id: str, *, root: str, outcome: str, at: str,
             nonce: str) -> Commitment:
@@ -592,6 +620,31 @@ class CommitmentLog:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+def _ask_witness(witness: Witness, commitment: Commitment) -> WitnessAck | None:
+    """Consult a witness. Nothing it does may stop the run.
+
+    ADR-021 decision 3: an acknowledgement, `None`, or a raise all mean the
+    same thing to the caller — continue, at whatever mode was actually reached.
+    An option that let a witness block would eventually be enabled by somebody
+    who had not imagined the outage.
+
+    An acknowledgement that names a different commitment is discarded rather
+    than attached: `Commitment.__post_init__` would refuse it anyway, and
+    refusing here would turn a hostile witness into a way to stop runs.
+    """
+    try:
+        acknowledged = witness.acknowledge(_canonical_bytes(commitment.to_dict()))
+    except BaseException:
+        return None
+    if acknowledged is None:
+        return None
+    if not isinstance(acknowledged, WitnessAck):
+        return None
+    if acknowledged.commitment != commitment.leaf:
+        return None
+    return acknowledged
 
 
 def _atomic_write(path: Path, text: str, *, fsync: bool) -> None:
