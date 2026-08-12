@@ -52,12 +52,13 @@
     "trace": "accepted"
   },
   "anchor": {
-    "network": null,
-    "txid": null,
-    "memo": null,
-    "explorer_url": null,
-    "published_at": null,
-    "block": null
+    "network": "nile",
+    "txid": "6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0",
+    "destination": null,
+    "memo": "VITRUVYAN_AUDIT:sha256:cb6829d3deffc3d518817d1d06c08cf4a7faa6755347df56983cd065b2468a92",
+    "explorer_url": "https://nile.tronscan.org/#/transaction/6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0",
+    "published_at": "2026-08-12T17:15:48Z",
+    "block": 70013920
   },
   "timeline": [
     {
