@@ -175,6 +175,18 @@ measurement — the distribution of run durations in a real deployment against t
 cost per anchored checkpoint — not chosen because it sounds prudent. ADR-021
 states the number and its derivation, or ships without a default.
 
+**Erratum, 2026-08-13 — PROPOSED, awaiting the founder.** The residual class
+below is stated too narrowly. It names a process killed between the two writes,
+and an adversarial round found a second member: a **live, healthy process that
+abandons a run** — a stream driver dropped mid-iteration, which this runtime
+treats as a supported usage mode rather than an error. The trace produced in
+that case is incomplete in exactly the same way, with no terminal record and no
+derived root, so the evidence and the commitment agree; but a reader of decision
+3 would have expected the class to be rare *because crashes are rare*, and it is
+not only crashes. The correct statement of the residual class is **a run that
+reached no terminal record**, of which process death is one member. Nothing else
+in this decision changes.
+
 **`BEGIN` without `END` is a signal only if it is rare.** If ordinary crashes
 and timeouts produce the same signature as suppression, the property is noise.
 This is why `END` is required on failure paths; the runtime already models that

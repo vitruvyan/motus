@@ -121,6 +121,95 @@ def test_a_run_whose_begin_cannot_be_written_does_not_execute(tmp_path):
     log.close()
 
 
+def test_a_failed_begin_costs_one_run_and_not_the_runtime(tmp_path):
+    """CRITICAL, and a defect this file had already fixed once by another route.
+
+    With `_commit_begin` above the try, a BEGIN that could not be written raised
+    from a point nothing cleaned up: `_start` had returned so its except was
+    gone, the finally had not been entered so the claim was never released, and
+    `_release_if_never_started` refuses to help because `handle.started` is
+    already True. The Runtime was then wedged forever — every later run(),
+    stream(), arun() and resume() raising "cannot execute overlapping runs".
+    """
+    log = _log(tmp_path)
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(), commitments=log)
+
+    log.begin("taken", at="2026-08-12T00:00:00Z", nonce="n")
+    with pytest.raises(ValueError, match="already committed"):
+        runtime.run(State.empty("x"), run_id="taken")
+
+    assert runtime._running is False, "the Runtime is wedged"
+    result = runtime.run(State.empty("x"), run_id="fresh")
+    assert result.status == "completed"
+    assert ("fresh", "end") in _kinds(log)
+    log.close()
+
+
+def test_a_failed_begin_still_finishes_the_sink_session(tmp_path):
+    """guarantees.md §6: without `finish`, a session cannot tell in flight from
+    abandoned forever. The wedge left a required sink's session open."""
+    log = _log(tmp_path)
+    finished: list[bool] = []
+
+    class _Session:
+        def write(self, records) -> None:
+            pass
+
+        def finish(self, *, complete: bool) -> None:
+            finished.append(complete)
+
+    class _Sink:
+        def open_run(self, header):
+            return _Session()
+
+    runtime = Runtime(SPEC, _nodes(), sink=_Sink(), commitments=log)
+    log.begin("taken", at="2026-08-12T00:00:00Z", nonce="n")
+    with pytest.raises(ValueError, match="already committed"):
+        runtime.run(State.empty("x"), run_id="taken")
+    assert finished == [False], "the sink session was left open forever"
+    log.close()
+
+
+def test_an_abandoned_stream_leaves_a_trace_and_a_log_that_agree(tmp_path):
+    """A driver dropped mid-run leaves a BEGIN with no END — and the TRACE is
+    incomplete in exactly the same way, with no terminal record and no root.
+
+    The two agree, which is what makes it honest rather than a discrepancy: the
+    evidence and the commitment both say this execution left no completion.
+    ADR-020 decision 3 names only process death as the residual class, and a
+    live process abandoning a driver is a second member of it — recorded here
+    so the class is what the tests say and not only what the ADR imagined.
+    """
+    log = _log(tmp_path)
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(), commitments=log)
+    driver = runtime.stream(State.empty("x"), run_id="r-abandoned")
+    next(driver)
+    next(driver)
+    trace = driver.trace
+    del driver
+
+    assert _kinds(log) == [("r-abandoned", "begin")]
+    assert trace.root is None
+    assert trace.records[-1]["kind"] not in ("run_completed", "run_failed",
+                                             "run_cancelled")
+    assert runtime._running is False
+    log.close()
+
+
+def test_a_drained_stream_pairs_exactly_once(tmp_path):
+    log = _log(tmp_path)
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(), commitments=log)
+    driver = runtime.stream(State.empty("x"), run_id="r1")
+    for _ in driver:
+        pass
+    driver.close()
+    driver.close()
+    import gc
+    gc.collect()
+    assert _kinds(log) == [("r1", "begin"), ("r1", "end")]
+    log.close()
+
+
 def test_an_end_that_cannot_be_written_does_not_mask_the_runs_own_error(tmp_path):
     """Raising over an in-flight exception replaces a diagnosis with a
     symptom. The missing END is itself the record of what happened."""

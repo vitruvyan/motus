@@ -917,19 +917,30 @@ class Runtime:
         self, *, copy_yields: bool, start_node: str, handle: _RunHandle
     ) -> Iterator[dict[str, Any]]:
         handle.started = True
-        # BEGIN and END live in ONE function on purpose. `_start` would be the
-        # obvious home for the first, but the generator it returns may never be
-        # advanced — a `stream()` driver created and dropped — and a BEGIN
-        # written there would stand alone forever for a run that did not
-        # execute a single node. Here they pair, and the only thing that can
-        # separate them is a crash, which is exactly what BEGIN-without-END is
-        # supposed to mean.
-        #
-        # This raises if the commitment cannot be made durable, and the run
-        # then does not execute. That is the point of the first phase: a run
-        # whose BEGIN can vanish has no execution continuity to prove.
-        self._commit_begin(handle)
         try:
+            # BEGIN and END live in ONE function on purpose. `_start` would be
+            # the obvious home for the first, but the generator it returns may
+            # never be advanced — a `stream()` driver created and dropped — and
+            # a BEGIN written there would stand alone forever for a run that
+            # did not execute a single node.
+            #
+            # INSIDE the try, and that placement is the whole of a defect this
+            # file had already fixed once by another route. Above it, a BEGIN
+            # that could not be written raised from a point where nothing
+            # cleaned up: `_start` had already returned, so its own except
+            # clause was long gone; this `finally` had not been entered, so the
+            # claim was never released; and `_release_if_never_started` refuses
+            # to help because `handle.started` is already True. The run
+            # correctly did not execute, and the Runtime was then wedged
+            # forever — every later run(), stream(), arun() and resume() on the
+            # instance raising "cannot execute overlapping runs" — with a
+            # required sink's session left open and never finished.
+            #
+            # It raises, and the run still does not execute: that is the point
+            # of the first phase, and a run whose BEGIN can vanish has no
+            # execution continuity to prove. What changes is that the failure
+            # now costs one run rather than the object.
+            self._commit_begin(handle)
             yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:
             # Publish onto the run's own handle BEFORE releasing the claim.
