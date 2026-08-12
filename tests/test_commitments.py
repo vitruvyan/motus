@@ -352,13 +352,18 @@ def test_the_pair_hash_is_order_dependent_and_domain_tagged():
 
 
 def test_a_path_element_with_an_unknown_side_is_refused_not_skipped():
-    """With `pass` instead of `return False` a malformed side SKIPS a level,
-    so whoever supplies the path chooses which levels count."""
+    """With `pass` instead of `return False` a malformed element is SKIPPED,
+    so a junk element padded onto an otherwise VALID path still verifies and
+    whoever supplies the path chooses which levels count. The refusal has to
+    be tested with a valid path plus junk -- junk inside a path that would
+    fail anyway proves nothing, which is what the first version of this test
+    did."""
     w = _window(4)
     root = merkle_root(w.leaves)
     good = w.proof_for(1)
-    poisoned = ((good[0][0], good[0][1]), ("sideways", good[1][1]))
-    assert not verify_merkle_path(w.leaves[1], poisoned, root)
+    assert verify_merkle_path(w.leaves[1], good, root)          # control
+    padded = good + (("sideways", w.leaves[0]),)
+    assert not verify_merkle_path(w.leaves[1], padded, root)
 
 
 def test_the_nonce_enters_the_digest():
