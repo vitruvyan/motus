@@ -973,23 +973,52 @@ class Runtime:
                 # forcing their own flush.
                 handle.evidence = self._hub.evidence
             handle.finished = True
-            self._commit_end(handle)
             self._active_attempt = None
             with self._lifecycle_lock:
                 self._running = False
                 self._cancel_reason = None
+            # AFTER the claim is released, and that ordering is the second half
+            # of the same defect. `_commit_end` re-raises when nothing else is
+            # in flight — a clean run whose END could not be written is a
+            # failure the caller must hear about — and from above the release
+            # that exception escaped before `_running` was ever set back to
+            # False. The instance was then wedged forever, through run(),
+            # stream(), arun(), astream() and cooperative cancellation alike,
+            # while the persisted account stayed perfectly honest: a BEGIN with
+            # no END, which is what it should say.
+            #
+            # Nothing below this line may touch the run's lifecycle state, so a
+            # raise here costs the caller their result and costs the Runtime
+            # nothing.
+            self._commit_end(handle)
 
     def _commit_begin(self, handle: _RunHandle) -> None:
         """Durably commit that this run is about to execute, or do nothing."""
         if self._commitments is None:
             return
         assert self._control is not None and self._trace is not None
-        self._commitments.begin(
+        committed = self._commitments.begin(
             self._trace.run["run_id"],
             at=self._control.timestamp(),
             nonce=self._control.kernel_uuid(),
             ask=self._witness,
         )
+        # A log must hand back the commitment it wrote. Nothing else here can
+        # tell a working implementation from a leftover test double: a `Mock()`
+        # has every attribute, satisfies any Protocol, accepts every call and
+        # returns another Mock — and an adversarial round found a run reporting
+        # `completed` with an audit trail that was never written,
+        # indistinguishable from one that was. The import is deliberately here
+        # and not at module scope, so an unconfigured Runtime still loads none
+        # of this (ADR-021 decision 1).
+        from vitruvyan_motus.commitments import Commitment
+
+        if not isinstance(committed, Commitment):
+            raise TypeError(
+                "a commitment log must return the Commitment it wrote; "
+                f"{type(committed).__name__} is not one. A double that accepts "
+                "every call and records nothing produces a run that reports "
+                "success with no evidence behind it")
 
     def _commit_end(self, handle: _RunHandle) -> None:
         """Bind this run's outcome to the evidence that produced it.

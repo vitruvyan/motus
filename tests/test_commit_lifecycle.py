@@ -171,6 +171,74 @@ def test_a_failed_begin_still_finishes_the_sink_session(tmp_path):
     log.close()
 
 
+@pytest.mark.parametrize("surface", ["run", "stream", "cancel"])
+def test_a_failed_end_costs_the_result_and_not_the_runtime(tmp_path, surface):
+    """CRITICAL, the second half of the same defect and on the other side.
+
+    `_commit_end` re-raises when nothing else is in flight — a clean run whose
+    END could not be written is a failure the caller must hear about — and from
+    ABOVE the lifecycle release that exception escaped before `_running` was
+    set back to False. The instance was wedged forever, through every entry
+    point and through cooperative cancellation alike, while the persisted
+    account stayed perfectly honest.
+    """
+    log = _log(tmp_path)
+
+    class _EndRefuses:
+        def __init__(self, inner: CommitmentLog) -> None:
+            self._inner = inner
+
+        def begin(self, *a, **kw):
+            return self._inner.begin(*a, **kw)
+
+        def end(self, *a, **kw):
+            raise OSError(28, "No space left on device")
+
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                      commitments=_EndRefuses(log))
+    with pytest.raises(OSError):
+        if surface == "run":
+            runtime.run(State.empty("x"), run_id="r-boom")
+        elif surface == "stream":
+            driver = runtime.stream(State.empty("x"), run_id="r-boom")
+            for _ in driver:
+                pass
+        else:
+            driver = runtime.stream(State.empty("x"), run_id="r-boom")
+            next(driver)
+            runtime.cancel("operator")
+            for _ in driver:
+                pass
+
+    assert runtime._running is False, "the Runtime is wedged"
+    log.close()
+
+    # and the SAME instance runs again, with a log that works
+    good = _log(tmp_path / "second")
+    result = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                     commitments=good).run(State.empty("x"), run_id="r-ok")
+    assert result.status == "completed"
+    good.close()
+
+
+def test_a_log_that_records_nothing_is_refused_before_a_node_runs(tmp_path):
+    """A Mock has every attribute, satisfies any Protocol, accepts every call
+    and returns another Mock. A run reported `completed` with an audit trail
+    that was never written, indistinguishable from one that was."""
+    from unittest.mock import Mock
+
+    ran: list[str] = []
+
+    def work(state: State) -> State:
+        ran.append("yes")
+        return state.with_fact(Fact("done", True, "test", NOW))
+
+    with pytest.raises(TypeError, match="must return the Commitment"):
+        Runtime(SPEC, {"work": work}, sink=InMemoryTraceSink(),
+                commitments=Mock()).run(State.empty("x"), run_id="r1")
+    assert ran == [], "a node executed against a log that records nothing"
+
+
 def test_an_abandoned_stream_leaves_a_trace_and_a_log_that_agree(tmp_path):
     """A driver dropped mid-run leaves a BEGIN with no END — and the TRACE is
     incomplete in exactly the same way, with no terminal record and no root.
