@@ -1,0 +1,157 @@
+{
+  "artifact": "trace",
+  "expect": "valid",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "istruttoria",
+    "version": "1.0.0",
+    "entry": "consulta",
+    "nodes": [
+      {
+        "name": "consulta",
+        "effect_class": "recorded_effect",
+        "writes_declared": [
+          "risposta"
+        ]
+      }
+    ],
+    "transitions": {
+      "consulta": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "3.0.0",
+    "run": {
+      "run_id": "impronta-0001",
+      "graph": {
+        "name": "istruttoria",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:15ec3457c4952d382179c3dd12fc21d99d3bac70d134bcb01d94359db026cfda",
+        "code_fingerprint": "code:sha256:d1b989daee6cca1d3f6b5cab462429b8b87fe3871da971e6905a5856a3ae6d87",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {},
+      "created_ts": "2026-08-08T00:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": "sha256:2922c355a63fa838071b82df2c91c9bf7bea14f6626d3a8ea04dc1fd63bd88ab",
+          "prev_hash": "sha256:ed71f6c80605914dcb9285d26a02870880cfa6ca8ff4da6255807f45b60d7f11"
+        },
+        "intent": "consulto",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": "sha256:ab1bf9689c887a9a31ac69369281c378e84e33ff5d8a264d03b794143cc0bc7b",
+          "prev_hash": "sha256:2922c355a63fa838071b82df2c91c9bf7bea14f6626d3a8ea04dc1fd63bd88ab"
+        },
+        "node": "consulta",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": "sha256:22f7dd430425898aa737adb9b346d9d000b96b8adcff3323d3b1e1178b3587bf",
+          "prev_hash": "sha256:ab1bf9689c887a9a31ac69369281c378e84e33ff5d8a264d03b794143cc0bc7b"
+        },
+        "node": "consulta",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "recorded_effect",
+        "reads": [],
+        "writes": {
+          "facts": [
+            {
+              "key": "risposta",
+              "value": "ok",
+              "source": "modello",
+              "ts": "2026-08-08T00:00:00Z"
+            }
+          ],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [
+          {
+            "class": "recorded_effect",
+            "description": "POST /modello",
+            "receipt": {
+              "receipt_id": "modello:4471",
+              "status": "completed",
+              "interaction_fingerprint": "interaction:sha256:7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+              "fingerprint_salt": "a3f1a3f1a3f1a3f1a3f1a3f1a3f1a3f1"
+            }
+          }
+        ],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": "sha256:309201474848117f894dddaaabd0f303facaffd6f51736aab57be0b8e5bd7be0",
+          "prev_hash": "sha256:22f7dd430425898aa737adb9b346d9d000b96b8adcff3323d3b1e1178b3587bf"
+        },
+        "after": "consulta",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": "sha256:bdae0aff010dd28533eaacc4e9bf16dec5fbc81f99248a8d043bbcf891aaa0f8",
+          "prev_hash": "sha256:309201474848117f894dddaaabd0f303facaffd6f51736aab57be0b8e5bd7be0"
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "node:consulta:source_unavailable",
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  }
+}

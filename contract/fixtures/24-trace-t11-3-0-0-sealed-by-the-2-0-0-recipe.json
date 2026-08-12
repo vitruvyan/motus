@@ -1,0 +1,174 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "istruttoria",
+    "version": "1.0.0",
+    "entry": "valuta",
+    "nodes": [
+      {
+        "name": "valuta",
+        "effect_class": "pure",
+        "reads_declared": [],
+        "writes_declared": [
+          "merito",
+          "esito"
+        ]
+      }
+    ],
+    "transitions": {
+      "valuta": {
+        "kind": "route",
+        "on": "esito",
+        "map": {
+          "approva": "END"
+        },
+        "default": "END"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "3.0.0",
+    "run": {
+      "run_id": "catena-0001",
+      "graph": {
+        "name": "istruttoria",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:ba9178e98778857d0da0bf216542af0f25512ea6618d39f619e22583c8461c63",
+        "code_fingerprint": "code:sha256:6bd5b7ffa35a0df3294c8c594ebceb641d8798360ea73451647fc6f91fccc1e1",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {},
+      "created_ts": "2026-08-08T00:00:00Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": "sha256:9db53eb0f4364b2c79e75493232e9e1865dc737456c60231714ad08dba183c25",
+          "prev_hash": "sha256:bf6364a31b076c909279ae6fb1ba1e86aca9bbe7e81f7eef9b36f9af33697e44"
+        },
+        "intent": "istruttoria",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": "sha256:bff5b928f3fd3f80426af0280e5998625757e8694e23edd602783c4f057f96fc",
+          "prev_hash": "sha256:9db53eb0f4364b2c79e75493232e9e1865dc737456c60231714ad08dba183c25"
+        },
+        "node": "valuta",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": "sha256:0be16585a154c95bbad543ed03e9ee6c9ee291816f89e957a37f249039758fcd",
+          "prev_hash": "sha256:bff5b928f3fd3f80426af0280e5998625757e8694e23edd602783c4f057f96fc"
+        },
+        "node": "valuta",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "pure",
+        "reads": [],
+        "writes": {
+          "facts": [
+            {
+              "key": "merito",
+              "value": 0.73,
+              "source": "modello",
+              "ts": "2026-08-08T00:00:00Z"
+            }
+          ],
+          "decisions": [
+            {
+              "key": "esito",
+              "value": "approva",
+              "ts": "2026-08-08T00:00:00Z"
+            }
+          ],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [],
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": "sha256:3f0fd17407960f3302668edac6bd5b00d970e293ffb276cb78723da5879a6d48",
+          "prev_hash": "sha256:0be16585a154c95bbad543ed03e9ee6c9ee291816f89e957a37f249039758fcd"
+        },
+        "after": "valuta",
+        "on": "esito",
+        "value": "approva",
+        "origin": {
+          "kind": "transition",
+          "seq": 3,
+          "index": 0
+        },
+        "outcome": "matched",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "map",
+              "key": "approva"
+            },
+            "target": "END",
+            "taken": true
+          },
+          {
+            "condition": {
+              "kind": "default"
+            },
+            "target": "END",
+            "taken": false
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-08-08T00:00:00Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": "sha256:3b1e954029041fc3c49d24fd9bfb97d729f976960146fefb62e326325a0c7593",
+          "prev_hash": "sha256:3f0fd17407960f3302668edac6bd5b00d970e293ffb276cb78723da5879a6d48"
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "node:valuta:source_unavailable",
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  },
+  "layer": "semantic",
+  "rule": "T11",
+  "reason_contains": "payload_hash does not match the record"
+}
