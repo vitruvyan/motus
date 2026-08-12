@@ -256,16 +256,19 @@ that rejects automation. Ask for the five values below, then continue.
   print(pk.public_key.to_base58check_address())    # TRON_WALLET_ADDRESS
   ```
 
-**3. Test TRX.** The Nile faucet at `https://nileex.io` gives 2000 TRX per
-address per day. Paste the address, wait for the transaction, check the balance
-on `https://nile.tronscan.org`.
+**3. Test TRX.** The Nile faucet at `https://nileex.io` gives **1000 TRX** per
+address per day. Take the FIRST form on that page — *Get 1000 test coins*. The
+others below it hand out TRC-20 and TRC-10 tokens (BTT, USDT, JST, TRN, WIN)
+which live *on* the chain and pay for nothing: bandwidth is paid in TRX and
+nothing else. Paste the address, wait for the transaction, check the balance on
+`https://nile.tronscan.org`.
 
 **4. A destination address.** Generate a second key the same way. Sending to
 yourself also works — the memo is recorded either way — but a distinct
 destination makes the anchor stream readable in the explorer.
 
 A memo-carrying transfer usually exceeds the free daily bandwidth and burns a
-fraction of a TRX. On 2000 test TRX that is not a constraint; on mainnet it is
+fraction of a TRX. On 1000 test TRX that is not a constraint; on mainnet it is
 the recurring cost of this design, and it is worth stating in your report.
 
 ### Configuration
@@ -283,7 +286,7 @@ TRON_PRIVATE_KEY=<its private key>
 TRON_ANCHOR_ADDRESS=<destination address for the anchor>
 ```
 
-Nile is a **testnet**. Its faucet gives 2000 TRX free. Do not touch mainnet, do
+Nile is a **testnet**. Its faucet gives 1000 TRX free. Do not touch mainnet, do
 not spend real TRX, and do not commit a key. If a key ever appears in a diff,
 stop and say so.
 
