@@ -23,13 +23,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vitruvyan-motus"
 dynamic = ["version"]
-description = "Motus — an embeddable, trace-first graph execution runtime whose immutable trace is the audit evidence"
+description = "Motus — an embeddable, trace-first graph execution runtime whose verifiable trace is the audit evidence"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Vitruvyan" }]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-keywords = ["orchestrator", "graph", "audit", "immutable", "trace"]
+keywords = ["orchestrator", "graph", "audit", "verifiable", "trace"]
 # The kernel imports nothing outside the standard library, and that stays
 # true. The distribution installs one thing: `jsonschema`, which the shipped
 # validator needs. Those are two different claims and the README states both.

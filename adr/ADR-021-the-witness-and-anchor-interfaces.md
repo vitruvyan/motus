@@ -1,7 +1,8 @@
 # ADR-021 — two interfaces, an accumulator, and a commitment log that is off until asked for
 
-- **Status:** PROPOSED — awaiting the founder
+- **Status:** ACCEPTED
 - **Date:** 2026-08-12
+- **Accepted:** 2026-08-12 by the founder
 - **Authority:** CTO, under ADR-020's directive that the trust model states
   conditions and this ADR chooses mechanisms
 - **Depends on:** ADR-020 (every term used here is defined there), ADR-019 (the
