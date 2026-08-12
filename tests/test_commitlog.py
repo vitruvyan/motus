@@ -411,6 +411,38 @@ def test_a_half_written_checkpoint_is_present_and_refused(tmp_path):
         _log(tmp_path)
 
 
+def test_a_checkpoint_reaches_its_name_by_rename_and_not_by_copy(tmp_path):
+    """Atomicity cannot be observed without a real crash, so this pins the
+    MECHANISM and says so. A copy leaves the final path holding half a file for
+    as long as the copy takes; a rename never does. The difference is invisible
+    on a healthy machine and total on a dying one, which is exactly the class
+    of property a test has to assert structurally or not at all."""
+    import os as os_module
+
+    log = _log(tmp_path)
+    _run(log, "r1")
+
+    renames: list[tuple[str, str]] = []
+    real = os_module.replace
+
+    def spy(src, dst, *a, **kw):
+        renames.append((str(src), str(dst)))
+        return real(src, dst, *a, **kw)
+
+    os_module.replace = spy
+    try:
+        checkpoint = log.seal(AT)
+    finally:
+        os_module.replace = real
+
+    target = str(log.directory / "checkpoint-000000.json")
+    assert any(dst == target and src.endswith(".tmp") for src, dst in renames), (
+        f"the checkpoint did not arrive by rename: {renames}")
+    assert not list(log.directory.glob("*.tmp")), "a temporary file was left behind"
+    assert checkpoint.index == 0
+    log.close()
+
+
 def test_a_checkpoint_is_never_written_over(tmp_path):
     log = _log(tmp_path)
     _run(log, "r1")
