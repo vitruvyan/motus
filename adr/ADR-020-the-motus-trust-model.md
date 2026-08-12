@@ -1,7 +1,10 @@
 # ADR-020 — the Motus trust model: what a receipt proves, what it cannot, and where the sold half attaches
 
-- **Status:** PROPOSED — awaiting the founder
+- **Status:** ACCEPTED
 - **Date:** 2026-08-12
+- **Accepted:** 2026-08-12 by the founder, after an independent reviewer
+  falsified the load-bearing sentence of the first draft and two further claims
+  in the revision — see *Wrong turns*
 - **Authority:** CTO, after **three** claims made in the design conversation
   were shown false by an independent reviewer and had to be withdrawn — the
   third one from the first draft of this ADR. See *Wrong turns*
@@ -14,6 +17,10 @@
   ADR-021 is **two** interfaces, not one: a *witness* interface, immediate and
   serving continuity, and an *anchor* interface, deferred and serving existence.
   Collapsing them was the first draft's structural error.
+- **Hands to ADR-021:** the accumulator. A linear hash chain alone makes an
+  inclusion proof O(n) *and* discloses every other commitment in the window —
+  see *Consequences*. The founder's direction is Merkle-per-window plus a chain
+  of checkpoints; ADR-021 decides it against that requirement.
 
 ## Context
 
@@ -181,13 +188,19 @@ completion, which is a question, not a verdict.
 
 | mode | what has to be true | what it supports |
 |---|---|---|
-| `LOCAL` | `BEGIN` written to the local append-only chain | `INTEGRITY`, `EXISTENCE` and `RETENTION` once checkpointed. **No** execution continuity |
+| `LOCAL` | `BEGIN` written to the local append-only chain | `INTEGRITY` immediately; `EXISTENCE` and `RETENTION` only once a checkpoint containing it has been **externally anchored**. **No** execution continuity |
 | `WITNESSED` | `BEGIN` acknowledged by an independent witness before execution | adds `EXECUTION_CONTINUITY` |
 | `QUALIFIED` | witnessed, plus identity and a qualified timestamp | adds `IDENTITY` and `LEGAL_TIME` |
 
 None of these has to be implemented now. The **format must be able to express
 them from version 1**, because the alternative is a future in which all three
 are called "verified" and the distinction survives only in the engineers' heads.
+
+**"Checkpointed" means externally anchored, never merely written.** A checkpoint
+that has not left the operator's machine proves nothing to a third party — it is
+one more file its author can rewrite. Until the anchor exists, a `LOCAL` receipt
+supports `INTEGRITY` and nothing else, and a verifier that reports `EXISTENCE`
+for it is wrong.
 
 **A witness is independent only if somebody else runs it.** A self-hosted
 witness is a convenience, not a guarantee, and the receipt records the witness's
@@ -277,11 +290,13 @@ reserved now so it can be.
   per tenant and are independent of run count. Conflating the two was an error in
   the first draft, and correcting it exposes the better argument — **the cost of
   anchoring does not grow with decisions taken**;
-- **the receipt must carry its slice of the local chain.** If only the head is
-  anchored, proving an individual run means showing its commitment under that
-  head: the run's link, the path to the checkpointed head, the checkpoint's path
-  into the batch, the transaction. A receipt that carries only the last two
-  proves a checkpoint and not a run;
+- **the receipt must carry its slice of the local chain**, and under a linear
+  chain that slice is the whole rest of the window. Proving commitment 3 belongs
+  under the head at 10 000 means handing over 4…10 000 so the verifier can
+  recompute — an O(n) proof, and worse, a **disclosure**: to prove one run
+  happened you would reveal that every other one did, and how many. For a
+  credit desk or a security desk that is not a size problem, it is a refusal to
+  use the product. The structural answer is handed to ADR-021;
 - **an unwitnessed run keeps a rewrite window**, bounded by the checkpoint
   interval, and an **omission** window that the interval does not bound at all.
   Both must be published rather than left for a reader to assume are zero;
@@ -364,8 +379,14 @@ is a differentiator rather than an imitation.
 **Putting an anchor in the runtime.** One import of `tronpy` makes the answer to
 "what if we do not use TRON?" a fork.
 
-**"Motus makes traces immutable."** The chain makes them verifiable. Only an
-anchor makes them immutable, and only from the moment it is published.
+**"Motus makes traces immutable."** False — and the obvious repair, *"only an
+anchor makes them immutable"*, is false in the same way and was in this ADR's
+own revision. **A trace always remains mutable as data.** Nothing published
+anywhere prevents somebody editing a file they hold. The chain makes
+modification *detectable*; an external anchor makes the *committed state*
+non-unilaterally rewritable from the moment it is published. What an anchor
+takes away is not the ability to edit, it is the ability to have the edit
+believed.
 
 **"Motus makes you compliant."** It does not, and the claim invites a legal
 review we would lose. The defensible form is that Motus makes verifiable the
