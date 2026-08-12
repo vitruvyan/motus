@@ -2,15 +2,18 @@
 
 - **Status:** PROPOSED — awaiting the founder
 - **Date:** 2026-08-12
-- **Authority:** CTO, after two claims made in the design conversation were
-  shown false by an independent reviewer and had to be withdrawn — see
-  *Wrong turns*
+- **Authority:** CTO, after **three** claims made in the design conversation
+  were shown false by an independent reviewer and had to be withdrawn — the
+  third one from the first draft of this ADR. See *Wrong turns*
 - **Depends on:** ADR-019 (the derived root is the value every level below
   attests to; without it there is nothing to attest)
 - **Advances:** #51, whose founder-decided split of 2026-08-07 this ADR states
   the *reason* for, and whose item 3 it makes writable
 - **Amends:** nothing yet. This ADR adds no public API. It fixes the vocabulary
-  and the limits that ADR-021 (the anchor interface) will be written against.
+  and the limits that ADR-021 will be written against — and it establishes that
+  ADR-021 is **two** interfaces, not one: a *witness* interface, immediate and
+  serving continuity, and an *anchor* interface, deferred and serving existence.
+  Collapsing them was the first draft's structural error.
 
 ## Context
 
@@ -54,12 +57,16 @@ where it cannot be corrected, in a format nobody chose.
 
 Six distinct properties have been called "the anchor proves it" in the course of
 one design conversation, and they have different owners, different costs and
-different truth conditions. Two claims made confidently in that conversation
-were false (below). Both were false in the same way: they attributed to
-cryptography a property that only holds if some *non-cryptographic* condition
-also holds, and the condition was never stated.
+different truth conditions. Four claims made confidently along the way were
+false (below), and all four failed the same way: they attributed to cryptography
+a property that holds only under some *non-cryptographic* condition — custody,
+ordering, or who writes the record — which was never stated.
 
-An interface designed on top of an unstated trust model encodes the confusion.
+The fourth was made in this ADR's own first draft, with the first three already
+written down two sections above it. That is the argument for fixing the
+vocabulary before the interface: an interface designed on top of an unstated
+trust model does not merely permit the confusion, it hardens it into a format
+that later has to be broken to correct.
 
 ## Decision
 
@@ -91,7 +98,10 @@ They are separated permanently:
 - **`RETENTION`** — a run that was committed cannot later be deleted or
   reordered without evidence. **Provable.**
 - **`EXECUTION_CONTINUITY`** — a run that *began* through Motus leaves a
-  commitment even if it never finished. **Provable, given decision 3.**
+  commitment even if it never finished. **Provable only for a run whose `BEGIN`
+  left the operator's unilateral control before the outcome was known** — see
+  decision 3. Unqualified, the claim is false, and the first draft of this ADR
+  made it unqualified.
 - **`SYSTEM_COMPLETENESS`** — every decision the organisation made passed
   through Motus. **Not provable, by us or by anyone.** It is a property of how
   the system was integrated, and it is addressed by attestation, by operational
@@ -100,7 +110,7 @@ They are separated permanently:
 `SYSTEM_COMPLETENESS` is named here precisely so that it can be refused when
 somebody asks for it in a sales meeting.
 
-### 3. Commitment is two-phase, and the first phase precedes the outcome
+### 3. Commitment is two-phase, and the first phase must ESCAPE the operator before the outcome
 
 A single commitment written at the end of a run cannot support
 `EXECUTION_CONTINUITY`, for the reason in *Wrong turns 1*. Therefore:
@@ -113,22 +123,50 @@ A single commitment written at the end of a run cannot support
    reason for termination.
 
 `BEGIN` enters a **local append-only chain immediately and without network**:
-`H(n) = hash(commitment(n) + H(n-1))`. Requiring a sequence number from a remote
-authority would couple every run's start to that authority's availability, which
-a runtime must not do (alternative 1).
+`H(n) = hash(commitment(n) + H(n-1))`.
 
-The chain head is **checkpointed at a fixed interval** and the checkpoint is
-what gets anchored. Because `BEGIN` precedes the outcome, omitting one means
-rewriting a chain whose head is already published — so the operator would have
-to decide to suppress a run **before knowing how it turned out**. That is the
-whole value of the two phases, and it does not exist if the commitment is
-written at the end.
+**Two phases are necessary and not sufficient.** The local chain is written by
+the same party that decides what enters it, and preceding the outcome *in time*
+buys nothing on its own: a run that begins and ends between two checkpoints was
+never published, so both commitments can be removed and the chain rebuilt before
+the next one (*Wrong turns 4*). The property is not temporal, it is custodial:
 
-**The checkpoint interval is a parameter, not yet a number.** It bounds a
-deniability window and must be derived from measurement — the distribution of
-run durations in a real deployment, against the cost per anchored checkpoint —
-not chosen because it sounds prudent. ADR-021 states the number and its
-derivation, or ships without a default.
+> **`EXECUTION_CONTINUITY` holds for a run exactly when its `BEGIN` commitment
+> left the operator's unilateral control before the run's outcome was known.**
+
+Three mechanisms achieve that, and this ADR deliberately chooses none of them —
+the trust model states the condition, ADR-021 implements one:
+
+- a **published checkpoint** that already contains the `BEGIN`;
+- an independent **witness** that acknowledges having received it;
+- WORM storage or trusted hardware held by somebody else.
+
+**The witness, and why it is not alternative 1.** A witness attests one thing —
+*at 12:01 I already held this commitment* — and returns a signed acknowledgement
+in milliseconds. Its own records are aggregated and anchored later, on the
+anchor's timescale rather than the run's. This is Certificate Transparency's
+shape exactly: an SCT is a signed promise to include within a bounded merge
+delay, issued immediately, with the Merkle inclusion following. The construction
+is field-proven at web scale, which is the strongest argument available for a
+design nobody here has operated.
+
+**An unreachable witness downgrades the assurance mode. It never blocks the
+run.** That is the entire difference from alternative 1, where an unavailable
+authority either stops the execution or lets it run unnumbered. Here the run
+proceeds, achieves `LOCAL` instead of `WITNESSED`, and **the receipt records the
+mode it actually reached** — so a run that fell back cannot later be described as
+witnessed by anyone, including us.
+
+**What the checkpoint interval bounds — and what it does not.** It bounds the
+**rewrite** window for commitments already present in the local chain. It does
+**not** bound the omission window. A run that begins and ends inside a single
+interval can have its whole episode removed; a run whose `BEGIN` crossed a
+checkpoint cannot. A verifier must never report the two cases the same way.
+
+The interval itself is a parameter, not yet a number. It must be derived from
+measurement — the distribution of run durations in a real deployment against the
+cost per anchored checkpoint — not chosen because it sounds prudent. ADR-021
+states the number and its derivation, or ships without a default.
 
 **`BEGIN` without `END` is a signal only if it is rare.** If ordinary crashes
 and timeouts produce the same signature as suppression, the property is noise.
@@ -139,7 +177,24 @@ contain `BEGIN` without `END` for reasons that are entirely innocent, and no
 verifier may report suppression.** It reports an execution that left no
 completion, which is a question, not a verdict.
 
-### 4. What Motus does not prove — normative, and it goes in `contract/`
+### 4. Three assurance modes, expressible from version 1
+
+| mode | what has to be true | what it supports |
+|---|---|---|
+| `LOCAL` | `BEGIN` written to the local append-only chain | `INTEGRITY`, `EXISTENCE` and `RETENTION` once checkpointed. **No** execution continuity |
+| `WITNESSED` | `BEGIN` acknowledged by an independent witness before execution | adds `EXECUTION_CONTINUITY` |
+| `QUALIFIED` | witnessed, plus identity and a qualified timestamp | adds `IDENTITY` and `LEGAL_TIME` |
+
+None of these has to be implemented now. The **format must be able to express
+them from version 1**, because the alternative is a future in which all three
+are called "verified" and the distinction survives only in the engineers' heads.
+
+**A witness is independent only if somebody else runs it.** A self-hosted
+witness is a convenience, not a guarantee, and the receipt records the witness's
+identity so that a reader judges independence instead of assuming it. More than
+one witness is expressible; none is required.
+
+### 5. What Motus does not prove — normative, and it goes in `contract/`
 
 - **not** that a decision was correct;
 - **not** that the facts recorded in it are true;
@@ -151,7 +206,7 @@ completion, which is a question, not a verdict.
 Publishing this list is not a disclaimer. It is the part a technical evaluator
 looks for, and a system that cannot state its limits has not established any.
 
-### 5. The commercial boundary follows from the levels
+### 6. The commercial boundary follows from the levels
 
 Levels 1–5 are **open, free, and stay so**: they need no human in the loop, so
 charging for them would be charging for arithmetic, and any competent user could
@@ -170,7 +225,7 @@ open, at every level.** A verifier must never need a Vitruvyan endpoint, a
 Vitruvyan key, or a Vitruvyan company. If checking required trusting us, the
 proposition would fail at exactly the point it exists to serve.
 
-### 6. The protocol is anchor-agnostic, and no anchor ships in the runtime
+### 7. The protocol is anchor-agnostic, and no anchor ships in the runtime
 
 `vitruvyan-motus` gains an anchor *interface* and never an anchor. Concrete
 anchors are separate distributions — `motus-anchor-opentimestamps`,
@@ -190,7 +245,7 @@ receipt therefore declares `pending` or `anchored`, and a verifier that reports
 **independent verification**, not "offline verification": it needs a chain, and
 usually a node — it does not need *us*.
 
-### 7. Signatures and revocation are reserved now, implemented later
+### 8. Signatures and revocation are reserved now, implemented later
 
 Levels 5–7 arrive years after the receipts they will have to attach to.
 Therefore the receipt format reserves, from version 1:
@@ -215,13 +270,21 @@ reserved now so it can be.
 
 **What this costs:**
 
-- **two commitments per run instead of one**, doubling the volume entering the
-  batcher. Merkle aggregation absorbs it — one on-chain transaction covers a
-  batch regardless of its size — but the local write is on the run's hot path
-  and `BEGIN` is synchronous with the run's start by construction. It cannot be
-  deferred without destroying the property it exists for;
-- **a deniability window remains**, bounded by the checkpoint interval, and we
-  must publish that interval rather than let a reader assume it is zero;
+- **two local writes per run instead of one**, and `BEGIN` is synchronous with
+  the run's start by construction — it cannot be deferred without destroying the
+  property it exists for. This does **not** double anchor volume: what reaches
+  the anchor is a checkpointed chain head, so submissions scale with checkpoints
+  per tenant and are independent of run count. Conflating the two was an error in
+  the first draft, and correcting it exposes the better argument — **the cost of
+  anchoring does not grow with decisions taken**;
+- **the receipt must carry its slice of the local chain.** If only the head is
+  anchored, proving an individual run means showing its commitment under that
+  head: the run's link, the path to the checkpointed head, the checkpoint's path
+  into the batch, the transaction. A receipt that carries only the last two
+  proves a checkpoint and not a run;
+- **an unwitnessed run keeps a rewrite window**, bounded by the checkpoint
+  interval, and an **omission** window that the interval does not bound at all.
+  Both must be published rather than left for a reader to assume are zero;
 - **an irreducible class of innocent `BEGIN` without `END`**, which weakens the
   signal in exactly the deployments most likely to crash;
 - **`SYSTEM_COMPLETENESS` is conceded**, permanently and in writing. This is the
@@ -233,7 +296,12 @@ verifier reports, where a signature attaches — now has one answer instead of s
 
 ## Wrong turns
 
-Both were made in this design conversation, by the author, with confidence.
+All four were made by the author, with confidence. The fourth was made *in the
+first draft of this ADR*, after the first three had already been recorded here —
+which is the most useful thing in this section, because it shows the error is
+not carelessness but a specific and recurring one: **attributing to
+cryptography a property that holds only under an unstated non-cryptographic
+condition.** Three different conditions, three times unstated.
 
 **1. "Receipts 1…40 then 42, therefore run 41 was suppressed."** False. If the
 sequence number is assigned when the operator submits, a suppressed run is never
@@ -255,13 +323,29 @@ is not: the chain is built by the same party that decides what enters it, so
 omission at source leaves it perfectly consistent. It secures `RETENTION` and
 contributes nothing to `EXECUTION_CONTINUITY` without the two phases.
 
+**4. "Because `BEGIN` precedes the outcome, omitting one means rewriting a chain
+whose head is already published."** False, and it was the load-bearing sentence
+of this ADR's first draft. The head is published only at the next checkpoint: a
+run that begins and ends inside one interval was never published at all, so both
+commitments can be dropped and the chain rebuilt with nothing to detect. What
+matters is not that `BEGIN` came first in time but that it **left the operator's
+control** before the outcome was known — which the two phases do not achieve on
+their own. Decision 3 now states the custodial condition and names the three
+mechanisms that can satisfy it.
+
 ## Alternatives rejected
 
-**Sequence numbers assigned synchronously by a remote authority.** Closes the
-`BEGIN` hole completely, and couples every run's start to a network call. A
-runtime whose executions stop when a third party is unreachable is not one
-anyone will put in front of a decision, and the failure mode — running anyway,
-unnumbered — reinstates exactly the hole.
+**Sequence numbers assigned synchronously by a remote authority, with the run
+blocked until they arrive.** Closes the `BEGIN` hole completely, and couples
+every run's start to a network call. A runtime whose executions stop when a
+third party is unreachable is not one anyone will put in front of a decision,
+and the usual escape — run anyway, unnumbered — reinstates exactly the hole
+while leaving no trace that it was reinstated.
+
+The witness of decision 3 is **not** this alternative. The sequence stays local
+and the run never blocks; what the witness changes is the **assurance mode the
+receipt can claim**. Degradation is recorded rather than silent, which is the
+property this alternative cannot offer at any latency.
 
 **Anchoring `SHA256(trace.json)`.** Simpler to explain and wrong: defeated by
 canonicalisation, and it commits to a byte sequence rather than to the chain.
