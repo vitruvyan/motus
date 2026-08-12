@@ -503,6 +503,14 @@ class Runtime:
             raise ValueError(
                 "a witness has nothing to acknowledge without a commitment "
                 "log: pass commitments= as well, or neither")
+        # Refused HERE rather than at the first run. A deadline missing from
+        # the log is a configuration mistake, and finding it out on the hot
+        # path of the first real decision is the worst possible moment.
+        if witness is not None and getattr(commitments, "witness_deadline", 0) is None:
+            raise ValueError(
+                "this commitment log has no witness_deadline, so a slow "
+                "witness would stop its writer for as long as it likes. Open "
+                "the log with witness_deadline=<seconds>")
         self._commitments = commitments
         self._witness = witness
         self.spec = spec

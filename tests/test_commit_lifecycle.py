@@ -39,6 +39,7 @@ def _nodes(*, fail: bool = False):
 
 
 def _log(tmp_path, **kw) -> CommitmentLog:
+    kw.setdefault("witness_deadline", 5.0)
     return CommitmentLog(tmp_path, tenant="acme", writer_id="w1",
                          fsync=False, **kw)
 
@@ -314,6 +315,92 @@ def test_a_witness_that_fails_downgrades_and_never_blocks(tmp_path, behaviour):
 def test_a_witness_without_a_log_is_refused_at_construction(tmp_path):
     with pytest.raises(ValueError, match="nothing to acknowledge"):
         Runtime(SPEC, _nodes(), witness=_Notary())
+
+
+def test_a_witness_without_a_deadline_is_refused_at_construction(tmp_path):
+    """ADR-021 decision 3 says the deadline is part of the configuration, and
+    for two commits it was part of the docstring only. Refused at construction
+    rather than on the hot path of the first real decision."""
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    with pytest.raises(ValueError, match="no witness_deadline"):
+        Runtime(SPEC, _nodes(), commitments=log, witness=_Notary())
+    log.close()
+
+
+def test_a_witness_that_hangs_is_abandoned_at_the_deadline(tmp_path):
+    """CRITICAL. Without a deadline a slow witness stops the writer for as long
+    as it likes — the literal opposite of "it never blocks the run"."""
+    import time
+
+    class _Hangs:
+        def acknowledge(self, commitment: bytes):
+            time.sleep(30)
+            raise AssertionError("should never be reached")
+
+    log = _log(tmp_path, witness_deadline=0.2)
+    started = time.perf_counter()
+    result = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                     commitments=log, witness=_Hangs()).run(
+        State.empty("x"), run_id="r1")
+    elapsed = time.perf_counter() - started
+
+    assert result.status == "completed"
+    assert elapsed < 5, f"the run waited {elapsed:.1f}s on a hanging witness"
+    assert log.open_window._commitments[0].mode is AssuranceMode.LOCAL
+    log.close()
+
+
+def test_a_witness_that_calls_back_into_its_own_log_does_not_deadlock(tmp_path):
+    """CRITICAL. `_ask_witness` runs while the writer's lock is held, and the
+    lock is not reentrant, so a witness that reenters wedged the process
+    permanently. RLock would not have fixed it: it excuses the same thread and
+    deadlocks identically when the reentry arrives on a new one."""
+    import time
+
+    log = _log(tmp_path, witness_deadline=0.3)
+
+    class _Reenters:
+        def acknowledge(self, commitment: bytes):
+            log.begin("reentrant", at="2026-08-12T00:00:00Z", nonce="re")
+            return None
+
+    started = time.perf_counter()
+    result = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                     commitments=log, witness=_Reenters()).run(
+        State.empty("x"), run_id="r1")
+    elapsed = time.perf_counter() - started
+
+    assert result.status == "completed"
+    assert elapsed < 5, f"the reentrant witness held the process {elapsed:.1f}s"
+    assert log.open_window._commitments[0].mode is AssuranceMode.LOCAL
+    log.close()
+
+
+def test_a_witness_may_not_swallow_the_operators_interrupt(tmp_path):
+    """`except BaseException` consumed KeyboardInterrupt and SystemExit — the
+    operator asking the process to stop, not a witness misbehaving. It took
+    away the one recovery mechanism available for a hung run."""
+    class _Interrupts:
+        def acknowledge(self, commitment: bytes):
+            raise KeyboardInterrupt
+
+    log = _log(tmp_path)
+    with pytest.raises(KeyboardInterrupt):
+        Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                commitments=log, witness=_Interrupts()).run(
+            State.empty("x"), run_id="r1")
+    log.close()
+
+
+def test_a_nonce_cannot_be_reused_in_a_window(tmp_path):
+    """A nonce is used once by definition. Reusing one lets an acknowledgement
+    captured for an earlier commitment be replayed against a later one, which
+    an agent reproduced across a store restore."""
+    log = _log(tmp_path)
+    log.begin("r1", at="2026-08-12T00:00:00Z", nonce="same")
+    with pytest.raises(ValueError, match="already used"):
+        log.begin("r2", at="2026-08-12T00:00:00Z", nonce="same")
+    log.close()
 
 
 # -- the proof, end to end --------------------------------------------------

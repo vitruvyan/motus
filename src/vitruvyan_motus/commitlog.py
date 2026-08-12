@@ -50,6 +50,7 @@ import os
 import re
 import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -183,11 +184,12 @@ class CommitmentLog:
 
     __slots__ = ("_root", "_dir", "tenant", "writer_id", "_fsync",
                  "_window", "_handle", "_lock", "_closed", "_lockfile",
-                 "_seen")
+                 "_seen", "_nonces", "_witness_deadline")
 
     def __init__(self, directory: str | os.PathLike[str], *, tenant: str,
                  writer_id: str, fsync: bool = True,
-                 allow_unlocked: bool = False) -> None:
+                 allow_unlocked: bool = False,
+                 witness_deadline: float | None = None) -> None:
         self.tenant = _require_identifier(tenant, "tenant")
         self.writer_id = _require_identifier(writer_id, "writer_id")
         self._fsync = fsync
@@ -198,6 +200,15 @@ class CommitmentLog:
         self._handle: Any = None
         self._lockfile: Any = None
         self._seen: set[tuple[str, str]] = set()
+        self._nonces: set[str] = set()
+        # No default. ADR-021 decision 3 says the deadline "is part of the
+        # configuration", and any number invented here would be a budget chosen
+        # to accommodate whatever was in front of it. A caller who configures a
+        # witness states how long they will wait for it; `begin(ask=...)`
+        # refuses otherwise.
+        if witness_deadline is not None and not (witness_deadline > 0):
+            raise ValueError("witness_deadline must be a positive number of seconds")
+        self._witness_deadline = witness_deadline
         self._dir.mkdir(parents=True, exist_ok=True)
         self._acquire(allow_unlocked=allow_unlocked)
         try:
@@ -375,6 +386,7 @@ class CommitmentLog:
 
     def _remember(self, commitment: Commitment) -> None:
         self._seen.add((commitment.run_id, commitment.kind.value))
+        self._nonces.add(commitment.nonce)
 
     def _open_handle(self) -> Any:
         if self._handle is None:
@@ -404,13 +416,26 @@ class CommitmentLog:
 
         witness: WitnessAck | None = fields.pop("witness", None)
         ask: Witness | None = fields.pop("ask", None)
+        if ask is not None and self._witness_deadline is None:
+            raise ValueError(
+                "a witness needs a deadline: open the log with "
+                "witness_deadline=<seconds>. Without one a slow witness stops "
+                "this writer for as long as it likes, which is the opposite of "
+                "what a witness is allowed to do")
+        nonce = fields.get("nonce")
+        if nonce in self._nonces:
+            raise ValueError(
+                f"nonce {nonce!r} was already used in this window. A nonce is "
+                "used once by definition, and reusing one lets an "
+                "acknowledgement captured for an earlier commitment be "
+                "replayed against this one")
         commitment = Commitment(
             kind=kind, tenant=self.tenant, writer_id=self.writer_id,
             sequence=self._window.next_sequence, run_id=run_id,
             witness=witness, **fields)
 
         if ask is not None and witness is None:
-            acknowledged = _ask_witness(ask, commitment)
+            acknowledged = _ask_witness(ask, commitment, self._witness_deadline)
             if acknowledged is not None:
                 witness = acknowledged
                 commitment = Commitment(
@@ -447,14 +472,19 @@ class CommitmentLog:
         commitment preceded its own outcome.
 
         The call happens while this writer's lock is held, and that cost is
-        real: one writer's begins serialise behind the witness's deadline. It
-        is inherent rather than incidental — the sequence number must be
-        assigned, witnessed and written without another begin interleaving, or
-        two runs are witnessed at one position. The answer to more throughput
-        is more writers (ADR-021 decision 5), not a shorter deadline.
+        real and measured: with a 50 ms witness, four threads take the same
+        wall-clock time as one. It is inherent rather than incidental — the
+        sequence number must be assigned, witnessed and written without another
+        begin interleaving, or two runs are witnessed at one position. The
+        answer to more throughput is more writers (ADR-021 decision 5), not a
+        shorter deadline.
 
-        Anything the witness does other than return an acknowledgement —
-        `None`, a timeout, an exception — leaves the run at `LOCAL` and does
+        Because the lock is held, the deadline is what stops a slow or
+        reentrant witness from stopping the writer, and it is required rather
+        than defaulted: `witness_deadline` on the log, or `ask=` is refused.
+
+        Anything the witness does other than return an acknowledgement in time
+        — `None`, a timeout, an exception — leaves the run at `LOCAL` and does
         not stop it (ADR-021 decision 3).
         """
         with self._lock:
@@ -494,6 +524,7 @@ class CommitmentLog:
                 self._handle = None
             self._window = CommitmentWindow.following(checkpoint)
             self._seen.clear()
+            self._nonces.clear()
             return checkpoint
 
     # -- reading ----------------------------------------------------------
@@ -595,6 +626,11 @@ class CommitmentLog:
                 "not a question this process may answer.")
 
     @property
+    def witness_deadline(self) -> float | None:
+        """How long a witness gets, or None if no witness may be used here."""
+        return self._witness_deadline
+
+    @property
     def durable(self) -> bool:
         """Whether `begin` returning means the commitment survives a power cut."""
         return self._fsync
@@ -622,24 +658,48 @@ class CommitmentLog:
         self.close()
 
 
-def _ask_witness(witness: Witness, commitment: Commitment) -> WitnessAck | None:
-    """Consult a witness. Nothing it does may stop the run.
+def _ask_witness(witness: Witness, commitment: Commitment,
+                 deadline: float) -> WitnessAck | None:
+    """Consult a witness, for at most `deadline` seconds. Nothing it does may
+    stop the run.
 
-    ADR-021 decision 3: an acknowledgement, `None`, or a raise all mean the
-    same thing to the caller — continue, at whatever mode was actually reached.
-    An option that let a witness block would eventually be enabled by somebody
-    who had not imagined the outage.
+    ADR-021 decision 3: an acknowledgement, `None`, a timeout or a raise all
+    mean the same thing to the caller — continue, at whatever mode was actually
+    reached. An option that let a witness block would eventually be enabled by
+    somebody who had not imagined the outage.
 
-    An acknowledgement that names a different commitment is discarded rather
-    than attached: `Commitment.__post_init__` would refuse it anyway, and
-    refusing here would turn a hostile witness into a way to stop runs.
+    **The deadline is enforced on another thread**, and that is not decoration.
+    The witness is consulted while this writer's lock is held, so without a
+    bound a slow witness stops this writer entirely, and a witness that calls
+    back into its own log deadlocks the process permanently — a non-reentrant
+    lock reacquired by the thread that holds it. An adversarial round
+    reproduced both. `RLock` would not have been the fix: it excuses the same
+    thread and deadlocks just the same when the reentry arrives on a new one.
+
+    The cost is stated rather than hidden: a witness that never returns leaks
+    the worker thread it was called on. A leaked thread on a broken witness is
+    a better outcome than a wedged process, and it is bounded by how many times
+    somebody configures a witness that hangs.
+
+    `BaseException` is deliberately NOT caught. `KeyboardInterrupt` and
+    `SystemExit` are the operator asking the process to stop, not a witness
+    misbehaving, and swallowing them consumed the one recovery mechanism an
+    operator has for a hung run.
     """
+    payload = _canonical_bytes(commitment.to_dict())
+    executor = ThreadPoolExecutor(max_workers=1,
+                                  thread_name_prefix="motus-witness")
+    future = executor.submit(witness.acknowledge, payload)
     try:
-        acknowledged = witness.acknowledge(_canonical_bytes(commitment.to_dict()))
-    except BaseException:
+        acknowledged = future.result(timeout=deadline)
+    except _FutureTimeout:
         return None
-    if acknowledged is None:
+    except Exception:
         return None
+    finally:
+        # Never wait: a hung witness would make shutdown the same block the
+        # deadline exists to avoid.
+        executor.shutdown(wait=False)
     if not isinstance(acknowledged, WitnessAck):
         return None
     if acknowledged.commitment != commitment.leaf:
