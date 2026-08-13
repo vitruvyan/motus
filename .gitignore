@@ -30,3 +30,6 @@ ENV/
 # directory is untracked on purpose and was one `git add -A` away from being
 # committed wholesale.
 .attack/
+
+# adversarial-round worktrees
+.claude/worktrees/

@@ -7,6 +7,7 @@ import functools
 import hashlib
 import inspect
 import json
+import sys
 import threading
 import weakref
 from dataclasses import dataclass
@@ -489,9 +490,29 @@ class Runtime:
         clock: Callable[[], Any] | None = None,
         identity: Callable[[], str] | None = None,
         random_source: Callable[[], float] | None = None,
+        commitments: Any = None,
+        witness: Any = None,
     ) -> None:
         if not isinstance(spec, GraphSpec):
             raise TypeError("spec must be GraphSpec")
+        # ADR-021 decision 1: unconfigured, this is bit-for-bit 0.8.1. Both are
+        # `Any` and both are inert when None — the module is not even imported
+        # unless an embedder passes one, which is what keeps Motus a library
+        # rather than a service that happens to be importable.
+        if witness is not None and commitments is None:
+            raise ValueError(
+                "a witness has nothing to acknowledge without a commitment "
+                "log: pass commitments= as well, or neither")
+        # Refused HERE rather than at the first run. A deadline missing from
+        # the log is a configuration mistake, and finding it out on the hot
+        # path of the first real decision is the worst possible moment.
+        if witness is not None and getattr(commitments, "witness_deadline", 0) is None:
+            raise ValueError(
+                "this commitment log has no witness_deadline, so a slow "
+                "witness would stop its writer for as long as it likes. Open "
+                "the log with witness_deadline=<seconds>")
+        self._commitments = commitments
+        self._witness = witness
         self.spec = spec
         self._plan = spec.compiled
         self._graph_fingerprint = spec.graph_fingerprint
@@ -905,6 +926,29 @@ class Runtime:
     ) -> Iterator[dict[str, Any]]:
         handle.started = True
         try:
+            # BEGIN and END live in ONE function on purpose. `_start` would be
+            # the obvious home for the first, but the generator it returns may
+            # never be advanced — a `stream()` driver created and dropped — and
+            # a BEGIN written there would stand alone forever for a run that
+            # did not execute a single node.
+            #
+            # INSIDE the try, and that placement is the whole of a defect this
+            # file had already fixed once by another route. Above it, a BEGIN
+            # that could not be written raised from a point where nothing
+            # cleaned up: `_start` had already returned, so its own except
+            # clause was long gone; this `finally` had not been entered, so the
+            # claim was never released; and `_release_if_never_started` refuses
+            # to help because `handle.started` is already True. The run
+            # correctly did not execute, and the Runtime was then wedged
+            # forever — every later run(), stream(), arun() and resume() on the
+            # instance raising "cannot execute overlapping runs" — with a
+            # required sink's session left open and never finished.
+            #
+            # It raises, and the run still does not execute: that is the point
+            # of the first phase, and a run whose BEGIN can vanish has no
+            # execution continuity to prove. What changes is that the failure
+            # now costs one run rather than the object.
+            self._commit_begin(handle)
             yield from self._execute(copy_yields=copy_yields, start_node=start_node)
         finally:
             # Publish onto the run's own handle BEFORE releasing the claim.
@@ -933,6 +977,103 @@ class Runtime:
             with self._lifecycle_lock:
                 self._running = False
                 self._cancel_reason = None
+            # AFTER the claim is released, and that ordering is the second half
+            # of the same defect. `_commit_end` re-raises when nothing else is
+            # in flight — a clean run whose END could not be written is a
+            # failure the caller must hear about — and from above the release
+            # that exception escaped before `_running` was ever set back to
+            # False. The instance was then wedged forever, through run(),
+            # stream(), arun(), astream() and cooperative cancellation alike,
+            # while the persisted account stayed perfectly honest: a BEGIN with
+            # no END, which is what it should say.
+            #
+            # Nothing below this line may touch the run's lifecycle state, so a
+            # raise here costs the caller their result and costs the Runtime
+            # nothing.
+            self._commit_end(handle)
+
+    def _commit_begin(self, handle: _RunHandle) -> None:
+        """Durably commit that this run is about to execute, or do nothing."""
+        if self._commitments is None:
+            return
+        assert self._control is not None and self._trace is not None
+        committed = self._commitments.begin(
+            self._trace.run["run_id"],
+            at=self._control.timestamp(),
+            nonce=self._control.kernel_uuid(),
+            ask=self._witness,
+        )
+        # A log must hand back the commitment it wrote. Nothing else here can
+        # tell a working implementation from a leftover test double: a `Mock()`
+        # has every attribute, satisfies any Protocol, accepts every call and
+        # returns another Mock — and an adversarial round found a run reporting
+        # `completed` with an audit trail that was never written,
+        # indistinguishable from one that was. The import is deliberately here
+        # and not at module scope, so an unconfigured Runtime still loads none
+        # of this (ADR-021 decision 1).
+        from vitruvyan_motus.commitments import Commitment
+
+        if not isinstance(committed, Commitment):
+            raise TypeError(
+                "a commitment log must return the Commitment it wrote; "
+                f"{type(committed).__name__} is not one. A double that accepts "
+                "every call and records nothing produces a run that reports "
+                "success with no evidence behind it")
+
+    def _commit_end(self, handle: _RunHandle) -> None:
+        """Bind this run's outcome to the evidence that produced it.
+
+        Written on every terminal path, because a BEGIN without an END is only
+        a signal if it is rare — and if ordinary failures produced the same
+        shape as suppression, it would be noise (ADR-020 decision 3).
+
+        A trace with no derived root gets no END, and that is not an omission:
+        `Trace.root` answers None when the document has not earned one, and an
+        END exists to bind an outcome TO evidence. There is nothing to bind to,
+        so the run is reported by its absence — as an execution that left no
+        completion, never as suppression.
+
+        A failure here does not mask the run's own exception. The missing END
+        is itself the record of what happened, and raising over an in-flight
+        error would replace a diagnosis with a symptom.
+        """
+        if self._commitments is None:
+            return
+        trace = handle.trace
+        if trace is None:
+            return
+        root = trace.root
+        if root is None:
+            return
+        records = trace.records
+        outcome = records[-1]["kind"] if records else "unknown"
+        # Read BEFORE the try. Inside an `except` block `sys.exc_info()` names
+        # the exception being handled, so asking there always answers "one is
+        # in flight" and the raise below never fires. This ran green until a
+        # test asked for the other half of the rule.
+        in_flight = sys.exc_info()[0] is not None
+        try:
+            committed = self._commitments.end(
+                trace.run["run_id"], root=root, outcome=outcome,
+                at=self._control.timestamp() if self._control else "",
+                nonce=self._control.kernel_uuid() if self._control else "",
+            )
+            # Symmetric with `_commit_begin`, and it was missing here. A store
+            # whose `end()` returns None without persisting anything let a run
+            # report `completed` while the durable account held only its BEGIN
+            # -- the exact silent no-op the BEGIN side already refused, and the
+            # asymmetry survived a round because both halves were read
+            # separately.
+            from vitruvyan_motus.commitments import Commitment
+            if not isinstance(committed, Commitment):
+                raise TypeError(
+                    "the commitment log's end() returned "
+                    f"{type(committed).__name__}, not a Commitment. A run that "
+                    "cannot show its END has no completion on record, and "
+                    "reporting one would describe evidence that does not exist")
+        except BaseException:
+            if not in_flight:
+                raise
 
     def _replace_trace(self, trace: Trace) -> None:
         self._trace = trace

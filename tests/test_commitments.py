@@ -515,9 +515,36 @@ def test_a_round_with_no_writers_is_not_a_round():
 
 # -- the empty case, which must remain exactly today's Motus ---------------
 
-def test_nothing_here_is_reachable_from_the_runtime_yet():
-    """ADR-021 decision 1: configured off means bit-for-bit today. Until the
-    lifecycle lands, the runtime must not import any of this."""
+def test_an_unconfigured_runtime_never_loads_any_of_this():
+    """ADR-021 decision 1: unconfigured means bit-for-bit 0.8.1.
+
+    This asserts the property rather than a proxy for it. The earlier version
+    grepped runtime.py for the word "commitments", which stopped meaning
+    anything the moment the runtime grew a `self._commitments = None` — a field
+    that imports nothing and does nothing. What matters is that a Runtime built
+    without a log never causes these modules to be loaded at all.
+    """
+    import subprocess
+    import sys as _sys
     import pathlib
-    runtime = pathlib.Path(__file__).resolve().parent.parent / "src" / "vitruvyan_motus" / "runtime.py"
-    assert "commitments" not in runtime.read_text(encoding="utf-8")
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    probe = (
+        "import sys, datetime;"
+        "from vitruvyan_motus import GraphSpec, Runtime, State, Fact;"
+        "spec = GraphSpec.from_dict({'schema_version':'1.0.0','name':'n',"
+        "'version':'1.0.0','entry':'a',"
+        "'nodes':[{'name':'a','effect_class':'pure'}],"
+        "'transitions':{'a':{'kind':'terminal'}}});"
+        "now = datetime.datetime(2026,8,12,tzinfo=datetime.timezone.utc);"
+        "Runtime(spec, {'a': lambda s: s.with_fact(Fact('k',1,'s',now))})"
+        ".run(State.empty('x'), run_id='r');"
+        "loaded = [m for m in sys.modules if 'commit' in m];"
+        "print(loaded)"
+    )
+    done = subprocess.run([_sys.executable, "-c", probe], capture_output=True,
+                          text=True, cwd=root,
+                          env={"PYTHONPATH": str(root / "src"), "PATH": "/usr/bin:/bin"})
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "[]", (
+        f"an unconfigured run loaded {done.stdout.strip()}")
