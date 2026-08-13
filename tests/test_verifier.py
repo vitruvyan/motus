@@ -422,3 +422,33 @@ def test_a_document_that_is_not_a_receipt_is_reported_not_raised():
         assert verdict.findings
         assert all(f.status in (validate.NOT_ESTABLISHED, validate.REFUSED)
                    for f in verdict.findings)
+
+
+def test_the_networks_we_ship_an_anchor_for_are_networks_this_verifier_knows():
+    """A production-default anchor whose receipts the validator refuses is a
+    product that cannot verify its own output. `plugs/` is where the anchors
+    live and this is the list they must appear in."""
+    assert "opentimestamps:bitcoin" in validate.KNOWN_ANCHOR_NETWORKS
+    assert "tron:nile" in validate.KNOWN_ANCHOR_NETWORKS
+    for network in validate.KNOWN_ANCHOR_NETWORKS:
+        assert network in validate.ANCHOR_LOOKUPS, (
+            f"{network} is accepted and a reader is given no way to settle it")
+
+
+def test_an_opentimestamps_anchor_is_claimed_and_names_no_transaction(run):
+    """An `.ots` attestation says the commitment sits under a block's merkle
+    root. Handing the reader an explorer URL would send them looking for a
+    transaction that does not exist, so the lookup for this network is an
+    instruction rather than a link."""
+    receipt, trace, digest = run
+    receipt["anchors"] = [{
+        "anchor_id": "opentimestamps", "network": "opentimestamps:bitcoin",
+        "checkpoint": digest, "state": "anchored",
+        "reference": "bitcoin-block:812345", "published_at": AT,
+    }]
+    verdict = validate.verify(receipt, trace)
+    assert not verdict.refused
+    assert verdict.status_of("EXISTENCE") == validate.UNCHECKED
+    reason = next(f.reason for f in verdict.findings if f.level == "EXISTENCE")
+    assert "ots verify" in reason
+    assert "tronscan" not in reason

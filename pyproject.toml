@@ -70,3 +70,11 @@ motus-validate = "vitruvyan_motus.contract.validate:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "vitruvyan_motus.__version__" }
+
+# The kernel suite runs over `tests/` and nothing else. `plugs/` holds separate
+# DISTRIBUTIONS with their own dependencies and their own suites — collecting
+# them here would make `pytest` at the repository root fail on a machine that
+# has Motus and not `opentimestamps`, which is exactly the coupling the plugs
+# exist to avoid. Each plug is run from its own directory, and CI runs both.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
