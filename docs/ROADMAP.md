@@ -153,15 +153,31 @@ derivation rule below — comes before any code.*
 You install Motus, point your coding agent at the MCP, and start building
 without reading three hundred lines of prose.
 
-**Why this and not more documentation.** We have the measurement. Commit
-`24adb30` is titled *"two examples for the part of the protocol a first
+**Why this and not more documentation. There are now three measurements, and
+the third is the one that settles it.**
+
+Commit `24adb30` is titled *"two examples for the part of the protocol a first
 integration gets wrong"* — so the gap was known and the answer was two more
 examples. An automated reviewer then read those examples and the Terraveler
 brief and **inverted the effect classification twice in one pull request**
 (#77): it called a database write `recorded_effect` where the protocol says
-`external_effect`, and read-only calls the opposite. A protocol with
-classifications does not travel in prose. It travels by answering the concrete
-question somebody is holding.
+`external_effect`, and read-only calls the opposite.
+
+**Then it happened in production code.** Terraveler's field report of
+2026-08-13, against v0.10.0: `check_verbatim` — a node that issues nothing but
+HTTP GETs to archive.org — was declared `external_effect`. It is the safe
+direction, so nothing was hidden and no write escaped the resume guard. What
+makes it the decisive data point is **how** it got there: the declaration
+carried a comment rationalising it as *"conservative"*, because downstream
+nodes stage a write.
+
+So the rule was not misread. It was **reasoned around**, by somebody who had it
+in front of them, in a direction that felt careful. A sentence in a document
+can be argued with. A tool that answers *"I need to issue an HTTP GET"* with
+`recorded_effect` and a citation cannot be, and that is `motus_classify`.
+
+**A protocol with classifications does not travel in prose. It travels by
+answering the concrete question somebody is holding.**
 
 **The rule that makes it impossible to rot, and it goes in an ADR before any
 code:**
@@ -201,9 +217,11 @@ convince a human to care, and teach an implementer — which is why it is eight
 hundred lines and serves neither well. They separate: the README is what a human
 reads to decide; the MCP is what an agent uses to build.
 
-**Its first test is Terraveler**, who is integrating now. Handing them an MCP
-instead of a three-hundred-line brief is the strongest evidence we can get, and
-the brief is the document a review already found wrong in several places.
+**Its first test is Terraveler**, who has now completed the brief end to end
+against v0.10.0. Handing the next integrator an MCP instead of a
+three-hundred-line brief is the strongest evidence we can get — and the brief
+is the document that was read carefully, followed, and still produced the
+classification error above.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
@@ -332,6 +350,21 @@ in the payload* — not a placeholder, not a plausible-looking hex string. If
 auditability that fabricates one piece of evidence has demonstrated the
 opposite, and the fabrication does not need to be load-bearing to do that.
 
+**And the scenario is no longer invented.** Terraveler's field report of
+2026-08-13 contains the demonstration this page needs, performed on real
+production evidence rather than on a fixture:
+
+> A value in an anchored trace was tampered with, and the whole downstream hash
+> chain was **correctly reprocessed** by hand-replicating Motus's own sealing
+> recipe. `motus-validate jsonl` returns **exit 0** on the forged document —
+> its chain is internally perfect. It fails `verify()` for one reason only:
+> the on-chain memo was written before the edit and names a different root.
+
+That is the entire product in four lines, and it is stronger than *"we broke
+the chain and it noticed"*, which is what the current brief demonstrates. A
+forgery that survives every local check and dies against a value it could not
+reach is what an anchor is FOR. Build the page on that, with their transaction.
+
 Built by a separate agent in frontier, from a brief written here.
 
 ---
@@ -353,8 +386,30 @@ runner allocation), #66 (validator under a hostile switch interval, in CI),
 #49 (distribution), #38 (H1), #40 (async resume).
 
 **Terraveler** is the first external integrator and the proving ground. Its
-brief is `docs/TERRAVELER_MOTUS_TRON.md`. Whatever it finds outranks whatever we
-think.
+brief is `docs/TERRAVELER_MOTUS_TRON.md`, and it **completed all three phases
+against v0.10.0 on 2026-08-13**. Whatever it finds outranks whatever we think,
+and what it found is recorded where each item is decided rather than summarised
+here — phase 1b for the classification error, phase 6 for the forgery
+demonstration.
+
+Two things from that report belong nowhere else and are kept here:
+
+- **they voided their own published anchor rather than quietly re-anchoring.**
+  Their 0.8.1 anchor was made under trace schema 2.0.0, whose digests do not
+  chain, so the anchored value never moves when a non-terminal record is
+  rewritten — ADR-019 names their situation as the example. They added a
+  correction notice and an addendum instead of rewriting history. An external
+  party reaching that conclusion from the ADR alone, and acting against their
+  own interest on it, is the strongest validation this trust model has had;
+- **they re-implemented our isolation invariant instead of trusting it.**
+  `scripts/test_motus_inert.py` runs an unconfigured graph in a subprocess and
+  asserts `commitlog`, `commitments` and `sealing` never reach `sys.modules` —
+  written after reading our source rather than after reading ADR-021's comment
+  about it. Verified here: `commitlog` is imported nowhere in `src/` but
+  itself, and both `commitments` imports in `runtime.py` are function-local and
+  sit after the `if self._commitments is None: return` guard. Their reliance on
+  `a recorded_effect node cannot record external effects` is also sound — it is
+  enforced twice, in `context.py` and in `runtime.py`.
 
 **Documentation** tracks code and never leads it: README, `kb.vitruvyan.com`
 (repo `vitruvyan-docs`), and the site. Documenting unshipped behaviour is the
