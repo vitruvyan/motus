@@ -40,12 +40,33 @@ fixes made for the previous round.
 1. **Verify each one yourself** before acting. Agents are sometimes wrong, and
    twice in this project a finding evaporated under scrutiny.
 2. **Fix, with a test that fails without the fix.**
-3. **Mutation-probe every fix**: neuter it in memory, re-run, confirm failure,
-   restore. Five tests in the 0.7 cycle passed for the wrong reason and only
-   this caught them.
-4. **Re-run the agent's own scripts**, not just your new test. Twice the thing
+3. **Mutation-probe every fix** with `tools/mutation_probe.py`, never by hand.
+   Neuter the fix, re-run, confirm the suite notices. Five tests in the 0.7
+   cycle passed for the wrong reason and only this caught them.
+
+   **Use the tool and not three lines of shell, and this is not a style
+   preference.** The obvious harness edits the file and restores it with
+   `git checkout --`, which discards every uncommitted change to that file and
+   not only the mutation. In this project it destroyed hours of unrelated work
+   **four separate times**, each one after "commit before probing" had been
+   written down and not kept. The tool restores from bytes held in memory and
+   never touches git, so it is correct on a dirty tree, when the anchor is not
+   found, and when pytest dies. It also refuses to start on uncommitted changes
+   under `src/`, `contract/`, `tests/` and `benchmarks/`, for the one case
+   in-memory restore cannot cover: the process being killed mid-probe.
+
+   **A rule that has to be remembered is a rule that will be broken. Put it in
+   the tool.** That is the general form, and it is the more useful half of this
+   entry.
+
+4. **A surviving mutant is not automatically a defect.** An *equivalent* mutant
+   — one provably indistinguishable given the code around it — is a real
+   category, and the honest response is to record why in the source so a later
+   reader does not invent a contrived test to "cover" it. What is never
+   acceptable is leaving a survivor unexplained.
+5. **Re-run the agent's own scripts**, not just your new test. Twice the thing
    that caught a bad fix was the agent's script rather than mine.
-5. **Report honestly**, including what did not reproduce and why. A finding
+6. **Report honestly**, including what did not reproduce and why. A finding
    that turns out to be a non-finding is information, not an embarrassment.
 
 ## Closing a round

@@ -43,7 +43,7 @@ code, it is this section that is wrong.*
 
 ---
 
-## Phase 0 — close what is open — **DONE, less the page**
+## Phase 0 — close what is open — **DONE**
 
 1. ✅ triage the seven Codex findings on #77;
 2. ✅ merge **#76 → #77 → #78** in order;
@@ -56,12 +56,12 @@ code, it is this section that is wrong.*
    transactions from the sender and does not paginate, so a retry made after
    50 later transactions from the same address would not see the original and
    would publish a duplicate (#84);
-5. ⏸ the demo page on `vitruvyan.com/motus/attack` — **deferred by the
-   founder**, not blocked. Brief in `docs/SITE_ATTACK_DEMO.md`, to be
-   implemented by a separate agent in frontier.
+5. ➡ the demo page on `vitruvyan.com/motus/attack` — **moved to the end of
+   this roadmap by the founder on 2026-08-13, and it needs a deep rewrite
+   before anybody builds it.** See *Phase 6* below for why the position is the
+   right one and not merely a convenience.
 
-**Shipped:** an anchored root, in a release. The page that demonstrates it is
-the one piece outstanding, and it is a founder scheduling call.
+**Shipped:** an anchored root, in a release.
 
 ---
 
@@ -212,7 +212,7 @@ replacement for them.
 
 ---
 
-## Phase 2 — the verifier, before any anchor a receipt depends on
+## Phase 2 — the verifier, before any anchor a receipt depends on — **IN PROGRESS**
 
 *Weeks. Out of order it turns the product into a promise.*
 
@@ -224,13 +224,15 @@ this phase protects is that **an anchor a third party is invited to rely on
 must not ship before the check they would rely on it with** — which is #51's
 constraint, and it is still ahead of us.
 
-1. **`motus-validate receipt <trace> <receipt>`** — reports which of ADR-020's
-   levels it could establish, and refuses on an unknown algorithm, network or
-   attestation type. A `VERIFIED` on a chain the verifier cannot evaluate is the
-   worst lie this system can tell;
-2. `BEGIN` without `END` reported as *an execution that left no completion* —
+1. ✅ **`motus-validate receipt <receipt> --trace <trace>`** — reports all seven
+   of ADR-020's levels including the ones it could not reach, and refuses on an
+   unknown algorithm or network. **A refusal outranks a violation**: an unknown
+   network is also a contract violation, and reporting it as one says "this
+   document is wrong" about a document that may be perfectly correct on a chain
+   we cannot read;
+2. ✅ `BEGIN` without `END` reported as *an execution that left no completion* —
    never as suppression;
-3. **the public verifier page.** Drag a trace and its receipt onto a page, get a
+3. ⏳ **the public verifier page.** Drag a trace and its receipt onto a page, get a
    verdict, no account, no API of ours. This is the padlock in the address bar:
    it makes the property visible to people who do not read code, and it is worth
    more commercially than any dashboard.
@@ -301,6 +303,36 @@ verifying.
    let a hash leave the building.
 
 **None of this closes a line of code.** That constraint is from #51 and it holds.
+
+---
+
+## Phase 6 — the demonstration, last and rewritten
+
+*Moved here from phase 0 by the founder on 2026-08-13. It is the only item in
+this document that got later rather than earlier, and the reason is worth
+stating.*
+
+**A demo is a claim made in public, and it can only be as strong as the weakest
+thing it demonstrates.** Built during phase 0 it would have shown an anchored
+root with **no shipped way to check it** — the visitor is asked to believe the
+page. Built after phase 3 it can show the whole sentence: a run committed
+before it executed, witnessed, sealed, anchored, and **verified by a tool the
+visitor runs themselves against a chain we do not operate**.
+
+Its current brief, `docs/SITE_ATTACK_DEMO.md`, is written against the first of
+those and **must be rewritten rather than updated**. It was drafted when the
+strongest available demonstration was a hash in a memo; the strongest available
+demonstration is now a different thing, and a brief revised line by line would
+carry the shape of the old one.
+
+**The absolute rule survives the rewrite** and is repeated here because it is
+the one that would cost the most: *never write a transaction hash that is not
+in the payload* — not a placeholder, not a plausible-looking hex string. If
+`anchor.txid` is null, the page renders a pending state. A demonstration of
+auditability that fabricates one piece of evidence has demonstrated the
+opposite, and the fabrication does not need to be load-bearing to do that.
+
+Built by a separate agent in frontier, from a brief written here.
 
 ---
 
