@@ -1,7 +1,8 @@
 # ADR-023 — the resumed run: the anchorable unit is the segment, and the link between segments belongs in the commitment
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-13
+- **Accepted:** 2026-08-13 by the founder
 - **Authority:** CTO. #75 asks three questions and says they must be answered
   before the shape is designed; this ADR answers them, and one of the three is
   answered by a measurement that removes the option the issue was leaning
