@@ -15,10 +15,12 @@ Sequence is load-bearing. Sizes are estimates and say so.
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong.*
 
-- **0.9.0** is the released version, carrying trace schema **3.0.0** and the
-  derived `Trace.root` (ADR-019). It shipped with the cumulative performance
-  gate **failing**, under ADR-018 and with a fresh real-workload measurement
-  — that is a documented exception, not a passing gate;
+- **0.10.0** is the released version, carrying phase 1 in full: the commitment
+  log, the `BEGIN`/`END` lifecycle, the resume link, the anchoring-cadence
+  arithmetic, and the commitment contract. Like 0.9.0 it ships with the
+  cumulative performance gate **failing**, under ADR-018 §3 with all four
+  conditions met — a documented exception, not a passing gate. Its per-release
+  arm passes, and by an amount the measurement cannot resolve;
 - **ADR-020** (the trust model) and **ADR-021** (the two interfaces and the
   accumulator) are ACCEPTED. ADR-020 was **corrected on 2026-08-13**: the
   residual class of `EXECUTION_CONTINUITY` was stated as one of its members,
@@ -63,7 +65,7 @@ the one piece outstanding, and it is a founder scheduling call.
 
 ---
 
-## Phase 1 — the commitment log — **IN PROGRESS**
+## Phase 1 — the commitment log — **DONE, released as v0.10.0**
 
 *Weeks. The only phase that touches the hot path.*
 
@@ -95,8 +97,13 @@ the one piece outstanding, and it is a founder scheduling call.
    validator that called the implementation would agree with any drift. A test
    pins that it never imports `vitruvyan_motus`, and another compares both
    implementations on real objects;
-5. ⏳ **release 0.10.0** — the one item left in this phase, and the one that
-   needs a founder's word: it creates public objects.
+5. ✅ **release 0.10.0** — tagged `v0.10.0` on the verified merge commit,
+   under ADR-018 §3 with all four conditions met. The per-release arm passes at
+   −1.5 %, −0.8 % and +0.3 % against v0.9.0 — **every one of them smaller than
+   the measurement's own paired spread**, so the release note says the
+   instrument cannot resolve this release's cost rather than claiming it has
+   none. Real-workload share re-taken for this release, as §4 requires and an
+   inherited number would violate: **0.053 %**.
 
 **Unlocks:** `RETENTION`. Not yet `EXECUTION_CONTINUITY` — that needs phase 3.
 
