@@ -15,7 +15,7 @@ package is implemented inside it, never the other way around.
 # will diverge the day the schema goes a release without changing while
 # the runtime does, or the reverse — collapsing them into one constant is
 # exactly the version confusion the contract exists to make impossible.
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 #: Single-sourced trace schema version. Pinned equal to
 #: ``contract/trace.v1.schema.json``'s ``properties.schema_version.const``
