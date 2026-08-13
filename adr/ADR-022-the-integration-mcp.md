@@ -1,7 +1,8 @@
 # ADR-022 — the integration MCP: every answer derived, and a diagnosis that ships the command to reproduce it
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-13
+- **Accepted:** 2026-08-13 by the founder
 - **Authority:** CTO, on the founder's direction that the MCP tells an agent
   how to read Motus and how Motus wants nodes designed, never entering the
   merits of an audit — and on the founder's addition of 2026-08-13 that it
