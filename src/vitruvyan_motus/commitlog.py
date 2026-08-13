@@ -60,6 +60,7 @@ except ImportError:                                    # pragma: no cover
     fcntl = None                                       # type: ignore[assignment]
 
 from vitruvyan_motus.commitments import (
+    Continuation,
     Checkpoint, Commitment, CommitmentKind, CommitmentWindow, Witness,
     WitnessAck, merkle_path, merkle_root,
 )
@@ -523,7 +524,10 @@ class CommitmentLog:
 
     def begin(self, run_id: str, *, at: str, nonce: str,
               witness: WitnessAck | None = None,
-              ask: Witness | None = None) -> Commitment:
+              ask: Witness | None = None,
+              continues: str | None = None,
+              continues_fingerprint: str | None = None,
+              continues_sequence: int | None = None) -> Commitment:
         """Commit that a run is ABOUT to execute.
 
         **A run_id may appear more than once, and that is not an error.** A
@@ -561,8 +565,104 @@ class CommitmentLog:
         not stop it (ADR-021 decision 3).
         """
         with self._lock:
+            link = None
+            if continues is not None or continues_fingerprint is not None:
+                if continues is None or continues_fingerprint is None:
+                    raise ValueError(
+                        "a continuation needs the source run_id AND the bundle "
+                        "fingerprint: the first says which run, the second is "
+                        "the only value a verifier can recompute")
+                link = self._continuation(continues, continues_fingerprint,
+                                          continues_sequence)
             return self._append(CommitmentKind.BEGIN, run_id, at=at,
-                                nonce=nonce, witness=witness, ask=ask)
+                                nonce=nonce, witness=witness, ask=ask,
+                                continues=link)
+
+    def _continuation(self, source_run_id: str, fingerprint: str,
+                      sequence: int | None = None) -> Continuation:
+        """Name the predecessor by chain coordinate when this store holds it.
+
+        ADR-023: `run_id` cannot name it. A run_id may repeat, so a chain can
+        hold several unpaired BEGINs under one, and a BEGIN carries no digest
+        of its own segment to tell them apart. `(writer_id, sequence)` names
+        exactly one, because ADR-021 numbers per writer without restarting at
+        a window boundary.
+
+        Candidates are BEGINs for that run_id with no END after them in this
+        writer's chain -- a segment that ended is not one anybody resumes, and
+        `UnsafeResume` refuses a terminal trace anyway.
+
+        Three outcomes, and the third is the one worth being careful about:
+
+        * exactly one candidate -- resolved, and the coordinate is written;
+        * more than one -- refused. Picking the newest would be a guess with a
+          coordinate's authority, and this codebase already refuses the same
+          shape in `proof_for`;
+        * none -- **unresolved, not an error.** The ordinary cause of a resume
+          is a process that died, and the process that resumes is frequently a
+          different writer on a different machine. A claim about a chain we do
+          not hold is recorded as such; denying it would be as wrong as
+          confirming it.
+        """
+        chain: list[Commitment] = []
+        for index in self._checkpoint_indices():
+            try:
+                _, sealed = self._sealed_window(index)
+            except CommitmentLogFork:
+                # The chain is broken elsewhere. That is `verify_chain()`'s
+                # verdict to deliver, not a reason to refuse a resume: this
+                # method's job is to name a predecessor, and it can honestly
+                # say it could not.
+                continue
+            chain.extend(sealed)
+        chain.extend(self._window._commitments)
+        chain.sort(key=lambda c: c.sequence)
+
+        # Paired by POSITION, not by run_id. "This run_id has an END somewhere"
+        # would mark every BEGIN under a repeated id as closed, so a retried
+        # job's second crash would look resolved and name the wrong segment.
+        # Oldest-open first: on one writer a Runtime refuses overlapping runs,
+        # so BEGIN/END alternate and the choice is moot; where two writers
+        # share a log it is the only ordering that does not assume nesting.
+        still_open: dict[str, list[Commitment]] = {}
+        for commitment in chain:
+            if commitment.kind is CommitmentKind.BEGIN:
+                still_open.setdefault(commitment.run_id, []).append(commitment)
+            else:
+                waiting = still_open.get(commitment.run_id)
+                if waiting:
+                    waiting.pop(0)
+        unpaired = still_open.get(source_run_id, [])
+
+        if sequence is not None:
+            # The caller broke the tie themselves, which is what the refusal
+            # below asks them to do. Checked rather than trusted: a coordinate
+            # naming a commitment this chain does not hold would be recorded
+            # with a resolved link's authority.
+            named = [c for c in unpaired if c.sequence == sequence]
+            if not named:
+                held = ", ".join(str(c.sequence) for c in unpaired) or "none"
+                raise CommitmentLogFork(
+                    f"sequence {sequence} is not an unpaired BEGIN for run "
+                    f"{source_run_id!r} in this chain (unpaired: {held})")
+            return Continuation(run_id=source_run_id,
+                                bundle_fingerprint=fingerprint,
+                                writer_id=named[0].writer_id,
+                                sequence=named[0].sequence)
+
+        if len(unpaired) > 1:
+            available = ", ".join(str(c.sequence) for c in unpaired)
+            raise CommitmentLogFork(
+                f"this chain holds {len(unpaired)} unpaired BEGINs for run "
+                f"{source_run_id!r} (sequences {available}); naming one of "
+                "them as the predecessor would be a guess wearing a "
+                "coordinate's authority. Name it: continues_sequence=<n>")
+        if len(unpaired) == 1:
+            return Continuation(run_id=source_run_id,
+                                bundle_fingerprint=fingerprint,
+                                writer_id=unpaired[0].writer_id,
+                                sequence=unpaired[0].sequence)
+        return Continuation(run_id=source_run_id, bundle_fingerprint=fingerprint)
 
     def end(self, run_id: str, *, root: str, outcome: str, at: str,
             nonce: str) -> Commitment:
@@ -843,5 +943,7 @@ def _commitment_from(body: dict[str, Any]) -> tuple[Commitment, WitnessAck | Non
         at=digested["at"], nonce=digested["nonce"],
         root=digested.get("root"), outcome=digested.get("outcome"),
         witness=ack,
+        continues=(Continuation(**digested["continues"])
+                   if digested.get("continues") else None),
     )
     return commitment, ack

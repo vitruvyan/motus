@@ -30,6 +30,28 @@ SPEC = GraphSpec.from_dict({
 })
 
 
+SPEC_CHAIN = GraphSpec.from_dict({
+    "schema_version": "1.0.0",
+    "name": "lifecycle-chain",
+    "version": "1.0.0",
+    "entry": "first",
+    "nodes": [
+        {"name": "first", "effect_class": "pure", "writes_declared": ["first"]},
+        {"name": "second", "effect_class": "pure",
+         "reads_declared": ["first"], "writes_declared": ["second"]},
+    ],
+    "transitions": {"first": {"kind": "next", "to": "second"},
+                    "second": {"kind": "terminal"}},
+})
+
+
+def _chain_nodes():
+    return {
+        "first": lambda s: s.with_fact(Fact("first", True, "test", NOW)),
+        "second": lambda s: s.with_fact(Fact("second", True, "test", NOW)),
+    }
+
+
 def _nodes(*, fail: bool = False):
     def work(state: State) -> State:
         if fail:
@@ -613,3 +635,51 @@ def test_a_hung_witness_does_not_hold_the_process_open(tmp_path):
         f"the process took {elapsed:.1f}s to exit with a 0.2s witness "
         f"deadline and a witness that sleeps for 120s"
     )
+
+
+# -- a resumed run, end to end (ADR-023) -------------------------------------
+
+def test_a_resumed_run_links_to_the_segment_it_continued(tmp_path):
+    """The measurement that produced ADR-023: without this, the durable account
+    of a crash-and-resume is an unpaired BEGIN followed by an unrelated pair
+    under a different run_id, with nothing connecting them -- while the trace
+    documents connect them perfectly well.
+
+    It matters twice. An auditor holding only the commitments can now follow
+    the chain; and ADR-020's unpaired BEGIN, whose value depends on being rare,
+    stops being manufactured anonymously by every resume."""
+    from vitruvyan_motus.replay import ReplayEngine, TraceBundle
+
+    log = _log(tmp_path)
+    runtime = Runtime(SPEC_CHAIN, _chain_nodes(), sink=InMemoryTraceSink(),
+                      commitments=log)
+    driver = runtime.stream(State.empty("x"), run_id="seg-1")
+    next(driver)
+    next(driver)
+    segment_one = driver.trace
+    del driver                          # the crash: no terminal record, no root
+
+    assert segment_one.root is None
+    assert _kinds(log) == [("seg-1", "begin")]
+
+    resumed = ReplayEngine(TraceBundle(SPEC_CHAIN, segment_one)).resume(
+        Runtime(SPEC_CHAIN, _chain_nodes(), sink=InMemoryTraceSink(),
+                commitments=log),
+        run_id="seg-2")
+
+    written = log.open_window._commitments
+    link = written[1].continues
+    assert link is not None, "the resumed BEGIN carries no link to what it continued"
+    assert link.run_id == "seg-1"
+    assert (link.writer_id, link.sequence) == ("w1", written[0].sequence)
+    assert link.bundle_fingerprint == resumed.trace.run["resume"]["bundle_fingerprint"]
+    assert written[0].continues is None, "a fresh run must carry no link"
+    log.close()
+
+
+def test_a_fresh_run_carries_no_link(tmp_path):
+    log = _log(tmp_path)
+    Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+            commitments=log).run(State.empty("x"), run_id="r1")
+    assert all(c.continues is None for c in log.open_window._commitments)
+    log.close()
