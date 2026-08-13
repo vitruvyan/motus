@@ -3104,6 +3104,12 @@ def derived_root(doc: dict) -> str | None:
         if integrity.get("payload_hash") != digest:
             return None
         expected_prev = digest
+    # `expected_prev` is the last record's digest, which the loop has just
+    # asserted equals its stored payload_hash — so returning that field instead
+    # is provably the same value here, and a mutation probe swapping them
+    # survives. Recorded rather than papered over with a contrived test: it is
+    # an equivalent mutant, not a gap. What makes reading-back wrong is doing
+    # it WITHOUT this walk, which is the version ADR-019 was written against.
     return expected_prev
 
 
