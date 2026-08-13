@@ -1,0 +1,19 @@
+{
+  "artifact": "checkpoint",
+  "expect": "invalid",
+  "rule": "K2",
+  "reason_contains": "nothing before the first window",
+  "instance": {
+    "tenant": "acme",
+    "writer_id": "w1",
+    "index": 0,
+    "window_root": "sha256:8065cf96012a9894477fbae95ce8a06b7fec2cd958bf376e8577d63fe2f4a19c",
+    "count": 3,
+    "first_sequence": 0,
+    "last_sequence": 2,
+    "sealed_at": "2026-08-13T09:05:00Z",
+    "previous": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "spec": null,
+  "layer": "semantic"
+}

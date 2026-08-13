@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The four surfaces
+## The five surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -25,6 +25,7 @@ enforcement point.
 | 2 | Node | `node-protocol.md` | Whoever writes node code | Record-and-compare: the runtime *captures* actual reads/writes; declarations, when present, are checked against captured reality. Verify-replay (0.6) makes the `pure` claim falsifiable |
 | 3 | Graph | `graphspec.v1.schema.json` | The declaration/execution boundary | Static validation at construction. An invalid graph refuses to exist — it does not start-and-warn |
 | 4 | Guarantees | `guarantees.md` | Operators and auditors | Executable: the conformance suite in `tests/contract/` and the CI benchmark gate. A release that violates either does not ship |
+| 5 | Commitment | `commitment.v1.schema.json`, `checkpoint.v1.schema.json`, `receipt.v1.schema.json` | A third party holding a receipt, who has none of our code running and no reason to trust us | `validate.py`'s C, K and P rules, which **recompute** every digest rather than reading it back. The three schemas travel in the wheel for the same reason `trace.v1` does: a verifier somebody has to clone a repository to obtain is a verifier most of them will not run |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
@@ -48,6 +49,27 @@ emitted by the current package; old evidence remains valid without rewriting.
    package and cannot host it.
 4. **Amendments leave a record.** A contract change is a PR touching this
    directory plus an ADR stating what changed, why, and what migrates.
+
+### The commitment rules, and why they recompute
+
+`validate.py` re-implements the leaf, node and checkpoint digests instead of
+importing them from `vitruvyan_motus.commitments`. That is the point: the
+contract is the authority (ADR-001), so a validator that called the
+implementation would be checking the implementation against itself and would
+agree with any drift. RFC 6962 domain separation is written out byte for byte
+in both places, and a positive fixture fails the moment they disagree.
+
+| Rule | What it refuses |
+|---|---|
+| `C1` | A witness acknowledgement that names a digest other than the leaf of the commitment beside it. An acknowledgement that does not name what it acknowledges is decoration, and it would carry a witnessed receipt's authority |
+| `K1` | A checkpoint whose `count` and sequence range disagree. Something was added or removed, and `count` is the half a reader trusts |
+| `K2` | Checkpoint 0 linking backwards, or a later checkpoint stating no predecessor. A null link at a non-zero index drops every window before it |
+| `P1` | An inclusion path that lands anywhere other than the sealed `window_root` — including a valid path with junk appended, because a path element whose side is neither `left` nor `right` is refused rather than skipped |
+| `P2` | A commitment proved against a window it was never in: a sequence outside the checkpoint's range, or a different `(tenant, writer_id)` |
+| `P3` | A mode this distribution cannot establish. `QUALIFIED` needs ADR-020 levels 6 and 7, and neither exists here |
+| `P4` | An anchor naming a checkpoint digest other than this receipt's |
+| `P5` | An anchor on a network this validator cannot evaluate. ADR-020: *a `VERIFIED` on a chain the verifier cannot evaluate is the worst lie this system can tell* |
+| `P6` | A chain of segments the receipt asserts by position and by nothing else: a later segment that continues nothing, one that names a predecessor other than the segment before it, or a segment with an `END` that has a successor — a trace that reached a terminal record cannot be resumed |
 
 ## Fingerprints (canonical form)
 
@@ -129,6 +151,19 @@ is `tests/contract/kernel.py`, exactly as described above.
 - `graphspec.v1.schema.json` — topology as data: nodes, entry, transitions
   (linear, routed, terminal), effect classes, optional declared read/write
   sets.
+- `commitment.v1.schema.json` — one BEGIN or END as stored in a window file
+  or handed to another party, with the witness acknowledgement BESIDE the
+  digested body and never inside it. Includes the `continues` link a resumed
+  segment carries (ADR-023).
+- `checkpoint.v1.schema.json` — one sealed window: the Merkle root over its
+  commitments, the range it covers, and the link to the checkpoint before it.
+- `receipt.v1.schema.json` — what a holder presents to a verifier: a RUN, as
+  the ordered chain of segments it actually was. ADR-021 decision 7 — a receipt
+  carrying only the checkpoint and the transaction proves a checkpoint and not
+  a run. Every segment has a BEGIN; only the LAST may have an END, because a
+  trace that reached a terminal record cannot be resumed. It travels alone, so
+  it declares its own version, and the mode it CLAIMS must be supported by what
+  it carries.
 - `node-protocol.md` — normative obligations of node code (RFC-2119
   language).
 - `guarantees.md` — the five invariants, durability profiles, replay

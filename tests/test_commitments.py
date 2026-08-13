@@ -539,7 +539,7 @@ def test_an_unconfigured_runtime_never_loads_any_of_this():
         "now = datetime.datetime(2026,8,12,tzinfo=datetime.timezone.utc);"
         "Runtime(spec, {'a': lambda s: s.with_fact(Fact('k',1,'s',now))})"
         ".run(State.empty('x'), run_id='r');"
-        "loaded = [m for m in sys.modules if 'commit' in m];"
+        "loaded = [m for m in sys.modules if 'commit' in m or 'sealing' in m];"
         "print(loaded)"
     )
     done = subprocess.run([_sys.executable, "-c", probe], capture_output=True,
@@ -548,3 +548,72 @@ def test_an_unconfigured_runtime_never_loads_any_of_this():
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "[]", (
         f"an unconfigured run loaded {done.stdout.strip()}")
+
+
+# -- the link between a segment and the one it continued (ADR-023) -----------
+
+FINGERPRINT = "bundle:sha256:" + "e" * 64
+
+
+def _fresh_begin(**kw):
+    from vitruvyan_motus.commitments import Commitment, CommitmentKind
+    base = dict(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                sequence=0, run_id="r1", at=AT, nonce="n1")
+    base.update(kw)
+    return Commitment(**base)
+
+
+def test_a_continuation_is_inside_the_leaf_digest():
+    """ADR-023 decision 3. Outside the leaf the link would sit outside the
+    checkpoint and outside whatever anchors the checkpoint -- an anchor would
+    commit to a segment while the fact that it IS a segment stayed unpublished.
+    """
+    from vitruvyan_motus.commitments import Continuation
+    link = Continuation(run_id="seg-1", bundle_fingerprint=FINGERPRINT,
+                        writer_id="w1", sequence=4)
+    assert _fresh_begin(continues=link).leaf != _fresh_begin().leaf
+    assert "continues" in _fresh_begin(continues=link).to_dict()
+    assert "continues" not in _fresh_begin().to_dict(), (
+        "an absent link must be absent, not null: its absence is the record "
+        "saying this run started fresh")
+
+
+def test_a_continuation_names_both_coordinate_axes_or_neither():
+    """`run_id` cannot name a predecessor -- #82 allows a run_id to repeat, so
+    a chain can hold several unpaired BEGINs under one, and a BEGIN carries no
+    digest of its own segment to tell them apart. Half a coordinate would read
+    as resolved while still naming a set."""
+    from vitruvyan_motus.commitments import Continuation
+    unresolved = Continuation(run_id="seg-1", bundle_fingerprint=FINGERPRINT)
+    assert unresolved.resolved is False
+    assert "writer_id" not in unresolved.to_dict()
+
+    with pytest.raises(ValueError, match="BOTH writer_id and sequence"):
+        Continuation(run_id="seg-1", bundle_fingerprint=FINGERPRINT, writer_id="w1")
+    with pytest.raises(ValueError, match="BOTH writer_id and sequence"):
+        Continuation(run_id="seg-1", bundle_fingerprint=FINGERPRINT, sequence=1)
+
+
+def test_a_continuation_refuses_a_fingerprint_nobody_can_recompute():
+    """The link's whole worth is that a verifier recomputes this value over the
+    predecessor's BUNDLE -- bundle_version, the complete graph_spec and the
+    trace. A value in a shape nothing recomputes is a link that cannot be
+    followed."""
+    from vitruvyan_motus.commitments import Continuation
+    for bad in ("", "sha256:" + "e" * 64, "bundle:sha256:" + "E" * 64,
+                "bundle:sha256:" + "e" * 63, FINGERPRINT + "e"):
+        with pytest.raises(ValueError, match="bundle_fingerprint"):
+            Continuation(run_id="seg-1", bundle_fingerprint=bad)
+
+
+def test_an_end_cannot_continue_anything():
+    """A segment is continued at the moment it starts. An END written after the
+    fact could name a predecessor the run never resumed from, and it would be
+    inside the digest with everything else's authority."""
+    from vitruvyan_motus.commitments import Commitment, CommitmentKind, Continuation
+    with pytest.raises(ValueError, match="an END cannot continue anything"):
+        Commitment(kind=CommitmentKind.END, tenant="acme", writer_id="w1",
+                   sequence=1, run_id="r1", at=AT, nonce="n2",
+                   root="sha256:" + "a" * 64, outcome="completed",
+                   continues=Continuation(run_id="seg-1",
+                                          bundle_fingerprint=FINGERPRINT))

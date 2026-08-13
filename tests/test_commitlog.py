@@ -625,3 +625,147 @@ def test_an_uncertain_durable_write_makes_the_log_unusable(tmp_path, monkeypatch
     assert again.verify_chain() == 1
     assert checkpoint.count == len(on_disk) + 1
     again.close()
+
+
+# -- the link between segments (ADR-023) ------------------------------------
+
+BUNDLE = "bundle:sha256:" + "d" * 64
+
+
+def test_a_continuation_names_its_predecessor_by_chain_coordinate(tmp_path):
+    """The commitment log is the artefact an auditor walks and the only one an
+    anchor covers, and until this it held no trace of a resume: an unpaired
+    BEGIN, then an unrelated pair under a different run_id, with nothing
+    joining them."""
+    log = _log(tmp_path)
+    log.begin("seg-1", at=AT, nonce="n1")            # crashed: no END follows
+    resumed = log.begin("seg-2", at=AT, nonce="n2",
+                        continues="seg-1", continues_fingerprint=BUNDLE)
+
+    link = resumed.continues
+    assert link is not None and link.resolved
+    assert (link.writer_id, link.sequence) == ("w1", 0)
+    assert link.run_id == "seg-1" and link.bundle_fingerprint == BUNDLE
+    log.close()
+
+
+def test_a_predecessor_this_store_never_saw_is_unresolved_not_denied(tmp_path):
+    """The ordinary cause of a resume is a process that died, and the process
+    that resumes is frequently a different writer on a different machine. A
+    claim about a chain we do not hold is recorded as a claim; denying it would
+    be as wrong as confirming it."""
+    log = _log(tmp_path)
+    resumed = log.begin("seg-2", at=AT, nonce="n1",
+                        continues="somewhere-else", continues_fingerprint=BUNDLE)
+    assert resumed.continues is not None
+    assert resumed.continues.resolved is False
+    assert "writer_id" not in resumed.continues.to_dict()
+    log.close()
+
+
+def test_an_ambiguous_predecessor_is_refused_and_can_be_named(tmp_path):
+    """A retried job keeps its run_id (#82), so a chain can hold several
+    unpaired BEGINs under one. Picking the newest would be a guess wearing a
+    coordinate's authority -- the same shape `proof_for` refuses."""
+    log = _log(tmp_path)
+    log.begin("retried", at=AT, nonce="n1")
+    log.begin("retried", at=AT, nonce="n2")
+
+    with pytest.raises(CommitmentLogFork, match="continues_sequence"):
+        log.begin("seg-2", at=AT, nonce="n3",
+                  continues="retried", continues_fingerprint=BUNDLE)
+
+    named = log.begin("seg-2", at=AT, nonce="n3", continues="retried",
+                      continues_fingerprint=BUNDLE, continues_sequence=1)
+    assert named.continues.sequence == 1
+
+    with pytest.raises(CommitmentLogFork, match="not an unpaired BEGIN"):
+        log.begin("seg-3", at=AT, nonce="n4", continues="retried",
+                  continues_fingerprint=BUNDLE, continues_sequence=99)
+    log.close()
+
+
+def test_pairing_is_by_position_not_by_run_id(tmp_path):
+    """A defect caught before it shipped, and it is the one this design is most
+    prone to: "this run_id has an END somewhere" marks every BEGIN under a
+    repeated id as closed, so a retried job's SECOND crash reads as resolved
+    and the link names the wrong segment -- or none at all."""
+    log = _log(tmp_path)
+    log.begin("job", at=AT, nonce="n1")                          # seq 0, closed
+    log.end("job", root=ROOT, outcome="completed", at=AT, nonce="e1")
+    log.begin("job", at=AT, nonce="n2")                          # seq 2, crashed
+
+    resumed = log.begin("seg-2", at=AT, nonce="n3",
+                        continues="job", continues_fingerprint=BUNDLE)
+    assert resumed.continues.sequence == 2, (
+        "the link named the completed execution, or refused to name one at all")
+    log.close()
+
+
+def test_a_predecessor_in_a_sealed_window_is_still_found(tmp_path):
+    """A crash and its resume can straddle a checkpoint -- that is the whole
+    point of the two phases. Searching only the open window would report the
+    predecessor as belonging to somebody else's chain."""
+    log = _log(tmp_path)
+    log.begin("seg-1", at=AT, nonce="n1")
+    log.seal(AT)
+    resumed = log.begin("seg-2", at=AT, nonce="n2",
+                        continues="seg-1", continues_fingerprint=BUNDLE)
+    assert resumed.continues.sequence == 0 and resumed.continues.resolved
+    log.close()
+
+
+def test_the_link_survives_the_disk_and_is_covered_by_the_checkpoint(tmp_path):
+    """Inside the leaf digest, so the checkpoint commits to it. Verified by
+    reopening from disk and walking the chain rather than by reading the code.
+    """
+    log = _log(tmp_path)
+    log.begin("seg-1", at=AT, nonce="n1")
+    log.begin("seg-2", at=AT, nonce="n2",
+              continues="seg-1", continues_fingerprint=BUNDLE)
+    checkpoint = log.seal(AT)
+    log.close()
+
+    again = _log(tmp_path)
+    assert again.verify_chain() == 1
+    _, commitments = again._sealed_window(checkpoint.index)
+    assert commitments[1].continues.to_dict() == {
+        "run_id": "seg-1", "bundle_fingerprint": BUNDLE,
+        "writer_id": "w1", "sequence": 0,
+    }
+    proof = again.proof_for("seg-2", CommitmentKind.BEGIN, checkpoint.index)
+    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+    again.close()
+
+
+def test_half_a_continuation_is_refused(tmp_path):
+    log = _log(tmp_path)
+    with pytest.raises(ValueError, match="source run_id AND the bundle"):
+        log.begin("seg-2", at=AT, nonce="n1", continues="seg-1")
+    with pytest.raises(ValueError, match="source run_id AND the bundle"):
+        log.begin("seg-2", at=AT, nonce="n1", continues_fingerprint=BUNDLE)
+    log.close()
+
+
+def test_one_end_closes_one_begin_not_all_of_them(tmp_path):
+    """The surviving mutant from the round on this feature.
+
+    `test_pairing_is_by_position_not_by_run_id` cannot tell "pop the oldest
+    open BEGIN" from "clear every open BEGIN for this run_id", because in
+    BEGIN, END, BEGIN order the two agree. Two BEGINs before the END is where
+    they part: one execution finished, one is still open, and clearing the
+    whole entry loses the open one -- so a resume of a genuinely crashed
+    segment would be recorded as a claim about a chain we do not hold, while
+    holding it."""
+    log = _log(tmp_path)
+    log.begin("job", at=AT, nonce="n1")                          # seq 0
+    log.begin("job", at=AT, nonce="n2")                          # seq 1
+    log.end("job", root=ROOT, outcome="completed", at=AT, nonce="e1")
+
+    resumed = log.begin("seg-2", at=AT, nonce="n3",
+                        continues="job", continues_fingerprint=BUNDLE)
+    assert resumed.continues.resolved, (
+        "one END cleared both executions, so a predecessor this chain holds "
+        "was recorded as belonging to somebody else's")
+    assert resumed.continues.sequence == 1
+    log.close()

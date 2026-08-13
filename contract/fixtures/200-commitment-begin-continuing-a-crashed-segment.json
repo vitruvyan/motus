@@ -1,0 +1,23 @@
+{
+  "artifact": "commitment",
+  "expect": "valid",
+  "instance": {
+    "commitment": {
+      "kind": "begin",
+      "tenant": "acme",
+      "writer_id": "w1",
+      "sequence": 1,
+      "run_id": "job-1",
+      "at": "2026-08-13T09:00:00Z",
+      "nonce": "n2",
+      "continues": {
+        "run_id": "seg-1",
+        "bundle_fingerprint": "bundle:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "writer_id": "w1",
+        "sequence": 0
+      }
+    },
+    "witness": null
+  },
+  "spec": null
+}

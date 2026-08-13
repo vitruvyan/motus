@@ -1,0 +1,16 @@
+{
+  "artifact": "checkpoint",
+  "expect": "valid",
+  "instance": {
+    "tenant": "acme",
+    "writer_id": "w1",
+    "index": 1,
+    "window_root": "sha256:ea0fb11b90e95d568508834f781c6e2a19177760ff253b57dcc45b12d90d284c",
+    "count": 1,
+    "first_sequence": 3,
+    "last_sequence": 3,
+    "sealed_at": "2026-08-13T09:10:00Z",
+    "previous": "sha256:682ae052ecbb6a7415024e385d092642fb39dde378bac08c544396818b5633bd"
+  },
+  "spec": null
+}

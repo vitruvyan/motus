@@ -22,6 +22,7 @@ being wrong first (ADR-020 *Wrong turns*):
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -31,7 +32,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from vitruvyan_motus.trace import _canonical_bytes
 
 __all__ = [
-    "AssuranceMode", "CommitmentKind", "Commitment", "WitnessAck",
+    "AssuranceMode", "CommitmentKind", "Commitment", "Continuation", "WitnessAck",
     "AnchorReceipt", "Checkpoint", "TenantCheckpoint", "CommitmentWindow",
     "Witness", "Anchor",
     "merkle_root", "merkle_path", "verify_merkle_path", "verify_inclusion",
@@ -39,6 +40,12 @@ __all__ = [
 
 _HASH = "sha256"
 _PREFIX = f"{_HASH}:"
+
+# The shape `TraceBundle.fingerprint` produces. Matched rather than assumed:
+# a continuation's whole worth is that a verifier can recompute this value
+# over the predecessor's bundle, so a value in a shape nothing recomputes is
+# a link that cannot be followed.
+_BUNDLE = re.compile(r"bundle:sha256:[0-9a-f]{64}")
 
 # RFC 6962's construction, and for its reason: a leaf and an internal node are
 # hashed in SEPARATE domains, so no commitment's digest can ever equal a node
@@ -177,6 +184,13 @@ class AnchorReceipt:
         if self.state == "anchored":
             _require_text(self.reference,
                           "an anchored receipt's transaction reference")
+            # The contract requires it (receipt.v1), and the producer did not,
+            # so this class could build an object the validator refuses --
+            # authority order backwards. `anchored` without a time says the
+            # publication finished and declines to say when, which is the one
+            # thing an EXISTENCE claim is about.
+            _require_text(self.published_at,
+                          "an anchored receipt's publication time")
         _require_text(self.anchor_id, "an anchor receipt's anchor_id")
         _require_text(self.network, "an anchor receipt's network")
         _require_digest(self.checkpoint, "anchored checkpoint")
@@ -188,6 +202,69 @@ class AnchorReceipt:
             "reference": self.reference, "published_at": self.published_at,
             "proof": self.proof,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Continuation:
+    """What a resumed segment's BEGIN says about the segment it continues.
+
+    ADR-023. A resumed run takes a NEW run_id and starts a fresh trace chain,
+    so the durable account of a crash-and-resume is an unpaired BEGIN followed
+    by an unrelated pair — with nothing connecting them. The trace documents
+    carry the link; the commitment log, which is the artefact an auditor walks
+    and the only one an anchor covers, did not carry it at all.
+
+    **`run_id` does not name the predecessor and cannot.** A run_id may repeat
+    — a retried job keeps its id — so a chain can hold several unpaired BEGINs
+    under one, and a BEGIN carries no digest of its own segment to tell them
+    apart. `(writer_id, sequence)` does name one: ADR-021 numbers per writer
+    and does not restart at a window boundary.
+
+    Those two are **absent together** when the predecessor lives in a chain the
+    resuming store does not hold — another machine, another writer's log we
+    were never given. Their absence is the record saying *unresolved from
+    here*, which is neither a confirmation nor a denial, because it is a claim
+    about somebody else's chain.
+    """
+
+    run_id: str
+    bundle_fingerprint: str
+    writer_id: str | None = None
+    sequence: int | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.run_id, "a continuation's source run_id")
+        if not isinstance(self.bundle_fingerprint, str) or not \
+                _BUNDLE.fullmatch(self.bundle_fingerprint):
+            raise ValueError(
+                "a continuation's bundle_fingerprint must look like "
+                "'bundle:sha256:<64 lowercase hex>' -- it is the value a "
+                "verifier recomputes over the predecessor's whole bundle, and "
+                "a shape we cannot recompute is a shape we cannot check")
+        if (self.writer_id is None) != (self.sequence is None):
+            raise ValueError(
+                "a continuation names its predecessor by BOTH writer_id and "
+                "sequence, or by neither. One without the other is a "
+                "coordinate with an axis missing, and it would read as "
+                "resolved while naming a set")
+        if self.writer_id is not None:
+            _require_text(self.writer_id, "a continuation's writer_id")
+            _require_index(self.sequence, "a continuation's sequence")
+
+    @property
+    def resolved(self) -> bool:
+        """Does this name one commitment, or only the run it came from?"""
+        return self.writer_id is not None
+
+    def to_dict(self) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "run_id": self.run_id,
+            "bundle_fingerprint": self.bundle_fingerprint,
+        }
+        if self.writer_id is not None:
+            body["writer_id"] = self.writer_id
+            body["sequence"] = self.sequence
+        return body
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +287,7 @@ class Commitment:
     root: str | None = None
     outcome: str | None = None
     witness: WitnessAck | None = None
+    continues: Continuation | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.tenant, "a commitment's tenant")
@@ -222,6 +300,11 @@ class Commitment:
             if self.root is not None or self.outcome is not None:
                 raise ValueError("a BEGIN precedes the outcome and cannot carry one")
         else:
+            if self.continues is not None:
+                raise ValueError(
+                    "an END cannot continue anything: a segment is continued "
+                    "at the moment it starts, and an END written after the "
+                    "fact could name a predecessor the run never resumed from")
             _require_text(self.outcome,
                           "an END's outcome -- it names why the run terminated")
             # `root=None` was accepted by the field default, so an END could
@@ -266,6 +349,12 @@ class Commitment:
         if self.kind is CommitmentKind.END:
             body["root"] = self.root
             body["outcome"] = self.outcome
+        # In the digest deliberately (ADR-023 decision 3): the link is what
+        # makes a segment a segment, and outside the leaf it would sit outside
+        # the checkpoint and outside whatever anchors the checkpoint. Written
+        # only when it applies, so its absence is a fact rather than a default.
+        if self.continues is not None:
+            body["continues"] = self.continues.to_dict()
         return body
 
     @property

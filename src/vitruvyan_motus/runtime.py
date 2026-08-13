@@ -997,11 +997,26 @@ class Runtime:
         if self._commitments is None:
             return
         assert self._control is not None and self._trace is not None
+        # ADR-023 decision 3. A resumed segment takes a new run_id and starts a
+        # fresh trace chain, so without this the durable account of a
+        # crash-and-resume is an unpaired BEGIN followed by an unrelated pair
+        # with nothing connecting them -- and an unpaired BEGIN is exactly the
+        # signal ADR-020 needs to stay rare. The trace documents carry the
+        # link; the log, which is what an auditor walks and what an anchor
+        # covers, did not.
+        resume = self._trace.run.get("resume")
+        link: dict[str, Any] = {}
+        if resume:
+            link = {
+                "continues": resume["source_run_id"],
+                "continues_fingerprint": resume["bundle_fingerprint"],
+            }
         committed = self._commitments.begin(
             self._trace.run["run_id"],
             at=self._control.timestamp(),
             nonce=self._control.kernel_uuid(),
             ask=self._witness,
+            **link,
         )
         # A log must hand back the commitment it wrote. Nothing else here can
         # tell a working implementation from a leftover test double: a `Mock()`

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/receipt.v1.schema.json",
+  "title": "Motus receipt v1",
+  "description": "What a holder presents to a verifier: a RUN, as the ordered chain of segments it actually was, each segment carrying the commitments that bound it and the proof that each is inside a sealed window. It travels alone, so it declares its own version. ADR-021 decision 7: a receipt carrying only the checkpoint and the transaction proves a checkpoint and not a run. ADR-023 decision 1: a run made of segments is verified by walking them, so the format has to be able to hold more than one.",
+  "type": "object",
+  "required": ["schema_version", "mode", "segments"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "mode": {
+      "enum": ["local", "witnessed", "qualified"],
+      "description": "What this receipt claims, for the run as a whole. LOCAL: the commitments are in a chain. WITNESSED: an independent party acknowledged the run's first BEGIN before it executed. QUALIFIED: witnessed plus identity and a qualified timestamp, neither of which this distribution produces."
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Oldest first. One entry per execution: the original, then each resume. Every segment has a BEGIN; only the LAST may have an END, because a segment that reached a terminal record cannot be resumed (UnsafeResume) and therefore cannot have a successor.",
+      "items": { "$ref": "#/$defs/Segment" }
+    },
+    "anchors": {
+      "type": "array",
+      "description": "Zero or more. Each names the checkpoint it published, so a verifier can tell which segment it covers rather than assuming it covers the run.",
+      "items": { "$ref": "#/$defs/Anchor" }
+    }
+  },
+  "$defs": {
+    "Entry": {
+      "type": "object",
+      "description": "One commitment, the path proving it is in a sealed window, and the checkpoint that sealed it. The three travel together because a proof without its checkpoint proves nothing and a checkpoint without a path proves somebody else's window.",
+      "required": ["commitment", "proof", "checkpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "commitment": { "$ref": "commitment.v1.schema.json#/$defs/Commitment" },
+        "witness": { "$ref": "commitment.v1.schema.json#/$defs/WitnessAck" },
+        "proof": {
+          "type": "array",
+          "description": "Siblings from leaf to root, each tagged with the side it sits on. An empty path is legal and means a single-leaf window.",
+          "items": {
+            "type": "object",
+            "required": ["side", "digest"],
+            "additionalProperties": false,
+            "properties": {
+              "side": { "enum": ["left", "right"] },
+              "digest": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+            }
+          }
+        },
+        "checkpoint": { "$ref": "checkpoint.v1.schema.json" }
+      }
+    },
+    "Segment": {
+      "type": "object",
+      "description": "One execution. `end` is absent for a segment that reached no terminal record — a crash, or a driver abandoned mid-iteration — which is ADR-020's residual class and the ordinary shape of every predecessor of a resumed run. Its absence is a fact, not a gap to be filled in.",
+      "required": ["begin"],
+      "additionalProperties": false,
+      "properties": {
+        "begin": { "$ref": "#/$defs/Entry" },
+        "end": { "$ref": "#/$defs/Entry" }
+      }
+    },
+    "Anchor": {
+      "type": "object",
+      "description": "Where a checkpoint was published, and whether that has finished. `state: pending` is an intention and proves nothing; only `anchored` with a reference supports EXISTENCE.",
+      "required": ["anchor_id", "network", "checkpoint", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "anchor_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "network": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "checkpoint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+        "state": { "enum": ["pending", "anchored"] },
+        "reference": {
+          "oneOf": [
+            { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+            { "type": "null" }
+          ]
+        },
+        "published_at": {
+          "oneOf": [
+            { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "proof": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "anchored" } }, "required": ["state"] },
+          "then": {
+            "properties": {
+              "reference": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+              "published_at": { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" }
+            },
+            "required": ["reference", "published_at"],
+            "description": "An anchor that says `anchored` and names no transaction has published nothing anybody can look up."
+          }
+        }
+      ]
+    }
+  }
+}
