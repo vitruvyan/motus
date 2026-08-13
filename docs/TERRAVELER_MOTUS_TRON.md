@@ -51,13 +51,29 @@ deliberately held (`vitruvyan/motus` PR #72, open on purpose). So install from
 the repository, pinned to a commit rather than to a moving branch:
 
 ```bash
-pip install "git+https://github.com/vitruvyan/motus@<the ADR-019 merge commit>"
+pip install "git+https://github.com/vitruvyan/motus@v0.10.0"
 ```
 
-Take that commit from the tip of `main` once the ADR-019 pull request has
-landed, and record it in your report — it is the first commit that emits trace
-schema 3.0.0. `508fd52`, the 0.8.1 release, is the version this document was
-first written against and is deliberately **not** the pin any more.
+**Pin the tag, and pin this one.** `508fd52` (0.8.1) is what this document was
+first written against and is deliberately not the pin any more.
+
+- **0.9.0** is the first release that emits trace schema 3.0.0, so it is the
+  earliest version that can satisfy the phase 3 condition above. That makes it
+  the *minimum*, not the recommendation;
+- **0.10.0** is what to take. Everything it adds — the commitment log, the
+  `BEGIN`/`END` lifecycle, the anchoring-cadence arithmetic — is **off unless
+  configured**, and a test in that repository runs an unconfigured graph in a
+  subprocess and asserts that none of those modules is even loaded. For an
+  integration that does not configure them, 0.10.0 behaves as 0.9.0 does. So
+  there is no reason to take the older one and one reason not to: the newer one
+  is what the next release is measured against.
+
+**What 0.10.0 does NOT give you**, so you do not go looking: the receipt
+verifier — `motus-validate receipt <receipt> --trace <trace>`, which reports
+which of the trust model's levels a receipt establishes — is on `main` and is
+**not in any release yet**. If your test needs to verify a receipt rather than
+produce one, say so and take a pinned `main` commit for that step alone; the
+rest of this document stands either way.
 
 Terraveler's Python side has **no `requirements.txt` and no `pyproject.toml`**
 today. Create one — `requirements.txt` at the repository root is enough —
