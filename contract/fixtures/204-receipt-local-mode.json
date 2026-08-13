@@ -1,0 +1,45 @@
+{
+  "artifact": "receipt",
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "mode": "local",
+    "commitment": {
+      "kind": "begin",
+      "tenant": "acme",
+      "writer_id": "w1",
+      "sequence": 1,
+      "run_id": "job-1",
+      "at": "2026-08-13T09:00:00Z",
+      "nonce": "n2",
+      "continues": {
+        "run_id": "seg-1",
+        "bundle_fingerprint": "bundle:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "writer_id": "w1",
+        "sequence": 0
+      }
+    },
+    "proof": [
+      {
+        "side": "left",
+        "digest": "sha256:7831b42fe416161fca00bc334c91727b86142a2ac99d63d8b4c0f9533594dd3b"
+      },
+      {
+        "side": "right",
+        "digest": "sha256:55a62e2252847d1d2f3d561aebf0fef1a7930665326c63f3ad2bed170bc5521d"
+      }
+    ],
+    "checkpoint": {
+      "tenant": "acme",
+      "writer_id": "w1",
+      "index": 0,
+      "window_root": "sha256:8065cf96012a9894477fbae95ce8a06b7fec2cd958bf376e8577d63fe2f4a19c",
+      "count": 3,
+      "first_sequence": 0,
+      "last_sequence": 2,
+      "sealed_at": "2026-08-13T09:05:00Z",
+      "previous": null
+    }
+  },
+  "spec": null
+}

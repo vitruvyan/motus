@@ -86,6 +86,12 @@ def _run_fixture(wrapper: dict):
             spec=wrapper.get("spec"),
             expect_complete=wrapper.get("expect_complete", True),
         )
+    if artifact == "commitment":
+        return validate.validate_commitment(wrapper["instance"])
+    if artifact == "checkpoint":
+        return validate.validate_checkpoint(wrapper["instance"])
+    if artifact == "receipt":
+        return validate.validate_receipt(wrapper["instance"])
     if artifact == "jsonl":
         text = "\n".join(wrapper["lines"]) + "\n"
         violations, _doc = validate.validate_jsonl(
@@ -103,7 +109,10 @@ def _run_fixture(wrapper: dict):
 
 
 @pytest.mark.parametrize(
-    "schema_file", ["graphspec.v1.schema.json", "trace.v1.schema.json"]
+    "schema_file",
+    ["graphspec.v1.schema.json", "trace.v1.schema.json",
+     "commitment.v1.schema.json", "checkpoint.v1.schema.json",
+     "receipt.v1.schema.json"],
 )
 def test_schema_passes_metaschema(schema_file):
     schema = _read(CONTRACT_DIR / schema_file)
@@ -192,6 +201,8 @@ ADVERTISED_RULES = {
     "SB1", "SB2", "SB3", "SB4",
     # Header, JSON strictness, JSONL encoding, schema layer
     "H1", "H2", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
+    # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
+    "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5",
 }
 
 
@@ -209,7 +220,9 @@ def test_corpus_minimums_and_wrapper_shape():
     assert len(POSITIVE) >= 18, f"corpus needs >= 18 positives, has {len(POSITIVE)}"
     assert len(NEGATIVE) >= 92, f"corpus needs >= 92 negatives, has {len(NEGATIVE)}"
     for path, wrapper in FIXTURES:
-        assert wrapper["artifact"] in {"graphspec", "trace", "jsonl"}, path.name
+        assert wrapper["artifact"] in {
+            "graphspec", "trace", "jsonl", "commitment", "checkpoint", "receipt",
+        }, path.name
         if wrapper["artifact"] == "jsonl":
             assert isinstance(wrapper["lines"], list) and wrapper["lines"], path.name
         else:

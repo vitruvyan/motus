@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/commitment.v1.schema.json",
+  "title": "Motus commitment envelope v1",
+  "description": "One BEGIN or END as it is stored in a window file or handed to another party. The acknowledgement sits BESIDE the digested body and never inside it: a leaf digest cannot depend on a value that did not exist when the witness signed it. The store declares its format once in identity.json (motus-commitlog/1), so this document carries no version of its own; a receipt, which travels alone, does.",
+  "type": "object",
+  "required": ["commitment"],
+  "additionalProperties": false,
+  "properties": {
+    "commitment": { "$ref": "#/$defs/Commitment" },
+    "witness": {
+      "oneOf": [{ "$ref": "#/$defs/WitnessAck" }, { "type": "null" }],
+      "description": "Absent or null when no witness acknowledged this commitment. ADR-021: an unreachable witness downgrades the assurance mode and never blocks the run, so its absence is an ordinary outcome and not a defect."
+    }
+  },
+  "$defs": {
+    "Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "A digest names its algorithm or it is refused. A bare 64-hex string leaves a verifier in 2034 guessing which function to recompute."
+    },
+    "BundleFingerprint": {
+      "type": "string",
+      "pattern": "^bundle:sha256:[0-9a-f]{64}$",
+      "description": "What TraceBundle.fingerprint produces, over bundle_version, the complete graph_spec and the trace — not over the trace alone."
+    },
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "\\S",
+      "description": "Opaque to Motus (ADR-021 decision 6), and non-blank: three spaces name nothing."
+    },
+    "Timestamp": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "Continuation": {
+      "type": "object",
+      "description": "What a resumed segment's BEGIN says about the segment it continues (ADR-023). writer_id and sequence appear together or not at all: run_id cannot name a predecessor, because a run_id may repeat and a BEGIN carries no digest of its own segment. Their absence records a predecessor in a chain this store does not hold — unresolved from here, which is neither a confirmation nor a denial.",
+      "required": ["run_id", "bundle_fingerprint"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": { "$ref": "#/$defs/Identifier" },
+        "bundle_fingerprint": { "$ref": "#/$defs/BundleFingerprint" },
+        "writer_id": { "$ref": "#/$defs/Identifier" },
+        "sequence": { "type": "integer", "minimum": 0 }
+      },
+      "dependentRequired": {
+        "writer_id": ["sequence"],
+        "sequence": ["writer_id"]
+      }
+    },
+    "WitnessAck": {
+      "type": "object",
+      "description": "An independent party stating it already held this commitment. `commitment` is the LEAF digest of what was acknowledged: an acknowledgement that does not name what it acknowledges is decoration.",
+      "required": ["witness_id", "commitment", "position", "acknowledged_at", "algorithm", "signature"],
+      "additionalProperties": false,
+      "properties": {
+        "witness_id": { "$ref": "#/$defs/Identifier" },
+        "commitment": { "$ref": "#/$defs/Digest" },
+        "position": { "type": "integer", "minimum": 0 },
+        "acknowledged_at": { "$ref": "#/$defs/Timestamp" },
+        "algorithm": { "$ref": "#/$defs/Identifier" },
+        "signature": { "$ref": "#/$defs/Identifier" }
+      }
+    },
+    "Commitment": {
+      "type": "object",
+      "required": ["kind", "tenant", "writer_id", "sequence", "run_id", "at", "nonce"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["begin", "end"] },
+        "tenant": { "$ref": "#/$defs/Identifier" },
+        "writer_id": { "$ref": "#/$defs/Identifier" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Per WRITER, and it does not restart at a window boundary (ADR-021 decision 5). This is what names an execution when a run_id repeats."
+        },
+        "run_id": {
+          "$ref": "#/$defs/Identifier",
+          "description": "NOT unique. A retried job keeping its id is the ordinary case."
+        },
+        "at": { "$ref": "#/$defs/Timestamp" },
+        "nonce": { "$ref": "#/$defs/Identifier" },
+        "root": {
+          "$ref": "#/$defs/Digest",
+          "description": "The derived root of the evidence this run produced (ADR-019). END only: a BEGIN precedes the outcome and cannot carry one."
+        },
+        "outcome": { "$ref": "#/$defs/Identifier" },
+        "continues": { "$ref": "#/$defs/Continuation" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "begin" } }, "required": ["kind"] },
+          "then": {
+            "not": { "anyOf": [{ "required": ["root"] }, { "required": ["outcome"] }] },
+            "description": "A BEGIN precedes the outcome and cannot carry one."
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "end" } }, "required": ["kind"] },
+          "then": {
+            "required": ["root", "outcome"],
+            "not": { "required": ["continues"] },
+            "description": "An END binds an outcome to the evidence that produced it, so it carries both; and it cannot continue anything, because a segment is continued at the moment it starts."
+          }
+        }
+      ]
+    }
+  }
+}

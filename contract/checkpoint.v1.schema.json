@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/checkpoint.v1.schema.json",
+  "title": "Motus checkpoint v1",
+  "description": "One sealed window of a writer's chain: the Merkle root over its commitments, the range it covers, and the link to the checkpoint before it. ADR-021 decision 2. A checkpoint that has not left the operator's machine proves nothing to a third party — 'checkpointed' means externally anchored, never merely written (ADR-020).",
+  "type": "object",
+  "required": ["tenant", "writer_id", "index", "window_root", "count", "first_sequence", "last_sequence", "sealed_at", "previous"],
+  "additionalProperties": false,
+  "properties": {
+    "tenant": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "writer_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "index": { "type": "integer", "minimum": 0 },
+    "window_root": {
+      "$ref": "commitment.v1.schema.json#/$defs/Digest",
+      "description": "The Merkle root over this window's leaves. An odd node is promoted, never duplicated: duplication makes a tree of n and a tree of n+1 whose last leaf repeats produce one root."
+    },
+    "count": { "type": "integer", "minimum": 1 },
+    "first_sequence": { "type": "integer", "minimum": 0 },
+    "last_sequence": { "type": "integer", "minimum": 0 },
+    "sealed_at": { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" },
+    "previous": {
+      "oneOf": [
+        { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+        { "type": "null" }
+      ],
+      "description": "The digest of checkpoint index-1, or null at index 0. Present-and-null is the statement 'this is the first'; the field is never omitted, so a missing link cannot pass as a first checkpoint."
+    }
+  }
+}

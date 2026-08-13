@@ -280,7 +280,14 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
     )
     assert shipped_from_contract == [
         "vitruvyan_motus/contract/__init__.py",
+        # The commitment side travels for the same reason the trace side does:
+        # a receipt is the artefact a THIRD PARTY holds, and a verifier they
+        # had to clone a repository to obtain is a verifier most of them will
+        # not run.
+        "vitruvyan_motus/contract/checkpoint.v1.schema.json",
+        "vitruvyan_motus/contract/commitment.v1.schema.json",
         "vitruvyan_motus/contract/graphspec.v1.schema.json",
+        "vitruvyan_motus/contract/receipt.v1.schema.json",
         "vitruvyan_motus/contract/trace.v1.schema.json",
         "vitruvyan_motus/contract/validate.py",
     ], shipped_from_contract

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/receipt.v1.schema.json",
+  "title": "Motus receipt v1",
+  "description": "What a holder presents to a verifier: one commitment, the path proving it is in a sealed window, the checkpoint that sealed it, and — when they exist — the witness acknowledgement and the anchor that published the checkpoint. It travels alone, so it declares its own version. ADR-020 decision 4: the mode a receipt CLAIMS must be supported by what it carries, or the distinction between the three modes survives only in the engineers' heads.",
+  "type": "object",
+  "required": ["schema_version", "mode", "commitment", "proof", "checkpoint"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "mode": {
+      "enum": ["local", "witnessed", "qualified"],
+      "description": "What this receipt claims. LOCAL: the commitment is in a chain. WITNESSED: an independent party acknowledged it before execution. QUALIFIED: witnessed plus identity and a qualified timestamp, neither of which this distribution produces."
+    },
+    "commitment": { "$ref": "commitment.v1.schema.json#/$defs/Commitment" },
+    "witness": { "$ref": "commitment.v1.schema.json#/$defs/WitnessAck" },
+    "proof": {
+      "type": "array",
+      "description": "Siblings from leaf to root, each tagged with the side it sits on. An empty path is legal and means a single-leaf window.",
+      "items": {
+        "type": "object",
+        "required": ["side", "digest"],
+        "additionalProperties": false,
+        "properties": {
+          "side": { "enum": ["left", "right"] },
+          "digest": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+        }
+      }
+    },
+    "checkpoint": { "$ref": "checkpoint.v1.schema.json" },
+    "anchor": {
+      "type": "object",
+      "description": "Where the checkpoint was published, and whether that has finished. `state: pending` is an intention and proves nothing; only `anchored` with a reference supports EXISTENCE.",
+      "required": ["anchor_id", "network", "checkpoint", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "anchor_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "network": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "checkpoint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+        "state": { "enum": ["pending", "anchored"] },
+        "reference": {
+          "oneOf": [
+            { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+            { "type": "null" }
+          ]
+        },
+        "published_at": {
+          "oneOf": [
+            { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "proof": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "anchored" } }, "required": ["state"] },
+          "then": {
+            "properties": {
+              "reference": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+              "published_at": { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" }
+            },
+            "required": ["reference", "published_at"],
+            "description": "An anchor that says `anchored` and names no transaction has published nothing anybody can look up."
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "enum": ["witnessed", "qualified"] } }, "required": ["mode"] },
+      "then": {
+        "required": ["witness"],
+        "description": "A receipt claiming WITNESSED without an acknowledgement is claiming the property that distinguishes it from LOCAL."
+      }
+    }
+  ]
+}

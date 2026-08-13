@@ -96,10 +96,14 @@ from typing import Any, Iterable
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError, best_match
+from referencing import Registry, Resource
 
 _CONTRACT_DIR = Path(__file__).resolve().parent
 _GRAPHSPEC_SCHEMA_FILE = "graphspec.v1.schema.json"
 _TRACE_SCHEMA_FILE = "trace.v1.schema.json"
+_COMMITMENT_SCHEMA_FILE = "commitment.v1.schema.json"
+_CHECKPOINT_SCHEMA_FILE = "checkpoint.v1.schema.json"
+_RECEIPT_SCHEMA_FILE = "receipt.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -297,6 +301,7 @@ def load_trace_schema() -> dict:
 
 
 _VALIDATORS: dict[str, Draft202012Validator] = {}
+_COMMITMENT_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -311,6 +316,62 @@ def _graphspec_validator() -> Draft202012Validator:
 
 def _trace_validator() -> Draft202012Validator:
     return _validator("trace", load_trace_schema())
+
+
+def load_commitment_schema() -> dict:
+    """The commitment envelope schema, loaded relative to this file."""
+    return _load(_COMMITMENT_SCHEMA_FILE)
+
+
+def load_checkpoint_schema() -> dict:
+    """The checkpoint schema, loaded relative to this file."""
+    return _load(_CHECKPOINT_SCHEMA_FILE)
+
+
+def load_receipt_schema() -> dict:
+    """The receipt schema, loaded relative to this file."""
+    return _load(_RECEIPT_SCHEMA_FILE)
+
+
+def _commitment_registry() -> Registry:
+    """The three commitment-side schemas, resolvable by their own `$id`.
+
+    They reference each other by relative filename, which resolves against the
+    `$id` base — a receipt embeds a checkpoint, and both use the commitment
+    schema's shared definitions. Duplicating those definitions into each file
+    would have avoided this registry and created three places for `Digest` to
+    drift apart.
+    """
+    global _COMMITMENT_REGISTRY
+    if _COMMITMENT_REGISTRY is None:
+        resources = []
+        for name in (_COMMITMENT_SCHEMA_FILE, _CHECKPOINT_SCHEMA_FILE,
+                     _RECEIPT_SCHEMA_FILE):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _COMMITMENT_REGISTRY = Registry().with_resources(resources)
+    return _COMMITMENT_REGISTRY
+
+
+def _registry_validator(key: str, schema: dict) -> Draft202012Validator:
+    if key not in _VALIDATORS:
+        _VALIDATORS[key] = Draft202012Validator(
+            schema, format_checker=FormatChecker(),
+            registry=_commitment_registry(),
+        )
+    return _VALIDATORS[key]
+
+
+def _commitment_validator() -> Draft202012Validator:
+    return _registry_validator("commitment", load_commitment_schema())
+
+
+def _checkpoint_validator() -> Draft202012Validator:
+    return _registry_validator("checkpoint", load_checkpoint_schema())
+
+
+def _receipt_validator() -> Draft202012Validator:
+    return _registry_validator("receipt", load_receipt_schema())
 
 
 def _pointer_validator(key: str, root: dict, pointer: str) -> Draft202012Validator:
@@ -2628,6 +2689,217 @@ def validate_jsonl(
 # --------------------------------------------------------------------------- #
 
 
+
+# --------------------------------------------------------------------------- #
+# Commitments, checkpoints and receipts — rules C, K and P                    #
+# --------------------------------------------------------------------------- #
+#
+# ADR-021 gives the accumulator, ADR-020 gives what a receipt may claim, and
+# ADR-023 gives what a resumed segment says about the one it continued. The
+# digests below are RE-IMPLEMENTED here rather than imported from
+# `vitruvyan_motus.commitments`, and that is the point: the contract is the
+# authority (ADR-001), so a validator that called the implementation would
+# check the implementation against itself and agree with any drift.
+#
+# RFC 6962 domain separation, byte for byte:
+_LEAF_DOMAIN = b"\x00"
+_NODE_DOMAIN = b"\x01"
+_CHECKPOINT_DOMAIN = b"\x02"
+
+# Networks this validator can evaluate. ADR-020 decision 8: a `VERIFIED` on a
+# chain the verifier cannot evaluate is the worst lie this system can tell, so
+# an unknown network is refused rather than passed through.
+KNOWN_ANCHOR_NETWORKS = frozenset({"tron:nile"})
+
+
+def _sha256_digest(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def commitment_leaf(body: dict) -> str:
+    """The leaf digest of a commitment, recomputed from its own fields.
+
+    Only the fields the writer digests enter here, in the order canonical JSON
+    imposes — so a document carrying an extra key produces a different leaf and
+    the proof stops verifying, which is the behaviour wanted.
+    """
+    return _sha256_digest(_LEAF_DOMAIN + canonical_json(body))
+
+
+def _pair(left: str, right: str) -> str:
+    return _sha256_digest(_NODE_DOMAIN + left.encode() + b"\x00" + right.encode())
+
+
+def checkpoint_digest(body: dict) -> str:
+    """CP(n) = H(root(n) ‖ CP(n-1) ‖ meta(n)) — the link inside the digest.
+
+    A digest that does not cover its own link leaves the link free to be
+    restated, which is the correction ADR-019 had to make to the trace chain.
+    """
+    return _sha256_digest(_CHECKPOINT_DOMAIN + canonical_json(body))
+
+
+def _fold_path(leaf: str, path: list) -> str:
+    """Walk a proof from leaf to root, honouring the side each sibling sits on.
+
+    A path element whose side is neither `left` nor `right` is refused rather
+    than skipped: skipping one yields a shorter walk that can still land on a
+    real root, so junk appended to a valid path would verify.
+    """
+    current = leaf
+    for element in path:
+        side = element.get("side")
+        digest = element.get("digest")
+        if side == "left":
+            current = _pair(digest, current)
+        elif side == "right":
+            current = _pair(current, digest)
+        else:
+            raise ValueError(f"a path element with side {side!r} cannot be walked")
+    return current
+
+
+def validate_commitment(document: dict) -> list[Violation]:
+    """A stored commitment envelope: schema, then what a schema cannot say."""
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    violations += _schema_violations(
+        load_commitment_schema(), _commitment_validator(), document, "SCHEMA")
+    if violations:
+        return violations
+
+    body = document["commitment"]
+    ack = document.get("witness")
+    if ack:
+        leaf = commitment_leaf(body)
+        if ack["commitment"] != leaf:
+            violations.append(Violation(
+                "C1", "$.witness.commitment",
+                f"this acknowledgement names {ack['commitment']}, and the "
+                f"commitment beside it digests to {leaf}. An acknowledgement "
+                "that does not name what it acknowledges is decoration, and it "
+                "would carry a witnessed receipt's authority"))
+    return violations
+
+
+def validate_checkpoint(document: dict) -> list[Violation]:
+    """One sealed window, checked for what its own numbers must agree about."""
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    violations += _schema_violations(
+        load_checkpoint_schema(), _checkpoint_validator(), document, "SCHEMA")
+    if violations:
+        return violations
+
+    span = document["last_sequence"] - document["first_sequence"] + 1
+    if span != document["count"]:
+        violations.append(Violation(
+            "K1", "$.count",
+            f"this checkpoint says it sealed {document['count']} commitments "
+            f"over sequences {document['first_sequence']}.."
+            f"{document['last_sequence']}, which spans {span}. A window whose "
+            "count and range disagree has had something added or removed, and "
+            "the count is the half a reader trusts"))
+
+    if document["index"] == 0 and document["previous"] is not None:
+        violations.append(Violation(
+            "K2", "$.previous",
+            "checkpoint 0 links to a predecessor, and there is nothing before "
+            "the first window. A chain that begins by pointing backwards is "
+            "either not the beginning or not this chain"))
+    if document["index"] > 0 and document["previous"] is None:
+        violations.append(Violation(
+            "K2", "$.previous",
+            f"checkpoint {document['index']} states no predecessor. Chaining "
+            "is what makes a whole window impossible to drop after the fact, "
+            "and a null link at a non-zero index drops every window before it"))
+    return violations
+
+
+def validate_receipt(document: dict) -> list[Violation]:
+    """What a holder presents, checked by recomputation rather than by reading.
+
+    Every rule here answers a question a verifier must not answer from the
+    document's own say-so: does this path reach that root, is this commitment
+    inside that range, does this anchor name this checkpoint, and is the mode
+    it claims supported by what it actually carries.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    violations += _schema_violations(
+        load_receipt_schema(), _receipt_validator(), document, "SCHEMA")
+    if violations:
+        return violations
+
+    body = document["commitment"]
+    checkpoint = document["checkpoint"]
+    leaf = commitment_leaf(body)
+
+    try:
+        reached = _fold_path(leaf, document["proof"])
+    except ValueError as exc:
+        reached = None
+        violations.append(Violation("P1", "$.proof", str(exc)))
+    if reached is not None and reached != checkpoint["window_root"]:
+        violations.append(Violation(
+            "P1", "$.proof",
+            f"this path takes the commitment to {reached}, and the checkpoint "
+            f"sealed {checkpoint['window_root']}. A proof that lands anywhere "
+            "else proves a different window"))
+
+    if not (checkpoint["first_sequence"] <= body["sequence"]
+            <= checkpoint["last_sequence"]):
+        violations.append(Violation(
+            "P2", "$.commitment.sequence",
+            f"sequence {body['sequence']} is outside the range this checkpoint "
+            f"sealed ({checkpoint['first_sequence']}.."
+            f"{checkpoint['last_sequence']}). A commitment proved against a "
+            "window it was never in is a proof about somebody else"))
+    if (body["tenant"], body["writer_id"]) != (checkpoint["tenant"],
+                                               checkpoint["writer_id"]):
+        violations.append(Violation(
+            "P2", "$.commitment.writer_id",
+            f"this commitment belongs to "
+            f"{body['tenant']}/{body['writer_id']} and the checkpoint to "
+            f"{checkpoint['tenant']}/{checkpoint['writer_id']}. One chain per "
+            "writer (ADR-021 decision 5), so these are two chains"))
+
+    mode = document["mode"]
+    ack = document.get("witness")
+    if mode in ("witnessed", "qualified") and ack and ack["commitment"] != leaf:
+        violations.append(Violation(
+            "P3", "$.witness.commitment",
+            f"this receipt claims {mode} on an acknowledgement of "
+            f"{ack['commitment']}, and its commitment digests to {leaf}"))
+    if mode == "qualified":
+        violations.append(Violation(
+            "P3", "$.mode",
+            "QUALIFIED needs an identity attestation and a qualified timestamp "
+            "(ADR-020 levels 6 and 7), and this distribution produces neither. "
+            "A mode nothing here can establish must not be claimed here"))
+
+    anchor = document.get("anchor")
+    if anchor:
+        stated = checkpoint_digest(checkpoint)
+        if anchor["checkpoint"] != stated:
+            violations.append(Violation(
+                "P4", "$.anchor.checkpoint",
+                f"this anchor published {anchor['checkpoint']}, and the "
+                f"checkpoint in this receipt digests to {stated}. An anchor "
+                "for a different checkpoint says nothing about this one"))
+        if anchor["network"] not in KNOWN_ANCHOR_NETWORKS:
+            violations.append(Violation(
+                "P5", "$.anchor.network",
+                f"this validator cannot evaluate the network "
+                f"{anchor['network']!r}, so it will not report what an anchor "
+                "there establishes. Known: "
+                f"{', '.join(sorted(KNOWN_ANCHOR_NETWORKS))}"))
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         # Left to argparse rather than hardcoded: this program is now reached
@@ -2638,7 +2910,8 @@ def main(argv: list[str] | None = None) -> int:
         prog=None,
         description=(
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
-            "trace T-rules, JSON document and JSONL stream forms."
+            "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
+            "P-rules, JSON document and JSONL stream forms."
         ),
         epilog=(
             "Prints one line per violation ('RULE path: message') and exits 0 "
@@ -2647,7 +2920,11 @@ def main(argv: list[str] | None = None) -> int:
             "path prefixes)."
         ),
     )
-    parser.add_argument("artifact", choices=["graphspec", "trace", "jsonl"])
+    parser.add_argument(
+        "artifact",
+        choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
+                 "receipt"],
+    )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
         "--spec",
@@ -2663,7 +2940,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.artifact == "graphspec" and (args.spec or args.allow_incomplete):
+    if args.artifact not in ("trace", "jsonl") and (args.spec or args.allow_incomplete):
         parser.error("--spec and --allow-incomplete apply to trace/jsonl only")
 
     try:
@@ -2723,6 +3000,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if args.artifact == "graphspec":
             violations = validate_graphspec(doc)
+        elif args.artifact == "commitment":
+            violations = validate_commitment(doc)
+        elif args.artifact == "checkpoint":
+            violations = validate_checkpoint(doc)
+        elif args.artifact == "receipt":
+            violations = validate_receipt(doc)
         else:
             violations = validate_trace(doc, spec=spec, expect_complete=expect_complete)
             trace_doc = doc if isinstance(doc, dict) else None
