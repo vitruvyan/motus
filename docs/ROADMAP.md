@@ -47,9 +47,13 @@ code, it is this section that is wrong.*
 2. ✅ merge **#76 → #77 → #78** in order;
 3. ✅ **release 0.9.0**, with the ADR-018 exception recorded in the release
    evidence and every failing ratio stated in the README;
-4. ✅ anchor the demo root on TRON Nile. `demo/anchor_root.py` is idempotent:
-   it queries the chain before signing and refuses if the scanner cannot
-   answer, so re-running it cannot mint a second anchor for the same root;
+4. ✅ anchor the demo root on TRON Nile. `demo/anchor_root.py` queries the
+   chain before signing and refuses if the scanner cannot answer, so an
+   ordinary re-run does not mint a second anchor for the same root. **Bounded,
+   and the bound is stated because it is real**: the scanner reads the last 50
+   transactions from the sender and does not paginate, so a retry made after
+   50 later transactions from the same address would not see the original and
+   would publish a duplicate (#84);
 5. ⏸ the demo page on `vitruvyan.com/motus/attack` — **deferred by the
    founder**, not blocked. Brief in `docs/SITE_ATTACK_DEMO.md`, to be
    implemented by a separate agent in frontier.
@@ -181,9 +185,17 @@ replacement for them.
 
 ---
 
-## Phase 2 — the verifier, before any anchor exists
+## Phase 2 — the verifier, before any anchor a receipt depends on
 
 *Weeks. Out of order it turns the product into a promise.*
+
+**The demo anchor of phase 0 is not a violation of this ordering, and the
+distinction is worth being precise about rather than trusting to context.**
+That anchor backs a page that says what it is; no receipt format depends on
+it, no customer verifies against it, and nothing about it is sold. The rule
+this phase protects is that **an anchor a third party is invited to rely on
+must not ship before the check they would rely on it with** — which is #51's
+constraint, and it is still ahead of us.
 
 1. **`motus-validate receipt <trace> <receipt>`** — reports which of ADR-020's
    levels it could establish, and refuses on an unknown algorithm, network or
