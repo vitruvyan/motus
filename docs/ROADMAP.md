@@ -20,14 +20,17 @@ code, it is this section that is wrong.*
   gate **failing**, under ADR-018 and with a fresh real-workload measurement
   — that is a documented exception, not a passing gate;
 - **ADR-020** (the trust model) and **ADR-021** (the two interfaces and the
-  accumulator) are ACCEPTED. **One erratum to ADR-020 is PROPOSED and awaits
-  the founder**: the residual class of `EXECUTION_CONTINUITY` was written too
-  narrowly — not "a process killed between the two writes" but *a run that
-  reached no terminal record*, of which process death is one member and an
-  abandoned stream driver is another;
+  accumulator) are ACCEPTED. ADR-020 was **corrected on 2026-08-13**: the
+  residual class of `EXECUTION_CONTINUITY` was stated as one of its members,
+  and is now *a run that reached no terminal record* — process death is one
+  member, an abandoned stream driver is another. No mechanism changed; what
+  changed is what a reader may assume about how often it happens;
 - `src/vitruvyan_motus/commitments.py` is on `main` — the arithmetic only;
-- **`src/vitruvyan_motus/commitlog.py` and the `BEGIN`/`END` lifecycle are
-  written and in review** (#82, four adversarial rounds). Not merged;
+- **`src/vitruvyan_motus/commitlog.py` and the `BEGIN`/`END` lifecycle are on
+  `main`** (#82). Four adversarial rounds, then five P1 findings from an
+  automated review **after** those four rounds had run — every one
+  reproduced, and two of them were code that passed its own test while
+  breaking the promise the test was named after;
 - **one root is anchored**, on TRON Nile, txid `6010ded8…`, block 70013920,
   memo carrying the full root. Demonstration only — there is still no
   verifier, so #51's hard constraint (verifying a trace against an anchor,
@@ -60,16 +63,15 @@ the one piece outstanding, and it is a founder scheduling call.
 
 *Weeks. The only phase that touches the hot path.*
 
-1. ✅ **`BEGIN`/`END` lifecycle in the runtime** — written, in review (#82).
-   `BEGIN` durable before the first node executes; `END` on every terminal
-   path. Four adversarial rounds, each of which found a defect in the previous
-   round's fix. Two of those defects were the same shape twice — a commit
-   placed where a failure leaks the lifecycle lock and wedges every later run
-   — first on the `BEGIN` side, then on the `END` side;
-2. ✅ **the local append-only store** — written, in review (#82). One chain per
-   writer (ADR-021 §5), `flock`, crash recovery on bytes, and the fork case:
-   a head that disagrees with a published checkpoint is reported, never
-   repaired;
+1. ✅ **`BEGIN`/`END` lifecycle in the runtime** — merged (#82). `BEGIN`
+   durable before the first node executes; `END` on every terminal path. Four
+   adversarial rounds, each of which found a defect in the previous round's
+   fix. Two of those defects were the same shape twice — a commit placed where
+   a failure leaks the lifecycle lock and wedges every later run — first on the
+   `BEGIN` side, then on the `END` side;
+2. ✅ **the local append-only store** — merged (#82). One chain per writer
+   (ADR-021 §5), `flock`, crash recovery on bytes, and the fork case: a head
+   that disagrees with a published checkpoint is reported, never repaired;
 3. ⏳ **checkpoint sealing**, and the interval. **The mechanism exists and is
    verified** — `seal(at)` recomputes the window's Merkle root and pins it in
    the checkpoint. What is undecided is *when to call it*. ADR-021 refuses to
@@ -87,10 +89,16 @@ the one piece outstanding, and it is a founder scheduling call.
 
 **Unlocks:** `RETENTION`. Not yet `EXECUTION_CONTINUITY` — that needs phase 3.
 
+**The lesson from #82 that outlives it**, and it should shape how the rest of
+this phase is reviewed: after four adversarial rounds an automated reviewer
+found five more P1s. Two were of the same kind — a promise verified against
+its *mechanism* and never against its *scope*. The witness deadline test was
+green while a hung witness held the whole process open for twenty seconds,
+because the test measured the call and the promise is about the process. **Ask
+what the sentence claims, not what the function does.**
+
 **Also owed inside this phase:**
 
-- the **ADR-020 erratum** above, still PROPOSED. **This one is the founder's**
-  — the ADR is ACCEPTED and correcting what it says is not mine to do;
 - **#75** — a resumed run's segments are not chained to each other, so an
   anchor covers one segment. The roadmap has always placed this *during*
   phase 1 and the phase is now open; settling it after the formats are frozen
