@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motus-anchor-opentimestamps"
+version = "0.1.0"
+description = "An OpenTimestamps anchor for Motus checkpoints — free, Bitcoin, no key custody"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Vitruvyan" }]
+# A SEPARATE DISTRIBUTION, which is the whole point. ADR-020 rejected putting
+# an anchor in the runtime: "one import of `tronpy` makes the answer to 'what
+# if we do not use TRON?' a fork". The same argument applies here, and it
+# applies to us: `vitruvyan-motus` declares zero runtime dependencies and this
+# package must not be able to change that.
+dependencies = ["opentimestamps>=0.4,<0.5"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.setuptools]
+packages = ["motus_anchor_opentimestamps"]
+package-dir = { "" = "src" }
