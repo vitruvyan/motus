@@ -330,3 +330,19 @@ def test_a_trace_below_schema_3_derives_no_root(run):
     older = copy.deepcopy(trace)
     older["schema_version"] = "2.0.0"
     assert validate.derived_root(older) is None
+
+
+def test_a_record_that_lies_about_its_own_predecessor_derives_no_root(run):
+    """A stale `prev_hash` still passes the digest check, because the digest
+    covers the value we RECOMPUTED and not the one the file carries.
+
+    So the two are separate questions: does this record hash to what it says
+    (payload_hash), and does it name the record before it (prev_hash). A
+    document that recomputes perfectly while pointing at the wrong predecessor
+    describes a chain it does not have, and would hand an anchor a root for it.
+    """
+    _, trace, _ = run
+    assert len(trace["records"]) > 1
+    lying = copy.deepcopy(trace)
+    lying["records"][1]["integrity"]["prev_hash"] = "sha256:" + "f" * 64
+    assert validate.derived_root(lying) is None
