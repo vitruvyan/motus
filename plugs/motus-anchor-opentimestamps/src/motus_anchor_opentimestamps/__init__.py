@@ -150,6 +150,28 @@ class OpenTimestampsAnchor:
                 "anchor has nothing to upgrade and will not guess")
         timestamp = self._deserialize(bytes.fromhex(proof["serialized"]))
 
+        # **THE PROOF MUST BE A PROOF OF THIS CHECKPOINT.** `proof` is an
+        # ordinary mutable field on a receipt the holder keeps, so without this
+        # they can drop in an already-anchored `.ots` for an unrelated digest,
+        # call upgrade(), and receive a receipt saying THEIR checkpoint reached
+        # a Bitcoin block. The Bitcoin attestation is genuine; what it attests
+        # is somebody else's document. Three values have to agree — the
+        # timestamp's own message, the digest recorded beside it, and the
+        # checkpoint the receipt names — and any two of them agreeing is not
+        # enough, because the attack supplies a matched pair.
+        stated = bytes.fromhex(proof["digest"])
+        if timestamp.msg != stated:
+            raise ValueError(
+                f"this proof timestamps {timestamp.msg.hex()} and the receipt "
+                f"records {proof['digest']}. A proof of another document says "
+                "nothing about this checkpoint, however real its attestation")
+        if self._digest_bytes(receipt.checkpoint) != stated:
+            raise ValueError(
+                f"this receipt names checkpoint {receipt.checkpoint} and "
+                f"carries a proof of {proof['digest']}. Upgrading it would "
+                "publish somebody else's attestation under this checkpoint's "
+                "name")
+
         for url in self._calendars:
             for commitment, sub in list(timestamp.ops.items()):
                 if any(isinstance(a, BitcoinBlockHeaderAttestation)

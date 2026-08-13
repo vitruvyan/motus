@@ -169,3 +169,39 @@ def test_a_longer_payload_is_hashed_rather_than_refused(monkeypatch):
     body = b'{"index":0,"window_root":"sha256:..."}'
     receipt = OpenTimestampsAnchor().publish(body)
     assert receipt.proof["digest"] == hashlib.sha256(body).hexdigest()
+
+
+def test_a_proof_of_another_document_cannot_upgrade_this_receipt(monkeypatch):
+    """The severe one. `proof` is an ordinary mutable field on a receipt the
+    holder keeps, so without this check they can drop in an ALREADY-ANCHORED
+    `.ots` for an unrelated digest and receive a receipt saying their
+    checkpoint reached a Bitcoin block.
+
+    The attestation in that proof is genuine. What it attests is somebody
+    else's document, and the receipt would carry a real block height under a
+    checkpoint that never went anywhere."""
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+
+    _patch(monkeypatch, _Calendar)
+    anchor = OpenTimestampsAnchor()
+
+    mine = anchor.publish(DIGEST)
+    theirs = anchor.publish("sha256:" + hashlib.sha256(b"somebody else").hexdigest())
+
+    # Their proof really does reach a block.
+    stamp = anchor._deserialize(bytes.fromhex(theirs.proof["serialized"]))
+    for sub in stamp.ops.values():
+        sub.attestations.add(BitcoinBlockHeaderAttestation(812345))
+    anchored_elsewhere = anchor._serialize(
+        bytes.fromhex(theirs.proof["digest"]), stamp).hex()
+
+    mine.proof["serialized"] = anchored_elsewhere
+    with pytest.raises(ValueError, match="timestamps"):
+        anchor.upgrade(mine)
+
+    # And the pair-matching version of the same attack: move the recorded
+    # digest too, so the proof and `proof["digest"]` agree with each other and
+    # only the checkpoint is left behind.
+    mine.proof["digest"] = theirs.proof["digest"]
+    with pytest.raises(ValueError, match="somebody else's attestation"):
+        anchor.upgrade(mine)
