@@ -76,20 +76,27 @@ the one piece outstanding, and it is a founder scheduling call.
 2. ✅ **the local append-only store** — merged (#82). One chain per writer
    (ADR-021 §5), `flock`, crash recovery on bytes, and the fork case: a head
    that disagrees with a published checkpoint is reported, never repaired;
-3. ⏳ **checkpoint sealing**, and the interval. **The mechanism exists and is
-   verified** — `seal(at)` recomputes the window's Merkle root and pins it in
-   the checkpoint. What is undecided is *when to call it*. ADR-021 refuses to
-   name a number until it is derived from run-duration distribution against
-   cost per anchored checkpoint. **Measure first, then choose, or ship without
-   a default** — shipping without one is an acceptable outcome and shipping a
-   guessed one is not;
-4. ⏳ **contract work**: schemas for commitment, checkpoint and receipt; the
-   `validate.py` rules that recompute them. Lands together, per the schema's
-   own wording, or not at all. **This is the load-bearing item of the phase.**
-   `contract/` holds two schemas today, `trace` and `graphspec`; until the
-   commitment formats join them, the log is our code rather than a format
-   somebody else can read — and phase 4 has nothing to freeze;
-5. ⏳ **release 0.10.0.**
+3. ✅ **checkpoint sealing**, and the interval — **shipped without a default,
+   which ADR-021 permits and this measurement earns.** `vitruvyan_motus.sealing`
+   derives the interval from a measured run-duration distribution and prices it
+   in anchors per hour. Deriving it surfaced that the ADR's phrasing conflated
+   two rates: sealing is local and protects nothing, since ADR-020 says
+   *"checkpointed" means externally anchored, never merely written*. The rate
+   that bounds the rewrite window is the **anchoring** one. And the arithmetic
+   then says something nobody expects — runs measured in seconds need an anchor
+   every few seconds, which no chain does at a price anybody pays, so **an
+   anchor cannot give execution continuity to a run shorter than its own
+   cadence.** That is what the witness is for, and it is the reason ADR-021 was
+   right to refuse a number;
+4. ✅ **contract work**: `commitment.v1`, `checkpoint.v1` and `receipt.v1`, with
+   eight rules (C1, K1, K2, P1–P5) that **recompute** every digest rather than
+   reading it back. `validate.py` re-implements the leaf, node and checkpoint
+   digests instead of importing them — the contract is the authority, so a
+   validator that called the implementation would agree with any drift. A test
+   pins that it never imports `vitruvyan_motus`, and another compares both
+   implementations on real objects;
+5. ⏳ **release 0.10.0** — the one item left in this phase, and the one that
+   needs a founder's word: it creates public objects.
 
 **Unlocks:** `RETENTION`. Not yet `EXECUTION_CONTINUITY` — that needs phase 3.
 
@@ -103,7 +110,20 @@ what the sentence claims, not what the function does.**
 
 **Also owed inside this phase:**
 
-- **#75** — a resumed run's segments are not chained to each other, so an
+- ~~**#75**~~ — **settled.** ADR-023 (accepted, then corrected by four findings
+  hours later) fixes the segment as the recorded unit, keeps `bundle_fingerprint`
+  because a resumable segment provably has no root to bind to, and puts the link
+  in the **commitment**: a resumed `BEGIN` carries `continues`, naming its
+  predecessor by `(writer_id, sequence)` because a `run_id` names a set. It is
+  inside the leaf digest, so an anchor covers it.
+
+  What the correction changed: a run-level commitment is **not** impossible. The
+  last segment's root already binds every predecessor transitively through
+  nested `bundle_fingerprint`s, so **the receipt format must be able to express
+  a chain**, not only a segment — which is why this had to be settled before
+  point 4 and not after.
+
+- **#75** (superseded above, kept for the reader who arrives from the issue) — a resumed run's segments are not chained to each other, so an
   anchor covers one segment. The roadmap has always placed this *during*
   phase 1 and the phase is now open; settling it after the formats are frozen
   would mean changing them again.
