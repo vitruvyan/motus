@@ -2998,6 +2998,412 @@ def validate_receipt(document: dict) -> list[Violation]:
     return violations
 
 
+
+# --------------------------------------------------------------------------- #
+# The verifier: what a receipt and its trace let somebody establish            #
+# --------------------------------------------------------------------------- #
+#
+# ADR-021 decision 8 and ADR-020's seven levels. Two rules govern everything
+# below and they pull in the same direction:
+#
+#   * it REFUSES rather than guesses. An unknown hash algorithm, anchor network
+#     or attestation type ends the answer — "a VERIFIED on a chain the verifier
+#     cannot evaluate is the worst lie this system can tell";
+#   * it says what it could NOT establish, and why, in the same breath as what
+#     it could. A report that lists only successes is read as a clean bill.
+#
+# It needs no network for INTEGRITY. For EXISTENCE it needs the chain, and not
+# us.
+
+ESTABLISHED = "established"
+NOT_ESTABLISHED = "not established"
+NOT_YET = "not yet"
+UNCHECKED = "claimed, unchecked"
+REFUSED = "refused"
+
+#: The levels of ADR-020, in order. Every report answers all seven, because a
+#: level omitted reads as a level passed.
+LEVELS = (
+    "INTEGRITY", "EXISTENCE", "RETENTION", "EXECUTION_CONTINUITY",
+    "PROVENANCE", "IDENTITY", "LEGAL_TIME",
+)
+
+KNOWN_DIGEST_PREFIX = "sha256:"
+
+#: Signature algorithms this verifier is competent to name. ADR-021 decision 8
+#: refuses an unknown ATTESTATION TYPE, and an acknowledgement signed with
+#: something we cannot name is one: reporting it as "present but unchecked"
+#: would put an unreadable object on the same footing as a readable one.
+KNOWN_WITNESS_ALGORITHMS = frozenset({"ed25519"})
+
+#: Where a reader can look a published anchor up for themselves. This verifier
+#: does not contact any network — see `verify` — so what it can offer instead
+#: is the address of the thing it declined to check.
+ANCHOR_EXPLORERS = {
+    "tron:nile": "https://nile.tronscan.org/#/transaction/",
+}
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One level, what came of it, and the sentence a reader is owed."""
+
+    level: str
+    status: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """The whole answer, including the parts that are refusals.
+
+    `refused` is not a level that failed — it is the verifier declining to
+    answer at all, and it makes every level below it unreportable.
+    """
+
+    findings: tuple[Finding, ...]
+    violations: tuple[Violation, ...]
+    notes: tuple[str, ...]
+
+    @property
+    def refused(self) -> bool:
+        return any(f.status == REFUSED for f in self.findings)
+
+    def status_of(self, level: str) -> str:
+        for finding in self.findings:
+            if finding.level == level:
+                return finding.status
+        raise KeyError(level)
+
+
+def derived_root(doc: dict) -> str | None:
+    """The root a trace DERIVES, recomputed here, or None.
+
+    ADR-019. Reading `records[-1].integrity.payload_hash` is not deriving it,
+    and the difference is three attacks: a rewritten header with a stale first
+    link, a 2.0.0 document relabelled 3.0.0, and any invented hash at all.
+
+    Re-implemented rather than imported for the reason every digest in this
+    file is: the contract is the authority, and a validator that called the
+    implementation would agree with any drift.
+    """
+    version = doc.get("schema_version")
+    if version != "3.0.0":
+        # Below 3.0.0 the digests do not cover prev_hash, so the terminal's
+        # hash covers one record rather than the run. There is no root to have.
+        return None
+    records = doc.get("records")
+    if not isinstance(records, list) or not records:
+        return None
+    last = records[-1]
+    if not isinstance(last, dict) or last.get("kind") not in (
+            "run_completed", "run_failed", "run_cancelled"):
+        return None
+
+    expected_prev = "sha256:" + hashlib.sha256(canonical_json({
+        "schema_version": document_version_header(doc),
+        "run": doc.get("run") or {},
+    })).hexdigest()
+    for record in records:
+        if not isinstance(record, dict):
+            return None
+        integrity = record.get("integrity")
+        if not isinstance(integrity, dict):
+            return None
+        if integrity.get("prev_hash") != expected_prev:
+            return None
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": expected_prev}
+        digest = "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
+        if integrity.get("payload_hash") != digest:
+            return None
+        expected_prev = digest
+    # `expected_prev` is the last record's digest, which the loop has just
+    # asserted equals its stored payload_hash — so returning that field instead
+    # is provably the same value here, and a mutation probe swapping them
+    # survives. Recorded rather than papered over with a contrived test: it is
+    # an equivalent mutant, not a gap. What makes reading-back wrong is doing
+    # it WITHOUT this walk, which is the version ADR-019 was written against.
+    return expected_prev
+
+
+def _unknown_digests(receipt: dict) -> list[str]:
+    """Every digest in the receipt whose algorithm this verifier does not know.
+
+    Collected before anything is checked, because the fail-closed rule is about
+    what the verifier is competent to evaluate, not about whether the values
+    happen to line up.
+    """
+    found: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, f"{path}[{index}]")
+        elif isinstance(node, str) and path.endswith(
+                ("digest", "window_root", "previous", "root", "checkpoint")):
+            if node and not node.startswith(KNOWN_DIGEST_PREFIX):
+                found.append(f"{path} = {node}")
+
+    walk(receipt, "$")
+    return found
+
+
+def verify(receipt: dict, trace: dict | None = None) -> Verdict:
+    """What this receipt — with this trace, if one is supplied — establishes.
+
+    The trace is optional and its absence is reported rather than assumed away:
+    without it, INTEGRITY is about the receipt's own arithmetic and says
+    nothing about any run.
+    """
+    violations = validate_receipt(receipt)
+    notes: list[str] = []
+    findings: list[Finding] = []
+
+    def add(level: str, status: str, reason: str) -> None:
+        findings.append(Finding(level, status, reason))
+
+    if not isinstance(receipt, dict) or (
+            violations and not isinstance(receipt.get("segments"), list)):
+        # The refusal checks below read fields, and a document that failed the
+        # schema may not have them. `verify([])` used to raise AttributeError
+        # where the plain validator printed the violation and exited 1.
+        for level in LEVELS:
+            add(level, NOT_ESTABLISHED,
+                "this document is not a receipt this validator can read; "
+                "nothing is established over a shape that failed the schema")
+        return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    unknown = _unknown_digests(receipt)
+    if unknown:
+        for level in LEVELS:
+            add(level, REFUSED,
+                "this receipt carries a digest in an algorithm this verifier "
+                f"cannot recompute ({unknown[0]}). Reporting anything about it "
+                "would be reporting about arithmetic nobody here performed")
+        return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    # A REFUSAL OUTRANKS A VIOLATION, and the first version had it the other
+    # way round. An unknown network is also a P5 violation, so the report said
+    # "not established, the document is wrong" for a document that may be
+    # perfectly correct on a chain we simply cannot read. Those are different
+    # answers, and the wrong one is the one that sounds like a finding.
+    for anchor in receipt.get("anchors") or []:
+        if isinstance(anchor, dict) and \
+                anchor.get("network") not in KNOWN_ANCHOR_NETWORKS:
+            for level in LEVELS:
+                add(level, REFUSED,
+                    f"this receipt is anchored on {anchor.get('network')!r}, "
+                    "which this verifier cannot evaluate. Known: "
+                    f"{', '.join(sorted(KNOWN_ANCHOR_NETWORKS))}")
+            return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    segments_field = receipt.get("segments")
+    for index, segment in enumerate(
+            segments_field if isinstance(segments_field, list) else []):
+        for position in ("begin", "end"):
+            if not isinstance(segment, dict):
+                continue
+            entry = segment.get(position)
+            ack = entry.get("witness") if isinstance(entry, dict) else None
+            if isinstance(ack, dict) and \
+                    ack.get("algorithm") not in KNOWN_WITNESS_ALGORITHMS:
+                for level in LEVELS:
+                    add(level, REFUSED,
+                        f"segment {index}'s {position.upper()} carries an "
+                        f"acknowledgement signed with "
+                        f"{ack.get('algorithm')!r}, which this verifier cannot "
+                        "name. An attestation type we cannot read must not be "
+                        "put on the same footing as one we can. Known: "
+                        f"{', '.join(sorted(KNOWN_WITNESS_ALGORITHMS))}")
+                return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    if violations:
+        for level in LEVELS:
+            add(level, NOT_ESTABLISHED,
+                f"the receipt does not satisfy the contract "
+                f"({len(violations)} violation(s)); nothing is established over "
+                "a document that is not what it says")
+        return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    segments = receipt["segments"]
+    last = segments[-1]
+    anchors = receipt.get("anchors", [])
+
+    # -- INTEGRITY ---------------------------------------------------------
+    if trace is None:
+        add("INTEGRITY", NOT_ESTABLISHED,
+            "no trace was supplied. The receipt's own arithmetic checks out, "
+            "which says the commitments are internally consistent and nothing "
+            "at all about a run")
+    elif "end" not in last:
+        add("INTEGRITY", NOT_ESTABLISHED,
+            "the run's last segment has no END, so there is no root in the "
+            "receipt to compare this trace against")
+    else:
+        computed = derived_root(trace)
+        claimed = last["end"]["commitment"]["root"]
+        trace_run = (trace.get("run") or {}).get("run_id")
+        receipt_run = last["end"]["commitment"]["run_id"]
+        if receipt_run != trace_run:
+            # Comparing roots alone is not enough: a holder can pair a receipt
+            # about run A with a valid trace for run B, and the roots would be
+            # compared without either document ever claiming to be about the
+            # other. The root says WHAT was executed; the run_id says WHOSE.
+            add("INTEGRITY", NOT_ESTABLISHED,
+                f"this receipt is about run {receipt_run!r} and this trace is "
+                f"run {trace_run!r}. They are documents about two different "
+                "executions, whatever their roots do")
+        elif computed is None:
+            add("INTEGRITY", NOT_ESTABLISHED,
+                "this trace derives no root: it is unfinished, below schema "
+                "3.0.0, or its own chain does not recompute. The receipt is "
+                "not the thing at fault here")
+        elif computed != claimed:
+            add("INTEGRITY", NOT_ESTABLISHED,
+                f"this trace derives {computed} and the receipt's END commits "
+                f"to {claimed}. They are two different documents")
+        else:
+            add("INTEGRITY", ESTABLISHED,
+                "the trace's chain recomputes to the root the END committed "
+                "to, and the END is inside a sealed window whose root the "
+                "proof reaches")
+
+    # -- EXISTENCE and RETENTION ------------------------------------------
+    covered = {checkpoint_digest(entry["checkpoint"])
+               for segment in segments
+               for entry in (segment["begin"], segment.get("end"))
+               if entry is not None}
+    published = [a for a in anchors
+                 if a["state"] == "anchored" and a["checkpoint"] in covered]
+    pending = [a for a in anchors if a["state"] == "pending"]
+    if published:
+        # **This verifier contacts no network, and an anchor is a CLAIM until
+        # somebody does.** ADR-021 decision 8 is explicit that for EXISTENCE it
+        # needs the chain and not us — and the first version of this function
+        # read `state: "anchored"` out of the receipt and reported EXISTENCE
+        # established, which let a holder mint the property by typing it. An
+        # allow-listed network says we could evaluate that chain, never that we
+        # did.
+        #
+        # So the honest status is CLAIMED, and what this verifier can offer
+        # instead of a verdict is the address of the thing it declined to
+        # check. Contacting the chain belongs in the anchor plugs (phase 3),
+        # not in a contract validator that must run offline and stdlib-only.
+        lookups = []
+        for anchor in published:
+            base = ANCHOR_EXPLORERS.get(anchor["network"], "")
+            lookups.append(f"{anchor['network']} {anchor['reference']}"
+                           + (f" — {base}{anchor['reference']}" if base else ""))
+        where = "; ".join(lookups)
+        add("EXISTENCE", UNCHECKED,
+            f"this receipt CLAIMS publication at {where}. This verifier "
+            "contacts no network, so it has not confirmed that transaction "
+            "exists or that it commits to this checkpoint. Look it up and the "
+            "answer is yours, not ours — which is the point")
+        add("RETENTION", UNCHECKED,
+            "it rests entirely on the anchor above. If that transaction is "
+            "real and carries this checkpoint, removing or reordering the "
+            "commitment would mean rewriting a chain that is already "
+            "published; if it is not, nothing here has left its author")
+    elif pending:
+        add("EXISTENCE", NOT_YET,
+            "an anchor is recorded as `pending`. An intention to publish is "
+            "not a publication, and until it confirms this receipt supports "
+            "INTEGRITY and nothing more")
+        add("RETENTION", NOT_YET,
+            "the checkpoint has not left the operator's control yet, and a "
+            "checkpoint that has not left is one more file its author can "
+            "rewrite")
+    else:
+        add("EXISTENCE", NOT_ESTABLISHED,
+            "no anchor is present. `LOCAL` means written, never published — "
+            "ADR-020: \"checkpointed\" means externally anchored, and a local "
+            "chain proves nothing to a third party")
+        add("RETENTION", NOT_ESTABLISHED,
+            "nothing here has left the operator's machine, so nothing here "
+            "resists its author")
+
+    # -- EXECUTION_CONTINUITY ---------------------------------------------
+    first_begin = segments[0]["begin"]
+    ack = first_begin.get("witness")
+    if ack is None:
+        add("EXECUTION_CONTINUITY", NOT_ESTABLISHED,
+            "the run's first BEGIN carries no acknowledgement. The property "
+            "holds when the BEGIN left the operator's unilateral control "
+            "before the outcome was known, and a local write does not do that")
+    else:
+        add("EXECUTION_CONTINUITY", NOT_ESTABLISHED,
+            f"an acknowledgement from {ack['witness_id']!r} is present and "
+            "bound to this commitment, and **its signature was not checked**: "
+            "this verifier holds no key for that witness. Binding is what "
+            "makes the signature checkable by somebody who does; it is not a "
+            "substitute for checking it")
+
+    # -- the levels this distribution cannot reach ------------------------
+    add("PROVENANCE", NOT_ESTABLISHED,
+        "no signature over this evidence was verified. This distribution "
+        "produces no keys and this verifier was given none")
+    add("IDENTITY", NOT_ESTABLISHED,
+        "binding a key to a legal entity is ADR-020 level 6, which is sold "
+        "rather than shipped, and nothing here attempts it")
+    add("LEGAL_TIME", NOT_ESTABLISHED,
+        "a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times "
+        "in this receipt are the writer's own clock")
+
+    # -- what the reader must not be allowed to misread --------------------
+    unfinished = [i for i, s in enumerate(segments) if "end" not in s]
+    if unfinished:
+        notes.append(
+            "segment(s) " + ", ".join(str(i) for i in unfinished) +
+            " have a BEGIN and no END. That is AN EXECUTION THAT LEFT NO "
+            "COMPLETION, and it is never a finding of suppression: a process "
+            "can die, a stream driver can be abandoned mid-iteration, and "
+            "ADR-020 declares that class rather than discovering it. It is a "
+            "question, not a verdict.")
+    if len(segments) > 1:
+        notes.append(
+            f"this run has {len(segments)} segments. Each one's claim to "
+            "continue its predecessor is checkable only against that "
+            "predecessor's whole BUNDLE — bundle_version, the complete "
+            "graph_spec and the trace. Whoever holds only this receipt cannot "
+            "check it, and its absence makes the claim UNVERIFIABLE rather "
+            "than false.")
+    if trace is not None and trace.get("run", {}).get("resume"):
+        stated = trace["run"]["resume"]["bundle_fingerprint"]
+        link = segments[-1]["begin"]["commitment"].get("continues") or {}
+        if link.get("bundle_fingerprint") != stated:
+            violations = violations + [Violation(
+                "V1", "$.segments[-1].begin.commitment.continues",
+                f"this trace resumed from {stated} and the receipt's last "
+                f"segment says it continued {link.get('bundle_fingerprint')}. "
+                "The receipt is not this trace's")]
+            findings = [Finding(f.level, NOT_ESTABLISHED, f.reason)
+                        if f.level == "INTEGRITY" else f for f in findings]
+
+    return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+
+def format_verdict(verdict: Verdict) -> str:
+    """The report, written so the refusals are as loud as the successes."""
+    lines: list[str] = []
+    for violation in verdict.violations:
+        lines.append(f"{violation.rule} {violation.path}: {violation.message}")
+    if verdict.violations:
+        lines.append("")
+    width = max(len(level) for level in LEVELS)
+    for finding in verdict.findings:
+        lines.append(f"  {finding.level.ljust(width)}  {finding.status.upper()}")
+        lines.append(f"  {' ' * width}  {finding.reason}")
+    for note in verdict.notes:
+        lines.append("")
+        lines.append(f"  NOTE  {note}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         # Left to argparse rather than hardcoded: this program is now reached
@@ -3029,6 +3435,14 @@ def main(argv: list[str] | None = None) -> int:
         help="GraphSpec file enabling the spec-correlated trace rules (T5, T8)",
     )
     parser.add_argument(
+        "--trace",
+        help=(
+            "the trace a receipt is claimed to be about; turns `receipt` into "
+            "the verifier of ADR-021 decision 8, which reports what it could "
+            "establish per ADR-020's levels and refuses rather than guesses"
+        ),
+    )
+    parser.add_argument(
         "--allow-incomplete",
         action="store_true",
         help=(
@@ -3040,6 +3454,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.artifact not in ("trace", "jsonl") and (args.spec or args.allow_incomplete):
         parser.error("--spec and --allow-incomplete apply to trace/jsonl only")
+    if args.trace and args.artifact != "receipt":
+        parser.error("--trace applies to receipt only")
 
     try:
         # Bytes, then an explicit decode — NEVER read_text().  Python's
@@ -3103,7 +3519,22 @@ def main(argv: list[str] | None = None) -> int:
         elif args.artifact == "checkpoint":
             violations = validate_checkpoint(doc)
         elif args.artifact == "receipt":
-            violations = validate_receipt(doc)
+            trace_side = None
+            if args.trace:
+                try:
+                    trace_side = _loads_strict(
+                        Path(args.trace).read_bytes().decode("utf-8"))
+                except (OSError, UnicodeDecodeError, ValueError) as exc:
+                    print(f"error: cannot load --trace {args.trace}: {exc}",
+                          file=sys.stderr)
+                    return 2
+            verdict = verify(doc, trace_side)
+            print(format_verdict(verdict))
+            # Exit 1 on a receipt that breaks the contract, and ALSO on a
+            # refusal: a verifier that could not evaluate what it was given has
+            # not said yes, and a caller reading only the exit code must not be
+            # able to mistake "I cannot tell" for "verified".
+            return 1 if (verdict.violations or verdict.refused) else 0
         else:
             violations = validate_trace(doc, spec=spec, expect_complete=expect_complete)
             trace_doc = doc if isinstance(doc, dict) else None
