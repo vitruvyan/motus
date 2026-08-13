@@ -11,71 +11,105 @@ Sequence is load-bearing. Sizes are estimates and say so.
 
 ## Where we are, in facts
 
-- **0.8.1** is the released version. Trace schema **3.0.0** and the derived
-  `Trace.root` (ADR-019) are written and **not merged**: PRs #76 → #77 → #78 are
-  stacked, CI green on all three, blocked on unresolved review threads;
+*Last reconciled against the repository on 2026-08-13. This section is a
+statement about the code, not about intentions; when it disagrees with the
+code, it is this section that is wrong.*
+
+- **0.9.0** is the released version, carrying trace schema **3.0.0** and the
+  derived `Trace.root` (ADR-019). It shipped with the cumulative performance
+  gate **failing**, under ADR-018 and with a fresh real-workload measurement
+  — that is a documented exception, not a passing gate;
 - **ADR-020** (the trust model) and **ADR-021** (the two interfaces and the
-  accumulator) are ACCEPTED;
-- `src/vitruvyan_motus/commitments.py` exists — the arithmetic only. No runtime
-  path, no store, no network. The runtime does not import it, and a test asserts
-  that;
-- **nothing is anchored anywhere.** #51's hard constraint — verifying a trace
-  against an anchor, always open — still has no code.
+  accumulator) are ACCEPTED. **One erratum to ADR-020 is PROPOSED and awaits
+  the founder**: the residual class of `EXECUTION_CONTINUITY` was written too
+  narrowly — not "a process killed between the two writes" but *a run that
+  reached no terminal record*, of which process death is one member and an
+  abandoned stream driver is another;
+- `src/vitruvyan_motus/commitments.py` is on `main` — the arithmetic only;
+- **`src/vitruvyan_motus/commitlog.py` and the `BEGIN`/`END` lifecycle are
+  written and in review** (#82, four adversarial rounds). Not merged;
+- **one root is anchored**, on TRON Nile, txid `6010ded8…`, block 70013920,
+  memo carrying the full root. Demonstration only — there is still no
+  verifier, so #51's hard constraint (verifying a trace against an anchor,
+  always open) still has no code. Phase 2 is what closes that, and until it
+  does the anchor proves something we cannot yet let anybody check;
+- the runtime still does not import the commitment modules unless configured,
+  and a subprocess test asserts it by inspecting `sys.modules`.
 
 ---
 
-## Phase 0 — close what is open
+## Phase 0 — close what is open — **DONE, less the page**
 
-*Days. Nothing below can start cleanly while this is in flight.*
+1. ✅ triage the seven Codex findings on #77;
+2. ✅ merge **#76 → #77 → #78** in order;
+3. ✅ **release 0.9.0**, with the ADR-018 exception recorded in the release
+   evidence and every failing ratio stated in the README;
+4. ✅ anchor the demo root on TRON Nile. `demo/anchor_root.py` is idempotent:
+   it queries the chain before signing and refuses if the scanner cannot
+   answer, so re-running it cannot mint a second anchor for the same root;
+5. ⏸ the demo page on `vitruvyan.com/motus/attack` — **deferred by the
+   founder**, not blocked. Brief in `docs/SITE_ATTACK_DEMO.md`, to be
+   implemented by a separate agent in frontier.
 
-1. triage the seven Codex findings on #77 — reproduce each, fix the real ones,
-   resolve the threads with reasons;
-2. merge **#76 → #77 → #78** in order;
-3. **release 0.9.0.** ADR-006 couples the version to committed baseline
-   evidence, so the bump belongs to a release that regenerates it — schema
-   3.0.0 is a breaking contract revision and cannot ride 0.8.1;
-4. anchor the demo root on TRON Nile and regenerate the demo payload. **Blocked
-   on one founder action**: a faucet click at `nileex.io`;
-5. the demo page lands on `vitruvyan.com/motus/attack` (frontier, separate
-   agent, brief in `docs/SITE_ATTACK_DEMO.md`).
-
-**Ships:** an anchorable root, in a release, with a page that demonstrates it.
+**Shipped:** an anchored root, in a release. The page that demonstrates it is
+the one piece outstanding, and it is a founder scheduling call.
 
 ---
 
-## Phase 1 — the commitment log
+## Phase 1 — the commitment log — **IN PROGRESS**
 
 *Weeks. The only phase that touches the hot path.*
 
-1. **`BEGIN`/`END` lifecycle in the runtime.** `BEGIN` durable before the first
-   node executes; `END` on every terminal path — success, failure, refusal,
-   cancellation, exhausted retry. The hook exists: `bind(header)` →
-   `TraceSink.open_run`. **Adversarial round before it lands**, non-negotiable:
-   this is the first Motus code that can lose a run's evidence by being slow;
-2. **the local append-only store.** One chain per writer (ADR-021 §5). Crash
-   recovery, restart, and the fork case — a restored backup whose head
-   disagrees with a published checkpoint is reported as a fork, never repaired
-   silently;
-3. **checkpoint sealing**, and the interval. ADR-021 refuses to name a number
-   until it is derived from run-duration distribution against cost per anchored
-   checkpoint. **Measure first, then choose, or ship without a default**;
-4. **contract work**: schemas for commitment, checkpoint and receipt; the
-   `validate.py` rules that recompute them. Lands together, per the schema's own
-   wording, or not at all;
-5. **release 0.10.0.**
+1. ✅ **`BEGIN`/`END` lifecycle in the runtime** — written, in review (#82).
+   `BEGIN` durable before the first node executes; `END` on every terminal
+   path. Four adversarial rounds, each of which found a defect in the previous
+   round's fix. Two of those defects were the same shape twice — a commit
+   placed where a failure leaks the lifecycle lock and wedges every later run
+   — first on the `BEGIN` side, then on the `END` side;
+2. ✅ **the local append-only store** — written, in review (#82). One chain per
+   writer (ADR-021 §5), `flock`, crash recovery on bytes, and the fork case:
+   a head that disagrees with a published checkpoint is reported, never
+   repaired;
+3. ⏳ **checkpoint sealing**, and the interval. **The mechanism exists and is
+   verified** — `seal(at)` recomputes the window's Merkle root and pins it in
+   the checkpoint. What is undecided is *when to call it*. ADR-021 refuses to
+   name a number until it is derived from run-duration distribution against
+   cost per anchored checkpoint. **Measure first, then choose, or ship without
+   a default** — shipping without one is an acceptable outcome and shipping a
+   guessed one is not;
+4. ⏳ **contract work**: schemas for commitment, checkpoint and receipt; the
+   `validate.py` rules that recompute them. Lands together, per the schema's
+   own wording, or not at all. **This is the load-bearing item of the phase.**
+   `contract/` holds two schemas today, `trace` and `graphspec`; until the
+   commitment formats join them, the log is our code rather than a format
+   somebody else can read — and phase 4 has nothing to freeze;
+5. ⏳ **release 0.10.0.**
 
 **Unlocks:** `RETENTION`. Not yet `EXECUTION_CONTINUITY` — that needs phase 3.
 
+**Also owed inside this phase:**
+
+- the **ADR-020 erratum** above, still PROPOSED. **This one is the founder's**
+  — the ADR is ACCEPTED and correcting what it says is not mine to do;
+- **#75** — a resumed run's segments are not chained to each other, so an
+  anchor covers one segment. The roadmap has always placed this *during*
+  phase 1 and the phase is now open; settling it after the formats are frozen
+  would mean changing them again.
+
 **The invariant to defend all through this phase:** unconfigured, Motus is
-bit-for-bit 0.8.1. The moment that stops being true, Motus has become a service
-and nobody decided it.
+bit-for-bit the last release — 0.9.0 today. The moment that stops being true,
+Motus has become a service and nobody decided it. It is currently enforced by a
+subprocess test that runs a real graph and asserts no module whose name contains
+`commit` was loaded; keep the enforcement mechanical, because this is exactly
+the kind of invariant that erodes one convenient import at a time.
 
 ---
 
-## Phase 1b — the integration MCP
+## Phase 1b — the integration MCP — **NOT STARTED**
 
 *Days, in parallel with phase 1. Gated by nothing in the trust model: it touches
-no receipt, no anchor, and promises nothing about audit.*
+no receipt, no anchor, and promises nothing about audit. Its ADR — carrying the
+derivation rule below — comes before any code.*
 
 You install Motus, point your coding agent at the MCP, and start building
 without reading three hundred lines of prose.
@@ -228,8 +262,8 @@ verifying.
 **The residues**, each needing its own ADR and its own round:
 
 - **#75** — a resumed run's segments are not chained to each other, so an anchor
-  covers one segment. This one touches the commitment design directly and should
-  be settled *during phase 1*, not after;
+  covers one segment. Listed under phase 1 above, where it is now due: phase 1
+  is open, and this touches the commitment design directly;
 - **#74** — the root commits to numbers at binary64 precision;
 - **#73** — a trace cannot say whether its evidence reached the sink;
 - **#52** — `result_fingerprint`, superseding ADR-013.
