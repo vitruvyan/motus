@@ -71,6 +71,28 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P5` | An anchor on a network this validator cannot evaluate. ADR-020: *a `VERIFIED` on a chain the verifier cannot evaluate is the worst lie this system can tell* |
 | `P6` | A chain of segments the receipt asserts by position and by nothing else: a later segment that continues nothing, one that names a predecessor other than the segment before it, or a segment with an `END` that has a successor — a trace that reached a terminal record cannot be resumed |
 
+### What the verifier will not tell you
+
+`motus-validate receipt <receipt> --trace <trace>` answers all seven ADR-020
+levels, including the ones it could not reach. Three of its refusals are the
+point of the tool rather than limitations of it:
+
+- **an anchor is a CLAIM.** This validator contacts no network — it is offline
+  and stdlib-only by design — so `state: "anchored"` in a receipt is something
+  the holder typed. `EXISTENCE` and `RETENTION` are reported as *claimed,
+  unchecked*, with the explorer URL, so the reader can settle it against a
+  chain we do not operate. ADR-021 decision 8: for `EXISTENCE` it needs the
+  chain, and not us;
+- **a witness acknowledgement does not establish `EXECUTION_CONTINUITY`.** It
+  is bound to the commitment, which is what makes its signature checkable by
+  somebody holding the witness's key. This validator holds none, and says so;
+- **an unknown hash algorithm, anchor network or signature algorithm ends the
+  answer.** Not a downgrade — a refusal, and the CLI exits non-zero, so a
+  caller reading only the exit code cannot mistake *I cannot tell* for
+  *verified*. **A refusal outranks a violation**: an unknown network is also a
+  P5 violation, and reporting it as one says "this document is wrong" about a
+  document that may be perfectly correct on a chain we cannot read.
+
 ## Fingerprints (canonical form)
 
 Where a schema references a fingerprint, it means: SHA-256 over the canonical

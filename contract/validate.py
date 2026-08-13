@@ -3018,6 +3018,7 @@ def validate_receipt(document: dict) -> list[Violation]:
 ESTABLISHED = "established"
 NOT_ESTABLISHED = "not established"
 NOT_YET = "not yet"
+UNCHECKED = "claimed, unchecked"
 REFUSED = "refused"
 
 #: The levels of ADR-020, in order. Every report answers all seven, because a
@@ -3028,6 +3029,19 @@ LEVELS = (
 )
 
 KNOWN_DIGEST_PREFIX = "sha256:"
+
+#: Signature algorithms this verifier is competent to name. ADR-021 decision 8
+#: refuses an unknown ATTESTATION TYPE, and an acknowledgement signed with
+#: something we cannot name is one: reporting it as "present but unchecked"
+#: would put an unreadable object on the same footing as a readable one.
+KNOWN_WITNESS_ALGORITHMS = frozenset({"ed25519"})
+
+#: Where a reader can look a published anchor up for themselves. This verifier
+#: does not contact any network — see `verify` — so what it can offer instead
+#: is the address of the thing it declined to check.
+ANCHOR_EXPLORERS = {
+    "tron:nile": "https://nile.tronscan.org/#/transaction/",
+}
 
 
 @dataclass(frozen=True)
@@ -3152,6 +3166,17 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
     def add(level: str, status: str, reason: str) -> None:
         findings.append(Finding(level, status, reason))
 
+    if not isinstance(receipt, dict) or (
+            violations and not isinstance(receipt.get("segments"), list)):
+        # The refusal checks below read fields, and a document that failed the
+        # schema may not have them. `verify([])` used to raise AttributeError
+        # where the plain validator printed the violation and exited 1.
+        for level in LEVELS:
+            add(level, NOT_ESTABLISHED,
+                "this document is not a receipt this validator can read; "
+                "nothing is established over a shape that failed the schema")
+        return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
     unknown = _unknown_digests(receipt)
     if unknown:
         for level in LEVELS:
@@ -3175,6 +3200,26 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
                     "which this verifier cannot evaluate. Known: "
                     f"{', '.join(sorted(KNOWN_ANCHOR_NETWORKS))}")
             return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
+    segments_field = receipt.get("segments")
+    for index, segment in enumerate(
+            segments_field if isinstance(segments_field, list) else []):
+        for position in ("begin", "end"):
+            if not isinstance(segment, dict):
+                continue
+            entry = segment.get(position)
+            ack = entry.get("witness") if isinstance(entry, dict) else None
+            if isinstance(ack, dict) and \
+                    ack.get("algorithm") not in KNOWN_WITNESS_ALGORITHMS:
+                for level in LEVELS:
+                    add(level, REFUSED,
+                        f"segment {index}'s {position.upper()} carries an "
+                        f"acknowledgement signed with "
+                        f"{ack.get('algorithm')!r}, which this verifier cannot "
+                        "name. An attestation type we cannot read must not be "
+                        "put on the same footing as one we can. Known: "
+                        f"{', '.join(sorted(KNOWN_WITNESS_ALGORITHMS))}")
+                return Verdict(tuple(findings), tuple(violations), tuple(notes))
 
     if violations:
         for level in LEVELS:
@@ -3201,7 +3246,18 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
     else:
         computed = derived_root(trace)
         claimed = last["end"]["commitment"]["root"]
-        if computed is None:
+        trace_run = (trace.get("run") or {}).get("run_id")
+        receipt_run = last["end"]["commitment"]["run_id"]
+        if receipt_run != trace_run:
+            # Comparing roots alone is not enough: a holder can pair a receipt
+            # about run A with a valid trace for run B, and the roots would be
+            # compared without either document ever claiming to be about the
+            # other. The root says WHAT was executed; the run_id says WHOSE.
+            add("INTEGRITY", NOT_ESTABLISHED,
+                f"this receipt is about run {receipt_run!r} and this trace is "
+                f"run {trace_run!r}. They are documents about two different "
+                "executions, whatever their roots do")
+        elif computed is None:
             add("INTEGRITY", NOT_ESTABLISHED,
                 "this trace derives no root: it is unfinished, below schema "
                 "3.0.0, or its own chain does not recompute. The receipt is "
@@ -3225,14 +3281,34 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
                  if a["state"] == "anchored" and a["checkpoint"] in covered]
     pending = [a for a in anchors if a["state"] == "pending"]
     if published:
-        where = ", ".join(f"{a['network']}:{a['reference']}" for a in published)
-        add("EXISTENCE", ESTABLISHED,
-            f"a checkpoint in this receipt is published at {where}, so the "
-            "committed state existed no later than that transaction")
-        add("RETENTION", ESTABLISHED,
-            "the commitment sits under a checkpoint that has left the "
-            "operator's control, so removing or reordering it would require "
-            "rewriting a chain that is already published")
+        # **This verifier contacts no network, and an anchor is a CLAIM until
+        # somebody does.** ADR-021 decision 8 is explicit that for EXISTENCE it
+        # needs the chain and not us — and the first version of this function
+        # read `state: "anchored"` out of the receipt and reported EXISTENCE
+        # established, which let a holder mint the property by typing it. An
+        # allow-listed network says we could evaluate that chain, never that we
+        # did.
+        #
+        # So the honest status is CLAIMED, and what this verifier can offer
+        # instead of a verdict is the address of the thing it declined to
+        # check. Contacting the chain belongs in the anchor plugs (phase 3),
+        # not in a contract validator that must run offline and stdlib-only.
+        lookups = []
+        for anchor in published:
+            base = ANCHOR_EXPLORERS.get(anchor["network"], "")
+            lookups.append(f"{anchor['network']} {anchor['reference']}"
+                           + (f" — {base}{anchor['reference']}" if base else ""))
+        where = "; ".join(lookups)
+        add("EXISTENCE", UNCHECKED,
+            f"this receipt CLAIMS publication at {where}. This verifier "
+            "contacts no network, so it has not confirmed that transaction "
+            "exists or that it commits to this checkpoint. Look it up and the "
+            "answer is yours, not ours — which is the point")
+        add("RETENTION", UNCHECKED,
+            "it rests entirely on the anchor above. If that transaction is "
+            "real and carries this checkpoint, removing or reordering the "
+            "commitment would mean rewriting a chain that is already "
+            "published; if it is not, nothing here has left its author")
     elif pending:
         add("EXISTENCE", NOT_YET,
             "an anchor is recorded as `pending`. An intention to publish is "

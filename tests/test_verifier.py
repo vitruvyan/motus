@@ -91,8 +91,9 @@ def test_a_receipt_for_a_different_run_does_not_establish_integrity(run):
     other["run"]["run_id"] = "somebody-else"
     verdict = validate.verify(receipt, other)
     assert verdict.status_of("INTEGRITY") == validate.NOT_ESTABLISHED
-    assert "two different documents" in verdict.findings[0].reason \
-        or "derives no root" in verdict.findings[0].reason
+    assert "two different executions" in verdict.findings[0].reason, (
+        "the receipt and the trace disagree about WHOSE run this is, and the "
+        "report must say that rather than reporting a digest mismatch")
 
 
 def test_without_a_trace_integrity_says_so_rather_than_passing(run):
@@ -142,16 +143,30 @@ def test_a_pending_anchor_is_not_yet_and_never_yes(run):
     assert verdict.status_of("INTEGRITY") == validate.ESTABLISHED
 
 
-def test_an_anchored_checkpoint_establishes_existence_and_retention(run):
+def test_an_anchor_is_a_claim_until_somebody_looks_it_up(run):
+    """The finding that mattered most on this PR.
+
+    The first version read `state: "anchored"` out of the receipt and reported
+    EXISTENCE established — so a holder could mint the property by typing it.
+    An allow-listed network says we COULD evaluate that chain, never that we
+    did, and this verifier contacts no network at all.
+
+    What it offers instead of a verdict is the address of the thing it declined
+    to check, which is more useful than a verdict we have not earned."""
     receipt, trace, digest = run
     receipt["anchors"] = [{
         "anchor_id": "tron", "network": "tron:nile", "checkpoint": digest,
         "state": "anchored", "reference": "6010ded8", "published_at": AT,
     }]
     verdict = validate.verify(receipt, trace)
-    assert verdict.status_of("EXISTENCE") == validate.ESTABLISHED
-    assert verdict.status_of("RETENTION") == validate.ESTABLISHED
-    assert "6010ded8" in verdict.findings[1].reason
+    assert verdict.status_of("EXISTENCE") == validate.UNCHECKED
+    assert verdict.status_of("RETENTION") == validate.UNCHECKED
+    reason = next(f.reason for f in verdict.findings if f.level == "EXISTENCE")
+    assert "CLAIMS publication" in reason
+    assert "contacts no network" in reason
+    assert "nile.tronscan.org/#/transaction/6010ded8" in reason, (
+        "the reader was not handed the lookup this verifier declined to make")
+    assert verdict.status_of("INTEGRITY") == validate.ESTABLISHED
 
 
 def test_an_anchor_for_a_checkpoint_not_in_this_receipt_establishes_nothing(run):
@@ -346,3 +361,64 @@ def test_a_record_that_lies_about_its_own_predecessor_derives_no_root(run):
     lying = copy.deepcopy(trace)
     lying["records"][1]["integrity"]["prev_hash"] = "sha256:" + "f" * 64
     assert validate.derived_root(lying) is None
+
+
+def test_a_receipt_about_another_run_is_caught(tmp_path):
+    """Comparing roots alone is not enough. A holder can pair a receipt about
+    run A with a valid trace for run B — every commitment real, every proof
+    real — and the roots get compared without either document ever having
+    claimed to be about the other. The root says WHAT was executed; the run_id
+    says WHOSE."""
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    traces = {}
+    for name in ("run-a", "run-b"):
+        result = Runtime(SPEC, {"a": _node}, sink=InMemoryTraceSink(),
+                         commitments=log).run(State.empty("x"), run_id=name)
+        traces[name] = result.trace.to_dict()
+    checkpoint = log.seal(AT)
+
+    def entry(run_id, kind):
+        proof = log.proof_for(run_id, kind, checkpoint.index)
+        return {"commitment": proof.commitment.to_dict(),
+                "proof": [{"side": s, "digest": d} for s, d in proof.path],
+                "checkpoint": checkpoint.to_dict()}
+
+    about_a = {"schema_version": "1.0.0", "mode": "local", "segments": [{
+        "begin": entry("run-a", CommitmentKind.BEGIN),
+        "end": entry("run-a", CommitmentKind.END)}]}
+    log.close()
+
+    assert validate.validate_receipt(about_a) == [], "the receipt itself is sound"
+    assert validate.verify(about_a, traces["run-a"]).status_of("INTEGRITY") == \
+        validate.ESTABLISHED
+
+    verdict = validate.verify(about_a, traces["run-b"])
+    assert verdict.status_of("INTEGRITY") == validate.NOT_ESTABLISHED
+    assert "two different executions" in verdict.findings[0].reason
+
+
+def test_an_unknown_witness_algorithm_is_refused(run):
+    """ADR-021 decision 8 refuses an unknown attestation type. Reporting one as
+    "present but unchecked" would put an object we cannot read on the same
+    footing as one we can."""
+    receipt, trace, _ = run
+    leaf = validate.commitment_leaf(receipt["segments"][0]["begin"]["commitment"])
+    receipt["mode"] = "witnessed"
+    receipt["segments"][0]["begin"]["witness"] = {
+        "witness_id": "witness.example", "commitment": leaf, "position": 0,
+        "acknowledged_at": AT, "algorithm": "rot13", "signature": "AAAA",
+    }
+    verdict = validate.verify(receipt, trace)
+    assert verdict.refused
+    assert "'rot13'" in verdict.findings[0].reason
+
+
+def test_a_document_that_is_not_a_receipt_is_reported_not_raised():
+    """`verify([])` raised AttributeError where the plain validator printed the
+    violation and exited 1 — introduced by putting the refusal checks, which
+    read fields, ahead of the schema return."""
+    for junk in ([], "receipt", 7, None, {}, {"segments": "no"}):
+        verdict = validate.verify(junk)
+        assert verdict.findings
+        assert all(f.status in (validate.NOT_ESTABLISHED, validate.REFUSED)
+                   for f in verdict.findings)
