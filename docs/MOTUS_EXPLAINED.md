@@ -122,6 +122,27 @@ Una run soppressa lascia un `BEGIN` senza `END`: si è cominciato qualcosa e non
 risulta nessuna conclusione. Non è una prova di colpa — un processo può morire,
 una macchina si può spegnere — ma è **una domanda che prima non esisteva**.
 
+**Quanto spesso capita innocentemente?** È la domanda che regge tutto: se un
+`BEGIN` spaiato è comune, non significa più niente. Nel documento di
+architettura avevamo scritto che il caso innocente è *«un processo ucciso tra le
+due scritture»*, e l'abbiamo tenuto per buono finché un attacco non ha prodotto
+un `BEGIN` spaiato **senza nessun crash**: basta smettere di leggere uno stream
+a metà, cosa che Motus permette apposta.
+
+Il meccanismo era giusto — in tutti e due i casi l'evidenza è incompleta
+esattamente come l'impegno, quindi i due documenti concordano. Sbagliata era
+l'*enumerazione*: avevamo descritto una classe nominando l'unico membro che ci
+era venuto in mente. E questo cambia una cosa sola, che però è quella portante:
+letto come *«processo ucciso»*, sembra che il caso sia raro **perché il software
+è affidabile**. Non è così. Il secondo membro dipende da quanto spesso si
+abbandona uno stream — che è una questione di *come si usa* il sistema, non di
+quanto è stabile. Va misurato dove gira, non dedotto da un documento.
+
+La lezione, per chi comincia: **quando verifichi un'affermazione su una classe
+di casi, il meccanismo non basta.** Noi avevamo controllato *«funziona per
+questo caso?»* — sì, sempre — e mai *«quali sono tutti i casi?»*. La prima
+domanda dà una risposta rassicurante e la seconda è quella che trova l'errore.
+
 E c'è una condizione che abbiamo dovuto imparare a dichiarare: non basta che il
 `BEGIN` venga *prima nel tempo*. Deve essere **uscito dalle mani di chi lo
 scrive** prima che l'esito sia noto, altrimenti lo si cancella con calma dopo.
@@ -165,6 +186,35 @@ Nessuno di quei dodici era arrivato a toccare una run vera, perché il magazzino
 è stato costruito **prima** di attaccarlo al motore — invertendo l'ordine
 scritto nella roadmap. È l'unica ragione per cui oggi sono aneddoti invece che
 incidenti.
+
+**Poi abbiamo attaccato l'aggancio al motore, e sono arrivati altri due round.**
+
+Il primo ha trovato che un `BEGIN` che non si riesce a scrivere costava **tutto
+il Runtime** e non solo quella run: il codice dell'impegno stava fuori dal
+blocco che rilascia il lucchetto del ciclo di vita, quindi il lucchetto restava
+chiuso e ogni run successiva veniva rifiutata. Abbiamo corretto, e il round
+dopo **ha trovato la stessa identica forma dall'altra parte**, sull'`END`. Due
+volte lo stesso errore, in due punti diversi, a distanza di un giorno.
+
+Sempre nel secondo round: la scadenza oltre la quale si smette di aspettare il
+testimone **esisteva solo nel commento** — non c'era nessun timeout nel codice —
+e un testimone che richiamava il magazzino da cui era stato invocato bloccava
+l'intero processo. Adesso la scadenza **non ha un valore di default**: se
+configuri un testimone la devi scrivere tu, perché un numero scelto da noi
+sarebbe un numero scelto senza sapere niente del tuo sistema.
+
+Un difetto, però, l'ha trovato **un mio test e non un agente**, ed è il più
+sottile di tutti. Per decidere se una run stava già fallendo, il codice
+chiedeva a Python *«c'è un'eccezione in corso?»* — ma lo chiedeva da dentro il
+blocco che gestisce le eccezioni, dove la risposta è **sempre sì**. Il
+controllo era scritto, sembrava giusto, e non poteva scattare mai. È il genere
+di errore che nessuna rilettura trova e che solo un test che lo *esercita* può
+scoprire.
+
+E infine: il magazzino accettava un oggetto finto. Nei test si usano oggetti
+segnaposto che dicono sì a tutto; il codice non verificava che quello che
+tornava fosse davvero un impegno, quindi una run poteva risultare registrata
+senza che nulla fosse stato scritto. Adesso lo verifica.
 
 ## Cosa Motus non promette
 
