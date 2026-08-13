@@ -11,6 +11,12 @@
   commitment, no anchor, and promises nothing about audit
 - **Advances:** roadmap phase 1b
 - **Amends:** nothing. Ships as an optional extra, absent unless installed
+- **Corrected:** 2026-08-13, after acceptance, by three findings on #85. Two
+  closed holes in decisions already taken — the sources were not packaged, and
+  the accepted costs were not recorded. **The third adds a constraint the
+  founder did not see when accepting**: the artefact crosses the wire before
+  any response-side filtering, so decision 4c was void for a remote server.
+  Decision 4e is new and is flagged as such
 
 ## Context
 
@@ -66,6 +72,21 @@ constraint that keeps the rule's force: an artefact is read by **running
 shipped code over it** — the validator, `Trace.root`, `GraphSpec.from_dict` —
 never by describing it. The MCP's job is to put the caller's artefact and our
 code in the same room and report what happened.
+
+**The sources must travel with the extra, and today they do not.** `pyproject`
+ships `validate.py` and the two schemas and nothing else: `contract/node-
+protocol.md`, the ADRs and `examples/` stay in the checkout, on the stated
+reasoning that "the reader who needs them already is" on GitHub. That reasoning
+holds for a human and fails for this server, whose reader is an agent inside a
+virtualenv. `pip install vitruvyan-motus[mcp]` must therefore ship every source
+the advertised tools cite, version-matched to the installed code.
+
+**And the server never fetches a source it did not install.** Not from GitHub,
+not from a documentation site, not from a newer release. An answer derived from
+`main` while the caller runs 0.9.0 is wrong in the most convincing way
+available — correct prose about code they do not have. A source the
+installation lacks makes the tool fail, which is decision 1's rule applied to
+its own distribution.
 
 ### 2. No prose lives in the server, and a test says so
 
@@ -140,6 +161,30 @@ only when the caller asks for it explicitly, **and says what it disclosed when
 it does**. An MCP that quietly widens what leaves a customer's machine to make
 an error message friendlier has made a decision that was not its to make.
 
+**4e. The artefact is named by path, never sent as content — which makes 4c
+true instead of merely intended.**
+
+*Added after acceptance. It is a real constraint and the founder should read
+it as one.*
+
+4c says a diagnosis reports structure rather than payload contents. That
+protects the **response** and does nothing about the **request**: a trace
+passed inline as a tool argument has already left the customer's machine before
+any filtering runs. Withholding payloads from the answer while transmitting
+them in the question is a protection in name only, and worse than none, because
+it reads as one in the ADR.
+
+So `motus_diagnose` takes a **filesystem path the server process can open**,
+and refuses inline artefact content. This is chosen over a warning because it
+fails closed by construction: a path is meaningless to a server on another
+machine, so a remote deployment **cannot work** rather than working while it
+leaks. The boundary is not a rule somebody must remember; it is the shape of
+the argument.
+
+Stated for completeness: this server is designed to run inside the caller's
+trust boundary. Anyone who tunnels it elsewhere has moved the artefacts
+themselves, and 4c is about what *we* do with them.
+
 **4d. "I cannot tell" is a permitted answer, and the tool must be able to give
 it.** A symptom the shipped code cannot reproduce gets that verdict and the
 commands that were tried. Guessing here costs more than silence, because a
@@ -160,6 +205,40 @@ never automate.
 `pip install vitruvyan-motus[mcp]`. No impact on the runtime, no import on any
 default path — the same house rule as ADR-021 decision 1. A library that grows
 a server by default has become a service, and nobody decided that.
+
+## The costs accepted
+
+House style asks what is being given up, so that a later implementer can tell
+an intended trade-off from a regression.
+
+**A second distribution surface.** `[mcp]` brings dependencies the kernel does
+not have and a server that can break independently of the runtime. The kernel's
+zero-dependency claim is unaffected — it is checked against a built wheel — but
+"Motus has no dependencies" becomes a sentence needing a qualifier, and every
+qualifier is eventually dropped by somebody quoting it.
+
+**Prose in the wheel.** Packaging the cited sources makes the distribution
+larger and couples a release to documents that used to move freely. That is the
+price of citations that are true after `pip install`, and it is paid
+deliberately.
+
+**Answers bounded by what executable checks can establish.** The validator
+knows what it refuses; it does not know what a good graph looks like. Half the
+questions an implementer has — *is this the right decomposition?* — are outside
+what this server may answer under decision 1, and it will answer "I cannot
+tell" to questions a summary-writing server would have answered fluently and
+sometimes wrongly. **We prefer the refusal, and it will be experienced as the
+tool being less useful than the alternative.**
+
+**Artefact access.** The server reads traces and graphs — real ones, with real
+data. 4e keeps that inside the caller's machine and 4c keeps it out of the
+answers, but the exposure exists and did not before, and it is the first Motus
+component that reads a customer's evidence for a purpose other than verifying
+it.
+
+**A place where documentation gaps can hide.** Recorded under *Consequences*
+as a thing to watch, and named here as a cost because it is one: after this
+ships, a badly documented rule can be well answered, and nothing will complain.
 
 ## Consequences
 
