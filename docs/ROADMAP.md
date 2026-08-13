@@ -153,15 +153,47 @@ derivation rule below — comes before any code.*
 You install Motus, point your coding agent at the MCP, and start building
 without reading three hundred lines of prose.
 
-**Why this and not more documentation.** We have the measurement. Commit
-`24adb30` is titled *"two examples for the part of the protocol a first
+**Why this and not more documentation. There are now three measurements, and
+the third is the one that settles it.**
+
+Commit `24adb30` is titled *"two examples for the part of the protocol a first
 integration gets wrong"* — so the gap was known and the answer was two more
 examples. An automated reviewer then read those examples and the Terraveler
 brief and **inverted the effect classification twice in one pull request**
 (#77): it called a database write `recorded_effect` where the protocol says
-`external_effect`, and read-only calls the opposite. A protocol with
-classifications does not travel in prose. It travels by answering the concrete
-question somebody is holding.
+`external_effect`, and read-only calls the opposite.
+
+**Then two of our own documents were found to disagree, which is worse and
+more useful.** Terraveler's field report of 2026-08-13, against v0.10.0:
+`check_verbatim` — a node issuing nothing but HTTP GETs — was declared
+`external_effect` with a comment calling it *"conservative"*. They reported it
+as an error against the brief. **It is not an error against the contract.**
+`node-protocol.md` §4.2 says *"Classify honestly or conservatively"*, and §4.1
+names `external_effect` the conservative reading. Their declaration is
+contract-valid.
+
+What it costs is real and it is not correctness: a read declared
+`external_effect` blocks resumes that were safe. That is an integration cost,
+paid silently, and nobody would ever be told they were paying it.
+
+**The finding is about us.** `docs/TERRAVELER_MOTUS_TRON.md` states the rule as
+*"the criterion is read or mutate, and nothing else"*, which leaves no room for
+the latitude the contract grants — and the prompt handed to their agent
+repeated the brief rather than the contract. Under the authority order the
+contract wins, so the brief is the document that is wrong.
+
+**And this is the argument for the MCP, in its strongest form.** An integrator
+holding two of our documents that disagree will reason their way to one of
+them, and there is no reason it should be the authoritative one. A
+`motus_classify` derived from `node-protocol.md` at call time answers what
+neither document says on its own: *`recorded_effect` is the honest class;
+`external_effect` is permitted and costs you safe resumes.* A tool that cites
+its source cannot drift from it, and cannot be out-argued by a second document
+that did.
+
+**A protocol with classifications does not travel in prose. It travels by
+answering the concrete question somebody is holding, from the source, at the
+moment they are holding it.**
 
 **The rule that makes it impossible to rot, and it goes in an ADR before any
 code:**
@@ -201,9 +233,11 @@ convince a human to care, and teach an implementer — which is why it is eight
 hundred lines and serves neither well. They separate: the README is what a human
 reads to decide; the MCP is what an agent uses to build.
 
-**Its first test is Terraveler**, who is integrating now. Handing them an MCP
-instead of a three-hundred-line brief is the strongest evidence we can get, and
-the brief is the document a review already found wrong in several places.
+**Its first test is Terraveler**, who has now completed the brief end to end
+against v0.10.0. Handing the next integrator an MCP instead of a
+three-hundred-line brief is the strongest evidence we can get — and the brief
+is the document that was read carefully, followed exactly, and turned out to
+disagree with the contract it was written from.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
@@ -332,6 +366,27 @@ in the payload* — not a placeholder, not a plausible-looking hex string. If
 auditability that fabricates one piece of evidence has demonstrated the
 opposite, and the fabrication does not need to be load-bearing to do that.
 
+**The scenario is already right; what changes is where the evidence comes
+from.** The current brief already requires the resealed forgery — an editor who
+recomputes every hash, whose trace then passes both local checks and disagrees
+only with the anchored root — and it already says that row is the sales
+argument for beat 3. **A rewrite must not discard that**, and the correction
+notice on this entry exists because an earlier draft of it implied the brief
+demonstrated something weaker than it does.
+
+What Terraveler's field report of 2026-08-13 adds is **provenance**, which is
+the half that was invented:
+
+> A value in a real anchored trace was tampered with, and the whole downstream
+> hash chain **correctly reprocessed** by hand-replicating Motus's own sealing
+> recipe. `motus-validate jsonl` returns **exit 0** on the forged document. It
+> fails `verify()` for one reason only: the on-chain memo was written before
+> the edit and names a different root.
+
+Real production evidence, a real Nile transaction, performed by somebody who is
+not us. Build the page on their run rather than on a fixture, and keep every
+requirement the brief already has.
+
 Built by a separate agent in frontier, from a brief written here.
 
 ---
@@ -353,8 +408,35 @@ runner allocation), #66 (validator under a hostile switch interval, in CI),
 #49 (distribution), #38 (H1), #40 (async resume).
 
 **Terraveler** is the first external integrator and the proving ground. Its
-brief is `docs/TERRAVELER_MOTUS_TRON.md`. Whatever it finds outranks whatever we
-think.
+brief is `docs/TERRAVELER_MOTUS_TRON.md`, and it **completed all three phases
+against v0.10.0 on 2026-08-13**. Whatever it finds outranks whatever we think,
+and what it found is recorded where each item is decided rather than summarised
+here — phase 1b for the classification error, phase 6 for the forgery
+demonstration.
+
+Two things from that report belong nowhere else and are kept here — and one
+correction to how it was first read: **their effect-class declaration was
+contract-valid**, not the error they and this document initially called it. See
+phase 1b; the finding turned out to be about our own documents disagreeing.
+
+Two things from that report belong nowhere else and are kept here:
+
+- **they voided their own published anchor rather than quietly re-anchoring.**
+  Their 0.8.1 anchor was made under trace schema 2.0.0, whose digests do not
+  chain, so the anchored value never moves when a non-terminal record is
+  rewritten — ADR-019 names their situation as the example. They added a
+  correction notice and an addendum instead of rewriting history. An external
+  party reaching that conclusion from the ADR alone, and acting against their
+  own interest on it, is the strongest validation this trust model has had;
+- **they re-implemented our isolation invariant instead of trusting it.**
+  `scripts/test_motus_inert.py` runs an unconfigured graph in a subprocess and
+  asserts `commitlog`, `commitments` and `sealing` never reach `sys.modules` —
+  written after reading our source rather than after reading ADR-021's comment
+  about it. Verified here: `commitlog` is imported nowhere in `src/` but
+  itself, and both `commitments` imports in `runtime.py` are function-local and
+  sit after the `if self._commitments is None: return` guard. Their reliance on
+  `a recorded_effect node cannot record external effects` is also sound — it is
+  enforced twice, in `context.py` and in `runtime.py`.
 
 **Documentation** tracks code and never leads it: README, `kb.vitruvyan.com`
 (repo `vitruvyan-docs`), and the site. Documenting unshipped behaviour is the
