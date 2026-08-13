@@ -2792,7 +2792,17 @@ def validate_checkpoint(document: dict) -> list[Violation]:
         load_checkpoint_schema(), _checkpoint_validator(), document, "SCHEMA")
     if violations:
         return violations
+    return _checkpoint_semantics(document)
 
+
+def _checkpoint_semantics(document: dict) -> list[Violation]:
+    """K-rules on a checkpoint, wherever it is standing.
+
+    Split out so an embedded checkpoint in a receipt is held to exactly what a
+    standalone one is. It was not, and a receipt could therefore legitimize a
+    checkpoint the checkpoint entry point rejects.
+    """
+    violations: list[Violation] = []
     span = document["last_sequence"] - document["first_sequence"] + 1
     if span != document["count"]:
         violations.append(Violation(
@@ -2818,13 +2828,83 @@ def validate_checkpoint(document: dict) -> list[Violation]:
     return violations
 
 
+def _entry_violations(entry: dict, where: str, expect_kind: str) -> list[Violation]:
+    """One commitment, its path and its checkpoint, checked by recomputation.
+
+    The checkpoint embedded here is put through the SAME semantics as a
+    standalone one. Without that, a receipt could legitimize a checkpoint the
+    checkpoint entry point rejects — count 99 over a range of three, or index 1
+    linking to nothing — because the P-rules only ever looked at the fields
+    they happened to need.
+    """
+    out: list[Violation] = []
+    body = entry["commitment"]
+    checkpoint = entry["checkpoint"]
+    leaf = commitment_leaf(body)
+
+    out += [Violation(v.rule, f"{where}.checkpoint{v.path[1:]}", v.message)
+            for v in _checkpoint_semantics(checkpoint)]
+
+    if body["kind"] != expect_kind:
+        out.append(Violation(
+            "P6", f"{where}.commitment.kind",
+            f"this position holds the run's {expect_kind.upper()} and carries a "
+            f"{body['kind'].upper()}. A receipt that pairs the wrong ends "
+            "describes a run nobody executed"))
+
+    try:
+        reached = _fold_path(leaf, entry["proof"])
+    except ValueError as exc:
+        reached = None
+        out.append(Violation("P1", f"{where}.proof", str(exc)))
+    if reached is not None and reached != checkpoint["window_root"]:
+        out.append(Violation(
+            "P1", f"{where}.proof",
+            f"this path takes the commitment to {reached}, and the checkpoint "
+            f"sealed {checkpoint['window_root']}. A proof that lands anywhere "
+            "else proves a different window"))
+
+    if not (checkpoint["first_sequence"] <= body["sequence"]
+            <= checkpoint["last_sequence"]):
+        out.append(Violation(
+            "P2", f"{where}.commitment.sequence",
+            f"sequence {body['sequence']} is outside the range this checkpoint "
+            f"sealed ({checkpoint['first_sequence']}.."
+            f"{checkpoint['last_sequence']}). A commitment proved against a "
+            "window it was never in is a proof about somebody else"))
+    if (body["tenant"], body["writer_id"]) != (checkpoint["tenant"],
+                                               checkpoint["writer_id"]):
+        out.append(Violation(
+            "P2", f"{where}.commitment.writer_id",
+            f"this commitment belongs to "
+            f"{body['tenant']}/{body['writer_id']} and the checkpoint to "
+            f"{checkpoint['tenant']}/{checkpoint['writer_id']}. One chain per "
+            "writer (ADR-021 decision 5), so these are two chains"))
+
+    ack = entry.get("witness")
+    if ack and ack["commitment"] != leaf:
+        out.append(Violation(
+            "C1", f"{where}.witness.commitment",
+            f"this acknowledgement names {ack['commitment']}, and the "
+            f"commitment beside it digests to {leaf}. An acknowledgement that "
+            "does not name what it acknowledges is decoration, and it would "
+            "carry a witnessed receipt's authority"))
+    return out
+
+
 def validate_receipt(document: dict) -> list[Violation]:
-    """What a holder presents, checked by recomputation rather than by reading.
+    """A run, as the chain of segments it actually was.
+
+    ADR-021 decision 7: a receipt carrying only the checkpoint and the
+    transaction proves a checkpoint and not a run. ADR-023 decision 1: the last
+    segment's root already binds every predecessor transitively, so a receipt
+    that can hold only one segment cannot present what it is claiming.
 
     Every rule here answers a question a verifier must not answer from the
     document's own say-so: does this path reach that root, is this commitment
-    inside that range, does this anchor name this checkpoint, and is the mode
-    it claims supported by what it actually carries.
+    inside that range, does this segment continue the one before it, does this
+    anchor name a checkpoint that is actually here, and is the mode it claims
+    supported by what it carries.
     """
     violations, structural = _j1_violations(document)
     if structural:
@@ -2834,46 +2914,62 @@ def validate_receipt(document: dict) -> list[Violation]:
     if violations:
         return violations
 
-    body = document["commitment"]
-    checkpoint = document["checkpoint"]
-    leaf = commitment_leaf(body)
+    segments = document["segments"]
+    for index, segment in enumerate(segments):
+        where = f"$.segments[{index}]"
+        violations += _entry_violations(segment["begin"], f"{where}.begin", "begin")
+        if "end" in segment:
+            violations += _entry_violations(segment["end"], f"{where}.end", "end")
+            if index != len(segments) - 1:
+                violations.append(Violation(
+                    "P6", f"{where}.end",
+                    "a segment with an END has a successor in this receipt, and "
+                    "a trace that reached a terminal record cannot be resumed. "
+                    "Either this is not the run's order, or these segments "
+                    "belong to different runs"))
+            if segment["end"]["commitment"]["run_id"] != \
+                    segment["begin"]["commitment"]["run_id"]:
+                violations.append(Violation(
+                    "P6", f"{where}.end.commitment.run_id",
+                    f"this segment begins as "
+                    f"{segment['begin']['commitment']['run_id']!r} and ends as "
+                    f"{segment['end']['commitment']['run_id']!r}. Two runs, not "
+                    "one segment"))
 
-    try:
-        reached = _fold_path(leaf, document["proof"])
-    except ValueError as exc:
-        reached = None
-        violations.append(Violation("P1", "$.proof", str(exc)))
-    if reached is not None and reached != checkpoint["window_root"]:
-        violations.append(Violation(
-            "P1", "$.proof",
-            f"this path takes the commitment to {reached}, and the checkpoint "
-            f"sealed {checkpoint['window_root']}. A proof that lands anywhere "
-            "else proves a different window"))
-
-    if not (checkpoint["first_sequence"] <= body["sequence"]
-            <= checkpoint["last_sequence"]):
-        violations.append(Violation(
-            "P2", "$.commitment.sequence",
-            f"sequence {body['sequence']} is outside the range this checkpoint "
-            f"sealed ({checkpoint['first_sequence']}.."
-            f"{checkpoint['last_sequence']}). A commitment proved against a "
-            "window it was never in is a proof about somebody else"))
-    if (body["tenant"], body["writer_id"]) != (checkpoint["tenant"],
-                                               checkpoint["writer_id"]):
-        violations.append(Violation(
-            "P2", "$.commitment.writer_id",
-            f"this commitment belongs to "
-            f"{body['tenant']}/{body['writer_id']} and the checkpoint to "
-            f"{checkpoint['tenant']}/{checkpoint['writer_id']}. One chain per "
-            "writer (ADR-021 decision 5), so these are two chains"))
+    for index in range(1, len(segments)):
+        this = segments[index]["begin"]["commitment"]
+        before = segments[index - 1]["begin"]["commitment"]
+        link = this.get("continues")
+        if link is None:
+            violations.append(Violation(
+                "P6", f"$.segments[{index}].begin.commitment.continues",
+                "this segment follows another in the receipt and states that it "
+                "continues nothing. A chain asserted by position and by nothing "
+                "else is a chain the holder arranged"))
+            continue
+        if link["run_id"] != before["run_id"]:
+            violations.append(Violation(
+                "P6", f"$.segments[{index}].begin.commitment.continues.run_id",
+                f"this segment continues {link['run_id']!r}, and the segment "
+                f"before it in this receipt is {before['run_id']!r}"))
+        elif link.get("writer_id") is not None and (
+                link["writer_id"] != before["writer_id"]
+                or link["sequence"] != before["sequence"]):
+            violations.append(Violation(
+                "P6", f"$.segments[{index}].begin.commitment.continues.sequence",
+                f"this segment names {link['writer_id']}/{link['sequence']} as "
+                f"its predecessor, and the segment before it in this receipt is "
+                f"{before['writer_id']}/{before['sequence']}"))
 
     mode = document["mode"]
-    ack = document.get("witness")
-    if mode in ("witnessed", "qualified") and ack and ack["commitment"] != leaf:
+    first = segments[0]["begin"]
+    if mode in ("witnessed", "qualified") and "witness" not in first:
         violations.append(Violation(
-            "P3", "$.witness.commitment",
-            f"this receipt claims {mode} on an acknowledgement of "
-            f"{ack['commitment']}, and its commitment digests to {leaf}"))
+            "P3", "$.mode",
+            f"this receipt claims {mode} and its first BEGIN carries no "
+            "acknowledgement. WITNESSED is the claim that the commitment left "
+            "the operator's control before the outcome was known, and nothing "
+            "here says it did"))
     if mode == "qualified":
         violations.append(Violation(
             "P3", "$.mode",
@@ -2881,18 +2977,20 @@ def validate_receipt(document: dict) -> list[Violation]:
             "(ADR-020 levels 6 and 7), and this distribution produces neither. "
             "A mode nothing here can establish must not be claimed here"))
 
-    anchor = document.get("anchor")
-    if anchor:
-        stated = checkpoint_digest(checkpoint)
-        if anchor["checkpoint"] != stated:
+    present = {checkpoint_digest(entry["checkpoint"])
+               for segment in segments
+               for entry in (segment["begin"], segment.get("end"))
+               if entry is not None}
+    for index, anchor in enumerate(document.get("anchors", [])):
+        if anchor["checkpoint"] not in present:
             violations.append(Violation(
-                "P4", "$.anchor.checkpoint",
-                f"this anchor published {anchor['checkpoint']}, and the "
-                f"checkpoint in this receipt digests to {stated}. An anchor "
-                "for a different checkpoint says nothing about this one"))
+                "P4", f"$.anchors[{index}].checkpoint",
+                f"this anchor published {anchor['checkpoint']}, and no "
+                "checkpoint in this receipt digests to it. An anchor for a "
+                "checkpoint that is not here says nothing about this run"))
         if anchor["network"] not in KNOWN_ANCHOR_NETWORKS:
             violations.append(Violation(
-                "P5", "$.anchor.network",
+                "P5", f"$.anchors[{index}].network",
                 f"this validator cannot evaluate the network "
                 f"{anchor['network']!r}, so it will not report what an anchor "
                 "there establishes. Known: "

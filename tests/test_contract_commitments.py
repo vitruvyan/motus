@@ -129,9 +129,13 @@ def test_a_receipt_built_from_a_real_store_validates_clean(store):
     receipt = {
         "schema_version": "1.0.0",
         "mode": "local",
-        "commitment": begin.to_dict(),
-        "proof": [{"side": s, "digest": d} for s, d in proof.path],
-        "checkpoint": checkpoint.to_dict(),
+        "segments": [{
+            "begin": {
+                "commitment": begin.to_dict(),
+                "proof": [{"side": s, "digest": d} for s, d in proof.path],
+                "checkpoint": checkpoint.to_dict(),
+            },
+        }],
     }
     assert validate.validate_receipt(receipt) == []
     assert validate.validate_checkpoint(checkpoint.to_dict()) == []
@@ -160,3 +164,42 @@ def test_the_validator_never_imports_the_implementation():
         "contract/validate.py imports the implementation it is the authority "
         f"over: {offenders}"
     )
+
+
+def test_a_receipt_cannot_legitimize_a_checkpoint_the_validator_rejects(store):
+    """An embedded checkpoint escaped K1 and K2 entirely: the P-rules only ever
+    read the fields they needed, so a receipt could carry `count: 99` over a
+    range of three, or `index: 1` linking to nothing, and exit clean.
+
+    A rule that holds at one entry point and not another is not a rule."""
+    store.begin("job-1", at=AT, nonce="n1")
+    checkpoint = store.seal(AT)
+    proof = store.proof_for("job-1", CommitmentKind.BEGIN, checkpoint.index)
+
+    tampered = checkpoint.to_dict()
+    tampered["count"] = 99
+    receipt = {
+        "schema_version": "1.0.0", "mode": "local",
+        "segments": [{"begin": {
+            "commitment": proof.commitment.to_dict(),
+            "proof": [{"side": s, "digest": d} for s, d in proof.path],
+            "checkpoint": tampered,
+        }}],
+    }
+    rules = {v.rule for v in validate.validate_receipt(receipt)}
+    assert "K1" in rules, (
+        f"the embedded checkpoint was not held to the K-rules; got {rules}")
+
+
+def test_an_anchored_receipt_the_contract_refuses_cannot_be_built(store):
+    """Authority order (ADR-001): the contract requires a publication time for
+    an anchored receipt, and the producer did not — so this class could build
+    an object the validator rejects. `anchored` without a time says the
+    publication finished and declines to say when, which is the one thing an
+    EXISTENCE claim is about."""
+    from vitruvyan_motus.commitments import AnchorReceipt
+
+    with pytest.raises(ValueError, match="publication time"):
+        AnchorReceipt(anchor_id="tron", network="tron:nile",
+                      checkpoint="sha256:" + "a" * 64, state="anchored",
+                      reference="6010ded8")

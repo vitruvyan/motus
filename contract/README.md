@@ -69,6 +69,7 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P3` | A mode this distribution cannot establish. `QUALIFIED` needs ADR-020 levels 6 and 7, and neither exists here |
 | `P4` | An anchor naming a checkpoint digest other than this receipt's |
 | `P5` | An anchor on a network this validator cannot evaluate. ADR-020: *a `VERIFIED` on a chain the verifier cannot evaluate is the worst lie this system can tell* |
+| `P6` | A chain of segments the receipt asserts by position and by nothing else: a later segment that continues nothing, one that names a predecessor other than the segment before it, or a segment with an `END` that has a successor — a trace that reached a terminal record cannot be resumed |
 
 ## Fingerprints (canonical form)
 
@@ -156,9 +157,13 @@ is `tests/contract/kernel.py`, exactly as described above.
   segment carries (ADR-023).
 - `checkpoint.v1.schema.json` — one sealed window: the Merkle root over its
   commitments, the range it covers, and the link to the checkpoint before it.
-- `receipt.v1.schema.json` — what a holder presents to a verifier. It travels
-  alone, so it declares its own version, and the mode it CLAIMS must be
-  supported by what it carries.
+- `receipt.v1.schema.json` — what a holder presents to a verifier: a RUN, as
+  the ordered chain of segments it actually was. ADR-021 decision 7 — a receipt
+  carrying only the checkpoint and the transaction proves a checkpoint and not
+  a run. Every segment has a BEGIN; only the LAST may have an END, because a
+  trace that reached a terminal record cannot be resumed. It travels alone, so
+  it declares its own version, and the mode it CLAIMS must be supported by what
+  it carries.
 - `node-protocol.md` — normative obligations of node code (RFC-2119
   language).
 - `guarantees.md` — the five invariants, durability profiles, replay

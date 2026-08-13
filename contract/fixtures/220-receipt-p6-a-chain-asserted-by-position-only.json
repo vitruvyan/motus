@@ -1,0 +1,82 @@
+{
+  "artifact": "receipt",
+  "expect": "invalid",
+  "spec": null,
+  "layer": "semantic",
+  "rule": "P6",
+  "reason_contains": "chain the holder arranged",
+  "instance": {
+    "schema_version": "1.0.0",
+    "mode": "local",
+    "segments": [
+      {
+        "begin": {
+          "commitment": {
+            "kind": "begin",
+            "tenant": "acme",
+            "writer_id": "w1",
+            "sequence": 0,
+            "run_id": "seg-a",
+            "at": "2026-08-13T09:00:00Z",
+            "nonce": "a"
+          },
+          "proof": [
+            {
+              "side": "right",
+              "digest": "sha256:2f10826a2827f76d6e9da078207844ee098f73bc9d5618309b68e56493a8d619"
+            },
+            {
+              "side": "right",
+              "digest": "sha256:bdaded9b9b876a4cf86738ccd5d77d44adc59af5c111e2fc3bfe1b3005611b96"
+            }
+          ],
+          "checkpoint": {
+            "tenant": "acme",
+            "writer_id": "w1",
+            "index": 0,
+            "window_root": "sha256:93b36ad56ef454ae37be0051a30e0bb691583f2e69678b118e7a489627a473c5",
+            "count": 3,
+            "first_sequence": 0,
+            "last_sequence": 2,
+            "sealed_at": "2026-08-13T09:00:00Z",
+            "previous": null
+          }
+        }
+      },
+      {
+        "begin": {
+          "commitment": {
+            "kind": "begin",
+            "tenant": "acme",
+            "writer_id": "w1",
+            "sequence": 1,
+            "run_id": "seg-b",
+            "at": "2026-08-13T09:00:00Z",
+            "nonce": "b"
+          },
+          "proof": [
+            {
+              "side": "left",
+              "digest": "sha256:3b6fe4765a9e3d1f680a4652b7af8e5a8bb080bd2ceed50dc9b0c080f75d10ad"
+            },
+            {
+              "side": "right",
+              "digest": "sha256:bdaded9b9b876a4cf86738ccd5d77d44adc59af5c111e2fc3bfe1b3005611b96"
+            }
+          ],
+          "checkpoint": {
+            "tenant": "acme",
+            "writer_id": "w1",
+            "index": 0,
+            "window_root": "sha256:93b36ad56ef454ae37be0051a30e0bb691583f2e69678b118e7a489627a473c5",
+            "count": 3,
+            "first_sequence": 0,
+            "last_sequence": 2,
+            "sealed_at": "2026-08-13T09:00:00Z",
+            "previous": null
+          }
+        }
+      }
+    ]
+  }
+}

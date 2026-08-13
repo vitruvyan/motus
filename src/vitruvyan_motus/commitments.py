@@ -184,6 +184,13 @@ class AnchorReceipt:
         if self.state == "anchored":
             _require_text(self.reference,
                           "an anchored receipt's transaction reference")
+            # The contract requires it (receipt.v1), and the producer did not,
+            # so this class could build an object the validator refuses --
+            # authority order backwards. `anchored` without a time says the
+            # publication finished and declines to say when, which is the one
+            # thing an EXISTENCE claim is about.
+            _require_text(self.published_at,
+                          "an anchored receipt's publication time")
         _require_text(self.anchor_id, "an anchor receipt's anchor_id")
         _require_text(self.network, "an anchor receipt's network")
         _require_digest(self.checkpoint, "anchored checkpoint")

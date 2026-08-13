@@ -1,56 +1,11 @@
 {
   "artifact": "receipt",
-  "expect": "invalid",
+  "expect": "valid",
   "spec": null,
-  "layer": "semantic",
-  "rule": "P3",
-  "reason_contains": "must not be claimed here",
   "instance": {
     "schema_version": "1.0.0",
-    "mode": "qualified",
+    "mode": "local",
     "segments": [
-      {
-        "begin": {
-          "commitment": {
-            "kind": "begin",
-            "tenant": "acme",
-            "writer_id": "w1",
-            "sequence": 0,
-            "run_id": "seg-1",
-            "at": "2026-08-13T09:00:00Z",
-            "nonce": "n1"
-          },
-          "proof": [
-            {
-              "side": "right",
-              "digest": "sha256:9da2adf0938cf23c8c006bd0e85e0607d20d6c5c89109b1541022a97e6056b93"
-            },
-            {
-              "side": "right",
-              "digest": "sha256:28350fc87c213c8ad34942f54c323cbc71b831bd6dbd633da21273a697abaee7"
-            }
-          ],
-          "checkpoint": {
-            "tenant": "acme",
-            "writer_id": "w1",
-            "index": 0,
-            "window_root": "sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb",
-            "count": 3,
-            "first_sequence": 0,
-            "last_sequence": 2,
-            "sealed_at": "2026-08-13T09:05:00Z",
-            "previous": null
-          },
-          "witness": {
-            "witness_id": "w.example",
-            "commitment": "sha256:7831b42fe416161fca00bc334c91727b86142a2ac99d63d8b4c0f9533594dd3b",
-            "position": 0,
-            "acknowledged_at": "2026-08-13T09:00:00Z",
-            "algorithm": "ed25519",
-            "signature": "AAAA"
-          }
-        }
-      },
       {
         "begin": {
           "commitment": {

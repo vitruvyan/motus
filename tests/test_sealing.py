@@ -102,3 +102,13 @@ def test_sealing_locally_is_not_the_rate_this_module_takes():
     report = describe([10.0], 60.0)
     assert "anchors_per_hour" in report
     assert "checkpoints_per_hour" not in report
+
+
+@pytest.mark.parametrize("bad", [0.0, -1e-9, float("nan"), float("inf")])
+def test_a_tolerance_that_cannot_terminate_is_refused(bad):
+    """A caller asking for exactness got an infinite loop: once rounding makes
+    the midpoint equal to a bound, the bounds stop moving while `high - low`
+    stays positive. Refused rather than clamped — a silently widened tolerance
+    answers a question nobody asked."""
+    with pytest.raises(ValueError, match="tolerance"):
+        interval_for([1.0, 2.0], target=0.5, tolerance=bad)

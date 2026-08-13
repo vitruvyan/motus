@@ -102,6 +102,14 @@ def interval_for(durations: Sequence[float], *, target: float,
     values = _durations(durations)
     if not 0.0 < target <= 1.0:
         raise ValueError("target coverage must be greater than 0 and at most 1")
+    # A caller asking for exactness gets an infinite loop otherwise: once
+    # rounding makes `middle` equal to a bound, the bounds stop moving while
+    # `high - low` stays positive. Refused rather than clamped, because a
+    # silently widened tolerance answers a question nobody asked.
+    if not tolerance > 0 or tolerance != tolerance or tolerance == float("inf"):
+        raise ValueError(
+            "tolerance must be a finite positive fraction; bisection on a "
+            "zero tolerance does not terminate")
     # Coverage is exactly 1 at the shortest run and below: anchor more often
     # than the fastest run finishes and every run is covered.
     low, high = min(values), max(values)
