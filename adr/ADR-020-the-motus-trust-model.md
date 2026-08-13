@@ -12,6 +12,11 @@
   attests to; without it there is nothing to attest)
 - **Advances:** #51, whose founder-decided split of 2026-08-07 this ADR states
   the *reason* for, and whose item 3 it makes writable
+- **Corrected:** 2026-08-13 by the founder — decision 3's residual class was
+  stated as one of its members. The correction is in decision 3, and the
+  reasoning and the reason it survived review are *Wrong turns 5*. No mechanism
+  and no guarantee changed; what changed is what a reader may assume about how
+  often an unpaired `BEGIN` occurs
 - **Amends:** nothing yet. This ADR adds no public API. It fixes the vocabulary
   and the limits that ADR-021 will be written against — and it establishes that
   ADR-021 is **two** interfaces, not one: a *witness* interface, immediate and
@@ -175,26 +180,38 @@ measurement — the distribution of run durations in a real deployment against t
 cost per anchored checkpoint — not chosen because it sounds prudent. ADR-021
 states the number and its derivation, or ships without a default.
 
-**Erratum, 2026-08-13 — PROPOSED, awaiting the founder.** The residual class
-below is stated too narrowly. It names a process killed between the two writes,
-and an adversarial round found a second member: a **live, healthy process that
-abandons a run** — a stream driver dropped mid-iteration, which this runtime
-treats as a supported usage mode rather than an error. The trace produced in
-that case is incomplete in exactly the same way, with no terminal record and no
-derived root, so the evidence and the commitment agree; but a reader of decision
-3 would have expected the class to be rare *because crashes are rare*, and it is
-not only crashes. The correct statement of the residual class is **a run that
-reached no terminal record**, of which process death is one member. Nothing else
-in this decision changes.
-
 **`BEGIN` without `END` is a signal only if it is rare.** If ordinary crashes
 and timeouts produce the same signature as suppression, the property is noise.
 This is why `END` is required on failure paths; the runtime already models that
-lifecycle (#63, #67). The residual class is a process killed between the two
-writes, and it is declared here rather than discovered: **a receipt set can
-contain `BEGIN` without `END` for reasons that are entirely innocent, and no
-verifier may report suppression.** It reports an execution that left no
-completion, which is a question, not a verdict.
+lifecycle (#63, #67).
+
+**The residual class is a run that reached no terminal record** *(corrected
+2026-08-13 — see Wrong turns 5; it was previously stated as "a process killed
+between the two writes", which is one member of the class and not the class)*.
+It has at least two members, and they differ in kind:
+
+- a **process killed between the two writes** — a failure;
+- a **live, healthy process that abandons a run** — a stream driver dropped
+  mid-iteration, which this runtime treats as a supported usage mode rather
+  than an error.
+
+In every member the trace is incomplete in the same way — no terminal record,
+therefore no derived root — so the evidence and the commitment agree about what
+is missing. That agreement is what makes the class safe to declare; it is not
+what makes it rare.
+
+**And rarity does not follow from reliability.** The narrow statement invited
+the reading that this class is rare *because crashes are rare*. It is not only
+crashes: the second member is bounded by how often an operator abandons a run,
+which is a question about usage and not about uptime. **A deployment that
+routinely drops streams will produce unpaired `BEGIN`s at a rate that has
+nothing to do with its stability, and it must be measured there rather than
+assumed from this document.**
+
+The class is declared here rather than discovered: **a receipt set can contain
+`BEGIN` without `END` for reasons that are entirely innocent, and no verifier
+may report suppression.** It reports an execution that left no completion, which
+is a question, not a verdict.
 
 ### 4. Three assurance modes, expressible from version 1
 
@@ -323,12 +340,18 @@ verifier reports, where a signature attaches — now has one answer instead of s
 
 ## Wrong turns
 
-All four were made by the author, with confidence. The fourth was made *in the
+All five were made by the author, with confidence. The fourth was made *in the
 first draft of this ADR*, after the first three had already been recorded here —
 which is the most useful thing in this section, because it shows the error is
 not carelessness but a specific and recurring one: **attributing to
 cryptography a property that holds only under an unstated non-cryptographic
 condition.** Three different conditions, three times unstated.
+
+The fifth, added after acceptance, **does not fit that pattern**, and saying so
+is the point of keeping it separate rather than filing it under the same
+heading. It is a different failure: describing a class by the one member that
+came to mind. Recording it as a fourth instance of the crypto error would have
+made this section tidier and would have taught the wrong lesson.
 
 **1. "Receipts 1…40 then 42, therefore run 41 was suppressed."** False. If the
 sequence number is assigned when the operator submits, a suppressed run is never
@@ -359,6 +382,27 @@ matters is not that `BEGIN` came first in time but that it **left the operator's
 control** before the outcome was known — which the two phases do not achieve on
 their own. Decision 3 now states the custodial condition and names the three
 mechanisms that can satisfy it.
+
+**5. "The residual class is a process killed between the two writes."** Stated
+in decision 3 of the accepted text and corrected on 2026-08-13, after an
+adversarial round on the lifecycle produced an unpaired `BEGIN` **without any
+crash**: a stream driver abandoned mid-iteration, which this runtime supports on
+purpose. The sentence was not false about its one member; it was false as a
+description of the class, and the difference matters because the surrounding
+argument rests on the class being **rare**. Stated as process death, rarity
+looks like it follows from the runtime being reliable. Stated correctly — *a run
+that reached no terminal record* — it plainly does not: the abandonment rate is
+a property of how a deployment uses streams. **A class defined by one
+recognisable member will be sized by the frequency of that member**, and the
+argument built on top of it inherits the wrong number. The correction changes no
+mechanism and no guarantee; it changes what a reader is entitled to assume about
+frequency, which is the load-bearing part.
+
+**What made it survive review.** The claim was checked against the mechanism —
+does an unpaired `BEGIN` leave the evidence and the commitment in agreement? It
+does, in every member — and never against the enumeration: *which runs reach no
+terminal record?* The mechanism was right, so the sentence read as verified.
+Asking the second question is cheap and it is the one that was skipped.
 
 ## Alternatives rejected
 

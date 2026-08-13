@@ -245,9 +245,12 @@ def test_an_abandoned_stream_leaves_a_trace_and_a_log_that_agree(tmp_path):
 
     The two agree, which is what makes it honest rather than a discrepancy: the
     evidence and the commitment both say this execution left no completion.
-    ADR-020 decision 3 names only process death as the residual class, and a
-    live process abandoning a driver is a second member of it — recorded here
-    so the class is what the tests say and not only what the ADR imagined.
+    ADR-020 decision 3 states the residual class as *a run that reached no
+    terminal record*, and lists this case as its second member alongside
+    process death. This test is where that correction came from: the ADR said
+    "a process killed between the two writes" until this run produced an
+    unpaired BEGIN with no crash anywhere. It stays here so the class keeps
+    being what the tests can produce, not what the ADR can imagine.
     """
     log = _log(tmp_path)
     runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(), commitments=log)
