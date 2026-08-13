@@ -19,31 +19,44 @@ The trace is not reconstructed from logs after execution.
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.9.0 **still does not pass its own cumulative performance gate**, and ships
+0.10.0 **still does not pass its own cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+90.4 %** | +20 % |
-| 100-node no-op | **+134.6 %** | +20 % |
-| Trace materialization | **+21.1 %** | +20 % |
+| Per-node overhead | **+91.3 %** | +20 % |
+| 100-node no-op | **+133.2 %** | +20 % |
+| Trace materialization | **+24.2 %** | +20 % |
 
-The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0:
-0.9.0 against 0.8.1 is +2.7 %, +3.7 % and +0.4 %, inside the per-release budget
-with no exception declared. Unlike 0.8.1's, these measurements can answer — the
-worst paired spread is 5.1 %, narrower than every effect above it, so the
-figures are the code and not the machine.
+The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0.
+
+**This release added none of it, and the measurement cannot prove it added
+anything at all.** Against v0.9.0, in the same jobs on the same runners, the
+three figures are **−1.5 %, −0.8 % and +0.3 %** — inside the per-release budget
+with no exception declared, and every one of them *smaller than the paired
+spread of the measurement* (3.1 %, 4.6 %, 3.4 %). The honest report is that this
+release's effect is below what this instrument can resolve, which is not the
+same sentence as "there is no difference" and is not written as one. It is also
+what you would expect from a release whose new machinery does not load unless
+it is configured.
+
+Trace materialization reads 3 points worse against the anchor than 0.9.0's
++21.1 %, and this release is not where it came from: the per-release delta is
++0.3 % on the same hardware in the same jobs. 0.9.0's cumulative figures were
+taken on an EPYC 9V74 and these on an EPYC 7763. Where the difference actually
+lives is **not separated here**, and it is not claimed to be.
 
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.8.1 says nothing about 0.9.0. Measured on 2026-08-12 against
-a live `api_graph` service with three real user queries: **2.8, 2.9 and 3.6 ms**
-of Motus against requests of 50.9 s, 6.3 s and 24.5 s. The honest share is the
-worst cost over the fastest response — 3.6 ms of 6.3 s — which is **0.057 %**.
-That figure is an upper bound: it contains the consumer's own node code, not
-only Motus.
+measured against 0.9.0 says nothing about 0.10.0. Measured on 2026-08-13
+against the live `api_graph` service (`frontier_graph`, `POST /run`) with three
+real Italian user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137,
+CPython 3.12.3: **2.8, 2.3 and 3.0 ms** of Motus against requests of 25.9 s,
+12.3 s and 5.7 s. The honest share is the worst cost over the fastest
+response — 3.0 ms of 5.7 s — which is **0.053 %**. That figure is an upper
+bound: it contains the consumer's own node code, not only Motus.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
