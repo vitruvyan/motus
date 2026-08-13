@@ -92,13 +92,21 @@ def test_a_failed_write_leaves_nothing_in_memory(tmp_path):
         log.begin("r2", at=AT, nonce="n2")
     handle.write = original                                 # type: ignore[method-assign]
 
-    log.begin("r3", at=AT, nonce="n3")
-    checkpoint = log.seal(AT)
-    assert checkpoint.count == 2, "the failed write entered the checkpoint"
+    assert [c.run_id for c in log.open_window._commitments] == ["r1"]
 
-    proof = log.proof_for("r3", CommitmentKind.BEGIN, checkpoint.index)
-    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+    # And it does not carry on. Whether the bytes reached the file is exactly
+    # what this process cannot know, so the next sequence it would issue is a
+    # guess -- see test_an_uncertain_durable_write_makes_the_log_unusable.
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("r3", at=AT, nonce="n3")
     log.close()
+
+    reopened = _log(tmp_path)
+    reopened.begin("r3", at=AT, nonce="n3")
+    checkpoint = reopened.seal(AT)
+    proof = reopened.proof_for("r3", CommitmentKind.BEGIN, checkpoint.index)
+    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+    reopened.close()
 
 
 def test_a_torn_line_with_non_ascii_content_truncates_to_the_byte(tmp_path):
@@ -326,18 +334,40 @@ def test_the_witness_acknowledgement_survives_the_disk(tmp_path):
     again.close()
 
 
-def test_one_run_cannot_have_two_commitments_of_a_kind(tmp_path):
-    """HIGH. Two ENDs for one run were both accepted and sealed, and
-    `proof_for` returned the first in file order with a proof that genuinely
-    verified -- a provable half of a self-contradiction, the other half
-    unreachable through any read API."""
+def test_a_retried_job_may_keep_its_run_id(tmp_path):
+    """A round refused a repeated run_id, and it was refusing an ordinary case.
+
+    Nothing in the contract or the schema requires run_id to be unique, and
+    `JsonlTraceSink` keeps both accounts on purpose
+    (test_the_same_run_id_twice_keeps_both_accounts). With no sealing interval
+    shipped, the refusal was permanent for the life of the open window: every
+    retry of a job that had already run was rejected before its first node.
+
+    The defect it was fixing was real and it lives in `proof_for`, not here --
+    two commitments of a kind for one run were both sealed and `proof_for`
+    returned the first in file order with a proof that genuinely verified, a
+    provable half of a self-contradiction. That is refused below, and the
+    caller who means one of them names its sequence."""
     log = _log(tmp_path)
-    log.begin("r1", at=AT, nonce="n1")
-    log.end("r1", root=ROOT, outcome="completed", at=AT, nonce="e1")
-    with pytest.raises(ValueError, match="already committed a end"):
-        log.end("r1", root="sha256:" + "b" * 64, outcome="cancelled", at=AT, nonce="e2")
-    with pytest.raises(ValueError, match="already committed a begin"):
-        log.begin("r1", at=AT, nonce="n2")
+    log.begin("job-4711", at=AT, nonce="n1")
+    log.end("job-4711", root=ROOT, outcome="failed", at=AT, nonce="e1")
+    second = log.begin("job-4711", at=AT, nonce="n2")
+    log.end("job-4711", root=ROOT, outcome="completed", at=AT, nonce="e2")
+
+    checkpoint = log.seal(AT)
+    assert checkpoint.count == 4, "an execution was dropped"
+
+    with pytest.raises(CommitmentLogFork, match="sequence=<n>"):
+        log.proof_for("job-4711", CommitmentKind.BEGIN, checkpoint.index)
+
+    proof = log.proof_for("job-4711", CommitmentKind.BEGIN, checkpoint.index,
+                          sequence=second.sequence)
+    assert proof.commitment.sequence == second.sequence
+    assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
+
+    with pytest.raises(KeyError, match="at sequence 99"):
+        log.proof_for("job-4711", CommitmentKind.END, checkpoint.index,
+                      sequence=99)
     log.close()
 
 
@@ -374,10 +404,11 @@ def test_the_chain_is_walked_and_a_broken_link_is_found(tmp_path):
     forged["sealed_at"] = "2026-01-01T00:00:00Z"
     (log.directory / "checkpoint-000000.json").write_text(json.dumps(forged))
 
-    again = _log(tmp_path)
+    # Caught at OPEN, before a single append. `verify_chain()` found this and
+    # nothing called it, so a store whose chain had a hole in it opened
+    # willingly and kept writing.
     with pytest.raises(CommitmentLogFork, match="links to"):
-        again.verify_chain()
-    again.close()
+        _log(tmp_path)
 
 
 def test_a_lost_checkpoint_is_a_fork_not_a_rewind(tmp_path):
@@ -524,3 +555,73 @@ def test_concurrent_begins_never_share_a_sequence(tmp_path):
     assert len(stored) == 120
     assert sorted(s["c"]["sequence"] for s in stored) == list(range(120))
     log.close()
+
+
+# -- what an adversarial round found after the log was wired to the runtime --
+
+def test_a_lost_interior_checkpoint_is_refused_at_open(tmp_path):
+    """P1. Recovery read the HIGHEST checkpoint and resumed after it, so
+    deleting an interior one left the store perfectly willing to open and
+    append: window 2 continued a chain whose window 0 was unaccounted for.
+
+    `verify_chain()` would have said so and nothing called it, which is the
+    difference between a guarantee and a function that could have provided one.
+    ADR-021 requires a lost window to be reported as a fork, and a fork
+    reported only if somebody thinks to ask is not reported."""
+    log = _log(tmp_path)
+    _run(log, "r1"); log.seal(AT)
+    _run(log, "r2"); log.seal(AT)
+    log.close()
+
+    (log.directory / "checkpoint-000000.json").unlink()
+    with pytest.raises(CommitmentLogFork, match="a sealed window was lost"):
+        _log(tmp_path)
+
+
+def test_an_uncertain_durable_write_makes_the_log_unusable(tmp_path, monkeypatch):
+    """P1, and the most damaging of the five.
+
+    `fsync` raising AFTER the line reached the file left the in-memory window
+    short by one while the file held it. The next append therefore re-issued
+    that sequence, and the round reproduced sequences [0, 1, 1] on disk under a
+    checkpoint that sealed two -- a store that had already lost the property it
+    exists for, still accepting writes.
+
+    The ordering rule -- disk first, memory after -- is what makes the failure
+    survivable, and it is also what creates this window. The answer is not to
+    guess: this process cannot know what reached the file, so it stops, and the
+    reopen decides from the bytes."""
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
+    log.begin("r1", at=AT, nonce="n1")
+
+    def boom(fd: int) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr("vitruvyan_motus.commitlog.os.fsync", boom)
+    with pytest.raises(OSError):
+        log.begin("r2", at=AT, nonce="n2")
+    monkeypatch.undo()
+
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("r3", at=AT, nonce="n3")
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.seal(AT)
+    log.close()
+
+    # Recovery reads the file rather than a hopeful memory: whatever survived
+    # of r2 decides where the sequence continues.
+    reopened = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
+    on_disk = [json.loads(line)["c"]["sequence"]
+               for line in (reopened.directory / "window-000000.jsonl")
+               .read_text().splitlines() if line.strip()]
+    issued = reopened.begin("r3", at=AT, nonce="n3")
+    assert issued.sequence == len(on_disk), (
+        f"reopened at sequence {issued.sequence} over a file holding {on_disk}")
+    assert sorted(on_disk) == list(range(len(on_disk))), (
+        f"a sequence was issued twice: {on_disk}")
+    checkpoint = reopened.seal(AT)
+    reopened.close()
+    again = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
+    assert again.verify_chain() == 1
+    assert checkpoint.count == len(on_disk) + 1
+    again.close()

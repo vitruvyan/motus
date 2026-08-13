@@ -1053,11 +1053,24 @@ class Runtime:
         # test asked for the other half of the rule.
         in_flight = sys.exc_info()[0] is not None
         try:
-            self._commitments.end(
+            committed = self._commitments.end(
                 trace.run["run_id"], root=root, outcome=outcome,
                 at=self._control.timestamp() if self._control else "",
                 nonce=self._control.kernel_uuid() if self._control else "",
             )
+            # Symmetric with `_commit_begin`, and it was missing here. A store
+            # whose `end()` returns None without persisting anything let a run
+            # report `completed` while the durable account held only its BEGIN
+            # -- the exact silent no-op the BEGIN side already refused, and the
+            # asymmetry survived a round because both halves were read
+            # separately.
+            from vitruvyan_motus.commitments import Commitment
+            if not isinstance(committed, Commitment):
+                raise TypeError(
+                    "the commitment log's end() returned "
+                    f"{type(committed).__name__}, not a Commitment. A run that "
+                    "cannot show its END has no completion on record, and "
+                    "reporting one would describe evidence that does not exist")
         except BaseException:
             if not in_flight:
                 raise

@@ -48,6 +48,34 @@ def _kinds(log: CommitmentLog) -> list[tuple[str, str]]:
     return [(c.run_id, c.kind.value) for c in log.open_window._commitments]
 
 
+class _RefusingLog:
+    """A real log with a switch that makes the next `begin` fail the way a full
+    disk does.
+
+    These tests used to provoke the failure by committing the run_id first, so
+    the log's own uniqueness rule refused it. That rule is gone — a retried job
+    keeping its id is the ordinary case and refusing it rejected every retry
+    before its first node — so the failure is now injected where it actually
+    comes from: the write.
+    """
+
+    def __init__(self, inner: CommitmentLog) -> None:
+        self._inner = inner
+        self.refuse = False
+
+    def begin(self, *args, **kwargs):
+        if self.refuse:
+            raise OSError(28, "No space left on device")
+        return self._inner.begin(*args, **kwargs)
+
+    def end(self, *args, **kwargs):
+        return self._inner.end(*args, **kwargs)
+
+    @property
+    def witness_deadline(self):
+        return self._inner.witness_deadline
+
+
 # -- the pair ---------------------------------------------------------------
 
 def test_a_completed_run_leaves_a_begin_and_an_end(tmp_path):
@@ -108,16 +136,17 @@ def test_a_run_whose_begin_cannot_be_written_does_not_execute(tmp_path):
     """A run whose BEGIN can vanish has no execution continuity to prove, so
     it must not run at all."""
     log = _log(tmp_path)
+    refusing = _RefusingLog(log)
+    refusing.refuse = True
     ran: list[str] = []
 
     def work(state: State) -> State:
         ran.append("yes")
         return state.with_fact(Fact("done", True, "test", NOW))
 
-    log.begin("r1", at="2026-08-12T00:00:00Z", nonce="n")   # same run_id
-    with pytest.raises(ValueError, match="already committed"):
+    with pytest.raises(OSError):
         Runtime(SPEC, {"work": work}, sink=InMemoryTraceSink(),
-                commitments=log).run(State.empty("x"), run_id="r1")
+                commitments=refusing).run(State.empty("x"), run_id="r1")
     assert ran == [], "the node executed despite an unwritable BEGIN"
     log.close()
 
@@ -133,11 +162,14 @@ def test_a_failed_begin_costs_one_run_and_not_the_runtime(tmp_path):
     stream(), arun() and resume() raising "cannot execute overlapping runs".
     """
     log = _log(tmp_path)
-    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(), commitments=log)
+    refusing = _RefusingLog(log)
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                      commitments=refusing)
 
-    log.begin("taken", at="2026-08-12T00:00:00Z", nonce="n")
-    with pytest.raises(ValueError, match="already committed"):
+    refusing.refuse = True
+    with pytest.raises(OSError):
         runtime.run(State.empty("x"), run_id="taken")
+    refusing.refuse = False
 
     assert runtime._running is False, "the Runtime is wedged"
     result = runtime.run(State.empty("x"), run_id="fresh")
@@ -163,9 +195,10 @@ def test_a_failed_begin_still_finishes_the_sink_session(tmp_path):
         def open_run(self, header):
             return _Session()
 
-    runtime = Runtime(SPEC, _nodes(), sink=_Sink(), commitments=log)
-    log.begin("taken", at="2026-08-12T00:00:00Z", nonce="n")
-    with pytest.raises(ValueError, match="already committed"):
+    refusing = _RefusingLog(log)
+    refusing.refuse = True
+    runtime = Runtime(SPEC, _nodes(), sink=_Sink(), commitments=refusing)
+    with pytest.raises(OSError):
         runtime.run(State.empty("x"), run_id="taken")
     assert finished == [False], "the sink session was left open forever"
     log.close()
@@ -491,3 +524,92 @@ def test_a_sealed_run_proves_its_own_root(tmp_path):
     assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
     assert json.loads(json.dumps(proof.to_dict()))["mode"] == "local"
     log.close()
+
+
+# -- what an adversarial round found after the first four ---------------------
+
+def test_an_end_that_records_nothing_is_refused(tmp_path):
+    """P1. `_commit_begin` validated the returned Commitment and `_commit_end`
+    did not, so a store whose `end()` returned None without persisting anything
+    let `run()` report `completed` while the durable account held only a BEGIN.
+
+    The asymmetry survived a round because each half was read on its own and
+    each half was correct on its own."""
+    log = _log(tmp_path)
+
+    class _NoOpEnd:
+        def begin(self, *args, **kwargs):
+            return log.begin(*args, **kwargs)
+
+        def end(self, *args, **kwargs):
+            return None
+
+    runtime = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                      commitments=_NoOpEnd())
+    with pytest.raises(TypeError, match="not a Commitment"):
+        runtime.run(State.empty("x"), run_id="r1")
+    assert _kinds(log) == [("r1", "begin")]
+    assert runtime._running is False, "the Runtime is wedged"
+    log.close()
+
+
+def test_a_retried_run_id_reaches_the_log_twice(tmp_path):
+    """The store's refusal of a repeated run_id was invisible until a run hit
+    it: a retried job was rejected BEFORE its first node, by the audit layer,
+    for keeping the id that identifies it. `JsonlTraceSink` supports exactly
+    this (test_the_same_run_id_twice_keeps_both_accounts) and the two must not
+    disagree about what a legal run is."""
+    log = _log(tmp_path)
+    runtime = Runtime(SPEC, _nodes(fail=True), sink=InMemoryTraceSink(),
+                      commitments=log)
+    with pytest.raises(NodeFailed):
+        runtime.run(State.empty("x"), run_id="job-4711")
+
+    result = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                     commitments=log).run(State.empty("x"), run_id="job-4711")
+    assert result.status == "completed"
+    assert _kinds(log) == [("job-4711", "begin"), ("job-4711", "end"),
+                           ("job-4711", "begin"), ("job-4711", "end")]
+    log.close()
+
+
+def test_a_hung_witness_does_not_hold_the_process_open(tmp_path):
+    """P1, and the deadline test passed while this was broken.
+
+    The witness ran on a `ThreadPoolExecutor` and the timeout path called
+    `shutdown(wait=False)`, which reads as "detach it". It does not:
+    `concurrent.futures` registers an interpreter-exit hook that JOINS every
+    pool thread, and pool threads are not daemons. So `begin()` returned in
+    0.25s, the deadline test went green, and the process then sat for the
+    remaining 20 seconds at exit -- a witness that never returned held it open
+    for good.
+
+    "Never blocks the run" was true. "Never blocks the process" was the promise
+    ADR-021 decision 3 actually makes, and only a test that measures the whole
+    process can tell them apart -- which is why this one spawns one."""
+    import pathlib
+    import subprocess
+    import sys
+    import time
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    probe = (
+        "import sys, time, tempfile;"
+        "from vitruvyan_motus.commitlog import CommitmentLog;"
+        "sloth = type('S', (), {'acknowledge': lambda self, c: time.sleep(120)})();"
+        "log = CommitmentLog(tempfile.mkdtemp(), tenant='t', writer_id='w',"
+        " fsync=False, witness_deadline=0.2);"
+        "log.begin('r', at='2026-08-12T00:00:00Z', nonce='n', ask=sloth);"
+        "log.close()"
+    )
+    started = time.monotonic()
+    done = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                          text=True, cwd=root, timeout=60,
+                          env={"PYTHONPATH": str(root / "src"),
+                               "PATH": "/usr/bin:/bin"})
+    elapsed = time.monotonic() - started
+    assert done.returncode == 0, done.stderr
+    assert elapsed < 15, (
+        f"the process took {elapsed:.1f}s to exit with a 0.2s witness "
+        f"deadline and a witness that sleeps for 120s"
+    )

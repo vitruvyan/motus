@@ -50,7 +50,6 @@ import os
 import re
 import threading
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -184,7 +183,7 @@ class CommitmentLog:
 
     __slots__ = ("_root", "_dir", "tenant", "writer_id", "_fsync",
                  "_window", "_handle", "_lock", "_closed", "_lockfile",
-                 "_seen", "_nonces", "_witness_deadline")
+                 "_poisoned", "_nonces", "_witness_deadline")
 
     def __init__(self, directory: str | os.PathLike[str], *, tenant: str,
                  writer_id: str, fsync: bool = True,
@@ -199,7 +198,7 @@ class CommitmentLog:
         self._closed = False
         self._handle: Any = None
         self._lockfile: Any = None
-        self._seen: set[tuple[str, str]] = set()
+        self._poisoned: str | None = None
         self._nonces: set[str] = set()
         # No default. ADR-021 decision 3 says the deadline "is part of the
         # configuration", and any number invented here would be a budget chosen
@@ -310,6 +309,36 @@ class CommitmentLog:
                 f"({exc}). A half-written checkpoint is not an absent one, and "
                 "this store will not guess which it was") from None
 
+    def _check_links(self, sealed: list[int]) -> None:
+        """Contiguous, and each checkpoint linking to the one before it.
+
+        Recovery used to read the HIGHEST checkpoint and resume after it, so
+        deleting an interior one left the store perfectly willing to open and
+        append. `verify_chain()` would have said so, and nothing called it: a
+        whole window could be dropped and the loss surfaced only if somebody
+        thought to ask.
+
+        This reads checkpoint files only -- no window is opened and no root is
+        recomputed -- so it costs one small read per sealed window and can be
+        afforded on every open. `verify_chain()` remains the full check, and it
+        is the one that catches a window edited under an intact checkpoint.
+        """
+        previous_digest: str | None = None
+        for expected, index in enumerate(sealed):
+            if index != expected:
+                raise CommitmentLogFork(
+                    f"checkpoint {expected} is missing and checkpoint {index} "
+                    "is present: a sealed window was lost, and appending after "
+                    "the highest checkpoint would continue a chain with a hole "
+                    "in it")
+            checkpoint = self._read_checkpoint(index)
+            if checkpoint.previous != previous_digest:
+                raise CommitmentLogFork(
+                    f"checkpoint {index} links to {checkpoint.previous!r}, but "
+                    f"checkpoint {index - 1} digests to {previous_digest!r}: "
+                    "these are two different chains")
+            previous_digest = checkpoint.digest
+
     def _recover(self) -> CommitmentWindow:
         """Rebuild the open window from what is on disk.
 
@@ -321,6 +350,7 @@ class CommitmentLog:
         """
         sealed = self._checkpoint_indices()
         if sealed:
+            self._check_links(sealed)
             last = self._read_checkpoint(sealed[-1])
             if last.tenant != self.tenant or last.writer_id != self.writer_id:
                 raise CommitmentLogFork(
@@ -385,8 +415,37 @@ class CommitmentLog:
     # -- appending --------------------------------------------------------
 
     def _remember(self, commitment: Commitment) -> None:
-        self._seen.add((commitment.run_id, commitment.kind.value))
         self._nonces.add(commitment.nonce)
+
+    def _poison(self, reason: str) -> None:
+        """Refuse every further write, because we no longer know what is on disk.
+
+        Reached only from a write that failed AFTER the bytes were handed to
+        the file. The line may be whole, partial or absent and this process
+        cannot tell which, so the sequence it would issue next is a guess. A
+        guess here re-issues a sequence a durable commitment may already hold.
+
+        Reopening the log is the recovery: `_replay` reads the file, truncates
+        a torn line on a byte boundary, and resumes from what actually
+        survived. That is a decision made from evidence rather than from a
+        hopeful in-memory picture.
+        """
+        self._poisoned = reason
+        handle, self._handle = self._handle, None
+        if handle is not None:
+            try:
+                handle.close()
+            except OSError:
+                pass
+
+    def _refuse_if_poisoned(self) -> None:
+        if self._poisoned is not None:
+            raise CommitmentLogFork(
+                f"this log stopped being writable: {self._poisoned}. What "
+                "reached the file is unknown, so any sequence issued now may "
+                "already be held by a durable commitment. Close it and open "
+                "it again — recovery reads the file and resumes from what "
+                "survived")
 
     def _open_handle(self) -> Any:
         if self._handle is None:
@@ -408,11 +467,7 @@ class CommitmentLog:
         """
         if self._closed:
             raise ValueError("this commitment log is closed")
-        if (run_id, kind.value) in self._seen:
-            raise ValueError(
-                f"this writer already committed a {kind.value} for run "
-                f"{run_id!r}. Two of them make the run's account "
-                "self-contradictory, and a proof would silently pick one")
+        self._refuse_if_poisoned()
 
         witness: WitnessAck | None = fields.pop("witness", None)
         ask: Witness | None = fields.pop("ask", None)
@@ -448,10 +503,19 @@ class CommitmentLog:
              "witness": witness.to_dict() if witness else None},
             sort_keys=True, separators=(",", ":")) + "\n"
         handle = self._open_handle()
-        handle.write(line)
-        handle.flush()
-        if self._fsync:
-            os.fsync(handle.fileno())
+        try:
+            handle.write(line)
+            handle.flush()
+            if self._fsync:
+                os.fsync(handle.fileno())
+        except BaseException as exc:
+            # The bytes were handed to the file and the failure arrived after.
+            # Continuing would re-issue this sequence while the file may
+            # already hold it -- an adversarial round produced sequences
+            # [0, 1, 1] on disk against a checkpoint that sealed two.
+            self._poison(f"a durable write failed after the line reached the "
+                         f"file ({type(exc).__name__}: {exc})")
+            raise
 
         self._window.append(commitment)
         self._remember(commitment)
@@ -461,6 +525,15 @@ class CommitmentLog:
               witness: WitnessAck | None = None,
               ask: Witness | None = None) -> Commitment:
         """Commit that a run is ABOUT to execute.
+
+        **A run_id may appear more than once, and that is not an error.** A
+        retried job keeping its job id is the ordinary case; nothing in the
+        contract or the schema requires uniqueness, and `JsonlTraceSink` keeps
+        both accounts on purpose. This log briefly refused a repeat and would
+        have rejected every retry of a job that had already run in the open
+        window — before its first node, with no sealing interval to clear it.
+        What distinguishes two executions is the SEQUENCE, so that is what
+        `proof_for` asks for when a run_id is ambiguous.
 
         Durable when this returns, provided the log was opened with
         ``fsync=True`` — which is the default, and which :attr:`durable`
@@ -511,6 +584,7 @@ class CommitmentLog:
         with self._lock:
             if self._closed:
                 raise ValueError("this commitment log is closed")
+            self._refuse_if_poisoned()
             path = self._dir / _CHECKPOINT.format(index=self._window.index)
             if path.exists():
                 raise CommitmentLogFork(
@@ -523,7 +597,6 @@ class CommitmentLog:
                 self._handle.close()
                 self._handle = None
             self._window = CommitmentWindow.following(checkpoint)
-            self._seen.clear()
             self._nonces.clear()
             return checkpoint
 
@@ -560,20 +633,34 @@ class CommitmentLog:
         return checkpoint, commitments
 
     def proof_for(self, run_id: str, kind: CommitmentKind,
-                  checkpoint_index: int) -> InclusionProof:
-        """The inclusion proof for one commitment inside a SEALED window."""
+                  checkpoint_index: int,
+                  sequence: int | None = None) -> InclusionProof:
+        """The inclusion proof for one commitment inside a SEALED window.
+
+        `sequence` names WHICH execution when a run_id was used more than once
+        — a retried job keeping its id. Without it an ambiguous run_id is
+        refused rather than resolved: returning the first match in file order
+        produced a proof that genuinely verified for one half of a pair while
+        the other half was unreachable through any read API, which is a
+        provable half-truth and the worst thing this store could hand out.
+        """
         checkpoint, commitments = self._sealed_window(checkpoint_index)
         leaves = tuple(c.leaf for c in commitments)
         matches = [i for i, c in enumerate(commitments)
-                   if c.run_id == run_id and c.kind is kind]
+                   if c.run_id == run_id and c.kind is kind
+                   and (sequence is None or c.sequence == sequence)]
         if not matches:
+            wanted = "" if sequence is None else f" at sequence {sequence}"
             raise KeyError(
-                f"no {kind.value} for run {run_id!r} in window {checkpoint_index}")
+                f"no {kind.value} for run {run_id!r}{wanted} in window "
+                f"{checkpoint_index}")
         if len(matches) > 1:
+            available = ", ".join(str(commitments[i].sequence) for i in matches)
             raise CommitmentLogFork(
                 f"window {checkpoint_index} holds {len(matches)} "
                 f"{kind.value} commitments for run {run_id!r}; proving one of "
-                "them would hide the others")
+                f"them would hide the others. Name one with "
+                f"sequence=<n> — this window has {available}")
         return InclusionProof(commitment=commitments[matches[0]],
                               path=merkle_path(leaves, matches[0]),
                               checkpoint=checkpoint)
@@ -676,30 +763,47 @@ def _ask_witness(witness: Witness, commitment: Commitment,
     reproduced both. `RLock` would not have been the fix: it excuses the same
     thread and deadlocks just the same when the reentry arrives on a new one.
 
-    The cost is stated rather than hidden: a witness that never returns leaks
-    the worker thread it was called on. A leaked thread on a broken witness is
-    a better outcome than a wedged process, and it is bounded by how many times
-    somebody configures a witness that hangs.
+    **The worker is a daemon thread, and `ThreadPoolExecutor` is not usable
+    here.** The first version used one and called `shutdown(wait=False)`,
+    believing that detached the worker. It does not: `concurrent.futures`
+    registers an interpreter-exit hook that JOINS every pool thread, and pool
+    threads are not daemons. A 20-second witness therefore returned control in
+    0.25s, passed its deadline test, and then held the process open for the
+    remaining 20 seconds at exit — a witness that never returns held it open
+    forever. "Never blocks the run" was true and "never blocks the process" was
+    false, which is not the promise ADR-021 decision 3 makes.
 
-    `BaseException` is deliberately NOT caught. `KeyboardInterrupt` and
-    `SystemExit` are the operator asking the process to stop, not a witness
-    misbehaving, and swallowing them consumed the one recovery mechanism an
-    operator has for a hung run.
+    The cost is stated rather than hidden: a witness that never returns leaks
+    the thread it was called on until the process ends. A leaked daemon thread
+    is a better outcome than a process that cannot exit, and it is bounded by
+    how many times somebody configures a witness that hangs.
+
+    `BaseException` from the witness is deliberately NOT swallowed.
+    `KeyboardInterrupt` and `SystemExit` are the operator asking the process to
+    stop, not a witness misbehaving, and swallowing them consumed the one
+    recovery mechanism an operator has for a hung run. Raised on the worker
+    they would be lost, so they are carried back and re-raised here.
     """
     payload = _canonical_bytes(commitment.to_dict())
-    executor = ThreadPoolExecutor(max_workers=1,
-                                  thread_name_prefix="motus-witness")
-    future = executor.submit(witness.acknowledge, payload)
-    try:
-        acknowledged = future.result(timeout=deadline)
-    except _FutureTimeout:
+    outcome: dict[str, Any] = {}
+
+    def _consult() -> None:
+        try:
+            outcome["value"] = witness.acknowledge(payload)
+        except BaseException as exc:  # carried back; see below
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=_consult, name="motus-witness", daemon=True)
+    worker.start()
+    worker.join(deadline)
+    if worker.is_alive():
         return None
-    except Exception:
+    error = outcome.get("error")
+    if error is not None:
+        if not isinstance(error, Exception):
+            raise error
         return None
-    finally:
-        # Never wait: a hung witness would make shutdown the same block the
-        # deadline exists to avoid.
-        executor.shutdown(wait=False)
+    acknowledged = outcome.get("value")
     if not isinstance(acknowledged, WitnessAck):
         return None
     if acknowledged.commitment != commitment.leaf:
