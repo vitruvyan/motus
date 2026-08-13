@@ -147,7 +147,12 @@ Rules that are not negotiable:
 - **The trace records shapes, not text.** Counts, lengths, scores, source
   identifiers, boolean checks. Quotation text and draft bodies stay in the
   database. Terraveler already works this way and Motus is built for it.
-- **The criterion is read or mutate, and nothing else.** Nodes that READ the
+- **The criterion is read or mutate** — and the contract permits erring
+  upward, which this brief used to omit. `node-protocol.md` §4.2 says
+  *"classify honestly or conservatively"* and §4.1 names `external_effect` the
+  conservative reading, so a read declared `external_effect` is **valid**, not
+  an error. It costs you safe resumes and nothing else, silently. Prefer the
+  honest class; know what the other one costs. Nodes that READ the
   outside world — a `SELECT`, the embedding service, an HTTP GET — declare
   `effect_class: "recorded_effect"`: the result is the effect, and repeating
   it costs a round trip. Nodes that CHANGE something out there — an `INSERT`,

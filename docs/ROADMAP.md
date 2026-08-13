@@ -163,21 +163,37 @@ brief and **inverted the effect classification twice in one pull request**
 (#77): it called a database write `recorded_effect` where the protocol says
 `external_effect`, and read-only calls the opposite.
 
-**Then it happened in production code.** Terraveler's field report of
-2026-08-13, against v0.10.0: `check_verbatim` — a node that issues nothing but
-HTTP GETs to archive.org — was declared `external_effect`. It is the safe
-direction, so nothing was hidden and no write escaped the resume guard. What
-makes it the decisive data point is **how** it got there: the declaration
-carried a comment rationalising it as *"conservative"*, because downstream
-nodes stage a write.
+**Then two of our own documents were found to disagree, which is worse and
+more useful.** Terraveler's field report of 2026-08-13, against v0.10.0:
+`check_verbatim` — a node issuing nothing but HTTP GETs — was declared
+`external_effect` with a comment calling it *"conservative"*. They reported it
+as an error against the brief. **It is not an error against the contract.**
+`node-protocol.md` §4.2 says *"Classify honestly or conservatively"*, and §4.1
+names `external_effect` the conservative reading. Their declaration is
+contract-valid.
 
-So the rule was not misread. It was **reasoned around**, by somebody who had it
-in front of them, in a direction that felt careful. A sentence in a document
-can be argued with. A tool that answers *"I need to issue an HTTP GET"* with
-`recorded_effect` and a citation cannot be, and that is `motus_classify`.
+What it costs is real and it is not correctness: a read declared
+`external_effect` blocks resumes that were safe. That is an integration cost,
+paid silently, and nobody would ever be told they were paying it.
+
+**The finding is about us.** `docs/TERRAVELER_MOTUS_TRON.md` states the rule as
+*"the criterion is read or mutate, and nothing else"*, which leaves no room for
+the latitude the contract grants — and the prompt handed to their agent
+repeated the brief rather than the contract. Under the authority order the
+contract wins, so the brief is the document that is wrong.
+
+**And this is the argument for the MCP, in its strongest form.** An integrator
+holding two of our documents that disagree will reason their way to one of
+them, and there is no reason it should be the authoritative one. A
+`motus_classify` derived from `node-protocol.md` at call time answers what
+neither document says on its own: *`recorded_effect` is the honest class;
+`external_effect` is permitted and costs you safe resumes.* A tool that cites
+its source cannot drift from it, and cannot be out-argued by a second document
+that did.
 
 **A protocol with classifications does not travel in prose. It travels by
-answering the concrete question somebody is holding.**
+answering the concrete question somebody is holding, from the source, at the
+moment they are holding it.**
 
 **The rule that makes it impossible to rot, and it goes in an ADR before any
 code:**
@@ -220,8 +236,8 @@ reads to decide; the MCP is what an agent uses to build.
 **Its first test is Terraveler**, who has now completed the brief end to end
 against v0.10.0. Handing the next integrator an MCP instead of a
 three-hundred-line brief is the strongest evidence we can get — and the brief
-is the document that was read carefully, followed, and still produced the
-classification error above.
+is the document that was read carefully, followed exactly, and turned out to
+disagree with the contract it was written from.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
@@ -350,20 +366,26 @@ in the payload* — not a placeholder, not a plausible-looking hex string. If
 auditability that fabricates one piece of evidence has demonstrated the
 opposite, and the fabrication does not need to be load-bearing to do that.
 
-**And the scenario is no longer invented.** Terraveler's field report of
-2026-08-13 contains the demonstration this page needs, performed on real
-production evidence rather than on a fixture:
+**The scenario is already right; what changes is where the evidence comes
+from.** The current brief already requires the resealed forgery — an editor who
+recomputes every hash, whose trace then passes both local checks and disagrees
+only with the anchored root — and it already says that row is the sales
+argument for beat 3. **A rewrite must not discard that**, and the correction
+notice on this entry exists because an earlier draft of it implied the brief
+demonstrated something weaker than it does.
 
-> A value in an anchored trace was tampered with, and the whole downstream hash
-> chain was **correctly reprocessed** by hand-replicating Motus's own sealing
-> recipe. `motus-validate jsonl` returns **exit 0** on the forged document —
-> its chain is internally perfect. It fails `verify()` for one reason only:
-> the on-chain memo was written before the edit and names a different root.
+What Terraveler's field report of 2026-08-13 adds is **provenance**, which is
+the half that was invented:
 
-That is the entire product in four lines, and it is stronger than *"we broke
-the chain and it noticed"*, which is what the current brief demonstrates. A
-forgery that survives every local check and dies against a value it could not
-reach is what an anchor is FOR. Build the page on that, with their transaction.
+> A value in a real anchored trace was tampered with, and the whole downstream
+> hash chain **correctly reprocessed** by hand-replicating Motus's own sealing
+> recipe. `motus-validate jsonl` returns **exit 0** on the forged document. It
+> fails `verify()` for one reason only: the on-chain memo was written before
+> the edit and names a different root.
+
+Real production evidence, a real Nile transaction, performed by somebody who is
+not us. Build the page on their run rather than on a fixture, and keep every
+requirement the brief already has.
 
 Built by a separate agent in frontier, from a brief written here.
 
@@ -391,6 +413,11 @@ against v0.10.0 on 2026-08-13**. Whatever it finds outranks whatever we think,
 and what it found is recorded where each item is decided rather than summarised
 here — phase 1b for the classification error, phase 6 for the forgery
 demonstration.
+
+Two things from that report belong nowhere else and are kept here — and one
+correction to how it was first read: **their effect-class declaration was
+contract-valid**, not the error they and this document initially called it. See
+phase 1b; the finding turned out to be about our own documents disagreeing.
 
 Two things from that report belong nowhere else and are kept here:
 
