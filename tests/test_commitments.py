@@ -539,7 +539,7 @@ def test_an_unconfigured_runtime_never_loads_any_of_this():
         "now = datetime.datetime(2026,8,12,tzinfo=datetime.timezone.utc);"
         "Runtime(spec, {'a': lambda s: s.with_fact(Fact('k',1,'s',now))})"
         ".run(State.empty('x'), run_id='r');"
-        "loaded = [m for m in sys.modules if 'commit' in m];"
+        "loaded = [m for m in sys.modules if 'commit' in m or 'sealing' in m];"
         "print(loaded)"
     )
     done = subprocess.run([_sys.executable, "-c", probe], capture_output=True,

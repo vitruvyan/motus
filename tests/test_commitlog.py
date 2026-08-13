@@ -745,3 +745,27 @@ def test_half_a_continuation_is_refused(tmp_path):
     with pytest.raises(ValueError, match="source run_id AND the bundle"):
         log.begin("seg-2", at=AT, nonce="n1", continues_fingerprint=BUNDLE)
     log.close()
+
+
+def test_one_end_closes_one_begin_not_all_of_them(tmp_path):
+    """The surviving mutant from the round on this feature.
+
+    `test_pairing_is_by_position_not_by_run_id` cannot tell "pop the oldest
+    open BEGIN" from "clear every open BEGIN for this run_id", because in
+    BEGIN, END, BEGIN order the two agree. Two BEGINs before the END is where
+    they part: one execution finished, one is still open, and clearing the
+    whole entry loses the open one -- so a resume of a genuinely crashed
+    segment would be recorded as a claim about a chain we do not hold, while
+    holding it."""
+    log = _log(tmp_path)
+    log.begin("job", at=AT, nonce="n1")                          # seq 0
+    log.begin("job", at=AT, nonce="n2")                          # seq 1
+    log.end("job", root=ROOT, outcome="completed", at=AT, nonce="e1")
+
+    resumed = log.begin("seg-2", at=AT, nonce="n3",
+                        continues="job", continues_fingerprint=BUNDLE)
+    assert resumed.continues.resolved, (
+        "one END cleared both executions, so a predecessor this chain holds "
+        "was recorded as belonging to somebody else's")
+    assert resumed.continues.sequence == 1
+    log.close()
