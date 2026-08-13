@@ -2709,7 +2709,7 @@ _CHECKPOINT_DOMAIN = b"\x02"
 # Networks this validator can evaluate. ADR-020 decision 8: a `VERIFIED` on a
 # chain the verifier cannot evaluate is the worst lie this system can tell, so
 # an unknown network is refused rather than passed through.
-KNOWN_ANCHOR_NETWORKS = frozenset({"tron:nile"})
+KNOWN_ANCHOR_NETWORKS = frozenset({"tron:nile", "opentimestamps:bitcoin"})
 
 
 def _sha256_digest(payload: bytes) -> str:
@@ -3039,8 +3039,19 @@ KNOWN_WITNESS_ALGORITHMS = frozenset({"ed25519"})
 #: Where a reader can look a published anchor up for themselves. This verifier
 #: does not contact any network — see `verify` — so what it can offer instead
 #: is the address of the thing it declined to check.
-ANCHOR_EXPLORERS = {
-    "tron:nile": "https://nile.tronscan.org/#/transaction/",
+#: How a reader settles for themselves what this verifier declined to check.
+#: A URL for a chain with a block explorer; an instruction for one where the
+#: answer is not a web page. Writing both as URLs would have been tidier and
+#: would have sent an OpenTimestamps holder looking for a transaction that does
+#: not exist — an `.ots` attestation says the commitment sits under a block's
+#: merkle root, and settling it means running the proof against a Bitcoin node.
+ANCHOR_LOOKUPS = {
+    "tron:nile": lambda ref: f"https://nile.tronscan.org/#/transaction/{ref}",
+    "opentimestamps:bitcoin": lambda ref: (
+        f"{ref} — verify the .ots proof in `anchor.proof.serialized` against a "
+        "Bitcoin node (`ots verify`); there is no transaction to open, the "
+        "attestation is to a block's merkle root"
+    ),
 }
 
 
@@ -3295,9 +3306,9 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
         # not in a contract validator that must run offline and stdlib-only.
         lookups = []
         for anchor in published:
-            base = ANCHOR_EXPLORERS.get(anchor["network"], "")
-            lookups.append(f"{anchor['network']} {anchor['reference']}"
-                           + (f" — {base}{anchor['reference']}" if base else ""))
+            resolve = ANCHOR_LOOKUPS.get(anchor["network"])
+            detail = resolve(anchor["reference"]) if resolve else anchor["reference"]
+            lookups.append(f"{anchor['network']} {detail}")
         where = "; ".join(lookups)
         add("EXISTENCE", UNCHECKED,
             f"this receipt CLAIMS publication at {where}. This verifier "
