@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import threading
+import traceback
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any, Protocol, runtime_checkable
@@ -166,6 +167,135 @@ class InMemoryTraceSink:
         )
 
 
+#: How deep the detachment walks. An exception carrying an exception carrying an
+#: exception is real (a group of retries, each with a cause); three levels of it
+#: is not, and an unbounded walk over caller-supplied objects is the kind of
+#: generality this project has twice shipped and withdrawn.
+_DETACH_DEPTH = 4
+
+
+def _describe(exc: BaseException) -> str:
+    """The formatted original, or a plain statement that it could not be read.
+
+    `format_exception` calls the exception's own `__str__` and `__repr__`, which
+    are caller code. On a failure path that must not fail, that is a hazard, not
+    a detail.
+    """
+    try:
+        return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    except BaseException:  # pragma: no cover - an exception that cannot describe itself
+        try:
+            return f"<{type(exc).__name__}: unrenderable>"
+        except BaseException:
+            return "<unrenderable failure>"
+
+
+def _strip(exc: BaseException, depth: int, seen: set[int]) -> None:
+    """Cut every edge along which an exception reaches a frame.
+
+    `__traceback__` is the obvious one and it is not the only one. A chained
+    exception carries its own; a `BaseExceptionGroup` carries one per member; an
+    exception stored in `args` or on an attribute carries one too — and a
+    shallow copy brings the attribute across. The edges are enumerated rather
+    than discovered by walking the object graph: enumeration is checkable, and
+    what it does not reach is a stated limit instead of a silent one.
+    """
+    if depth <= 0 or id(exc) in seen:
+        return
+    seen.add(id(exc))
+    for field in ("__traceback__", "__cause__", "__context__"):
+        try:
+            setattr(exc, field, None)
+        except BaseException:  # pragma: no cover - an exception refusing attributes
+            pass
+    try:
+        exc.__suppress_context__ = True
+    except BaseException:  # pragma: no cover
+        pass
+
+    reachable: list[Any] = []
+    try:
+        reachable.extend(exc.args)
+    except BaseException:  # pragma: no cover
+        pass
+    try:
+        reachable.extend(getattr(exc, "exceptions", ()) or ())   # BaseExceptionGroup
+    except BaseException:  # pragma: no cover
+        pass
+    try:
+        reachable.extend(vars(exc).values())
+    except BaseException:  # pragma: no cover
+        pass
+    for value in reachable:
+        if isinstance(value, BaseException):
+            _strip(value, depth - 1, seen)
+
+
+def _detached(exc: BaseException) -> BaseException:
+    """A stand-in for ``exc`` that reaches no frame, and that CANNOT raise.
+
+    **The cannot-raise half is not defensive style; it is the invariant.** An
+    earlier version of this function ran inside `except BaseException:` and was
+    itself unprotected, so an exception class whose `__new__` demands arguments
+    — `pydantic.ValidationError` is one — made the latch itself fail. Nothing
+    was stored, the guard that refuses further writes never tripped, the
+    unflushed buffer was handed to the sink again, and the caller was told
+    `required trace sink failed: <the copy error>`: a false statement about
+    what the sink did, beside duplicated `seq`s in the artifact. A sink may
+    raise anything; the protocol places no constraint on it, and that is the
+    whole protocol.
+
+    **Why it must reach no frame.** An exception keeps its ``__traceback__``, a
+    traceback keeps the frame that raised, and a frame keeps ``f_back``. Latching
+    one failure on an object that outlives the call keeps the whole call stack
+    alive — and here that stack held the stream driver whose collection releases
+    the run (#99).
+
+    **The original is never mutated.** It is still propagating to whoever raised
+    it, with its traceback intact, and taking that away to protect a copy would
+    trade one caller's diagnosis for another's. A `__copy__` that returns `self`
+    is therefore refused rather than used.
+
+    Fidelity is attempted in this order, and each step is a real loss stated
+    rather than hidden: a shallow copy keeps type, args and attributes; failing
+    that, construction without `__init__` keeps type and args; failing that, a
+    `RuntimeError` keeps only the text. **Losing the failure is never an
+    option, and losing its type is preferable to losing the failure.**
+    """
+    origin = _describe(exc)
+    clone: BaseException | None = None
+    try:
+        candidate = copy.copy(exc)
+        if (candidate is not exc and type(candidate) is type(exc)
+                and candidate.args == exc.args):
+            clone = candidate
+    except BaseException:
+        clone = None
+    if clone is None:
+        try:
+            candidate = type(exc).__new__(type(exc))
+            candidate.args = exc.args
+            try:
+                vars(candidate).update(vars(exc))
+            except BaseException:  # pragma: no cover - no instance dict
+                pass
+            clone = candidate
+        except BaseException:
+            clone = None
+    if clone is None:
+        # Type and args are what a caller reads off `SinkFailed.cause`, and
+        # losing them is a real cost. It is smaller than every alternative:
+        # the run must not continue believing its evidence was accepted.
+        clone = RuntimeError(origin)
+
+    _strip(clone, _DETACH_DEPTH, set())
+    try:
+        clone.__motus_origin__ = origin  # type: ignore[attr-defined]
+    except BaseException:  # pragma: no cover - an exception refusing attributes
+        pass
+    return clone
+
+
 class _ObservationHub:
     """Runtime-owned delivery coordinator; deliberately not public."""
 
@@ -207,6 +337,22 @@ class _ObservationHub:
         self._run_sink: TraceRunSink | None = None
         self._saw_terminal = False
 
+    def _latch(self, exc: BaseException) -> None:
+        """Record a failure this hub must refuse on, without pinning its stack.
+
+        The only place `_async_failure` is assigned outside `__init__`, and a
+        test asserts that by parsing this module. A rule that has to be
+        remembered is a rule that will be broken: there were three assignment
+        sites and every one of them had to remember to detach.
+        """
+        try:
+            self._async_failure = _detached(exc)
+        except BaseException:  # pragma: no cover - `_detached` cannot raise
+            # Belt beside braces, and the reason is the finding above: when the
+            # latch fails, the run keeps going and reports evidence nobody
+            # wrote. Whatever else is true, SOMETHING must be stored here.
+            self._async_failure = RuntimeError("a required sink refused")
+
     @property
     def evidence(self) -> str:
         """Whether this run's durable evidence is whole, and answerable to a caller.
@@ -238,7 +384,7 @@ class _ObservationHub:
                 raise TypeError("TraceSink.open_run must return a TraceRunSink")
             self._run_sink = session
         except BaseException as exc:
-            self._async_failure = exc
+            self._latch(exc)
 
     def _cancel_timer_locked(self) -> None:
         timer, self._timer = self._timer, None
@@ -265,7 +411,7 @@ class _ObservationHub:
         try:
             self._run_sink.write(batch)
         except BaseException as exc:
-            self._async_failure = exc
+            self._latch(exc)
             raise
         if any(record["kind"] in _TERMINAL_KINDS for record in batch):
             self._saw_terminal = True
@@ -286,7 +432,7 @@ class _ObservationHub:
 
     def persist(self, record: dict[str, Any], *, force: bool = False) -> None:
         if self._async_failure is not None:
-            raise self._async_failure
+            raise _detached(self._async_failure)
         if self.profile == "in-memory" and self._run_sink is None:
             return
         assert self._run_sink is not None
@@ -303,14 +449,14 @@ class _ObservationHub:
                 # `seq` and, on the terminal, one artifact asserting both that
                 # the run completed and that it failed. OPEN-08 licenses a
                 # truncated prefix; it does not license a corrupted suffix.
-                self._async_failure = exc
+                self._latch(exc)
                 raise
             if record["kind"] in _TERMINAL_KINDS:
                 self._saw_terminal = True
             return
         with self._lock:
             if self._async_failure is not None:
-                raise self._async_failure
+                raise _detached(self._async_failure)
             self._buffer.append(copy.deepcopy(record))
             elapsed_ms = (time.monotonic() - self._last_flush) * 1000
             should_flush = force or len(self._buffer) >= self.chunk_records

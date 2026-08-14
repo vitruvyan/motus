@@ -431,6 +431,17 @@ class CommitmentLog:
         survived. That is a decision made from evidence rather than from a
         hopeful in-memory picture.
         """
+        # A STRING, and the annotation is load-bearing rather than decorative.
+        # #99's class is that storing an exception on a long-lived object pins
+        # every frame beneath it — and this log outlives many calls. Keeping
+        # the reason as text is what makes that impossible here, so an edit
+        # that stored the exception instead would reintroduce the defect at a
+        # second site. Asserted rather than trusted.
+        if not isinstance(reason, str):
+            # A `raise`, not an `assert`: `python -O` strips assertions, and a
+            # guard that disappears under a flag is a guard that is not there
+            # on the machine where it mattered.
+            raise TypeError("a poison reason is text, never an exception")
         self._poisoned = reason
         handle, self._handle = self._handle, None
         if handle is not None:
@@ -891,6 +902,13 @@ def _ask_witness(witness: Witness, commitment: Commitment,
         try:
             outcome["value"] = witness.acknowledge(payload)
         except BaseException as exc:  # carried back; see below
+            # Swept for #99's class and kept: this is not a long-lived store.
+            # `outcome` is local to `_ask_witness` and reachable only through
+            # this worker's closure, so the stack it pins dies with the thread
+            # — and the thread has just finished, because storing here means
+            # `acknowledge` returned. A HUNG witness never reaches this line at
+            # all. Recorded rather than repaired, so that a later reader does
+            # not spend the afternoon proving the same thing twice.
             outcome["error"] = exc
 
     worker = threading.Thread(target=_consult, name="motus-witness", daemon=True)
