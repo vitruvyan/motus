@@ -162,31 +162,31 @@ def test_a_tool_with_nothing_to_say_says_so(corpus):
 # -- the reproduce lines ----------------------------------------------------
 
 def test_every_reproduce_line_reproduces(corpus):
-    """4a, checked by running them.
+    """4a, checked by running the line **as rendered** and reading its output.
 
-    A reproduce line that does not reproduce is worse than none, because it
-    asks for a trust it has not earned. Commands are deduplicated and each is
-    run once — the property is about the command, not about how many spans
-    carried it.
+    Two rounds found this test too weak in the same way. It used to split the
+    command on spaces and feed stdin itself, so a line that read `review-node -`
+    — which blocks on a terminal and fails on empty input — passed while being
+    unrunnable for the caller. And it asserted only that something was printed,
+    so spans claiming `derived root` under a command that never prints one
+    passed too.
+
+    So: through a shell, exactly as a caller would paste it, and the span's own
+    text must appear in what comes back. A reproduce line that does not
+    reproduce is worse than none, because it asks for a trust it has not
+    earned.
     """
-    commands = {span.reproduce for answer in corpus for span in answer.spans
-                if isinstance(span, Computed)}
-    assert commands, "no answer in the corpus carried a reproduce line"
+    carried: dict[str, set[str]] = {}
+    for answer in corpus:
+        for span in answer.spans:
+            if isinstance(span, Computed):
+                carried.setdefault(span.reproduce, set()).add(span.text)
+    assert carried, "no answer in the corpus carried a reproduce line"
 
-    for command in sorted(commands):
-        # `shlex`, not `str.split`: the reproduce line is written for a shell,
-        # and splitting on spaces would take a quoted description apart and
-        # then blame the command for the pieces.
-        parts = shlex.split(command)
-        # The interpreter that has Motus installed, not the word `python`:
-        # on a plain Debian or a pipx install there is no `python` on PATH.
-        assert parts[0] in (sys.executable, "python"), command
-        stdin = ""
-        if parts[-1] == "-":
-            stdin = json.dumps(GRAPH) if "review-graph" in parts else NODE_SOURCE
+    for command, texts in sorted(carried.items()):
         finished = subprocess.run(
-            [sys.executable, *parts[1:]], cwd=ROOT, input=stdin,
-            capture_output=True, text=True, timeout=120,
+            command, shell=True, cwd=ROOT, capture_output=True, text=True,
+            timeout=180,
         )
         # 1 is the validator reporting violations, which is a verdict and not
         # a failure to run. Anything else, or a traceback, means the line this
@@ -195,7 +195,19 @@ def test_every_reproduce_line_reproduces(corpus):
             f"{command!r} exited {finished.returncode}\n{finished.stderr}")
         assert "Traceback" not in finished.stderr, (
             f"{command!r} crashed\n{finished.stderr}")
-        assert finished.stdout.strip(), f"{command!r} printed nothing"
+
+        if " -m vitruvyan_motus.mcp " in command:
+            for text in texts:
+                assert text in finished.stdout, (
+                    f"{command!r} does not produce the span it carries:\n"
+                    f"  span: {text!r}\n  output: {finished.stdout[:400]!r}")
+        else:
+            # The validator prints `RULE PATH: message`; the span withholds the
+            # message (4c), so the rule and the path are what must line up.
+            for text in texts:
+                rule = text.split(" ", 1)[0]
+                assert rule in finished.stdout or "no violation" in text, (
+                    f"{command!r} does not report {rule!r}\n{finished.stdout[:400]!r}")
 
 
 def test_a_computed_span_agrees_with_its_own_command():

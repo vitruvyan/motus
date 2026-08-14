@@ -313,3 +313,68 @@ def test_a_file_that_cannot_be_opened_is_answered_and_not_raised(tmp_path):
     finally:
         artefact.chmod(0o600)
     assert answer.is_refusal
+
+
+def test_the_idempotency_review_reads_the_effect_call_and_not_the_file(tmp_path):
+    """§4.3 wants a non-empty key on the effect. The check asked whether the
+    keyword appeared anywhere in the node.
+
+    So `idempotency_key=None` — the exact value §4.3 refuses — satisfied it, and
+    so did an unrelated call that happened to take a keyword of that name. The
+    review looked satisfied in precisely the case where resume stays blocked
+    and the write can be repeated.
+    """
+    from vitruvyan_motus.mcp.tools import review_node
+
+    explicit_none = review_node(
+        "def n(s, ctx):\n"
+        "    ctx.record_effect(EffectDescriptor(kind='http', idempotency_key=None))\n",
+        effect_class="external_effect")
+    assert any("idempotency_key=None" in span.text for span in explicit_none.spans
+               if isinstance(span, Computed))
+
+    elsewhere = review_node(
+        "def n(s, ctx):\n"
+        "    log(idempotency_key='x')\n"
+        "    ctx.record_effect(EffectDescriptor(kind='http'))\n",
+        effect_class="external_effect")
+    assert any("passes no idempotency_key" in span.text for span in elsewhere.spans
+               if isinstance(span, Computed))
+
+    computed_key = review_node(
+        "def n(s, ctx):\n"
+        "    ctx.record_effect(EffectDescriptor(kind='http', idempotency_key=key))\n",
+        effect_class="external_effect")
+    assert any("cannot read" in span.text for span in computed_key.spans
+               if isinstance(span, Computed)), (
+        "a key computed at run time is not a finding, and is not a clearance")
+
+
+def test_a_pure_node_reading_module_state_is_reported(tmp_path):
+    """ADR-022 decision 3 names *a `pure` node reading a module-level global*
+    and it was not implemented at all.
+
+    Reported as a read and never as a verdict: a module-level constant and a
+    mutable cache are indistinguishable from the AST, so §4.1 is quoted beside
+    the fact and the reader decides which they have. Scoped to `pure`, because
+    that is the class whose obligation §4.1 states.
+    """
+    from vitruvyan_motus.mcp.tools import review_node
+
+    source = ("import json\n"
+              "CACHE = {}\n"
+              "def node(state):\n"
+              "    return state.with_fact(json.dumps(CACHE['x']))\n")
+    reported = review_node(source, effect_class="pure")
+    assert any("reads the module-level CACHE" in span.text
+               for span in reported.spans if isinstance(span, Computed))
+    assert any("`pure`" in span.text for span in reported.spans
+               if isinstance(span, Quoted))
+
+    # `json` is imported, not module state; and without a declared class this
+    # says nothing, because §4.1's obligation is `pure`'s.
+    assert "json" not in " ".join(
+        span.text for span in reported.spans if isinstance(span, Computed))
+    assert not any("module-level" in span.text
+                   for span in review_node(source).spans
+                   if isinstance(span, Computed))

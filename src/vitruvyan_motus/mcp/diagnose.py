@@ -120,11 +120,34 @@ def _refuse_unopenable(artefact: str) -> Answer:
     """
     return Answer(tool="motus_diagnose", spans=(
         Computed(by="pathlib.Path.is_file",
-                 reproduce="python -m vitruvyan_motus.mcp diagnose "
-                           + shlex.quote(artefact),
+                 reproduce=(shlex.quote(sys.executable)
+                            + " -m vitruvyan_motus.mcp diagnose "
+                            + shlex.quote(artefact)),
                  text="not a file this process can open"),
         Cannot(tried=(f"open({artefact!r})",)),
     ))
+
+
+def _trace_command(path: Path) -> str:
+    """A line that reproduces the root and the record count.
+
+    `validate <kind> <file>` prints violations and nothing else, so the spans
+    carrying `derived root` and the record summary were quoting a command that
+    does not produce them — a reproduce line that does not reproduce, which 4a
+    calls worse than none.
+
+    It is this tool's own CLI rather than a one-liner, and the reason is worth
+    stating because 4a's phrasing is *"without us"*. A one-liner would have to
+    reach for either `Trace.from_json`, which refuses any trace document
+    carrying an extra top-level key and so crashes on real archives, or the
+    validator's strict loader, which is private and should not be pressed into
+    a line handed to a caller. What the caller gets instead is shipped code on
+    their own machine, run from a shell, with no server involved — and the
+    violation spans above still carry the validator's own command, so the half
+    that can be checked against a different program still is.
+    """
+    return (shlex.quote(sys.executable) + " -m vitruvyan_motus.mcp diagnose "
+            + shlex.quote(str(path)))
 
 
 def _root_span(document: dict, by: str, reproduce: str) -> Computed:
@@ -178,7 +201,8 @@ def _json_diagnosis(path: Path, kind: str, document: dict) -> tuple[object, ...]
         "checkpoint": validate.validate_checkpoint,
         "receipt": validate.validate_receipt,
     }[kind]
-    reproduce = ("python -m vitruvyan_motus.contract.validate "
+    reproduce = (shlex.quote(sys.executable)
+                 + " -m vitruvyan_motus.contract.validate "
                  f"{kind} {shlex.quote(str(path))}")
     by = f"vitruvyan_motus.contract.validate.{checker.__name__}"
 
@@ -189,13 +213,14 @@ def _json_diagnosis(path: Path, kind: str, document: dict) -> tuple[object, ...]
                               text=f"{kind}: no violation"))
 
     if kind == "trace":
-        spans.append(_root_span(document, by, reproduce))
+        derived = _trace_command(path)
+        spans.append(_root_span(document, "vitruvyan_motus.trace.Trace.root", derived))
         records = document.get("records")
         if isinstance(records, list):
             terminal = records[-1].get("kind") if records and isinstance(
                 records[-1], dict) else None
             spans.append(Computed(
-                by=by, reproduce=reproduce,
+                by=by, reproduce=derived,
                 text=f"{len(records)} records, last kind {terminal!r}"))
     return tuple(spans)
 
@@ -210,7 +235,8 @@ def _jsonl_diagnosis(path: Path, raw: str) -> tuple[object, ...]:
     writes was answered `I cannot tell` with a command about reviewing a node.
     """
     validate = _validate_module()
-    reproduce = ("python -m vitruvyan_motus.contract.validate jsonl "
+    reproduce = (shlex.quote(sys.executable)
+                 + " -m vitruvyan_motus.contract.validate jsonl "
                  f"{shlex.quote(str(path))}")
     by = "vitruvyan_motus.contract.validate.validate_jsonl"
     violations, document = validate.validate_jsonl(raw)
@@ -218,7 +244,7 @@ def _jsonl_diagnosis(path: Path, raw: str) -> tuple[object, ...]:
     if not violations:
         spans.append(Computed(by=by, reproduce=reproduce, text="jsonl: no violation"))
     if isinstance(document, dict):
-        spans.append(_root_span(document, by, reproduce))
+        spans.append(_root_span(document, by, reproduce))  # JSONL has no such line
     return tuple(spans)
 
 
@@ -278,7 +304,8 @@ def diagnose(artefact: str, symptom: str = "") -> Answer:
         return _refuse_unopenable(artefact)
 
     spans: list[object] = []
-    unidentified_reproduce = ("python -m vitruvyan_motus.mcp diagnose "
+    unidentified_reproduce = (shlex.quote(sys.executable)
+                              + " -m vitruvyan_motus.mcp diagnose "
                               + shlex.quote(str(path)))
 
     document: object = None
@@ -312,7 +339,8 @@ def diagnose(artefact: str, symptom: str = "") -> Answer:
             spans.extend(_json_diagnosis(path, kinds[0], document))
         else:
             spans.append(Cannot(tried=(
-                "python -m vitruvyan_motus.contract.validate "
+                shlex.quote(sys.executable)
+                + " -m vitruvyan_motus.contract.validate "
                 f"<kind> {shlex.quote(str(path))}",)))
             spans.append(Computed(
                 by=f"{__name__}._identify",

@@ -13,6 +13,7 @@ exist otherwise.
 from __future__ import annotations
 
 import ast
+import json
 import shlex
 import sys
 from pathlib import Path
@@ -25,6 +26,18 @@ __all__ = ["classify", "review_graph", "review_node", "explain",
            "start_here", "where", "ADVERTISED"]
 
 _ME = "vitruvyan_motus.mcp.tools"
+
+
+def _piped(payload: str, *parts: str) -> str:
+    """A reproduce line that carries the input the caller passed inline.
+
+    `review-graph -` and `review-node -` read stdin, so the line as rendered
+    blocked on a terminal or failed on empty input — and the suite masked it by
+    supplying stdin itself. The spec or the source is something the caller
+    already sent, so putting it back in the command crosses no boundary the
+    request had not already crossed.
+    """
+    return ("printf %s " + shlex.quote(payload) + " | " + _command(*parts))
 
 
 def _command(*parts: str) -> str:
@@ -167,7 +180,7 @@ def review_graph(spec: dict) -> Answer:
     from vitruvyan_motus import GraphSpec
     from vitruvyan_motus.errors import GraphSpecValidationError
 
-    reproduce = _command("review-graph", "-")
+    reproduce = _piped(json.dumps(spec, sort_keys=True), "review-graph", "-")
     try:
         parsed = GraphSpec.from_dict(spec)
     except GraphSpecValidationError as refused:
@@ -218,11 +231,107 @@ def _called_names(tree: ast.AST) -> list[tuple[str, int]]:
     return found
 
 
-def _keyword_used(tree: ast.AST, name: str) -> bool:
-    """Whether any call passes ``name`` as a keyword argument."""
-    return any(keyword.arg == name
-               for node in ast.walk(tree) if isinstance(node, ast.Call)
-               for keyword in node.keywords)
+#: The two call shapes that carry an effect's identity. Named rather than
+#: matched loosely: the previous check asked whether `idempotency_key` appeared
+#: as a keyword ANYWHERE in the node, so an unrelated call satisfied it — and
+#: so did `idempotency_key=None`, which is the exact value §4.3 refuses.
+_EFFECT_CALLS = ("record_effect", "EffectDescriptor")
+
+
+def _effect_key_findings(tree: ast.AST) -> list[tuple[int, str]]:
+    """Each effect call that cannot show §4.3 a non-empty idempotency key.
+
+    Three verdicts, and the third is the honest one: absent, present but
+    constant-empty, or an expression this cannot read. A key computed at run
+    time is the normal case and is not a finding — but it is also not a
+    clearance, so it is reported as unread rather than passed over.
+    """
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        name = target.attr if isinstance(target, ast.Attribute) else (
+            target.id if isinstance(target, ast.Name) else "")
+        if name not in _EFFECT_CALLS:
+            continue
+        supplied = [k for k in node.keywords if k.arg == "idempotency_key"]
+        if not supplied:
+            found.append((node.lineno, f"{name} passes no idempotency_key"))
+            continue
+        value = supplied[0].value
+        if isinstance(value, ast.Constant):
+            if not isinstance(value.value, str) or not value.value:
+                found.append((node.lineno,
+                              f"{name} passes idempotency_key={value.value!r}, "
+                              "and §4.3 requires a non-empty key"))
+        else:
+            found.append((node.lineno,
+                          f"{name} passes an idempotency_key this cannot read "
+                          "from source — check it is non-empty at run time"))
+    return found
+
+
+def _module_state(tree: ast.AST) -> set[str]:
+    """Names bound at module level by an ASSIGNMENT, and nothing else.
+
+    A `def`, a `class` and an import are module-level bindings too, and a node
+    calling a helper or constructing a `Fact` is reading them — which is
+    ordinary and is not what ADR-022 decision 3 names. What it names is the
+    side channel: state that lives outside the run and can differ between one
+    execution and the next.
+    """
+    bound: set[str] = set()
+    for statement in getattr(tree, "body", []):
+        targets: list[ast.AST] = []
+        if isinstance(statement, ast.Assign):
+            targets = list(statement.targets)
+        elif isinstance(statement, (ast.AnnAssign, ast.AugAssign)):
+            targets = [statement.target]
+        for target in targets:
+            for node in ast.walk(target):
+                if isinstance(node, ast.Name):
+                    bound.add(node.id)
+    return bound
+
+
+def _module_state_reads(tree: ast.AST) -> list[tuple[int, str]]:
+    """Where a function reads module-level state it does not bind itself.
+
+    ADR-022 decision 3 names *"a `pure` node reading a module-level global"* as
+    a case this tool reviews, and it was not implemented. This is that case,
+    and it is structural: the read is a fact about the AST. It is reported as
+    a read and never as a verdict, because a module-level constant and a
+    mutable cache are indistinguishable from here — §4.1 is quoted beside it
+    and the reader decides which they have.
+    """
+    module_state = _module_state(tree)
+    if not module_state:
+        return []
+    found: list[tuple[int, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for function in ast.walk(tree):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        local: set[str] = set()
+        for node in ast.walk(function):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                local.add(node.id)
+        for group in (function.args.posonlyargs, function.args.args,
+                      function.args.kwonlyargs):
+            local.update(argument.arg for argument in group)
+        for extra in (function.args.vararg, function.args.kwarg):
+            if extra is not None:
+                local.add(extra.arg)
+        for node in ast.walk(function):
+            if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+                    and node.id in module_state and node.id not in local
+                    and (function.name, node.id) not in seen):
+                seen.add((function.name, node.id))
+                found.append((node.lineno,
+                              f"{function.name} reads the module-level "
+                              f"{node.id}"))
+    return found
 
 
 def review_node(source: str, effect_class: str | None = None,
@@ -249,7 +358,7 @@ def review_node(source: str, effect_class: str | None = None,
     # caller already has beats asking them to pipe the source back in: a round
     # found this line emitted as `review-node -`, which blocks on a terminal
     # when pasted — a reproduce line that does not reproduce.
-    reproduce = reproduce or _command("review-node", "-")
+    reproduce = reproduce or _piped(source, "review-node", "-")
     try:
         tree = ast.parse(source)
     except SyntaxError as broken:
@@ -272,10 +381,28 @@ def review_node(source: str, effect_class: str | None = None,
     if drawn:
         spans.append(Quoted(SECTION, protocol.clause("6.2")))
 
-    if effect_class == "external_effect" and not _keyword_used(tree, "idempotency_key"):
-        spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
-                              text="no call passes idempotency_key"))
+    if effect_class == "external_effect":
+        keys = _effect_key_findings(tree)
+        for line, detail in keys:
+            spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
+                                  text=f"line {line}: {detail}"))
+        if not keys:
+            spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
+                                  text="no call in this source records an effect"))
         spans.append(Quoted(SECTION, protocol.clause("4.3")))
+
+    if effect_class == "pure":
+        # Scoped to the class ADR-022 decision 3 names, and not run wider. The
+        # obligation being cited is §4.1's `pure` row; a `recorded_effect` node
+        # reading a module-level constant breaks nothing, and reporting it
+        # would be a fact nobody asked for beside a clause that does not
+        # govern it. Reviewed without a declared class, this stays silent.
+        reads = _module_state_reads(tree)
+        for line, detail in reads:
+            spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
+                                  text=f"line {line}: {detail}"))
+        if reads:
+            spans.append(Quoted(SECTION, protocol.clause("4.1")))
 
     if not spans:
         spans.append(Cannot(tried=(reproduce,)))
