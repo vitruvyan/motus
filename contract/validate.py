@@ -3195,6 +3195,12 @@ def derived_root(doc: dict) -> str | None:
             "run_completed", "run_failed", "run_cancelled"):
         return None
 
+    # `document_version_header(doc)` is provably "3.0.0" here — the gate above
+    # returned for every other value — so a mutant hard-coding it survives the
+    # whole suite. That is an EQUIVALENT mutant and not a coverage gap: do not
+    # invent a test for it. The call stays because the header digest's inputs
+    # should read as the header's fields rather than as constants, and because
+    # a later version admitted to the gate must change this line with it.
     expected_prev = "sha256:" + hashlib.sha256(canonical_json({
         "schema_version": document_version_header(doc),
         "run": doc.get("run") or {},

@@ -363,16 +363,22 @@ def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
     """The obvious attack on a version-scoped rule: the attacker declares a
     version the rule does not govern.
 
-    It fails, and the reason is structural rather than lucky. `schema_version`
-    is inside the header digest that seeds the chain (ADR-019), so relabelling
-    a genuine 3.0.0 document to `2.0.0` — without resealing, which an attacker
-    who does not hold the run cannot do — leaves a document J2 no longer
-    governs and that **derives no root at all**. There is then nothing for an
-    anchor or a receipt to bind to, which is exactly the state J2 exists to
-    protect.
+    It fails, and the reason is structural rather than lucky — but it is not
+    the reason a first reading suggests, and a mutation probe is what corrected
+    it. `derived_root` refuses to derive anything below 3.0.0 at all (ADR-019:
+    the digests do not cover `prev_hash` there, so the terminal hash covers one
+    record rather than the run). So the version J2 is scoped on is the same
+    version the root is scoped on, and **escaping one escapes the other**: the
+    relabelled document derives no root, and there is nothing for an anchor or
+    a receipt to bind to. That is exactly the state J2 exists to protect.
 
-    Pinned because the scope key being covered is the load-bearing half of the
-    argument in `_lexically_governed`, and it lives in a different module."""
+    Not the mechanism to state here: that `schema_version` sits inside the
+    header digest. It does, but the gate returns before that line is reached,
+    which is why a mutant removing it survives the entire suite as an
+    equivalent mutant — recorded at the line in `contract/validate.py`.
+
+    Pinned because the two halves of the argument live in different modules and
+    a change to either would separate them silently."""
     genuine = run.to_json()
     assert run.root is not None
 
