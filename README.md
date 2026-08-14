@@ -342,6 +342,28 @@ The contract prose and the frozen conformance fixtures stay in this
 repository. The reader who needs those is already reading it; the validator is
 needed by everyone, without having to know it exists.
 
+## Building against Motus with an agent
+
+`pip install vitruvyan-motus[mcp]` ships an MCP server whose every answer is
+either quoted from a document in the installation or produced by running the
+shipped code, with the command that reproduces it. Nothing in it is written
+from memory, and if a document changes the answer changes.
+
+It exists because of a measurement, not a hunch: the effect classification has
+been read wrong twice by careful readers, once by an automated reviewer that
+inverted it twice in one pull request, and once by an integrator who declared
+read-only HTTP calls `external_effect` believing it conservative. The contract
+permits that; nothing told them it costs safe resumes, silently, forever.
+
+```
+pip install "vitruvyan-motus[mcp]"
+python -m vitruvyan_motus.mcp classify "I need to INSERT a row"
+```
+
+See [`docs/MCP.md`](docs/MCP.md) for the surface, the client configuration, and
+the two things it refuses to do. It is off until installed: nothing on any
+runtime path imports it.
+
 ## Where to put your code
 
 Motus never sees your filesystem. `Runtime` receives a mapping of node names to
