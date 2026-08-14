@@ -82,10 +82,17 @@ every model tier:
   whose lexeme could be rewritten without moving the root; string escapes had
   the same hole, and an escaped letter renders as the word while `grep` for it
   fails. A round found a commitment log satisfied by a `Mock()`; the sink had
-  the same hole, on the primary evidence path, and reported `persisted` with
-  nothing written. **Both second sites were worse than the first, and neither
-  was reported by anybody.** When the class cannot be closed, say where it
-  stays open and leave a test that fails when a new member appears.
+  the same hole. **Neither second site was reported by anybody.** When the class
+  cannot be closed, say where it stays open and leave a test that fails when a
+  new member appears.
+
+  **And the class being real does not make your repair for it right.** Both
+  repairs written under this rule on 2026-08-14 were killed by the round that
+  followed: one covered half its own surface and refused a frozen artifact of
+  ours; the other refused `xmlrpc.client.ServerProxy` from the standard library
+  while missing the doubles the stdlib documentation recommends. **Generalising
+  a fix widens its blast radius, so it raises the bar on measuring it, not
+  lowers it.**
 - **Build the general solution, not the particular one.** A fix that handles
   the reported case and nothing else is a fix that will be reported again from
   the next case. Where the general form costs more, pay it or say why you did

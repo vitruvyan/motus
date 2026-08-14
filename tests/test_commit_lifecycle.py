@@ -281,10 +281,8 @@ def test_a_log_that_records_nothing_is_refused_before_a_node_runs(tmp_path):
     and returns another Mock. A run reported `completed` with an audit trail
     that was never written, indistinguishable from one that was.
 
-    It is now refused at CONSTRUCTION rather than at the first run, by the
-    general rule that an object answering to a name no protocol declares is
-    answering to anything — so the node never runs and there is no run to
-    report on."""
+    Caught by the return-value check: a log must hand back the Commitment it
+    wrote, and a Mock hands back another Mock."""
     from unittest.mock import Mock
 
     ran: list[str] = []
@@ -293,9 +291,9 @@ def test_a_log_that_records_nothing_is_refused_before_a_node_runs(tmp_path):
         ran.append("yes")
         return state.with_fact(Fact("done", True, "test", NOW))
 
-    with pytest.raises(TypeError, match="no protocol declares"):
+    with pytest.raises(TypeError, match="must return the Commitment"):
         Runtime(SPEC, {"work": work}, sink=InMemoryTraceSink(),
-                commitments=Mock())
+                commitments=Mock()).run(State.empty("x"), run_id="r1")
     assert ran == [], "a node executed against a log that records nothing"
 
 

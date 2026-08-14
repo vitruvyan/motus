@@ -52,45 +52,6 @@ def _iterator_is_running(iterator: Any) -> bool:
     return False
 
 
-#: A name no protocol Motus accepts will ever declare. Asking for it is how a
-#: stand-in is told from an implementation.
-_PROBE = "_motus_no_protocol_declares_this"
-
-
-def refuse_a_stand_in(candidate: Any, what: str) -> Any:
-    """Refuse an object that answers EVERYTHING, at any protocol boundary.
-
-    A shape check cannot tell a working implementation from a leftover test
-    double: `Mock()` has every attribute, satisfies any Protocol, accepts every
-    call and returns another Mock. An adversarial round found a run reporting
-    `completed` against a commitment log that recorded nothing, and the repair
-    there was to validate the CONCRETE TYPE it returns — which works only where
-    something concrete comes back. `TraceRunSink.write` returns None, so there
-    is nothing to validate, and the same defect sat unfixed at the primary
-    evidence path: a `Mock()` sink produced status `completed` and evidence
-    `persisted` with nothing written anywhere.
-
-    So this asks a different question. An object that has a method for a name
-    **no protocol declares** is not implementing a protocol; it is answering
-    everything. A real implementation says no. So does a hand-rolled duck type,
-    a `SimpleNamespace`, and — deliberately — a `Mock(spec=...)`, because a
-    double whose author declared what it stands in for is a bounded test double
-    and not an accident.
-
-    Generalised from one site to every site on purpose: the founder's objection
-    to fixing this one place at a time is recorded in ADR-024, and the rule it
-    produced is in AGENTS.md.
-    """
-    if candidate is not None and getattr(candidate, _PROBE, None) is not None:
-        raise TypeError(
-            f"{what} answers to {_PROBE!r}, which no protocol declares, so it "
-            "answers to anything. A stand-in here produces a run that reports "
-            "evidence nobody wrote, and it is indistinguishable from one that "
-            "did. Pass a real implementation, or a double with `spec=` so it "
-            "declares what it stands in for")
-    return candidate
-
-
 @runtime_checkable
 class TraceRunSink(Protocol):
     """One run-scoped durable session receiving ordered record batches.
@@ -275,7 +236,6 @@ class _ObservationHub:
             session = self.sink.open_run(copy.deepcopy(header))
             if not callable(getattr(session, "write", None)):
                 raise TypeError("TraceSink.open_run must return a TraceRunSink")
-            refuse_a_stand_in(session, "the session TraceSink.open_run returned")
             self._run_sink = session
         except BaseException as exc:
             self._async_failure = exc

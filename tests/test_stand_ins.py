@@ -1,29 +1,32 @@
-"""No caller-supplied protocol may be satisfied by an object that answers
-everything — at EVERY boundary, not at the one where it was noticed.
+"""What a stand-in at a protocol boundary does and does not prove — and why the
+obvious repair was withdrawn.
 
-This file exists because of a specific failure of method rather than of code.
-An adversarial round found a run reporting `completed` against a commitment log
-that recorded nothing, and the repair validated the concrete type that log
-returns. That closed the site. **It did not close the class**, and the founder
-said so before the second site was found: the primary evidence path — the sink —
-had the same hole, and a `Mock()` there produced status `completed` with
-evidence `persisted` and nothing written anywhere.
+A `Mock()` sink produces `status=completed` and `evidence=persisted` with
+nothing written anywhere. That looks like a defect and **it is declared
+behaviour**: ADR-016 defines `persisted` as *a required sink accepted every
+record, terminal included*, and §6 says a sink that does not raise has accepted.
+The property *persisted implies durable* was never on offer and **cannot be
+checked from inside the process** — which is what #73 is about.
 
-So the rule is enforced here over the whole surface, and a new protocol that
-does not appear below is a gap in this file rather than a decision.
+A rule was written to refuse objects that "answer everything", and an
+adversarial round killed it: it refused `xmlrpc.client.ServerProxy` from the
+standard library, a lazy-loading sink, and a failover proxy — every
+`__getattr__`-forwarding idiom — while `Mock(spec=...)` and `create_autospec`,
+which the stdlib docs *recommend over bare Mock*, sailed through it. It refused
+more legitimate code than stand-ins.
+
+These tests pin the limit so that the next person to notice it finds this file
+before writing the same rule again.
 """
 
 from __future__ import annotations
 
-import types
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock, create_autospec
 
 import pytest
 
-from vitruvyan_motus import (
-    Fact, GraphSpec, InMemoryTraceSink, Runtime, State,
-)
+from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 
@@ -38,83 +41,37 @@ def _nodes():
     return {"a": lambda state: state.with_fact(Fact("k", 1, "test", NOW))}
 
 
-#: Every caller-supplied protocol the Runtime accepts. A new one belongs here.
-#:
-#: Each entry wires the double into ONE boundary and everything else real. The
-#: first version passed the same double as both the commitment log and the
-#: witness, so the log's check fired and the witness's was never reached — a
-#: mutation probe removing it survived. A test that asserts the right sentence
-#: while exercising the wrong thing is this project's most repeated defect, and
-#: it took a probe to notice it here too.
-BOUNDARIES = [
-    ("sink", lambda double, tmp: {"sink": double}),
-    ("commitments", lambda double, tmp: {"commitments": double}),
-    ("witness", lambda double, tmp: {"commitments": _real_log(tmp),
-                                     "witness": double}),
-]
+def test_a_sink_that_writes_nothing_still_reports_persisted(tmp_path):
+    """**The limit, asserted rather than described.** `persisted` means the sink
+    accepted every record, not that anything reached a disk. A stand-in accepts
+    everything, so it reports `persisted` — and so would a real sink whose
+    `write` is `pass`, which is the case that shows this is not about doubles.
 
+    Closing this needs #73, and #73 needs the sink to say something back. Do not
+    close it by trying to recognise stand-ins: that was tried and it refused
+    `xmlrpc.client.ServerProxy`."""
+    class WritesNothing:
+        def open_run(self, header):
+            return self
 
-def _real_log(tmp_path):
-    from vitruvyan_motus.commitlog import CommitmentLog
-    return CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False,
-                         witness_deadline=5.0)
+        def write(self, records):
+            pass
 
+        def finish(self, *, complete):
+            pass
 
-@pytest.mark.parametrize(("name", "wire"), BOUNDARIES, ids=[n for n, _ in BOUNDARIES])
-@pytest.mark.parametrize("double", [Mock, MagicMock], ids=["Mock", "MagicMock"])
-def test_no_boundary_accepts_an_object_that_answers_everything(
-        name, wire, double, tmp_path):
-    with pytest.raises(TypeError, match="no protocol declares"):
-        Runtime(SPEC, _nodes(), **wire(double(), tmp_path))
-
-
-def test_the_sink_was_the_site_that_stayed_open(monkeypatch):
-    """Named on its own because it is the one that mattered: the sink is the
-    primary evidence path and has been there since 0.1, while the commitment
-    log is optional and one release old.
-
-    Before this rule, the run below reported `completed` with evidence
-    `persisted`."""
-    with pytest.raises(TypeError, match="no protocol declares"):
-        Runtime(SPEC, _nodes(), sink=Mock())
-
-
-# -- what the rule must NOT refuse -----------------------------------------
-
-def test_a_real_implementation_passes():
-    result = Runtime(SPEC, _nodes(), sink=InMemoryTraceSink()).run(
+    result = Runtime(SPEC, _nodes(), sink=WritesNothing()).run(
         State.empty("x"), run_id="r1")
     assert result.status == "completed"
     assert str(result.evidence) in ("persisted", "EvidenceStatus.PERSISTED")
 
 
-def test_a_hand_rolled_duck_type_passes():
-    """The rule asks whether an object answers to a name no protocol declares.
-    A duck type written by hand answers only what it implements, which is the
-    entire point of allowing duck types at all."""
-    written: list[tuple] = []
-
-    class Session:
-        def write(self, records):
-            written.append(tuple(records))
-
-        def finish(self, *, complete):
-            written.append(("finish", complete))
-
-    class Sink:
-        def open_run(self, header):
-            return Session()
-
-    result = Runtime(SPEC, _nodes(), sink=Sink()).run(State.empty("x"), run_id="r1")
-    assert result.status == "completed"
-    assert written, "the hand-rolled sink was never written to"
-
-
-def test_a_double_that_declares_what_it_stands_in_for_passes():
-    """`Mock(spec=...)` answers only the names of the thing it specs, so its
-    author has declared the boundary. That is a bounded test double and not an
-    accident, and refusing it would make the rule hostile to legitimate
-    testing."""
+@pytest.mark.parametrize("double", ["bare", "spec", "autospec"])
+def test_every_kind_of_double_reaches_the_same_place(double):
+    """The rule that was withdrawn caught only the first of these. The stdlib
+    documentation recommends the other two, so a team following its advice
+    reproduced the case the rule was written for while a bare Mock — the least
+    likely thing in production code — was the only one it stopped."""
     class Session:
         def write(self, records): ...
         def finish(self, *, complete): ...
@@ -122,34 +79,55 @@ def test_a_double_that_declares_what_it_stands_in_for_passes():
     class Sink:
         def open_run(self, header): ...
 
-    sink = Mock(spec=Sink)
-    sink.open_run.return_value = Mock(spec=Session)
+    if double == "bare":
+        sink = Mock()
+    elif double == "spec":
+        sink = Mock(spec=Sink)
+        sink.open_run.return_value = Mock(spec=Session)
+    else:
+        sink = create_autospec(Sink, instance=True)
+        sink.open_run.return_value = create_autospec(Session, instance=True)
+
     result = Runtime(SPEC, _nodes(), sink=sink).run(State.empty("x"), run_id="r1")
     assert result.status == "completed"
-    sink.open_run.assert_called_once()
 
 
-def test_a_simple_namespace_passes():
-    session = types.SimpleNamespace(write=lambda records: None,
-                                    finish=lambda *, complete: None)
-    sink = types.SimpleNamespace(open_run=lambda header: session)
-    assert Runtime(SPEC, _nodes(), sink=sink).run(
-        State.empty("x"), run_id="r1").status == "completed"
+def test_a_forwarding_proxy_is_a_legitimate_sink(tmp_path):
+    """What the withdrawn rule refused, and the reason it had to go.
+
+    Resolving the target at call time is how a lazy connection, a shard router,
+    a failover wrapper and an RPC stub are written — `xmlrpc.client.ServerProxy`
+    in the standard library has exactly this shape. A rule that refuses it
+    refuses more working code than it protects."""
+    from vitruvyan_motus.sinks import JsonlTraceSink
+
+    inner = JsonlTraceSink(tmp_path, fsync=False)
+
+    class LazyProxy:
+        def __getattr__(self, name):
+            def call(*args, **kwargs):
+                return getattr(inner, name)(*args, **kwargs)
+            return call
+
+    result = Runtime(SPEC, _nodes(), sink=LazyProxy()).run(
+        State.empty("x"), run_id="r1")
+    assert result.status == "completed"
+    assert list(tmp_path.rglob("*.jsonl")), "the proxy's target wrote nothing"
 
 
-def test_the_session_a_sink_returns_is_checked_too():
-    """The sink itself may be perfectly real and hand back a stand-in. Checking
-    only the object the caller passed would close half the boundary.
+def test_the_commitment_log_check_is_a_different_rule_and_it_stays(tmp_path):
+    """#82's check is not the withdrawn one and does not share its fate. It
+    validates the CONCRETE TYPE the log returns, which is checkable because
+    something concrete comes back — and it is why a log that records nothing
+    cannot let a run report `completed`. `TraceRunSink.write` returns None, so
+    the same repair was never available for the sink."""
+    class RecordsNothing:
+        def begin(self, *args, **kwargs):
+            return None
 
-    It surfaces as `SinkFailed` rather than `TypeError`, and that is the right
-    shape: a bad argument is the caller's mistake, caught at construction; a
-    sink misbehaving while a run is in flight is a sink failure, and the
-    runtime already has a name for that."""
-    from vitruvyan_motus import SinkFailed
+        def end(self, *args, **kwargs):
+            return None
 
-    class Sink:
-        def open_run(self, header):
-            return Mock()
-
-    with pytest.raises(SinkFailed, match="no protocol declares"):
-        Runtime(SPEC, _nodes(), sink=Sink()).run(State.empty("x"), run_id="r1")
+    with pytest.raises(TypeError, match="must return the Commitment"):
+        Runtime(SPEC, _nodes(), sink=InMemoryTraceSink(),
+                commitments=RecordsNothing()).run(State.empty("x"), run_id="r1")
