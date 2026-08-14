@@ -69,8 +69,8 @@ def test_everything_this_contract_writes_is_already_canonical(value):
     `json.dumps`, so a document we produced carries canonical lexemes. **The
     defect was never in what we write** — it was that a verifier re-serializes
     what it parses, and re-serialization launders the difference."""
-    text = json.dumps({"v": value})
-    assert validate._loads_strict(text) == {"v": value}
+    text = json.dumps({"schema_version": "3.0.0", "v": value})
+    assert validate._loads_strict(text) == {"schema_version": "3.0.0", "v": value}
 
 
 def test_a_real_trace_survives_the_rule_unchanged(run):
@@ -93,7 +93,8 @@ def test_a_real_trace_survives_the_rule_unchanged(run):
 ])
 def test_a_lexeme_the_contract_would_not_write_is_refused(lexeme, canonical):
     with pytest.raises(validate.NonCanonicalNumberError) as caught:
-        validate._loads_strict('{"v":%s}' % lexeme)
+        validate._loads_strict(
+            '{"schema_version":"3.0.0","v":%s}' % lexeme)
     assert lexeme in str(caught.value) and canonical in str(caught.value)
 
 
@@ -104,9 +105,9 @@ def test_a_number_inside_a_string_is_not_a_number(run):
     `5.10` here is somebody's prose. It is not a value the digest commits to as
     a number, and refusing the document for it would be refusing a document that
     is entirely well-formed."""
-    for text in ('{"note":"cost 5.10 eur"}',
-                 '{"note":"5000000000000000511.0"}',
-                 '{"note":"1e-400 and 0.10 and 1E5"}'):
+    for text in ('{"schema_version":"3.0.0","note":"cost 5.10 eur"}',
+                 '{"schema_version":"3.0.0","note":"5000000000000000511.0"}',
+                 '{"schema_version":"3.0.0","note":"1e-400 and 0.10 and 1E5"}'):
         assert validate._loads_strict(text) == json.loads(text)
 
 
@@ -223,8 +224,8 @@ CLASS_MEMBERS = [
 ]
 
 SUBJECT = json.dumps(
-    {"decision": "approved", "note": "café", "path": "a/b",
-     "big": 5e18, "n": 1.5, "z": 0},
+    {"schema_version": "3.0.0", "decision": "approved", "note": "café",
+     "path": "a/b", "big": 5e18, "n": 1.5, "z": 0},
     ensure_ascii=False, separators=(",", ":"))
 
 
@@ -282,11 +283,77 @@ def test_an_escape_can_still_hide_a_word_from_grep_and_this_is_open(hidden):
     This test asserts the hole so that closing it breaks the test and forces
     somebody to come back here and read why the first attempt failed."""
     escaped = "\\u%04x" % ord(hidden[0]) + hidden[1:]
-    document = '{"v":"%s"}' % escaped
+    document = '{"schema_version":"3.0.0","v":"%s"}' % escaped
     assert json.loads(document)["v"] == hidden
-    assert validate._loads_strict(document) == {"v": hidden}, (
+    assert validate._loads_strict(document)["v"] == hidden, (
         "string escapes are refused now — good. Close #98, delete this test, "
         "and read ADR-024's residual before choosing the canonical form"
     )
 
 
+
+
+# --------------------------------------------------------------------------- #
+# The canonical number form, frozen against the interpreter                    #
+#                                                                              #
+# ADR-024 names an implementation, and naming one is not enough for a format    #
+# meant to verify in ten years: `pyproject` supports >=3.10 open-endedly, and a #
+# formatter change in a future interpreter would make a newer verifier refuse   #
+# genuine historical evidence. These vectors are the contract; the interpreter  #
+# is the thing being checked against them.                                     #
+# --------------------------------------------------------------------------- #
+
+CANONICAL_VECTORS = [
+    (0.0, "0.0"),
+    (-0.0, "-0.0"),
+    (1.0, "1.0"),
+    (0.1, "0.1"),
+    (1 / 3, "0.3333333333333333"),
+    (5e18, "5e+18"),
+    (1e16, "1e+16"),
+    (1e15, "1000000000000000.0"),
+    (1e-4, "0.0001"),
+    (1e-5, "1e-05"),
+    (float(2 ** 53), "9007199254740992.0"),
+    (2 ** 53, "9007199254740992"),
+    (-0, "0"),
+    (42, "42"),
+    (-7, "-7"),
+]
+
+
+@pytest.mark.parametrize(("value", "canonical"), CANONICAL_VECTORS,
+                         ids=[c for _, c in CANONICAL_VECTORS])
+def test_the_canonical_number_form_is_what_the_adr_froze(value, canonical):
+    """If this fails, the interpreter's formatter has moved and the contract has
+    not. Do not update the table to match: a changed formatter means documents
+    written before it are no longer canonical by the new rule, which is a
+    schema-version question and not a test fixture."""
+    assert json.dumps(value) == canonical
+
+
+@pytest.mark.parametrize(("value", "canonical"), CANONICAL_VECTORS,
+                         ids=[c for _, c in CANONICAL_VECTORS])
+def test_every_frozen_vector_is_accepted_by_j2(value, canonical):
+    assert validate._loads_strict(
+        '{"schema_version":"3.0.0","v":%s}' % canonical) == {
+            "schema_version": "3.0.0", "v": value}
+
+
+# -- J2 is scoped by the document's own version -----------------------------
+
+def test_j2_does_not_reach_evidence_written_before_it_existed():
+    """`contract/README.md` §7: old evidence remains valid without rewriting,
+    and a breaking change to a contract surface is a major version. A 1.x or
+    2.x trace — or one another serializer formatted differently — was written
+    under rules that did not include J2.
+
+    Below 3.0.0 the terminal digest covers one record rather than the run
+    (ADR-019), so there is no anchorable root for a lexical collision to
+    attack: the rule would refuse without protecting anything."""
+    tampered = '{"schema_version":"%s","v":5000000000000000511.0}'
+    for older in ("1.0.0", "1.1.0", "2.0.0"):
+        assert validate._loads_strict(tampered % older)["v"] == 5e18
+
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict(tampered % "3.0.0")

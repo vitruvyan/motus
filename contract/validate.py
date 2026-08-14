@@ -214,12 +214,45 @@ def _loads_strict(text: str) -> Any:
     Numbers need no such machinery: the C scanner honours `parse_float` and
     `parse_int`, so J2 costs a hook and not a scanner.
     """
-    return json.loads(
+    document = json.loads(
         text, parse_constant=_refuse_non_finite,
         object_pairs_hook=_refuse_duplicate_keys,
-        parse_float=lambda lexeme: _canonical_number(lexeme, float),
-        parse_int=lambda lexeme: _canonical_number(lexeme, int),
     )
+    if _lexically_governed(document):
+        json.loads(
+            text, parse_constant=_refuse_non_finite,
+            object_pairs_hook=_refuse_duplicate_keys,
+            parse_float=lambda lexeme: _canonical_number(lexeme, float),
+            parse_int=lambda lexeme: _canonical_number(lexeme, int),
+        )
+    return document
+
+
+#: The trace schema versions at which the terminal digest became an anchorable
+#: commitment to the run (ADR-019). Below them there is no root for a lexical
+#: collision to attack, so J2 has nothing to protect and refusing an older
+#: document would break `contract/README.md`'s promise that old evidence stays
+#: valid without rewriting.
+_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
+
+
+def _lexically_governed(document: Any) -> bool:
+    """Does J2 apply to this document?
+
+    Scoped by the document's OWN declared version rather than applied
+    unconditionally. A 1.x or 2.x trace, or one a third party's serializer
+    formatted differently, was written under rules that did not include J2, and
+    refusing it now is a breaking change to a contract surface without a major
+    version — which `contract/README.md` §7 forbids.
+
+    Measured before choosing the scope: the whole repository corpus, 189 JSON
+    documents including the frozen production goldens, contains **zero**
+    non-canonical numeric lexemes. So this scope costs nothing today and is
+    about what a rule may do to evidence written before it existed.
+    """
+    if not isinstance(document, dict):
+        return False
+    return document.get("schema_version") in _LEXICALLY_GOVERNED
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:

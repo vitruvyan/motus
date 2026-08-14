@@ -16,7 +16,12 @@
 - **Advances:** #74. It is on the critical path to 1.0.0 because it touches what
   the root commits to, and the root is what gets frozen
 - **Amends:** nothing. **No digest recipe changes and no schema version moves.**
-  Every genuine trace keeps the root it already has — see decision 2
+  Every genuine trace keeps the root it already has — see decision 2. `J2` is
+  **scoped by the document's own declared version**: it applies from trace
+  schema 3.0.0, where the terminal digest became an anchorable commitment and a
+  lexical collision first had something to attack. Below that there is no root
+  to protect, and refusing an older document would break `contract/README.md`'s
+  promise that old evidence stays valid without rewriting
 
 ## Context
 
@@ -226,12 +231,47 @@ specification. Python renders `5e18` as `5e+18`; JavaScript's
 Both are shortest round-trips. They disagree on when to use an exponent, and a
 rule that admits both admits exactly the collision this ADR closes.
 
-So the canonical form is **what CPython's `json.dumps` emits**, which is
-`repr(float)` — the shortest round-tripping decimal, with CPython's exponent
-thresholds. A producer in another language must match it to write a Motus
-document. That is a real burden and it is the price of a number form that is
-*decidable*; the alternative is a form under which two byte-different documents
-share a root, which is the defect.
+So the canonical form is the shortest round-tripping decimal **with CPython's
+exponent thresholds**, and naming an implementation is not sufficient: *"what
+`json.dumps` emits"* does not identify a version, `pyproject` supports `>=3.10`
+open-endedly, and a formatter change in a future interpreter would make a newer
+verifier refuse genuine historical evidence. **A format frozen for ten years
+cannot delegate its own definition to the installed runtime.**
+
+The rules, written out:
+
+- a value that is integral and fits the integer syntax is written without a
+  decimal point or exponent;
+- otherwise the shortest decimal string that round-trips to the same binary64;
+- an exponent is used when the decimal exponent is **< −4 or ≥ 17**, written
+  `e` with an explicit sign and no leading zeros in the exponent digits;
+- the fraction always has at least one digit (`1.0`, never `1.`);
+- negative zero is written `-0.0`; there is no `-0` for an integral value.
+
+And a **frozen vector table**, which is what actually pins it, because a
+sentence about formatting is checked by nobody:
+
+| value | canonical |
+|---|---|
+| `0.0` | `0.0` |
+| `-0.0` | `-0.0` |
+| `1.0` | `1.0` |
+| `0.1` | `0.1` |
+| `1/3` | `0.3333333333333333` |
+| `5e18` | `5e+18` |
+| `1e16` | `1e+16` |
+| `1e15` | `1000000000000000.0` |
+| `1e-4` | `0.0001` |
+| `1e-5` | `1e-05` |
+| `2**53` (float) | `9007199254740992.0` |
+| `2**53` (int) | `9007199254740992` |
+| `-0` (int) | `0` |
+
+`tests/test_number_lexeme.py` asserts every row against the live interpreter,
+so **an interpreter whose formatter has moved fails the suite** rather than
+silently redefining the contract. A producer in another language implements the
+table; that is a real burden and it is the price of a number form that is
+decidable at all.
 
 ## The costs accepted
 
@@ -306,10 +346,15 @@ so the bytes are not final until the end, and the JSON ⟷ JSONL equivalence tha
 T11 and the fixtures pin would break — the same document in two encodings would
 carry two roots.
 
-**Normalise non-canonical lexemes on load instead of refusing them.** Turns a
-tampered document into a valid one with a different root, silently. A verifier
-would then report a mismatch with no way to say why, which is strictly worse
-than a refusal that names the lexeme.
+**Normalise non-canonical lexemes on load instead of refusing them.** Rejected,
+and an earlier draft of this ADR gave the wrong reason — it said normalisation
+produces a different root and an unexplained mismatch. It does not: both
+lexemes parse to the same binary64, so the canonical-object digest is
+**unchanged** and the root stays exactly what it was. Normalisation therefore
+*preserves* the collision and launders the alteration in silence, which is
+worse than the failure the draft imagined and is the actual reason to refuse.
+Recorded because a wrong model of the defect, written into the document that
+defines it, is how the next person builds on sand.
 
 **Warn rather than refuse.** The runtime does not have a warning level for
 evidence questions, deliberately. A document either earns a root or does not.
