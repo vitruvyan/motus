@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import __version__ as MOTUS_VERSION
+from vitruvyan_motus.mcp.sources import CITABLE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -279,6 +280,12 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         n for n in names if n.startswith("vitruvyan_motus/contract/")
     )
     assert shipped_from_contract == [
+        # ADR-022 decision 1: the MCP's reader is an agent inside a virtualenv,
+        # and a citation it cannot resolve after `pip install` is not a
+        # citation. `README.md` and `node-protocol.md` travel for that reason
+        # and no other — the exact set is asserted against `CITABLE` below, so
+        # neither this list nor that one can grow alone.
+        "vitruvyan_motus/contract/README.md",
         "vitruvyan_motus/contract/__init__.py",
         # The commitment side travels for the same reason the trace side does:
         # a receipt is the artefact a THIRD PARTY holds, and a verifier they
@@ -287,6 +294,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/checkpoint.v1.schema.json",
         "vitruvyan_motus/contract/commitment.v1.schema.json",
         "vitruvyan_motus/contract/graphspec.v1.schema.json",
+        "vitruvyan_motus/contract/node-protocol.md",
         "vitruvyan_motus/contract/receipt.v1.schema.json",
         "vitruvyan_motus/contract/trace.v1.schema.json",
         "vitruvyan_motus/contract/validate.py",
@@ -295,7 +303,58 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
     assert not any("fixtures" in n for n in names), (
         "the frozen conformance corpus stays in the repository"
     )
-    assert not any(n.endswith(".md") for n in names if n.startswith("vitruvyan_motus/"))
+    prose = sorted(n for n in names
+                   if n.endswith(".md") and n.startswith("vitruvyan_motus/"))
+    assert prose == sorted(
+        "vitruvyan_motus/" + relative for relative in CITABLE
+        if relative.endswith(".md")), (
+        "prose in the wheel is exactly what the MCP cites, and ADR-022 records "
+        "it as a cost paid deliberately: " + repr(prose))
+
+
+def test_the_wheel_ships_every_source_the_mcp_would_cite(built_wheel):
+    """ADR-022 decision 1, checked against the artefact rather than the tree.
+
+    The server never fetches a source it did not install — not from GitHub, not
+    from a newer release — so a source missing from the wheel is not a
+    degraded answer, it is a tool that raises. In a checkout every citable path
+    resolves from the repository and this can never fail; the wheel is the only
+    place the packaging can be wrong, which is why the check lives here.
+
+    It runs in both directions on purpose. A citable source nobody packaged is
+    a broken tool; a document packaged that nothing cites is weight in the
+    distribution that no decision put there.
+    """
+    with zipfile.ZipFile(built_wheel) as archive:
+        names = set(archive.namelist())
+
+    missing = sorted(relative for relative in CITABLE
+                     if "vitruvyan_motus/" + relative not in names)
+    assert not missing, (
+        f"mcp/sources.py cites these and the wheel does not carry them: {missing}"
+    )
+
+    packaged_adrs = sorted(
+        n[len("vitruvyan_motus/"):] for n in names
+        if n.startswith("vitruvyan_motus/adr/") and not n.endswith("__init__.py")
+    )
+    assert packaged_adrs == sorted(
+        relative for relative in CITABLE if relative.startswith("adr/")), (
+        f"an ADR travels when a tool cites it and not otherwise: {packaged_adrs}")
+
+    # The examples are the exception, and it is a choice rather than an
+    # oversight: they are one document. `motus_start_here` cites two of them,
+    # and shipping only those two would leave the installed `examples/`
+    # directory a half of itself, where `02` refers to `03` and neither is
+    # there. So all of them travel, and the check is that none is MISSING.
+    packaged_examples = sorted(
+        n[len("vitruvyan_motus/examples/"):] for n in names
+        if n.startswith("vitruvyan_motus/examples/")
+        and not n.endswith("__init__.py")
+    )
+    assert packaged_examples == sorted(
+        path.name for path in (REPO_ROOT / "examples").glob("*.py")
+        if path.name != "__init__.py"), packaged_examples
 
 
 def test_wheel_exposes_the_validator_as_a_command(built_wheel):
@@ -400,3 +459,53 @@ def test_importing_motus_pulls_no_third_party_module():
     assert probe.stdout.strip() == "[]", (
         f"importing vitruvyan_motus pulled non-stdlib modules: {probe.stdout}"
     )
+
+
+def test_the_mcp_answers_from_an_installed_wheel_and_not_from_the_checkout(
+    built_wheel, tmp_path
+):
+    """ADR-022 decision 1's distribution clause, in the only place it can fail.
+
+    In a checkout every citable path resolves from the repository, so the
+    server appears to work no matter how the packaging is written. Here the
+    wheel is installed by itself, in a venv rooted outside this tree, and the
+    tools are asked a question whose answer is a quotation: if the sources did
+    not travel, `Quoted` raises rather than answering, which is decision 1
+    applied to the server's own distribution.
+
+    The alternative — the server fetching what it lacks — is what makes this
+    worth a venv and two minutes. An answer derived from `main` while the
+    caller runs an older release is wrong in the most convincing way
+    available: correct prose about code they do not have.
+    """
+    isolated_venv = tmp_path / "mcp-venv"
+    venv.EnvBuilder(with_pip=True, clear=True).create(isolated_venv)
+    python = isolated_venv / (
+        "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    )
+
+    install = subprocess.run(
+        [str(python), "-m", "pip", "install", "--no-index", "--no-deps",
+         str(built_wheel)],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert install.returncode == 0, install.stderr
+
+    # `--no-deps`, so the SDK is absent here too. That is deliberate: the
+    # derivation is the valuable half of ADR-022 and it must not need a
+    # transport to be correct.
+    probe = subprocess.run(
+        [str(python), "-c",
+         "from vitruvyan_motus.mcp import sources, tools\n"
+         "for relative in sources.CITABLE:\n"
+         "    sources.read(relative)\n"
+         "answer = tools.classify('the node runs an INSERT')\n"
+         "print(answer.spans[0].text)\n"
+         "print(any(getattr(s, 'source', None) for s in answer.spans))\n"],
+        capture_output=True, text=True, cwd=str(tmp_path), timeout=120,
+    )
+    assert probe.returncode == 0, (
+        f"the installed MCP could not answer from its own sources\n{probe.stderr}"
+    )
+    assert probe.stdout.splitlines() == [
+        "\u00a74.4 terms present in your text: INSERT", "True"], probe.stdout

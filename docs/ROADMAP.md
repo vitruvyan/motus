@@ -144,11 +144,11 @@ the kind of invariant that erodes one convenient import at a time.
 
 ---
 
-## Phase 1b — the integration MCP — **NOT STARTED**
+## Phase 1b — the integration MCP — **MERGED, not yet released**
 
-*Days, in parallel with phase 1. Gated by nothing in the trust model: it touches
-no receipt, no anchor, and promises nothing about audit. Its ADR — carrying the
-derivation rule below — comes before any code.*
+*Built on 2026-08-14 against ADR-022. It touches no receipt, no anchor, and
+promises nothing about audit. What follows is the argument that put it here;
+what it actually became is at the end of this section.*
 
 You install Motus, point your coding agent at the MCP, and start building
 without reading three hundred lines of prose.
@@ -238,6 +238,71 @@ against v0.10.0. Handing the next integrator an MCP instead of a
 three-hundred-line brief is the strongest evidence we can get — and the brief
 is the document that was read carefully, followed exactly, and turned out to
 disagree with the contract it was written from.
+
+### What it became, and the one decision that shaped it
+
+**The rule is in the type, not in a review.** ADR-022 asks for a test that no
+prose lives in the server, and a test that reads the tools and judges their
+sentences is the version that decays. So an answer is a sequence of spans and a
+span is one of exactly three things — quoted from a named installed source and
+**verified when it is constructed**, computed by shipped code and carrying the
+command that reproduces it, or `I cannot tell` with what was tried. There is no
+fourth kind and none of the three has a field an author could put an opinion in.
+
+**The test that matters is the one that moves the document.** Every other
+property would still hold if `classify` returned a constant and quoted a
+matching line. `test_editing_the_table_changes_the_answer` re-declares `INSERT`
+as `recorded_effect` in the text the server reads and requires the verdict to
+follow the document.
+
+**The contract gained what the tools read.** §4.4 names operations and — for
+the first time anywhere — the **price of the conservative choice**: a read
+declared `external_effect` costs safe resumes, and a write declared
+`recorded_effect` never meets the resume guard at all. §6.4 names the ambient
+draws. Both say a row is wrong where it disagrees with the clause above it.
+This is the Consequence ADR-022 predicted, running the right way: the server
+needed an answer, so the *document* got one.
+
+**A mutation probe found three guarantees nothing was holding**, including the
+construction-time check on a quotation — disabling it changed no test, because
+every quotation the tools produce today is genuine.
+
+### Then the round ran, and both halves of it were wrong
+
+*Three lenses, independent, all three landing on the same component. This is
+the strongest signal this project has produced, and it is recorded here rather
+than in a commit message because it changes what the component is.*
+
+**The describing half computed a class from word matching, and was wrong on
+most realistic descriptions** — 15 of 20 on one lens, 6 of 6 on another, in
+both directions, never refusing. *"Computes the invoice total and stores it in
+Postgres"* was answered `pure`, because `compute` is a marked term and `stores`
+is not; a lens then demonstrated verify-replay re-executing such a node and
+**sending its mail a second time** while reporting it verified. The same defect
+sat in `review_node` over Python identifiers, where it accused **our own
+shipped example** of implying `external_effect` because it calls `payload.get`.
+
+It is a class this project had already written down: *a pattern answering a
+question about meaning*. Adding terms repairs the instance, so the terms were
+not added. **The verdict is withdrawn** (ADR-025): the tool reports which
+marked terms the caller's text contains and hands over the table, the costs,
+the strictest rule and 4.1. What the measurement asked for was never a matcher
+— it was that somebody be told what the conservative choice costs.
+
+**The debug half ran the shipped rules over a document the shipped reader had
+never seen.** A trace containing `records` twice was reported as verifying with
+a derived root while its own reproduce line refused it as J1; one invalid byte
+was laundered and reported clean; and every JSONL trace **the only durable sink
+we ship** writes was answered *I cannot tell*, because a JSON object literal is
+a valid Python expression and `ast.parse` accepted it.
+
+**And a cache had made "derived" false.** A long-lived server kept answering
+after the row was edited and after the document was **deleted**. The test meant
+to catch that patched the reader, so it tested a mock of the mechanism.
+
+**ADR-025 was accepted on 2026-08-14**, which closes the amendment the round
+found missing. Still owed before it is released: a first integrator using the
+MCP instead of a brief.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should

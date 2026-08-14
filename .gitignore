@@ -33,3 +33,7 @@ ENV/
 
 # adversarial-round worktrees
 .claude/worktrees/
+
+# Adversarial-round scratch. Attack scripts belong on an evidence branch, not
+# in the working tree of the branch they are attacking.
+.attack/
