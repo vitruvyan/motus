@@ -19,44 +19,52 @@ The trace is not reconstructed from logs after execution.
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.10.0 **still does not pass its own cumulative performance gate**, and ships
+0.11.0 **still does not pass its own cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+91.3 %** | +20 % |
-| 100-node no-op | **+133.2 %** | +20 % |
-| Trace materialization | **+24.2 %** | +20 % |
+| Per-node overhead | **+91.4 %** | +20 % |
+| 100-node no-op | **+133.8 %** | +20 % |
+| Trace materialization | **+27.5 %** | +20 % |
 
 The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0.
 
 **This release added none of it, and the measurement cannot prove it added
-anything at all.** Against v0.9.0, in the same jobs on the same runners, the
-three figures are **−1.5 %, −0.8 % and +0.3 %** — inside the per-release budget
+anything at all.** Against v0.10.0, in the same jobs on the same runners, the
+three figures are **−0.1 %, −0.0 % and +0.4 %** — inside the per-release budget
 with no exception declared, and every one of them *smaller than the paired
-spread of the measurement* (3.1 %, 4.6 %, 3.4 %). The honest report is that this
-release's effect is below what this instrument can resolve, which is not the
-same sentence as "there is no difference" and is not written as one. It is also
-what you would expect from a release whose new machinery does not load unless
-it is configured.
+spread of the measurement* (6.0 %, 106.0 %, 5.3 %). The honest report is that
+this release's effect is below what this instrument can resolve, which is not
+the same sentence as "there is no difference" and is not written as one. The
+100-node no-op's spread is worth reading twice: at 106 % it is **wider than the
+cumulative effect it is being used to measure**, and the checker says so in its
+own output rather than leaving it to be noticed.
 
-Trace materialization reads 3 points worse against the anchor than 0.9.0's
-+21.1 %, and this release is not where it came from: the per-release delta is
-+0.3 % on the same hardware in the same jobs. 0.9.0's cumulative figures were
-taken on an EPYC 9V74 and these on an EPYC 7763. Where the difference actually
-lives is **not separated here**, and it is not claimed to be.
+It is also what you would expect from a release whose new machinery — the
+integration MCP — is not imported on any runtime path, which a subprocess test
+asserts by running a real graph and inspecting `sys.modules`.
+
+Trace materialization reads 3 points worse against the anchor than 0.10.0's
++24.2 %, and this release is not where it came from: the per-release delta is
++0.4 % on the same hardware in the same jobs, against a paired spread of 5.3 %.
+Where the difference actually lives is **not separated here**, and it is not
+claimed to be.
 
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.9.0 says nothing about 0.10.0. Measured on 2026-08-13
-against the live `api_graph` service (`frontier_graph`, `POST /run`) with three
-real Italian user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137,
-CPython 3.12.3: **2.8, 2.3 and 3.0 ms** of Motus against requests of 25.9 s,
-12.3 s and 5.7 s. The honest share is the worst cost over the fastest
-response — 3.0 ms of 5.7 s — which is **0.053 %**. That figure is an upper
-bound: it contains the consumer's own node code, not only Motus.
+measured against 0.10.0 says nothing about 0.11.0, and an inherited number is
+the same error as an inherited baseline. Measured on 2026-08-14 against the
+live `api_graph` service (`frontier_graph`, `POST /run`) with five real Italian
+user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137, CPython
+3.12.3: **4.4, 2.9, 3.9, 3.4 and 2.5 ms** of Motus against requests of 51.6 s,
+11.2 s, 31.4 s, 6.1 s and 6.4 s. The honest share is the worst cost over the
+fastest response — 3.4 ms of 6.1 s — which is **0.055 %**. That figure is an
+upper bound: it contains the consumer's own node code, not only Motus. Every
+run's trace validated clean against the contract, schema 3.0.0, integrity chain
+present, with a derived root.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
