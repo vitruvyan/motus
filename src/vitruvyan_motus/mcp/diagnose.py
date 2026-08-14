@@ -24,6 +24,7 @@ from __future__ import annotations
 import ast
 import json
 import shlex
+import sys
 from pathlib import Path
 
 from .answers import Answer, Cannot, Computed, Quoted
@@ -100,11 +101,71 @@ def _identify(document: object) -> tuple[str, ...]:
                         if required <= present))
 
 
-def _refuse_inline(artefact: str) -> Answer:
+def _refuse_inline() -> Answer:
+    """The 4e refusal, for a string that carries the artefact instead of naming it."""
     return Answer(tool="motus_diagnose", spans=(
         Quoted(ADR, _DECISION_4E),
         Cannot(tried=()),
     ))
+
+
+def _refuse_unopenable(artefact: str) -> Answer:
+    """A path this process cannot open, said as that and not as 4e.
+
+    A round found every non-file answered *"refuses inline artefact content"* —
+    a typo'd filename, a directory, a dangling symlink. The answer asserted
+    something false about the caller's request and hid the commonest real
+    cause. Failing closed is about refusing to ACCEPT content; it never
+    required mislabelling why a path failed.
+    """
+    return Answer(tool="motus_diagnose", spans=(
+        Computed(by="pathlib.Path.is_file",
+                 reproduce="python -m vitruvyan_motus.mcp diagnose "
+                           + shlex.quote(artefact),
+                 text="not a file this process can open"),
+        Cannot(tried=(f"open({artefact!r})",)),
+    ))
+
+
+def _root_span(document: dict, by: str, reproduce: str) -> Computed:
+    """What `derived_root` returned, and why — the two cases it distinguishes.
+
+    Reporting `derives no root` for both collapses a distinction the function
+    itself makes: below schema 3.0.0 the digests do not cover `prev_hash`, so
+    the terminal hash covers one record rather than the run and **there is no
+    root to have** (ADR-019). A customer holding a conformant 1.x archive was
+    being handed the sentence written for a corrupted trace.
+    """
+    validate = _validate_module()
+    root = validate.derived_root(document)
+    if root:
+        text = f"derived root: {root}"
+    else:
+        version = document.get("schema_version")
+        text = ("derives no root"
+                if version == "3.0.0"
+                else f"derives no root: schema_version {version!r} is below "
+                     "3.0.0, where a terminal digest covers one record rather "
+                     "than the run — there is none to have")
+    return Computed(by=by, reproduce=reproduce, text=text)
+
+
+def _violation_spans(violations, by: str, reproduce: str) -> list[object]:
+    """Rule and path for each violation, with the rule's own description once.
+
+    The message is withheld: it can quote the value that broke the rule, and
+    the reproduce line gives the caller the whole verdict on their own machine.
+    """
+    documented = _rule_rows()
+    quoted: set[str] = set()
+    spans: list[object] = []
+    for violation in violations:
+        spans.append(Computed(by=by, reproduce=reproduce,
+                              text=f"{violation.rule} at {violation.path}"))
+        if violation.rule in documented and violation.rule not in quoted:
+            quoted.add(violation.rule)
+            spans.append(Quoted(CONTRACT, documented[violation.rule]))
+    return spans
 
 
 def _json_diagnosis(path: Path, kind: str, document: dict) -> tuple[object, ...]:
@@ -121,28 +182,14 @@ def _json_diagnosis(path: Path, kind: str, document: dict) -> tuple[object, ...]
                  f"{kind} {shlex.quote(str(path))}")
     by = f"vitruvyan_motus.contract.validate.{checker.__name__}"
 
-    spans: list[object] = []
     violations = checker(document)
-    documented = _rule_rows()
-    quoted: set[str] = set()
-    for violation in violations:
-        # Rule and path only: the message may quote the value that broke the
-        # rule, and the reproduce line above gives the caller all of it locally.
-        spans.append(Computed(by=by, reproduce=reproduce,
-                              text=f"{violation.rule} at {violation.path}"))
-        if violation.rule in documented and violation.rule not in quoted:
-            quoted.add(violation.rule)
-            spans.append(Quoted(CONTRACT, documented[violation.rule]))
+    spans: list[object] = _violation_spans(violations, by, reproduce)
     if not violations:
         spans.append(Computed(by=by, reproduce=reproduce,
                               text=f"{kind}: no violation"))
 
     if kind == "trace":
-        root = validate.derived_root(document)
-        spans.append(Computed(
-            by="vitruvyan_motus.contract.validate.derived_root",
-            reproduce=reproduce,
-            text=f"derived root: {root}" if root else "derives no root"))
+        spans.append(_root_span(document, by, reproduce))
         records = document.get("records")
         if isinstance(records, list):
             terminal = records[-1].get("kind") if records and isinstance(
@@ -151,6 +198,45 @@ def _json_diagnosis(path: Path, kind: str, document: dict) -> tuple[object, ...]
                 by=by, reproduce=reproduce,
                 text=f"{len(records)} records, last kind {terminal!r}"))
     return tuple(spans)
+
+
+def _jsonl_diagnosis(path: Path, raw: str) -> tuple[object, ...]:
+    """The JSONL half of the trace surface, which used to be read as Python.
+
+    `JsonlTraceSink` is the only durable sink Motus ships, and its output has
+    no schema file of its own — so `_identify` could not name it, `json.loads`
+    refused it, and control reached `ast.parse`, **which succeeds**: a JSON
+    object literal is a valid Python expression. Every trace the shipped sink
+    writes was answered `I cannot tell` with a command about reviewing a node.
+    """
+    validate = _validate_module()
+    reproduce = ("python -m vitruvyan_motus.contract.validate jsonl "
+                 f"{shlex.quote(str(path))}")
+    by = "vitruvyan_motus.contract.validate.validate_jsonl"
+    violations, document = validate.validate_jsonl(raw)
+    spans: list[object] = _violation_spans(violations, by, reproduce)
+    if not violations:
+        spans.append(Computed(by=by, reproduce=reproduce, text="jsonl: no violation"))
+    if isinstance(document, dict):
+        spans.append(_root_span(document, by, reproduce))
+    return tuple(spans)
+
+
+def _looks_like_a_stream(raw: str) -> bool:
+    """Whether this text is a JSONL stream rather than one JSON document.
+
+    Structural and cheap: more than one non-empty line, and the first one is a
+    JSON object on its own. It is not a guess about content — a document that
+    passes this and then fails `validate_jsonl` gets that validator's verdict,
+    which is the right answer either way.
+    """
+    lines = [line for line in raw.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return False
+    try:
+        return isinstance(json.loads(lines[0]), dict)
+    except ValueError:
+        return False
 
 
 def diagnose(artefact: str, symptom: str = "") -> Answer:
@@ -172,19 +258,55 @@ def diagnose(artefact: str, symptom: str = "") -> Answer:
         # a path, and is very likely content that arrived where a path belongs.
         is_file = False
     if not is_file:
-        return _refuse_inline(artefact)
+        return (_refuse_inline() if _carries_content(artefact)
+                else _refuse_unopenable(artefact))
 
-    text = path.read_text(encoding="utf-8", errors="replace")
+    validate = _validate_module()
+    try:
+        # Bytes, then an explicit decode — never `read_text`, and never
+        # `errors="replace"`. `validate.main` carries the same instruction and
+        # the reason: the file is what the contract judges, and a reader that
+        # substitutes U+FFFD for a byte the contract refuses has laundered the
+        # artefact before the rules ran. A round produced a trace with one
+        # invalid byte that this reported as verifying while its own reproduce
+        # line exited 2.
+        raw = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return Answer(tool="motus_diagnose", spans=(
+            Cannot(tried=(f"{path.name}: decode utf-8",)),))
+    except OSError:
+        return _refuse_unopenable(artefact)
+
     spans: list[object] = []
+    unidentified_reproduce = ("python -m vitruvyan_motus.mcp diagnose "
+                              + shlex.quote(str(path)))
 
     document: object = None
-    parsed_json = True
+    parsed = True
     try:
-        document = json.loads(text)
+        # The shipped strict reader, not `json.loads`. A round handed this a
+        # document containing `records` twice — two readings, one of which it
+        # reported as verifying with a derived root, while the reproduce line
+        # refused it as J1. Running the shipped RULES over a document produced
+        # by a reader that is not the shipped READER is not running shipped
+        # code over the artefact.
+        document = validate._loads_strict(raw)
+    except validate.NonCanonicalNumberError:
+        spans.append(Computed(by="vitruvyan_motus.contract.validate._loads_strict",
+                              reproduce=unidentified_reproduce, text="J2 at $"))
+        parsed = False
+    except validate.StrictJSONError:
+        spans.append(Computed(by="vitruvyan_motus.contract.validate._loads_strict",
+                              reproduce=unidentified_reproduce, text="J1 at $"))
+        parsed = False
+    except RecursionError:
+        return Answer(tool="motus_diagnose", spans=(
+            Cannot(tried=(f"{path.name}: strict JSON parse (nesting)",)),))
     except ValueError:
-        parsed_json = False
+        document = None
+        parsed = False
 
-    if parsed_json:
+    if parsed:
         kinds = _identify(document)
         if len(kinds) == 1:
             spans.extend(_json_diagnosis(path, kinds[0], document))
@@ -194,22 +316,25 @@ def diagnose(artefact: str, symptom: str = "") -> Answer:
                 f"<kind> {shlex.quote(str(path))}",)))
             spans.append(Computed(
                 by=f"{__name__}._identify",
-                # This tool, on this path. A reproduce line whose job is to
-                # show the caller how the artefact was identified has no
-                # shorter honest form than the identification itself.
-                reproduce=("python -m vitruvyan_motus.mcp diagnose "
-                           + shlex.quote(str(path))),
+                reproduce=unidentified_reproduce,
                 text=("matches no contract surface" if not kinds
                       else "matches more than one contract surface: "
                            + ", ".join(kinds))))
-    else:
+    elif not spans and _looks_like_a_stream(raw):
+        spans.extend(_jsonl_diagnosis(path, raw))
+    elif not spans:
         try:
-            ast.parse(text)
-        except SyntaxError:
-            spans.append(Cannot(tried=(f"json.loads({path.name})",
-                                       f"ast.parse({path.name})")))
+            ast.parse(raw)
+        except (SyntaxError, ValueError, RecursionError):
+            spans.append(Cannot(tried=(f"{path.name}: strict JSON parse",
+                                       f"{path.name}: JSONL stream",
+                                       f"{path.name}: Python source")))
         else:
-            spans.extend(tools.review_node(text).spans)
+            spans.extend(tools.review_node(
+                raw,
+                reproduce=(shlex.quote(sys.executable)
+                           + " -m vitruvyan_motus.mcp review-node "
+                           + shlex.quote(str(path)))).spans)
 
     if symptom:
         explained = tools.explain(symptom)
@@ -217,3 +342,16 @@ def diagnose(artefact: str, symptom: str = "") -> Answer:
             spans.extend(explained.spans)
 
     return Answer(tool="motus_diagnose", spans=tuple(spans))
+
+
+def _carries_content(artefact: str) -> bool:
+    """Whether this string is an artefact rather than a name for one.
+
+    Only the message differs — the mechanism is the same either way, because
+    the argument is used **only** as a path and never as content. This decides
+    which true sentence the caller is told, not whether they are refused.
+    """
+    if "\n" in artefact or len(artefact) > 512:
+        return True
+    stripped = artefact.strip()
+    return stripped.startswith(("{", "[")) and stripped.endswith(("}", "]"))

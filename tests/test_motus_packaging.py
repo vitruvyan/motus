@@ -507,4 +507,5 @@ def test_the_mcp_answers_from_an_installed_wheel_and_not_from_the_checkout(
     assert probe.returncode == 0, (
         f"the installed MCP could not answer from its own sources\n{probe.stderr}"
     )
-    assert probe.stdout.split() == ["external_effect", "True"], probe.stdout
+    assert probe.stdout.splitlines() == [
+        "\u00a74.4 terms present in your text: INSERT", "True"], probe.stdout

@@ -355,6 +355,11 @@ inverted it twice in one pull request, and once by an integrator who declared
 read-only HTTP calls `external_effect` believing it conservative. The contract
 permits that; nothing told them it costs safe resumes, silently, forever.
 
+It answers narrowly on purpose. `motus_classify` reports which of the
+protocol's marked terms your description contains and hands you the table; it
+does not decide the class, because a version that did was measured wrong on
+most realistic descriptions and wrong in the direction that costs correctness.
+
 ```
 pip install "vitruvyan-motus[mcp]"
 python -m vitruvyan_motus.mcp classify "I need to INSERT a row"

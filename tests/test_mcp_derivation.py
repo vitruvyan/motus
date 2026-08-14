@@ -23,6 +23,7 @@ import pytest
 
 from vitruvyan_motus.mcp import diagnose as diagnose_module
 from vitruvyan_motus.mcp import protocol, sources, tools
+from vitruvyan_motus.mcp import answers
 from vitruvyan_motus.mcp.answers import Cannot, Computed, Quoted
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,6 +80,8 @@ def corpus(tmp_path_factory) -> tuple:
         tools.where("zzzz"),
         diagnose_module.diagnose(str(trace)),
         diagnose_module.diagnose(str(directory / "absent.json")),
+        # Content where a path belongs — the branch that quotes decision 4e.
+        diagnose_module.diagnose('{"schema_version": "3.0.0", "records": []}'),
     )
 
 
@@ -152,7 +155,7 @@ def test_a_tool_with_nothing_to_say_says_so(corpus):
     absence of this answer is not a sign of a better tool.
     """
     refusals = [answer.tool for answer in corpus if answer.is_refusal]
-    assert {"motus_classify", "motus_explain", "motus_where",
+    assert {"motus_classify", "motus_explain",
             "motus_diagnose"} <= set(refusals), refusals
 
 
@@ -175,7 +178,9 @@ def test_every_reproduce_line_reproduces(corpus):
         # and splitting on spaces would take a quoted description apart and
         # then blame the command for the pieces.
         parts = shlex.split(command)
-        assert parts[0] == "python", command
+        # The interpreter that has Motus installed, not the word `python`:
+        # on a plain Debian or a pipx install there is no `python` on PATH.
+        assert parts[0] in (sys.executable, "python"), command
         stdin = ""
         if parts[-1] == "-":
             stdin = json.dumps(GRAPH) if "review-graph" in parts else NODE_SOURCE
@@ -212,80 +217,105 @@ def test_a_computed_span_agrees_with_its_own_command():
 
 # -- the derivation itself --------------------------------------------------
 
-def test_editing_the_table_changes_the_answer(monkeypatch):
+@pytest.fixture()
+def installation(monkeypatch, tmp_path):
+    """A copy of the citable sources that a test may edit or delete.
+
+    Every derivation test below works on **files**, not on a monkeypatched
+    reader. That distinction is the whole lesson of the round that produced
+    this fixture: the previous version patched `sources.read`, so it tested a
+    mock of the mechanism, and the real defect — a process-lifetime cache that
+    kept answering from a document that had been DELETED — passed it silently.
+    """
+    for relative in sources.CITABLE:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(sources.read(relative), encoding="utf-8")
+    monkeypatch.setattr(sources, "_roots", lambda: (tmp_path,))
+    return tmp_path
+
+
+def test_editing_the_document_changes_the_answer(installation):
     """The one test that checks the answer is DERIVED and not merely shaped
     like a derivation.
 
-    Every other property in this file would still hold if `classify` returned
-    a constant and quoted a matching line. This one moves the document out from
-    under it: `INSERT` is re-declared `recorded_effect` in the text the server
-    reads, and the verdict must follow the document rather than the author.
+    Every other property in this file would still hold if `classify` returned a
+    constant and quoted a matching line. This one edits the file on disk under
+    a live process and requires the answer to follow it.
     """
-    original = sources.read(protocol.SECTION)
-    edited = original.replace(
+    document = installation / protocol.SECTION
+    original = document.read_text(encoding="utf-8")
+    assert "external_effect" in tools.classify("an INSERT").render()
+
+    document.write_text(original.replace(
         "| a SQL `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT` or "
         "`TRUNCATE` | `external_effect` |",
         "| a SQL `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT` or "
-        "`TRUNCATE` | `recorded_effect` |")
-    assert edited != original, "the fixture no longer matches the document"
+        "`TRUNCATE` | `recorded_effect` |"), encoding="utf-8")
+    assert document.read_text(encoding="utf-8") != original, "the fixture drifted"
 
-    assert tools.classify("an INSERT").spans[0].text == "external_effect"
-
-    monkeypatch.setattr(sources, "read",
-                        lambda relative: edited if relative == protocol.SECTION
-                        else sources.resolve(relative).read_text(encoding="utf-8"))
-    protocol.table.cache_clear()
-    try:
-        assert tools.classify("an INSERT").spans[0].text == "recorded_effect"
-    finally:
-        monkeypatch.undo()
-        protocol.table.cache_clear()
-
-    # And back, with the document restored — a cache that kept the edited
-    # answer would make this test pass once and lie afterwards.
-    assert tools.classify("an INSERT").spans[0].text == "external_effect"
+    rendered = tools.classify("an INSERT").render()
+    assert ("| a SQL `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT` or "
+            "`TRUNCATE` | `recorded_effect` |") in rendered, rendered
+    assert ("| a SQL `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT` or "
+            "`TRUNCATE` | `external_effect` |") not in rendered
 
 
-def test_a_deleted_source_makes_the_tool_fail_and_not_invent(monkeypatch):
+def test_a_deleted_document_makes_the_tool_fail_and_not_invent(installation):
     """Decision 1: if the source is deleted the tool fails instead of inventing.
 
-    The failure is the feature. A server that keeps answering when its document
-    is gone has revealed that the document was never where the answer came
-    from.
+    Deleted from disk, not intercepted. A round found a server that kept
+    answering `external_effect` — and kept building quotations citing the file
+    — for as long as the process lived after the document was removed.
     """
-    def gone(relative: str) -> str:
-        raise sources.SourceMissing(relative)
-
-    monkeypatch.setattr(sources, "read", gone)
-    protocol.table.cache_clear()
-    try:
-        with pytest.raises(sources.SourceMissing):
-            tools.classify("an INSERT")
-    finally:
-        protocol.table.cache_clear()
+    (installation / protocol.SECTION).unlink()
+    with pytest.raises(sources.SourceMissing):
+        tools.classify("an INSERT")
+    with pytest.raises(sources.SourceMissing):
+        sources.read(protocol.SECTION)
 
 
-def test_a_table_this_reader_cannot_read_is_refused(monkeypatch):
+def test_a_table_this_reader_cannot_read_is_refused(installation):
     """A document present but shaped differently is not a licence to guess."""
-    original = sources.read(protocol.SECTION)
-    # A fourth column: the shape a table drifts into, not a shape nobody would
-    # write. The reader is told how many columns it was written for and says so
-    # rather than reading the first three and hoping.
-    widened = original.replace(
+    document = installation / protocol.SECTION
+    document.write_text(document.read_text(encoding="utf-8").replace(
         "| a SQL `SELECT` | `recorded_effect` | permitted; blocks a resume "
         "that was safe |",
         "| a SQL `SELECT` | `recorded_effect` | permitted; blocks a resume "
-        "that was safe | new |")
-    assert widened != original, "the fixture no longer matches the document"
-    monkeypatch.setattr(sources, "read",
-                        lambda relative: widened if relative == protocol.SECTION
-                        else original)
-    protocol.table.cache_clear()
-    try:
-        with pytest.raises(protocol.ProtocolUnreadable):
-            tools.classify("an INSERT")
-    finally:
-        protocol.table.cache_clear()
+        "that was safe | new |"), encoding="utf-8")
+    with pytest.raises(protocol.ProtocolUnreadable):
+        tools.classify("an INSERT")
+
+
+def test_a_row_that_lost_its_marks_is_refused_and_not_skipped(installation):
+    """A row whose operation cell carries no marked term stops the reader.
+
+    Found by a round: restyling `` `INSERT` `` to `**INSERT**` — an ordinary
+    maintainer edit — used to drop that row silently, leaving eleven rows and
+    an answer that softened from `external_effect` to `recorded_effect`. A
+    partial table is the one state this reader must never operate in, because
+    the missing row is invisible in the answer.
+    """
+    document = installation / protocol.SECTION
+    document.write_text(document.read_text(encoding="utf-8").replace(
+        "| `send`, `email`, `sms`, `webhook`, `notify` |",
+        "| **send**, **email**, **sms**, **webhook**, **notify** |"),
+        encoding="utf-8")
+    with pytest.raises(protocol.ProtocolUnreadable):
+        tools.classify("we send the mail")
+
+
+def test_the_strictness_ranking_names_classes_the_document_declares(installation):
+    """`STRICTNESS` is a literal, and this is the test its docstring claimed.
+
+    A round found the claim false. The order itself cannot be derived — it is
+    what `strictest` is FOR — but every name in it must be a class §4.4 uses,
+    so a class renamed in the document cannot leave a stale name ranking above
+    a live one.
+    """
+    declared = {row.effect_class for row in protocol.table()}
+    assert set(protocol.STRICTNESS) == declared, (
+        f"ranked {sorted(protocol.STRICTNESS)}, document declares {sorted(declared)}")
 
 
 def test_every_citable_source_is_actually_cited(corpus):
@@ -369,7 +399,7 @@ def test_the_tools_work_without_the_sdk_installed():
     finished = subprocess.run([sys.executable, "-c", program], cwd=ROOT,
                               capture_output=True, text=True, timeout=120)
     assert finished.returncode == 0, finished.stderr
-    assert finished.stdout.strip() == "external_effect"
+    assert finished.stdout.strip() == "§4.4 terms present in your text: INSERT"
 
 
 def test_running_a_graph_does_not_load_the_server():
@@ -397,34 +427,143 @@ def test_running_a_graph_does_not_load_the_server():
 
 # -- the error this whole component exists because of -----------------------
 
-@pytest.mark.parametrize(("description", "expected"), [
-    ("the node issues an HTTP GET", "recorded_effect"),
-    ("check_verbatim issues nothing but HTTP GETs", "recorded_effect"),
-    ("I need to INSERT a row", "external_effect"),
-    ("it POSTs the result to their API", "external_effect"),
-    ("we send an email when the run finishes", "external_effect"),
-    ("it reads the file and then writes the report", "external_effect"),
-    # pure and recorded together, which is the pair alphabetical order gets
-    # wrong: `pure` sorts first and is the softer class. A probe found that
-    # nothing here covered it.
-    ("it derives a total and reads a file", "recorded_effect"),
-])
-def test_the_measured_misreading_is_answered(description, expected):
-    """#77 inverted this twice in one pull request, and a field report against
-    v0.10.0 declared HTTP GETs `external_effect` believing it conservative.
+#: The descriptions two independent adversarial lenses answered wrongly, in
+#: both directions, when this tool computed a class from word matching.
+WERE_ANSWERED_WRONGLY = [
+    "the node formats the receipt and mails it to the customer",
+    "the node computes the invoice total and stores it in Postgres",
+    "the node derives the customer tier and saves it to our billing system",
+    "the node reads the intent and derives a route decision",
+    "it reads facts by key and formats a summary",
+    "it formats the message and produces it onto the Kafka topic",
+    "derives the diff and then git-pushes the branch",
+    "the node writes a fact recording the score",
+    "appends a decision to the state for the router to dispatch on",
+]
 
-    The last row is the one prose never delivered: a node that reads AND writes
-    is the strict class, because mutating is not cancelled by also reading.
+EFFECT_CLASSES = {"pure", "recorded_effect", "external_effect"}
+
+
+@pytest.mark.parametrize("description", WERE_ANSWERED_WRONGLY + [
+    "the node issues an HTTP GET",
+    "I need to INSERT a row",
+    "it just does some work",
+])
+def test_no_answer_is_a_class_this_tool_decided(description):
+    """The withdrawal, pinned.
+
+    `classify` computed an effect class from word matching and was wrong on
+    most realistic descriptions — `pure` for a node that mails a receipt,
+    because `compute` is marked and `mails` is not. Adding terms would repair
+    the instance; the class of the defect is **a pattern answering a question
+    about meaning**, and it does not have a vocabulary big enough to fix.
+
+    So no span may be a bare class name. What the caller gets is which marked
+    terms their text contains — a fact about the text — and the document.
     """
     answer = tools.classify(description)
-    assert not answer.is_refusal, description
-    assert answer.spans[0].text == expected
+    for span in answer.spans:
+        if isinstance(span, Computed):
+            assert span.text.strip() not in EFFECT_CLASSES, (
+                f"{description!r}: the tool decided a class again")
 
 
-def test_a_classification_always_carries_its_cost():
-    """The class alone is the half that was already being guessed correctly
-    half the time. What nobody was told is the price of the other choice."""
-    answer = tools.classify("the node issues an HTTP GET")
-    rendered = answer.render()
+@pytest.mark.parametrize("description", WERE_ANSWERED_WRONGLY)
+def test_a_description_that_was_answered_wrongly_now_carries_the_table(description):
+    """And the answer is not merely silent — it is the document.
+
+    The measured error was never that readers could not run a matcher. It was
+    that nothing told them what the conservative choice costs. Every answer now
+    carries the whole table, the asymmetry, the strictest-class rule and 4.1.
+    """
+    rendered = tools.classify(description).render()
+    assert "This table classifies operations" in rendered
     assert "blocks a resume that was safe" in rendered
     assert "never\nmeets the resume guard at all" in rendered
+    assert "takes the strictest class any of" in rendered
+    for row in protocol.table():
+        assert row.line in rendered, row.line
+
+
+def test_the_matched_terms_are_reported_as_terms(corpus):
+    """Which is a fact about the caller's text, and checkable by them."""
+    answer = tools.classify("I need to INSERT a row and read the config")
+    reported = next(span for span in answer.spans if isinstance(span, Computed))
+    assert reported.text.startswith("§4.4 terms present in your text:")
+    assert "INSERT" in reported.text and "read" in reported.text
+
+
+def test_review_node_no_longer_accuses_the_shipped_examples():
+    """It read `payload.get` as an HTTP GET and `seen.append` as a file write.
+
+    On the example whose own docstring says the node *stays `pure`, which is
+    what makes it verifiable during replay*, it reported `declared pure, calls
+    imply external_effect` — and an agent taking the shortest path from that
+    re-declares a genuinely pure node and forfeits the falsifiability §4.1
+    promises. Same class as `classify`'s withdrawal, over identifiers.
+    """
+    for name in ("03_async_and_streaming.py", "05_how_a_node_reports.py"):
+        source = (ROOT / "examples" / name).read_text(encoding="utf-8")
+        rendered = tools.review_node(source, effect_class="pure").render()
+        assert "calls imply" not in rendered, name
+        assert "not\nexhaustive" in rendered, (
+            f"{name}: a silent refusal reads as *no ambient draws present*")
+
+
+def test_review_node_still_finds_what_is_structural():
+    """The two checks that survive are AST facts, not word matches."""
+    ambient = tools.review_node("import datetime\ndef n(s):\n    return datetime.now()\n")
+    assert any("datetime.now" in span.text for span in ambient.spans
+               if isinstance(span, Computed))
+
+    missing_key = tools.review_node(
+        "def n(s, ctx):\n    ctx.record_effect(EffectDescriptor(kind='http'))\n",
+        effect_class="external_effect")
+    assert any("idempotency_key" in span.text for span in missing_key.spans
+               if isinstance(span, Computed))
+
+
+def test_the_labels_carry_no_protocol_meaning():
+    """`answers.LABELS` said a test constrained it. A round found no such test,
+    and found `LABELS` read by nothing at all — a decoration standing where
+    decision 2's second guard was meant to be. The renderers read it now."""
+    for label in answers.LABELS:
+        lowered = label.lower()
+        assert not (EFFECT_CLASSES & set(lowered.split())), label
+        assert "motus" not in lowered and "trace" not in lowered
+
+    rendered = tools.classify("an INSERT").render()
+    assert f"[{answers.LABELS[0]}: " in rendered
+    assert f"[{answers.LABELS[1]}: " in rendered
+
+
+def test_the_advertised_descriptions_make_no_claim_about_the_protocol():
+    """The one place text crosses the wire without being quoted.
+
+    A tool description and the server's `instructions` reach the client at
+    `initialize`, before any tool has run — so there is nothing yet to derive
+    them from, and ADR-022 decision 2's type rule cannot reach them. A round
+    found two of them materially false as advertisements and `instructions`
+    asserting *"Nothing here is written from memory"*, which was itself written
+    from memory.
+
+    They are held to a narrower rule instead, and it is this test: they say
+    what an argument is and what comes back, and they claim nothing about the
+    protocol's content or about this server's own honesty.
+    """
+    pytest.importorskip("mcp")
+    import asyncio
+
+    from vitruvyan_motus.mcp.server import build
+
+    server = build()
+    advertised = [tool.description or "" for tool in asyncio.run(server.list_tools())]
+    advertised.append(server.instructions or "")
+    assert len(advertised) == 8
+
+    forbidden = tuple(EFFECT_CLASSES) + (
+        "from memory", "nothing here", "always", "cannot drift", "honest")
+    for text in advertised:
+        lowered = text.lower()
+        for phrase in forbidden:
+            assert phrase not in lowered, f"{phrase!r} in {text!r}"

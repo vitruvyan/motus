@@ -18,7 +18,6 @@ structure.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 from . import sources
 
@@ -117,13 +116,13 @@ def rows_of(text: str, columns: int) -> tuple[tuple[str, ...], ...]:
     return tuple(body)
 
 
-@lru_cache(maxsize=1)
 def table() -> tuple[Row, ...]:
-    """§4.4's rows, parsed from the installed document.
+    """§4.4's rows, parsed from the installed document on every call.
 
-    Cached for the process, for the same reason ``sources.read`` is: an answer
-    may consult it several times and the document does not move underneath a
-    running server in any case worth designing for.
+    Not cached, for the reason written out in ``sources.read``: a cache here
+    would reintroduce the snapshot that a round proved makes ADR-022 decision 1
+    false — the answer would stop following the document the moment the
+    document moved.
     """
     rows: list[Row] = []
     for cells in rows_of(clause("4.4"), columns=3):
@@ -131,7 +130,18 @@ def table() -> tuple[Row, ...]:
         if len(declared) != 1:
             raise ProtocolUnreadable(
                 f"§4.4 row names {len(declared)} effect classes: {cells!r}")
-        rows.append(Row(terms=terms_in(cells[0]),
+        named = terms_in(cells[0])
+        if not named:
+            # A row whose operation cell carries no marked term used to be
+            # skipped. An ordinary restyle — `INSERT` written **INSERT** —
+            # then dropped that row silently, leaving eleven rows and an
+            # answer that softened from `external_effect` to
+            # `recorded_effect`. A partial table is the one state this reader
+            # must never operate in, because what is missing is invisible in
+            # the answer it produces.
+            raise ProtocolUnreadable(
+                f"§4.4 row names no marked operation term: {cells!r}")
+        rows.append(Row(terms=named,
                         effect_class=declared[0],
                         cost=cells[2],
                         line="| " + " | ".join(cells) + " |"))
@@ -190,7 +200,6 @@ def clause(number: str) -> str:
         f"clause {number} is not in {SECTION!r} in this installation")
 
 
-@lru_cache(maxsize=1)
 def ambient_terms() -> tuple[tuple[str, str], ...]:
     """§6.4's ambient draws paired with the mediated form 6.1 requires.
 

@@ -51,8 +51,9 @@ classifiers = [
 # contract — a bare venv shows async-plugin failures that are noise.
 test = ["pytest>=8,<9", "pytest-asyncio>=0.23,<0.25", "jsonschema>=4.21,<5"]
 
-# The integration MCP (ADR-022). It brings the only third-party dependency in
-# this file that the kernel does not need, and it is optional for that reason:
+# The integration MCP (ADR-022). It brings a SECOND third-party dependency to
+# this file that the kernel does not need — `jsonschema`, for the shipped
+# validator, is the first — and it is optional for that reason:
 # a library that grows a server by default has become a service, and nobody
 # decided that. `vitruvyan_motus.mcp.tools` is stdlib-only and importable
 # without this extra — only the transport binding needs the SDK.
@@ -85,7 +86,11 @@ package-dir = { "vitruvyan_motus" = "src/vitruvyan_motus", "vitruvyan_motus.cont
 vitruvyan_motus = ["py.typed"]
 "vitruvyan_motus.contract" = ["*.schema.json", "node-protocol.md", "README.md"]
 "vitruvyan_motus.adr" = ["ADR-022-the-integration-mcp.md"]
-"vitruvyan_motus.examples" = ["01_first_run.py", "06_effects_and_receipts.py"]
+# No package-data entry for the examples: `vitruvyan_motus.examples` is a
+# declared package, so `build_py` copies its `*.py` as modules and all six
+# travel. A `package-data` line here named two of them and changed the wheel
+# not at all — configuration that misdescribes what ships, and that no test
+# could notice being deleted.
 
 [project.scripts]
 motus-validate = "vitruvyan_motus.contract.validate:main"

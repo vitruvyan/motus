@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import shlex
+import sys
 from pathlib import Path
 
 from .answers import Answer, Cannot, Computed, Quoted
@@ -33,7 +34,11 @@ def _command(*parts: str) -> str:
     reproduce line that does not reproduce is worse than none, because it
     invites a trust it has not earned.
     """
-    return "python -m vitruvyan_motus.mcp " + " ".join(shlex.quote(p) for p in parts)
+    # `sys.executable`, not the word `python`. The interpreter that has Motus
+    # installed is the one that can run the line, and on a plain Debian or a
+    # pipx install there is no `python` on PATH at all.
+    return (shlex.quote(sys.executable) + " -m vitruvyan_motus.mcp "
+            + " ".join(shlex.quote(p) for p in parts))
 
 
 def _words(text: str) -> set[str]:
@@ -91,48 +96,62 @@ def _paragraph(text: str, opening: str) -> str:
 # -- motus_classify ---------------------------------------------------------
 
 #: The paragraph §4.4 uses to say why the two errors are not symmetric. Quoted
-#: on every classification that reached a verdict, because the class alone is
-#: the half that was already being guessed correctly half the time.
+#: on every classification, because the class alone is the half that was
+#: already being guessed correctly half the time.
 _ASYMMETRY = "**The asymmetry is the whole point,"
 _FALLBACK = "**When the operation is not in this table**"
 _STRICTEST = "**A node whose work falls in more than one row"
+#: The paragraph that says what a program may do with the marked terms. Quoted
+#: on every answer, and the reason there is no verdict to quote it beside.
+_NOT_SENTENCES = "**This table classifies operations."
 
 
 def classify(description: str) -> Answer:
-    """Which effect class §4.4 gives the operation in ``description``.
+    """Which §4.4 terms are present in ``description``, and the whole table.
 
-    The matching is conservative and its result is never the whole answer: the
-    rows that matched are quoted, so a caller who disagrees with the match is
-    reading the same table the match came from. When nothing matches, the
-    answer is 4.4's own fallback clause and 4.1, not a guess.
+    **This tool does not classify. It used to, and the verdict it produced was
+    wrong on most realistic descriptions** — two independent adversarial
+    lenses measured 15 of 20 and 6 of 6, in both directions, and it never
+    refused once. Worse than the count is the direction: *"computes the invoice
+    total and stores it in Postgres"* was answered `pure`, because `compute` is
+    a marked term and `stores` is not, and a write declared `pure` never meets
+    the resume guard at all.
+
+    The class of the defect is one this project has written down: **a pattern
+    answering a question about meaning.** Matching characters against a
+    vocabulary tells you which marked terms a sentence contains; it cannot tell
+    you which operation the sentence names in words the table does not mark,
+    and that is exactly the operation that decides the class. Adding terms
+    repairs the instance and leaves the class, so the terms were not added.
+
+    What is left is what the measurement actually asked for. The error we
+    observed was not that readers could not run a matcher — it was that nobody
+    had told them **what the conservative choice costs**. So every answer
+    carries the whole table, the asymmetry, the strictest-class rule, the
+    fallback clause and 4.1, and the matched terms arrive as what they are: a
+    fact about the caller's text.
     """
+    rows = protocol.table()
     words = _words(description)
-    matched = [row for row in protocol.table()
-               if any(_matches(term, words) for term in row.terms)]
+    found = [term for row in rows for term in row.terms if _matches(term, words)]
     reproduce = _command("classify", description)
 
-    if not matched:
-        # The table travels with the refusal. A caller whose wording this did
-        # not match is one row away from their answer, and handing them the
-        # refusal alone would make the tool worse than the document.
-        return Answer(tool="motus_classify", spans=tuple(
-            [Cannot(tried=(reproduce,)),
-             Quoted(SECTION, _paragraph(protocol.clause("4.4"), _FALLBACK))]
-            + [Quoted(SECTION, row.line) for row in protocol.table()]
-            + [Quoted(SECTION, protocol.clause("4.1"))]
-        ))
+    spans: list[object] = []
+    if found:
+        spans.append(Computed(
+            by=f"{_ME}.classify", reproduce=reproduce,
+            # Terms, never a class. The rows below carry the classes, and they
+            # carry them as the document wrote them.
+            text="§4.4 terms present in your text: " + ", ".join(sorted(set(found)))))
+    else:
+        spans.append(Cannot(tried=(reproduce,)))
 
-    classes = {row.effect_class for row in matched}
-    verdict = protocol.strictest(classes)
-    spans: list[object] = [
-        Computed(by=f"{_ME}.classify",
-                 reproduce=reproduce,
-                 text=verdict),
-    ]
-    spans.extend(Quoted(SECTION, row.line) for row in matched)
-    if len(classes) > 1:
-        spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _STRICTEST)))
+    spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _NOT_SENTENCES)))
+    spans.extend(Quoted(SECTION, row.line) for row in rows)
     spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _ASYMMETRY)))
+    spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _STRICTEST)))
+    spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _FALLBACK)))
+    spans.append(Quoted(SECTION, protocol.clause("4.1")))
     return Answer(tool="motus_classify", spans=tuple(spans))
 
 
@@ -206,15 +225,31 @@ def _keyword_used(tree: ast.AST, name: str) -> bool:
                for keyword in node.keywords)
 
 
-def review_node(source: str, effect_class: str | None = None) -> Answer:
+def review_node(source: str, effect_class: str | None = None,
+                reproduce: str | None = None) -> Answer:
     """What the protocol says about the calls this node makes.
 
-    Three questions, each answered by a clause rather than by this function:
-    does it draw ambiently (6.4, reported as 6.2 requires); does what it calls
-    agree with the class it declares (4.4); and, for an `external_effect`, does
-    anything supply the idempotency key resume requires (4.3).
+    Two questions, both answered structurally: does it draw ambiently (§6.4,
+    reported as §6.2 requires), and — for a node declared `external_effect` —
+    does anything supply the idempotency key resume requires (§4.3).
+
+    **A third check was here and is withdrawn.** It compared the last dotted
+    component of every call against §4.4's marked terms, and so it read
+    `payload.get` as an HTTP `GET` and `seen.append` as appending to a file. On
+    Motus's own shipped examples it accused a node whose docstring says it
+    *"stays `pure`, which is what makes it verifiable during replay"* of
+    implying `external_effect`. An agent taking the shortest path from that
+    verdict re-declares a genuinely pure node and forfeits the falsifiability
+    §4.1 promises — the exact harm ADR-022 exists to prevent, produced by the
+    tool built to prevent it. It is the same class as `classify`'s withdrawal:
+    a pattern answering a question about meaning, over identifiers this time
+    instead of over English.
     """
-    reproduce = _command("review-node", "-")
+    # `diagnose` passes the path it was given. Reading it from a file the
+    # caller already has beats asking them to pipe the source back in: a round
+    # found this line emitted as `review-node -`, which blocks on a terminal
+    # when pasted — a reproduce line that does not reproduce.
+    reproduce = reproduce or _command("review-node", "-")
     try:
         tree = ast.parse(source)
     except SyntaxError as broken:
@@ -229,26 +264,13 @@ def review_node(source: str, effect_class: str | None = None) -> Answer:
              for name, line in calls
              for draw, mediated in protocol.ambient_terms()
              if name == draw or name.endswith("." + draw)]
+    for name, line, mediated in drawn:
+        spans.append(Computed(by=f"{_ME}.review_node",
+                              reproduce=reproduce,
+                              text=f"line {line}: {name} — 6.1 draws this "
+                                   f"through {mediated}"))
     if drawn:
-        for name, line, mediated in drawn:
-            spans.append(Computed(by=f"{_ME}.review_node",
-                                  reproduce=reproduce,
-                                  text=f"line {line}: {name} — 6.1 draws this "
-                                       f"through {mediated}"))
         spans.append(Quoted(SECTION, protocol.clause("6.2")))
-
-    tails = {name.rsplit(".", 1)[-1].lower() for name, _ in calls}
-    implied = {row.effect_class for row in protocol.table()
-               if any(term.lower() in tails for term in row.terms)}
-    if implied:
-        witnessed = protocol.strictest(implied)
-        spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
-                              text=f"calls imply {witnessed}"))
-        if effect_class is not None and effect_class != witnessed:
-            spans.append(Computed(
-                by=f"{_ME}.review_node", reproduce=reproduce,
-                text=f"declared {effect_class}, calls imply {witnessed}"))
-            spans.append(Quoted(SECTION, _paragraph(protocol.clause("4.4"), _ASYMMETRY)))
 
     if effect_class == "external_effect" and not _keyword_used(tree, "idempotency_key"):
         spans.append(Computed(by=f"{_ME}.review_node", reproduce=reproduce,
@@ -257,6 +279,10 @@ def review_node(source: str, effect_class: str | None = None) -> Answer:
 
     if not spans:
         spans.append(Cannot(tried=(reproduce,)))
+    # Always, and especially when nothing was found: §6.4 says its own table is
+    # not exhaustive, and a silent `I cannot tell` reads as *none present*.
+    spans.append(Quoted(SECTION, _paragraph(protocol.clause("6.4"),
+                                            "This table names the ones")))
     return Answer(tool="motus_review_node", spans=tuple(spans))
 
 
@@ -283,7 +309,7 @@ def explain(error: str) -> Answer:
         return Answer(tool="motus_explain", spans=(
             Cannot(tried=(reproduce,)),
             Computed(by="vitruvyan_motus.errors.__all__",
-                     reproduce="python -m vitruvyan_motus.mcp explain",
+                     reproduce=shlex.quote(sys.executable) + " -m vitruvyan_motus.mcp explain",
                      text=", ".join(known)),))
 
     inherited = " -> ".join(base.__name__ for base in candidate.__mro__[1:]
@@ -342,30 +368,24 @@ def _module_summaries() -> tuple[tuple[str, str], ...]:
 
 
 def where(intent: str) -> Answer:
-    """Which module of the kernel already owns this kind of code.
+    """Which module of the kernel owns which kind of code.
 
     The answer is the modules' own docstrings. Motus states what each file is
     for on its first line (ADR-001 gives `errors.py` its subject outright), so
     the question has a source and does not need one written for it.
+
+    **The whole map travels every time, and the intent selects nothing.** A
+    round found `where("the")` naming seven of fourteen modules and `where("a")`
+    naming four: matching on shared words, articles included, produced a
+    selection carrying no signal while presenting itself as *which module
+    already owns this kind of code*. Fourteen one-line docstrings is a short
+    answer; a wrong seven of them is not a shorter one.
     """
     reproduce = _command("where", intent)
-    summaries = _module_summaries()
-    words = _words(intent)
-    matched = [(module, summary) for module, summary in summaries
-               if words & _words(module + " " + summary)]
-    spans: list[object] = []
-    if matched:
-        spans.extend(
-            Computed(by=f"vitruvyan_motus.{module}.__doc__", reproduce=reproduce,
-                     text=f"{module}.py — {summary}")
-            for module, summary in matched)
-    else:
-        spans.append(Cannot(tried=(reproduce,)))
-        spans.extend(
-            Computed(by=f"vitruvyan_motus.{module}.__doc__", reproduce=reproduce,
-                     text=f"{module}.py — {summary}")
-            for module, summary in summaries)
-    return Answer(tool="motus_where", spans=tuple(spans))
+    return Answer(tool="motus_where", spans=tuple(
+        Computed(by=f"vitruvyan_motus.{module}.__doc__", reproduce=reproduce,
+                 text=f"{module}.py — {summary}")
+        for module, summary in _module_summaries()))
 
 
 #: The advertised describing surface, named once. The test that walks it reads

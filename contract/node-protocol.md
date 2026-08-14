@@ -156,7 +156,19 @@ The terms in `code` are the ones a reader is holding when they ask. They are
 marked so that a program can find them without guessing at English, which is a
 deliberate property of this table and not typography: the integration MCP
 (ADR-022) reads this table at call time rather than restating it, so a row
-edited here changes what it answers and a row deleted here makes it fail.
+edited here changes what it reports, and a row it cannot read stops it.
+
+**This table classifies operations. It does not classify sentences, and no
+program may use it to.** A program can find the marked terms that are present
+in a description; it cannot find the operation a description names in words
+this table does not mark, and *that* is the operation that would have changed
+the answer. So a term found here is a fact about the text and never a verdict
+about the node — a node described as *"computes the total and mails the
+receipt"* contains `compute` and no marked term for the mailing, and any
+program that folded that into a class would answer `pure` about a node that
+sends mail. A tool reporting matched terms reports them as matches, quotes this
+paragraph beside them, and leaves the classification to the reader holding the
+node.
 
 | Operation | Honest class | Declaring `external_effect` instead |
 |---|---|---|
@@ -171,7 +183,7 @@ edited here changes what it answers and a row deleted here makes it fail.
 | `send`, `email`, `sms`, `webhook`, `notify` | `external_effect` | — |
 | `enqueue`, `publish` to a queue or topic | `external_effect` | — |
 | `charge`, `refund`, `transfer`, `payout` | `external_effect` | — |
-| computing over state already captured — `compute`, `derive`, `format`, `sum` | `pure` | permitted; forfeits verify-replay |
+| computing over state already captured — `compute`, `derive`, `format`, `sum` | `pure` | permitted; **blocks every later resume of the run** and forfeits verify-replay |
 
 `DELETE` appears twice on purpose: an HTTP `DELETE` and a SQL `DELETE` are the
 same class, so a reader who cannot tell which one they meant has still been
@@ -179,11 +191,19 @@ answered.
 
 **A node whose work falls in more than one row takes the strictest class any of
 those rows names** — `external_effect` over `recorded_effect` over `pure`.
-Mutating is not cancelled by also reading, and 4.1 already says so: a node that
-mutates something outside the run *is* the third row, whatever else it also
-did. Stated here because it is the case a reader actually has — real nodes read
-and then write — and leaving it to be inferred is how the softer class gets
-chosen.
+Mutating is not cancelled by also reading.
+
+This is stated here because it is the case a reader actually has — real nodes
+read and then write — and leaving it to be inferred is how the softer class
+gets chosen. **Two things about it are said plainly rather than left to be
+discovered.** It is not a restatement: 4.1 gives three overlapping descriptions
+and no precedence, and 4.2's latitude permits the conservative class without
+requiring it, so this clause decides a case 4.1 left open. And **nothing
+enforces it**: the runtime detects the sub-case where a node declared
+`recorded_effect` voluntarily records an `external_effect` descriptor, and a
+node that simply performs the write is invisible to every gate Motus has. A
+contract is binding exactly where a gate checks it; this clause is a rule for
+the person declaring the node, and it says so rather than implying a check.
 
 **The asymmetry is the whole point, and it is why the two classes are not
 symmetric mistakes.** A read declared `external_effect` costs safe resumes — a
@@ -268,7 +288,7 @@ wrong in both directions, so both are stated here rather than left to be
 discovered:
 
 - `full` is not a purity certificate. `motus_config()` is an ATTESTATION by the
-  class author, taken at its word (§6.4). A callable that provides it and reads
+  class author, taken at its word (see `motus_config()` below). A callable that provides it and reads
   a module-level object reports `full`, because nothing inspects what
   `__call__` does. §1.2 says why nothing can.
 - `partial` is not an accusation. It says one node's configuration could not be

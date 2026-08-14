@@ -21,11 +21,18 @@ HTTP GETs as `external_effect` and called it conservative. The contract permits
 that. **Nothing told them what it costs**, which is safe resumes, silently,
 forever.
 
-`motus_classify("I need to INSERT a row")` answers `external_effect`, quotes
-the row of `contract/node-protocol.md` §4.4 it came from, and quotes the
-paragraph that says why the two errors are not symmetric. A tool that cites its
-source cannot drift from it, and cannot be out-argued by a second document that
-did.
+`motus_classify("I need to INSERT a row")` reports which §4.4 terms your text
+contains and hands you the whole table, the cost of each conservative choice,
+the strictest-class rule and §4.1.
+
+**It does not tell you the class, and that is a withdrawal rather than a
+limitation.** It used to. Two adversarial lenses measured the verdict wrong on
+15 of 20 and 6 of 6 realistic descriptions, in both directions — *"computes the
+invoice total and stores it in Postgres"* was answered `pure`, because
+`compute` is a marked term and `stores` is not. Matching characters tells you
+which marked terms a sentence contains; it cannot tell you which operation the
+sentence names in words the table does not mark, and that is the operation that
+decides the class. See ADR-025.
 
 ## What an answer is made of
 
@@ -64,18 +71,20 @@ python -m vitruvyan_motus.mcp diagnose ./run-4711.json --symptom ReplayMismatch
 
 ## The surface
 
-- **`motus_classify(description)`** — the effect class, the row it came from,
-  and the cost of the conservative choice;
+- **`motus_classify(description)`** — which §4.4 terms your description
+  contains, the whole table, and the cost of each conservative choice;
 - **`motus_review_graph(spec)`** — `GraphSpec.from_dict` on your spec. Not
   advice: the verdict of the code that will refuse you at runtime;
 - **`motus_review_node(source, effect_class)`** — ambient draws (§6.4, reported
-  as §6.2 requires), whether the calls agree with the declared class, and
-  whether anything supplies the idempotency key resume needs;
+  as §6.2 requires) and whether anything supplies the idempotency key resume
+  needs. Both are AST facts. A third check compared call names against §4.4's
+  terms and is withdrawn: it read `payload.get` as an HTTP `GET`;
 - **`motus_explain(error)`** — the docstring of the exception class that
   raises, and its ancestry;
 - **`motus_start_here()`** — two shipped examples, verbatim;
-- **`motus_where(intent)`** — which kernel module already owns this kind of
-  code, from the modules' own docstrings;
+- **`motus_where(intent)`** — every kernel module with its own one-line
+  docstring. The whole map every time: selecting by shared words named seven of
+  fourteen modules for the intent `"the"`;
 - **`motus_diagnose(path, symptom)`** — the shipped code, run over your
   artefact, reporting what it said.
 

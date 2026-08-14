@@ -34,51 +34,58 @@ def build() -> Any:
     server = MCPServer(
         name="vitruvyan-motus",
         version=__version__,
+        # A tool description and this string are the one place in this
+        # component where text crosses the wire without being quoted from a
+        # source: the protocol requires them before any tool has run, so there
+        # is nothing yet to derive them from. They are therefore held to a
+        # narrower rule, asserted by test: they say what an argument is and
+        # what comes back, and they make no claim about the protocol's content
+        # or about this server's own honesty. The previous version asserted
+        # "Nothing here is written from memory" — a sentence written from
+        # memory, in the server, which a round then showed was also untrue of
+        # a hardcoded ranking.
         instructions=(
-            "Every answer names the repository source it was quoted from, or "
-            "the shipped code that produced it and the command that reproduces "
-            "it. Nothing here is written from memory. `motus_diagnose` takes a "
-            "filesystem path and refuses artefact content."),
+            "Each answer carries either the repository source it was quoted "
+            "from, or the code that produced it and a command that runs it "
+            "again. `motus_diagnose` takes a filesystem path."),
     )
 
     @server.tool(name="motus_classify")
     def motus_classify(description: str) -> str:
-        """Which effect class the node protocol gives an operation, and its cost."""
+        """Report which node-protocol terms a description contains, with the table."""
         return tools.classify(description).render()
 
     @server.tool(name="motus_review_graph")
     def motus_review_graph(spec: dict) -> str:
-        """The verdict of the code that will refuse this GraphSpec at runtime."""
+        """Run GraphSpec.from_dict on a spec and report what it returned."""
         return tools.review_graph(spec).render()
 
     @server.tool(name="motus_review_node")
     def motus_review_node(source: str, effect_class: str | None = None) -> str:
-        """What the protocol says about the calls a node's source makes."""
+        """Report ambient draws and a missing idempotency key in a node's source."""
         return tools.review_node(source, effect_class=effect_class).render()
 
     @server.tool(name="motus_explain")
     def motus_explain(error: str) -> str:
-        """What a Motus error means, from the class that raises it."""
+        """Return the docstring and ancestry of a named Motus exception class."""
         return tools.explain(error).render()
 
     @server.tool(name="motus_start_here")
     def motus_start_here() -> str:
-        """The shape of a Motus program, as the shipped example writes it."""
+        """Return two shipped example programs, verbatim."""
         return tools.start_here().render()
 
     @server.tool(name="motus_where")
     def motus_where(intent: str) -> str:
-        """Which module of the kernel already owns this kind of code."""
+        """Return every kernel module with its own one-line docstring."""
         return tools.where(intent).render()
 
     @server.tool(name="motus_diagnose")
     def motus_diagnose(path: str, symptom: str = "") -> str:
-        """Run the shipped code over an artefact named by PATH and report it.
+        """Run the shipped validator over an artefact named by PATH.
 
         PATH is a filesystem path this server process can open. Artefact
-        content is refused (ADR-022 decision 4e): a path is meaningless to a
-        server on another machine, so a remote deployment cannot work rather
-        than working while it leaks the caller's evidence.
+        content is refused.
         """
         return _diagnose(path, symptom=symptom).render()
 

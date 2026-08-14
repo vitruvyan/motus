@@ -19,7 +19,6 @@ module is the repository half. It does two things and refuses a third:
 
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
 
 __all__ = ["SourceMissing", "read", "resolve", "CITABLE"]
@@ -82,15 +81,25 @@ def resolve(relative: str) -> Path:
         f"Looked in: {', '.join(str(r) for r in _roots())}")
 
 
-@lru_cache(maxsize=None)
 def read(relative: str) -> str:
-    """The text of a citable source.
+    """The text of a citable source, read from disk on every call.
 
-    Cached because a quoted span verifies itself against the source at the
-    moment it is constructed (see ``answers.Quoted``), so one answer may read
-    the same document several times. The cache is process-lifetime: a server
-    running while its own installation is edited underneath it is not a case
-    worth designing for, and re-reading per call would make every answer's cost
-    depend on how many things it cites.
+    **This was cached, and the cache was a defect that voided the ADR.** An
+    adversarial round demonstrated it: a long-lived server kept answering
+    `external_effect` after the row saying so had been edited to say otherwise,
+    kept quoting a line that was no longer in the file, and kept answering
+    after the document had been **deleted** — while the reproduce line it had
+    just handed the caller, run fresh, gave the opposite verdict.
+
+    ADR-022 decision 1 is unambiguous: *if the source changes the answer
+    changes; if the source is deleted the tool fails instead of inventing.* A
+    process-lifetime cache makes both sentences false for the only process that
+    matters, because an MCP server over stdio lives as long as the session and
+    `pip install -U` rewrites exactly these files underneath it.
+
+    The cost of removing it is a few file reads per tool call, on a call that
+    already crossed a process boundary. That was never the trade it looked
+    like: what the cache actually bought was a snapshot, and a snapshot is the
+    thing this component exists not to serve from.
     """
     return resolve(relative).read_text(encoding="utf-8")

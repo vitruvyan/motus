@@ -48,6 +48,12 @@ LABELS: tuple[str, ...] = (
     "tried",
 )
 
+#: Read by the renderers below, so that the enumeration is the thing rather
+#: than a comment about it. A round found `LABELS` was read by nothing at all
+#: while its docstring claimed a test constrained it — a decoration standing
+#: where decision 2's second guard was supposed to be.
+_SOURCE, _BY, _REPRODUCE, _CANNOT, _TRIED = LABELS
+
 
 @dataclass(frozen=True)
 class Span:
@@ -83,7 +89,7 @@ class Quoted(Span):
         return {"kind": "quoted", "source": self.source, "text": self.text}
 
     def render(self) -> str:
-        return f"{self.text}\n[source: {self.source}]"
+        return f"{self.text}\n[{_SOURCE}: {self.source}]"
 
 
 @dataclass(frozen=True)
@@ -109,7 +115,8 @@ class Computed(Span):
                 "reproduce": self.reproduce, "text": self.text}
 
     def render(self) -> str:
-        return f"{self.text}\n[computed by: {self.by}]\n[reproduce: {self.reproduce}]"
+        return (f"{self.text}\n[{_BY}: {self.by}]"
+                f"\n[{_REPRODUCE}: {self.reproduce}]")
 
 
 @dataclass(frozen=True)
@@ -128,8 +135,8 @@ class Cannot(Span):
 
     def render(self) -> str:
         if not self.tried:
-            return "I cannot tell."
-        return "I cannot tell.\n[tried: " + "; ".join(self.tried) + "]"
+            return _CANNOT
+        return _CANNOT + f"\n[{_TRIED}: " + "; ".join(self.tried) + "]"
 
 
 @dataclass(frozen=True)
