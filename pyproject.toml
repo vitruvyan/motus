@@ -51,22 +51,45 @@ classifiers = [
 # contract — a bare venv shows async-plugin failures that are noise.
 test = ["pytest>=8,<9", "pytest-asyncio>=0.23,<0.25", "jsonschema>=4.21,<5"]
 
+# The integration MCP (ADR-022). It brings the only third-party dependency in
+# this file that the kernel does not need, and it is optional for that reason:
+# a library that grows a server by default has become a service, and nobody
+# decided that. `vitruvyan_motus.mcp.tools` is stdlib-only and importable
+# without this extra — only the transport binding needs the SDK.
+mcp = ["mcp>=2,<3"]
+
 # Two roots, listed rather than discovered. `src/vitruvyan_motus` is the
 # kernel; `contract/` is mapped in as `vitruvyan_motus.contract` so that
 # installing Motus installs the means to check what it produced. The contract
 # directory keeps its place in the tree — it is the authority (ADR-001), not a
 # copy — and only the validator and the two schemas travel: the prose and the
 # frozen fixtures stay on GitHub, where the reader who needs them already is.
+# ADR-022 decision 1 extends this list. The MCP's reader is an agent inside a
+# virtualenv, so "the reader who needs the prose is already on GitHub" — true
+# of a human — fails for it: every source its tools cite must travel with the
+# code, version-matched, or the server would have to fetch one, and an answer
+# derived from `main` while the caller runs 0.9.0 is wrong in the most
+# convincing way available. What travels is exactly what `mcp/sources.py`
+# names in CITABLE, not a directory, and a test compares the two.
 [tool.setuptools]
-packages = ["vitruvyan_motus", "vitruvyan_motus.contract"]
-package-dir = { "vitruvyan_motus" = "src/vitruvyan_motus", "vitruvyan_motus.contract" = "contract" }
+packages = [
+    "vitruvyan_motus",
+    "vitruvyan_motus.contract",
+    "vitruvyan_motus.mcp",
+    "vitruvyan_motus.adr",
+    "vitruvyan_motus.examples",
+]
+package-dir = { "vitruvyan_motus" = "src/vitruvyan_motus", "vitruvyan_motus.contract" = "contract", "vitruvyan_motus.mcp" = "src/vitruvyan_motus/mcp", "vitruvyan_motus.adr" = "adr", "vitruvyan_motus.examples" = "examples" }
 
 [tool.setuptools.package-data]
 vitruvyan_motus = ["py.typed"]
-"vitruvyan_motus.contract" = ["*.schema.json"]
+"vitruvyan_motus.contract" = ["*.schema.json", "node-protocol.md", "README.md"]
+"vitruvyan_motus.adr" = ["ADR-022-the-integration-mcp.md"]
+"vitruvyan_motus.examples" = ["01_first_run.py", "06_effects_and_receipts.py"]
 
 [project.scripts]
 motus-validate = "vitruvyan_motus.contract.validate:main"
+motus-mcp = "vitruvyan_motus.mcp.server:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "vitruvyan_motus.__version__" }

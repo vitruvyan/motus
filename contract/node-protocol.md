@@ -140,6 +140,64 @@ completed receipt and non-empty idempotency key for every recorded external
 effect. `unknown` is evidence, not failure, but it blocks automatic resume.
 Exactly-once is never inferred.
 
+4.4. **The operations, named.** 4.1 gives the rule and 4.2 gives the latitude,
+and a reader holding a concrete operation has still had to apply them. Two
+measured misreadings say that step is where this protocol is lost: an automated
+reviewer inverted the classification twice in one pull request (#77), and an
+integrator's field report declared HTTP GETs `external_effect` and called it
+conservative — which 4.2 permits and no document told them the price of.
+
+This table classifies named operations under 4.1. It adds no obligation: where
+a row and 4.1 disagree, **the row is wrong**. The honest class is the one 4.1's
+definition yields; the conservative class is `external_effect`, always
+permitted by 4.2, and the cost column is what nobody was being told.
+
+The terms in `code` are the ones a reader is holding when they ask. They are
+marked so that a program can find them without guessing at English, which is a
+deliberate property of this table and not typography: the integration MCP
+(ADR-022) reads this table at call time rather than restating it, so a row
+edited here changes what it answers and a row deleted here makes it fail.
+
+| Operation | Honest class | Declaring `external_effect` instead |
+|---|---|---|
+| an HTTP `GET`, `HEAD` or `OPTIONS` | `recorded_effect` | permitted; blocks a resume that was safe |
+| an HTTP `POST`, `PUT`, `PATCH` or `DELETE` | `external_effect` | — |
+| a SQL `SELECT` | `recorded_effect` | permitted; blocks a resume that was safe |
+| a SQL `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT` or `TRUNCATE` | `external_effect` | — |
+| reading a file — `read`, `load`, `stat`, `glob` | `recorded_effect` | permitted; blocks a resume that was safe |
+| writing a file — `write`, `append`, `unlink`, `rmtree` | `external_effect` | — |
+| an LLM or model call — `complete`, `chat`, `embed`, `rerank` | `recorded_effect` | permitted; blocks a resume that was safe |
+| a tool call whose *result* is the effect — `lookup`, `search`, `fetch` | `recorded_effect` | permitted; blocks a resume that was safe |
+| `send`, `email`, `sms`, `webhook`, `notify` | `external_effect` | — |
+| `enqueue`, `publish` to a queue or topic | `external_effect` | — |
+| `charge`, `refund`, `transfer`, `payout` | `external_effect` | — |
+| computing over state already captured — `compute`, `derive`, `format`, `sum` | `pure` | permitted; forfeits verify-replay |
+
+`DELETE` appears twice on purpose: an HTTP `DELETE` and a SQL `DELETE` are the
+same class, so a reader who cannot tell which one they meant has still been
+answered.
+
+**A node whose work falls in more than one row takes the strictest class any of
+those rows names** — `external_effect` over `recorded_effect` over `pure`.
+Mutating is not cancelled by also reading, and 4.1 already says so: a node that
+mutates something outside the run *is* the third row, whatever else it also
+did. Stated here because it is the case a reader actually has — real nodes read
+and then write — and leaving it to be inferred is how the softer class gets
+chosen.
+
+**The asymmetry is the whole point, and it is why the two classes are not
+symmetric mistakes.** A read declared `external_effect` costs safe resumes — a
+real price, paid silently, forever. A write declared `recorded_effect` **never
+meets the resume guard at all**: the run resumes and the write happens twice,
+with no idempotency key required and no receipt demanded. One error costs
+availability. The other costs correctness, in a system whose purpose is to be
+believed.
+
+**When the operation is not in this table**, 4.1 governs and the question to
+ask is 4.1's: does this node's effect on the outside world survive the run? If
+the answer is unclear, 4.2's latitude exists, the price above is what it costs,
+and paying it deliberately is a decision — being unaware of it is not.
+
 ## 5. Redaction
 
 5.1. Sensitive content MUST be written through the redaction API, which
@@ -228,6 +286,29 @@ evaluates it at construction and at each run start so mutable configuration
 cannot retain a stale fingerprint. Failure is reported as
 `NodeConfigurationError` before `run_started`: without valid identity material
 there is no run whose code fingerprint Motus can truthfully record.
+
+6.4. **The ambient draws, named.** 6.1 says a node MUST draw time, randomness
+and identifiers from the RunContext, and 6.2 says what happens when it does
+not. Neither names the calls, and a reader auditing their own node is holding
+calls.
+
+This table names the ones a program can find in source. It is **not
+exhaustive** and does not try to be — 6.1 governs, and a draw absent from this
+table is not thereby permitted. Its purpose is that a tool reading a node can
+say which clause it is applying and to what, rather than reporting a suspicion.
+
+| Ambient draw | Mediated form |
+|---|---|
+| `datetime.now`, `datetime.utcnow`, `time.time`, `time.monotonic` | `ctx.now()` |
+| `random.random`, `random.choice`, `random.randint`, `random.shuffle` | `ctx.rand()` |
+| `uuid.uuid1`, `uuid.uuid4`, `os.urandom`, `secrets.token_hex` | `ctx.uuid()` |
+
+**A draw found here is a finding about `replay_capability`, never about
+honesty.** 6.2's downgrade is a description of what this runtime can
+re-identify, and a node that draws ambiently for a run that declares no
+reproducibility has broken nothing. Any tool reporting a row of this table
+reports it as 6.2 does, or it is reporting something the protocol does not
+say.
 
 ## 7. Failure, attempts, and dispositions
 
