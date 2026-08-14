@@ -437,7 +437,11 @@ class CommitmentLog:
         # the reason as text is what makes that impossible here, so an edit
         # that stored the exception instead would reintroduce the defect at a
         # second site. Asserted rather than trusted.
-        assert isinstance(reason, str), "a poison reason is text, never an exception"
+        if not isinstance(reason, str):
+            # A `raise`, not an `assert`: `python -O` strips assertions, and a
+            # guard that disappears under a flag is a guard that is not there
+            # on the machine where it mattered.
+            raise TypeError("a poison reason is text, never an exception")
         self._poisoned = reason
         handle, self._handle = self._handle, None
         if handle is not None:
