@@ -17,6 +17,8 @@ from __future__ import annotations
 import gc
 import weakref
 
+import pytest
+
 from vitruvyan_motus import GraphSpec, InMemoryTraceSink, Runtime, State
 
 SPEC = GraphSpec.from_dict({
@@ -199,3 +201,24 @@ def test_the_failure_is_latched_in_one_place_and_a_parser_says_so():
     assert assigners == {"__init__", "_latch"}, (
         f"`_async_failure` is assigned in {sorted(assigners)}; every store must "
         "go through `_latch`, which is the only thing that detaches the stack")
+
+
+def test_a_poison_reason_is_text_and_refuses_to_be_an_exception(tmp_path):
+    """The second site the sweep found, and the reason it is clean.
+
+    `CommitmentLog` outlives many calls, so an exception stored on it would
+    pin a stack exactly as `_ObservationHub` did. It stores text — and the
+    guard is exercised here rather than trusted, because an unexercised guard
+    is indistinguishable from its own absence and is removed by the next person
+    who finds it noisy.
+    """
+    from vitruvyan_motus.commitlog import CommitmentLog
+
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1")
+    log._poison("the disk went away")          # text is the contract
+    assert log._poisoned == "the disk went away"
+
+    other = CommitmentLog(tmp_path, tenant="acme", writer_id="w2")
+    with pytest.raises(AssertionError):
+        other._poison(OSError(28, "No space left on device"))  # type: ignore[arg-type]
+    assert other._poisoned is None
