@@ -60,6 +60,22 @@ document is deleted, the tool raises.
 }
 ```
 
+Some clients ask for the same thing as fields rather than as JSON. The values
+are:
+
+| field | value |
+|---|---|
+| name | `motus` |
+| transport | `stdio` |
+| command | the absolute path to `motus-mcp` in the venv Motus is installed in |
+| args | *empty* |
+| environment | *empty* |
+
+**The absolute path matters**: a client does not inherit your shell's
+virtualenv. And the environment stays empty — this server takes no credential,
+contacts nothing, and has no account. A field offering `API_KEY=secret` is
+inviting you to configure something else.
+
 Equivalently `python -m vitruvyan_motus.mcp.server`. Everything the server
 answers is also reachable from the command line, which is how you check it:
 
@@ -68,6 +84,52 @@ python -m vitruvyan_motus.mcp classify "the node POSTs to their API"
 python -m vitruvyan_motus.mcp explain UnsafeResume
 python -m vitruvyan_motus.mcp diagnose ./run-4711.json --symptom ReplayMismatch
 ```
+
+## How to see that it is connected
+
+Three levels, and only the last one answers.
+
+**The process starts.** `timeout 3 motus-mcp < /dev/null; echo $?` printing `0`
+proves the executable exists and exits when its input does. It proves nothing
+else.
+
+**It speaks the protocol.** This is the check worth running, because it fails
+in your terminal rather than inside a client that will show you the error
+filtered:
+
+```python
+import asyncio, sys
+from mcp import ClientSession, StdioServerParameters, stdio_client
+
+async def main() -> int:
+    params = StdioServerParameters(
+        command=sys.executable, args=["-m", "vitruvyan_motus.mcp.server"])
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            info = await session.initialize()
+            print("connected to :", info.server_info.name, info.server_info.version)
+            tools = (await session.list_tools()).tools
+            print("tools        :", len(tools))
+            for tool in tools:
+                print("   -", tool.name)
+            answer = await session.call_tool(
+                "motus_classify", {"description": "the node runs an INSERT"})
+            text = answer.content[0].text
+            print("first line   :", text.splitlines()[0])
+            print("cites its source :", "contract/node-protocol.md" in text)
+    return 0
+
+raise SystemExit(asyncio.run(main()))
+```
+
+It proves three things a configuration file cannot: the process starts, it
+**completes the handshake**, and a real call comes back with an answer that
+**carries its source**. If any of the three is missing you find out here, where
+the failure is legible.
+
+**The client lists seven tools**, all prefixed `motus_`. Fewer than seven means
+the server started and part of its surface did not register — and the check
+above tells you whether that is Motus or the client.
 
 ## The surface
 
