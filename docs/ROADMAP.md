@@ -306,18 +306,38 @@ understood to commit to, and phase 4 freezes exactly that.*
 
 **The digest commits to a document only up to what the parser flattens.**
 ADR-024 states the line — a text difference may be absorbed only if a reader
-reads the same thing — and closes the two families that fail it: numeric
-lexemes (`J2`) and string escapes (`J3`). The string case is the one nobody
-reported: `appro\u0076ed` and `approved` share a root, the first renders as
-*approved* in any viewer, and `grep approved` over the raw file does not find
-it. Whitespace and member order stay absorbed, deliberately, and the reason is
+reads the same thing. Two families fail it. **One is closed and one is not, and
+the difference is the most useful thing this section records.**
+
+**Numeric lexemes (`J2`) are closed**, and scoped to schema `3.0.0` and above by
+the document's own declared version. Below that the terminal digest covers one
+record rather than the run, so there is no root for a lexical collision to
+attack — and `contract/README.md` promises that evidence written before a rule
+existed stays valid. The canonical number form is **frozen as a vector table in
+the ADR** and checked against the live interpreter, because *"what CPython's
+`json.dumps` emits"* names no version and `pyproject` supports `>=3.10` openly.
+
+**String escapes (`J3`) were written, accepted, and withdrawn the same day
+(#98 open).** It covered half its own surface: `parse_string` reaches values,
+while `JSONObject` reads member *names* through the module-global `scanstring`,
+so the ADR's own demonstration moved from a value to a key was accepted. And
+its canonical form **refused our own frozen golden** —
+`tests/compat/terraveler/golden/production-ingestion-trace.json`, taken from
+production and unmodifiable by CI, contains a `\u2014`. So `appro\u0076ed` and
+`approved` still share a root: the first renders as *approved* in any viewer,
+and `grep approved` over the raw file does not find it. The enumeration table in
+`tests/test_number_lexeme.py` carries that row with the verdict `OPEN` and the
+issue number, and **a test asserts the hole**, so closing it breaks that test
+and sends whoever closes it to read why the first attempt failed.
+
+Whitespace and member order stay absorbed, deliberately, and the reason is
 written down.
 
 **The guarantee belongs to whoever holds the bytes.** `Trace.from_json` applies
-both rules; `Trace.from_dict` provably cannot, because by the time it is called
-the two documents are one object. That residual is asserted by a test rather
-than described, so that somebody setting out to fix it finds out there is
-nothing to fix.
+`J2`; `Trace.from_dict` provably cannot, because by the time it is called the
+two documents are one object. That residual is asserted by a test rather than
+described, so that somebody setting out to fix it finds out there is nothing to
+fix.
 
 **And the freeze must inherit the rule that produced these**, not only their
 outcomes: *a finding names an instance, repair the class*. Both of today's
@@ -432,15 +452,22 @@ Built by a separate agent in frontier, from a brief written here.
   recipe changed and no genuine root moved**: `_canonical_bytes` already
   serializes through `json.dumps`, so what we write was always canonical — the
   defect was that a *verifier* re-serializes what it parses, and
-  re-serialization launders the difference. Rules `J2` and `J3` refuse a
-  document whose lexemes are not the ones this contract writes;
-- **#73** — a trace cannot say whether its evidence reached the sink. **Now
-  known to be sharper than filed.** `RunResult.evidence` reports what the
-  runtime told the session, not what a sink did with it, and until 2026-08-14 a
-  `Mock()` sink produced status `completed` with evidence `persisted` and
-  nothing written anywhere. The stand-in is refused now; **the general question
-  #73 asks is still open**, because a real sink that silently drops is
-  indistinguishable from one that persisted;
+  re-serialization launders the difference. Rule `J2` refuses a document whose
+  numeric lexemes are not the ones this contract writes, from schema `3.0.0`;
+  `J3` would have done the same for string escapes and was **withdrawn** (#98);
+- **#73** — a trace cannot say whether its evidence reached the sink. **Still
+  open, and the attempt to close it on 2026-08-14 was withdrawn the same day.**
+  `RunResult.evidence` reports what the runtime told the session, not what a
+  sink did with it, so a `Mock()` sink produces status `completed` with evidence
+  `persisted` and nothing written anywhere. A refusal of stand-ins was written
+  for that — and it rejected `xmlrpc.client.ServerProxy` from the standard
+  library, a lazy sink and a failover proxy, while `Mock(spec=...)` and
+  `create_autospec`, which the stdlib documentation recommends, walked through.
+  **The deeper reason it had to go is that the defect was over-claimed:**
+  ADR-016 defines `persisted` as *a required sink accepted every record*, and a
+  sink that does not raise has accepted. The `Mock()` is the contract working as
+  written. `tests/test_stand_ins.py` now **pins the limit** instead of enforcing
+  a rule, so the next person to notice finds this before rewriting it;
 - **#52** — `result_fingerprint`, superseding ADR-013.
 
 **Engineering debt that will bite on schedule:** #70 (the SLO gate depends on
