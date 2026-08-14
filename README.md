@@ -781,10 +781,24 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
   `JsonlTraceSink`, `StreamDriver`, `AsyncStreamDriver`;
 - evidence: `Trace`, `TRACE_SCHEMA_VERSION`, `RedactedValue`, `ContextDraw`,
-  `RunContext`;
+  `RunContext`, `NonCanonicalNumber`;
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+`Trace.from_json` is the loader to prefer when the document's **text** is in
+reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken
+over its parsed value, so a genuine `5e+18` and a rewritten
+`5000000000000000511.0` are the same IEEE-754 double and would share a root —
+while `jq`, `git diff` and a human read different numbers. The characters are
+the evidence, and a parser destroys them, so `from_dict` cannot make this check
+and no implementation could: by the time it is called, the two documents are
+one object (ADR-024).
+
+**String escapes are not checked, and that is a known hole rather than an
+oversight** — `"appro\u0076ed"` and `"approved"` still share a root. A rule for
+it was written and withdrawn the same day; #98 carries the measurements, and
+ADR-024 §1b carries the reasons.
 
 Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the two
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),

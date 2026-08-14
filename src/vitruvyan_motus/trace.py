@@ -151,6 +151,68 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
     )
 
 
+class NonCanonicalNumber(ValueError):
+    """A lexeme written in characters this contract would not produce.
+
+    Numbers (J2) and string escapes (J3) are one defect class and share one
+    exception, because a caller catching it wants the same thing in both cases:
+    the document's characters are not the ones its values denote, so its root is
+    not the root of what a reader reads. ADR-024.
+    """
+
+
+def _canonical_number(lexeme: str, cast: Any) -> Any:
+    """ADR-024 rule J2, hooked into the parser rather than matched by pattern.
+
+    `parse_float` and `parse_int` are called only for real JSON numbers and
+    receive the exact characters. A regular expression over the raw text would
+    flag `{"note": "cost 5.10 eur"}`, where 5.10 is somebody's prose.
+    """
+    value = cast(lexeme)
+    if json.dumps(value) != lexeme:
+        raise NonCanonicalNumber(
+            f"the number {lexeme} is not written the way this contract writes "
+            f"the value it denotes, which is {json.dumps(value)}. The digest is "
+            "taken over parsed values, so accepting this lexeme would let it "
+            "share a root with the genuine document (ADR-024, rule J2)")
+    return value
+
+
+def _refuse_repeated_members(pairs: list) -> dict:
+    """RFC 8259 J1's duplicate-member half, at the loader that holds the text."""
+    seen: dict = {}
+    for key, value in pairs:
+        if key in seen:
+            raise NonCanonicalNumber(
+                f"the member {key!r} appears more than once. A reader and every "
+                "first-wins parser take the first; Python takes the last, so "
+                "this document says two different things and would earn the "
+                "root of one of them")
+        seen[key] = value
+    return seen
+
+
+def _loads_canonical(text: str) -> Any:
+    """`json.loads` with the text rules a loader holding bytes can apply.
+
+    J2 (numeric lexemes) and J1's duplicate-member half, which this loader did
+    not have: a document repeating a member reads as the FIRST value to a human
+    and to every first-wins parser, parses to the genuine object in Python, and
+    was earning the genuine root here while `contract/validate.py` refused the
+    same bytes. Two loaders disagreeing about what a Motus document is, at the
+    one place ADR-024 introduces as where the guarantee lives.
+
+    **String escapes are not checked**, and ADR-024 records why as an open
+    residual rather than a closed rule — see #98.
+    """
+    return json.loads(
+        text,
+        object_pairs_hook=_refuse_repeated_members,
+        parse_float=lambda lexeme: _canonical_number(lexeme, float),
+        parse_int=lambda lexeme: _canonical_number(lexeme, int),
+    )
+
+
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
@@ -338,8 +400,31 @@ class Trace:
         return instance
 
     @classmethod
+    def from_json(cls, text: str) -> "Trace":
+        """Load a trace from the TEXT of a document, which is the only place the
+        whole guarantee is available.
+
+        ADR-024. A number's digest is taken over its parsed value, so a genuine
+        `5e+18` and a rewritten `5000000000000000511.0` are the same double and
+        would share a root — while `jq`, `git diff` and a human read different
+        numbers. The characters are the evidence, and a parser destroys them.
+
+        So this refuses a numeric lexeme that is not what serializing its value
+        produces (rule J2), before the document becomes objects.
+        `from_dict` cannot do this and no implementation can: by the time it is
+        called, the two documents are indistinguishable. A caller holding bytes
+        should come through here.
+        """
+        return cls.from_dict(_loads_canonical(text))
+
+    @classmethod
     def from_dict(cls, document: dict[str, Any]) -> "Trace":
-        """Load an isolated trace document while preserving its wire version."""
+        """Load an isolated trace document while preserving its wire version.
+
+        **The caller has already discarded the numeric lexemes**, so the J2
+        guarantee of ADR-024 is not available here. Use :meth:`from_json` when
+        the document's text is in reach.
+        """
         plain = _strict_plain_json(document, reserve_redacted=False)
         if not isinstance(plain, dict):
             raise TypeError("trace document must be an object")

@@ -53,7 +53,9 @@ from vitruvyan_motus.runtime import (
 from vitruvyan_motus.sinks import JsonlTraceSink
 from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.state import State
-from vitruvyan_motus.trace import Decision, Fact, RedactedValue, Rejection, Trace, redact
+from vitruvyan_motus.trace import (
+    Decision, Fact, NonCanonicalNumber, RedactedValue, Rejection, Trace, redact,
+)
 
 __all__ = [
     "__version__", "TRACE_SCHEMA_VERSION",
@@ -70,4 +72,5 @@ __all__ = [
     "Policy", "DurabilityProfile", "EvidenceStatus", "RunResult", "Runtime",
     "TraceBundle", "ReplayResult", "ReplayEngine",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
+    "NonCanonicalNumber",
 ]

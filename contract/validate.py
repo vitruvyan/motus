@@ -163,12 +163,96 @@ def _refuse_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
     return dict(pairs)
 
 
+class NonCanonicalNumberError(StrictJSONError):
+    """A number written in characters our own serializer would not produce (J2)."""
+
+
+def _canonical_number(lexeme: str, cast: Any) -> Any:
+    """Refuse a numeric lexeme that is not the canonical form of its value.
+
+    ADR-024. T11 digests PARSED values, so a number commits to its IEEE-754
+    double and not to the characters in the file: a genuine `5e+18` rewritten
+    to `5000000000000000511.0` left the validator green and the root unchanged,
+    while `jq`, `git diff` and a human read a different number. A genuine `0.0`
+    accepted `1e-400` on the same terms.
+
+    The check is a PRECONDITION ON LOADING and not a change to hashing.
+    `_canonical_bytes` already serializes through `json.dumps`, so a document
+    we produced already carries canonical lexemes; the defect was that a
+    VERIFIER re-serializes what it parses, and re-serialization launders the
+    difference. Every genuine root is unchanged by this rule.
+
+    Hooked into the parser rather than matched with a regular expression, and
+    that is not a style preference: `parse_float` and `parse_int` receive the
+    lexeme and are never called for a number inside a STRING. A regex over the
+    raw text flags `{"note": "cost 5.10 eur"}`, which is not a number at all.
+    """
+    value = cast(lexeme)
+    if json.dumps(value) != lexeme:
+        raise NonCanonicalNumberError(
+            f"the number {lexeme} is not written the way this contract writes "
+            f"the value it denotes, which is {json.dumps(value)}. Two documents "
+            "that differ here are two documents, and the digest is taken over "
+            "parsed values -- so accepting this lexeme would let it share a "
+            "root with the genuine one (ADR-024, rule J2)")
+    return value
+
+
 def _loads_strict(text: str) -> Any:
     """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
-    names (RFC 8259, J1)."""
-    return json.loads(
-        text, parse_constant=_refuse_non_finite, object_pairs_hook=_refuse_duplicate_keys,
+    names (RFC 8259, J1) and non-canonical numeric lexemes (ADR-024, J2).
+
+    **String escapes are NOT checked, and that is a stated hole rather than an
+    oversight** — see ADR-024's residual and #98. A rule for them was written,
+    reviewed and withdrawn: object KEYS are structurally unreachable through
+    CPython's decoder hooks (`JSONObject` calls the module-global `scanstring`,
+    never `context.parse_string`), so it covered half its own surface; and its
+    canonical form refused a FROZEN production artifact of ours,
+    `tests/compat/terraveler/golden/production-ingestion-trace.json`, for a
+    `\u2014`.
+
+    Numbers need no such machinery: the C scanner honours `parse_float` and
+    `parse_int`, so J2 costs a hook and not a scanner.
+    """
+    document = json.loads(
+        text, parse_constant=_refuse_non_finite,
+        object_pairs_hook=_refuse_duplicate_keys,
     )
+    if _lexically_governed(document):
+        json.loads(
+            text, parse_constant=_refuse_non_finite,
+            object_pairs_hook=_refuse_duplicate_keys,
+            parse_float=lambda lexeme: _canonical_number(lexeme, float),
+            parse_int=lambda lexeme: _canonical_number(lexeme, int),
+        )
+    return document
+
+
+#: The trace schema versions at which the terminal digest became an anchorable
+#: commitment to the run (ADR-019). Below them there is no root for a lexical
+#: collision to attack, so J2 has nothing to protect and refusing an older
+#: document would break `contract/README.md`'s promise that old evidence stays
+#: valid without rewriting.
+_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
+
+
+def _lexically_governed(document: Any) -> bool:
+    """Does J2 apply to this document?
+
+    Scoped by the document's OWN declared version rather than applied
+    unconditionally. A 1.x or 2.x trace, or one a third party's serializer
+    formatted differently, was written under rules that did not include J2, and
+    refusing it now is a breaking change to a contract surface without a major
+    version — which `contract/README.md` §7 forbids.
+
+    Measured before choosing the scope: the whole repository corpus, 189 JSON
+    documents including the frozen production goldens, contains **zero**
+    non-canonical numeric lexemes. So this scope costs nothing today and is
+    about what a rule may do to evidence written before it existed.
+    """
+    if not isinstance(document, dict):
+        return False
+    return document.get("schema_version") in _LEXICALLY_GOVERNED
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:
@@ -3111,6 +3195,12 @@ def derived_root(doc: dict) -> str | None:
             "run_completed", "run_failed", "run_cancelled"):
         return None
 
+    # `document_version_header(doc)` is provably "3.0.0" here — the gate above
+    # returned for every other value — so a mutant hard-coding it survives the
+    # whole suite. That is an EQUIVALENT mutant and not a coverage gap: do not
+    # invent a test for it. The call stays because the header digest's inputs
+    # should read as the header's fields rather than as constants, and because
+    # a later version admitted to the gate must change this line with it.
     expected_prev = "sha256:" + hashlib.sha256(canonical_json({
         "schema_version": document_version_header(doc),
         "run": doc.get("run") or {},
@@ -3489,7 +3579,8 @@ def main(argv: list[str] | None = None) -> int:
         except StrictJSONError as exc:
             # Rule J1 applies to the spec input too; an unusable spec keeps
             # the established exit-2 semantics ("invalid --spec").
-            print(f"J1 spec:$: {exc}")
+            rule = "J2" if isinstance(exc, NonCanonicalNumberError) else "J1"
+            print(f"{rule} spec:$: {exc}")
             print(f"error: cannot load --spec {args.spec}: {exc}", file=sys.stderr)
             return 2
         except (OSError, ValueError) as exc:
@@ -3514,6 +3605,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         try:
             doc = _loads_strict(raw)
+        except NonCanonicalNumberError as exc:
+            # J2 before J1: a non-canonical number IS strict RFC 8259, so
+            # reporting it as J1 would name the wrong rule and send a reader to
+            # look for a duplicate key or a NaN.
+            print(f"J2 $: {exc}")
+            return 1
         except StrictJSONError as exc:
             # A parseable-but-non-strict document is a CONTRACT violation
             # (J1), not an I/O problem: report it like any other violation

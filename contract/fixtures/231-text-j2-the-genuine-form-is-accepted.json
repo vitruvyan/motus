@@ -1,0 +1,7 @@
+{
+  "artifact": "text",
+  "expect": "valid",
+  "spec": null,
+  "note": "What our own serializer emits. Zero false positives is the property that makes J2 affordable.",
+  "raw": "{\"schema_version\":\"3.0.0\",\"v\":5e+18}"
+}
