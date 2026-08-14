@@ -15,7 +15,14 @@ Sequence is load-bearing. Sizes are estimates and say so.
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong.*
 
-- **0.10.0** is the released version, carrying phase 1 in full: the commitment
+- **0.11.0** is the released version (2026-08-14), carrying the verifier, the
+  OpenTimestamps anchor, rule `J2` and the integration MCP. Like 0.10.0 it ships
+  with the cumulative gate **failing** — +91.4 %, +133.8 %, +27.5 % against the
+  v0.6.1 anchor — under ADR-018 §3 with all four conditions met and none
+  inherited. Its per-release arm passes at −0.1 %, −0.0 %, +0.4 %, by amounts
+  the measurement cannot resolve, and the real-workload share was re-taken for
+  it: **0.055 %**, an upper bound;
+- **0.10.0** carried phase 1 in full: the commitment
   log, the `BEGIN`/`END` lifecycle, the resume link, the anchoring-cadence
   arithmetic, and the commitment contract. Like 0.9.0 it ships with the
   cumulative performance gate **failing**, under ADR-018 §3 with all four
@@ -144,7 +151,7 @@ the kind of invariant that erodes one convenient import at a time.
 
 ---
 
-## Phase 1b — the integration MCP — **MERGED, not yet released**
+## Phase 1b — the integration MCP — **DONE, released in v0.11.0**
 
 *Built on 2026-08-14 against ADR-022. It touches no receipt, no anchor, and
 promises nothing about audit. What follows is the argument that put it here;
@@ -301,8 +308,9 @@ after the row was edited and after the document was **deleted**. The test meant
 to catch that patched the reader, so it tested a mock of the mechanism.
 
 **ADR-025 was accepted on 2026-08-14**, which closes the amendment the round
-found missing. Still owed before it is released: a first integrator using the
-MCP instead of a brief.
+found missing. Shipped in v0.11.0. Still owed: a first integrator using the MCP
+instead of a brief — and the first one is now **vitruvyan-core itself**, see the
+pilot below.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
@@ -409,6 +417,39 @@ outcomes: *a finding names an instance, repair the class*. Both of today's
 second sites were worse than the reported first, and neither was reported by
 anybody. It is now in `AGENTS.md` and in the adversarial-round skill, with the
 six known classes listed for sweeping.
+
+---
+
+## The pilot that has to happen before phase 4 — vitruvyan-core, not Orbis
+
+*Corrected on 2026-08-14 by the founder, and the correction matters: this was
+written as "one Orbis-shaped flow", and **Orbis does not exist**. What exists is
+`vitruvyan-core`, running LangGraph today. A pilot against a system that has not
+been built is not a pilot.*
+
+**The freeze is a promise that a receipt written today verifies in ten years,
+and this is the last thing that can still tell us the format is wrong while
+changing it is cheap.** Terraveler completed three phases against v0.10.0 and
+found no Motus defect — but they used Motus as an outside integrator would.
+`vitruvyan-core` is different in the way that matters: it is our own code, with
+its own nodes, already orchestrated by something else.
+
+The work, in order, and none of it is a rewrite:
+
+1. **read how LangGraph is actually used in `vitruvyan-core`** — where the graph
+   is declared, what a node receives, what crosses between them, and what is
+   persisted today;
+2. **name the real nodes** and, for each, the effect class §4.4 gives it and the
+   price of the conservative reading. This is the first use of the MCP as the
+   thing it was built to be;
+3. **port one flow**, end to end, and run it beside the LangGraph one;
+4. **say what Motus records that nothing records today** — and, more usefully,
+   **what the format could not express**. That last answer is the one the freeze
+   is waiting for.
+
+**The order is load-bearing and it is the reason 1.0.0 is below this and not
+above it.** Freezing first and porting second would mean discovering a format
+defect when correcting it costs a major version, instead of an afternoon.
 
 ---
 
