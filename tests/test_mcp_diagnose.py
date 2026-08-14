@@ -202,3 +202,114 @@ def test_a_symptom_naming_nothing_adds_nothing(trace_with_a_secret):
     noisy = diagnose(str(path), symptom="it just feels slow")
     assert [span.to_dict() for span in noisy.spans] == \
            [span.to_dict() for span in plain.spans]
+
+
+# -- the reader must be the shipped reader ----------------------------------
+
+def test_a_document_with_two_readings_is_refused_not_rooted(tmp_path):
+    """It was parsed by `json.loads`, so the shipped RULES ran over a document
+    the shipped READER had never seen.
+
+    A trace carrying `records` twice was reported as verifying **with a derived
+    root**, while the reproduce line it shipped in the same answer refused it
+    as J1. Two readings is precisely what J1 exists to refuse, and a root
+    derived from one of them is the defect ADR-019 corrects, restated.
+    """
+    artefact = tmp_path / "two-readings.json"
+    artefact.write_text(
+        '{"schema_version":"3.0.0","run":{},"records":[],"records":[]}',
+        encoding="utf-8")
+    rendered = diagnose(str(artefact)).render()
+    assert "J1 at $" in rendered
+    assert "derived root" not in rendered
+    assert "no violation" not in rendered
+
+
+def test_a_byte_the_contract_refuses_is_not_laundered(tmp_path):
+    """`errors="replace"` substituted U+FFFD and the answer said the trace
+    verified, while the reproduce line exited 2 on the decode.
+
+    `validate.main` already carried the instruction this violated: *the file is
+    what the contract judges; the reader must not launder it.*
+    """
+    artefact = tmp_path / "not-utf8.json"
+    artefact.write_bytes(b'{"schema_version":"3.0.0","run":{},"records":["\xff"]}')
+    answer = diagnose(str(artefact))
+    assert answer.is_refusal
+    assert "no violation" not in answer.render()
+    assert any("decode utf-8" in tried
+               for span in answer.spans if isinstance(span, Cannot)
+               for tried in span.tried)
+
+
+def test_the_stream_the_shipped_sink_writes_is_read_as_a_trace(tmp_path):
+    """Every JSONL trace was answered `I cannot tell`, with a command about
+    reviewing a node.
+
+    `JsonlTraceSink` is the only durable sink Motus ships and its output has no
+    schema file of its own, so nothing could name it, `json.loads` refused it —
+    and `ast.parse` **accepted** it, because a JSON object literal is a valid
+    Python expression. The artefact was misidentified as source code and the
+    misidentification was stated as fact.
+    """
+    from vitruvyan_motus.sinks import JsonlTraceSink
+
+    directory = tmp_path / "sink"
+    directory.mkdir()
+    Runtime(SPEC, {"a": lambda state: state}, sink=JsonlTraceSink(directory)).run(
+        State.empty("x"), run_id="r-jsonl")
+    written = list(directory.glob("*.jsonl"))
+    assert written, "the shipped sink wrote no stream"
+
+    rendered = diagnose(str(written[0])).render()
+    assert "jsonl" in rendered
+    assert "review-node" not in rendered
+
+
+def test_a_version_below_3_0_0_is_told_why_it_has_no_root(trace_with_a_secret):
+    """`derives no root` is a defect for a 3.0.0 trace and a property of the
+    format for a 1.x or 2.x one, and both got the same sentence.
+
+    ADR-019: below 3.0.0 the terminal digest covers one record rather than the
+    run, so **there is none to have**. A customer holding a conformant archive
+    was handed the sentence written for a corrupted trace.
+    """
+    path, document = trace_with_a_secret
+    document["schema_version"] = "2.0.0"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    rendered = diagnose(str(path)).render()
+    assert "is below 3.0.0" in rendered
+    assert "there is none to have" in rendered
+
+
+def test_a_path_that_is_not_there_is_not_called_inline_content(tmp_path):
+    """Every non-file was answered *refuses inline artefact content* — a typo'd
+    filename, a directory, a dangling symlink.
+
+    The answer asserted something false about the caller's request and hid the
+    commonest real cause. Failing closed is about refusing to ACCEPT content;
+    it never required mislabelling why a path failed.
+    """
+    for artefact in (tmp_path / "absent.json", tmp_path):
+        answer = diagnose(str(artefact))
+        assert answer.is_refusal
+        rendered = answer.render()
+        assert "inline artefact content" not in rendered, artefact
+        assert "not a file this process can open" in rendered, artefact
+
+    # And content still meets the decision that refuses it.
+    assert "inline artefact content" in diagnose(
+        '{"schema_version": "3.0.0", "records": []}').render()
+
+
+def test_a_file_that_cannot_be_opened_is_answered_and_not_raised(tmp_path):
+    """4d: `I cannot tell` is permitted **and the tool must be able to give
+    it**. A file the process may stat and not open used to raise."""
+    artefact = tmp_path / "forbidden.json"
+    artefact.write_text("{}", encoding="utf-8")
+    artefact.chmod(0o000)
+    try:
+        answer = diagnose(str(artefact))
+    finally:
+        artefact.chmod(0o600)
+    assert answer.is_refusal
