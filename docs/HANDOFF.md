@@ -1,9 +1,9 @@
 # Handoff — principal architect, Motus
 
-> **Verified against the repository on 2026-08-14.** Everything below was true
-> at commit `8171caa`. **Do not trust it.** A document that describes code stops
-> being true the moment the code moves, and §1 is how you find out whether it
-> has. Read this as orientation, never as ground truth.
+> **Verified against the repository on 2026-08-14, after v0.11.0.** **Do not
+> trust it.** A document that describes code stops being true the moment the
+> code moves, and §1 is how you find out whether it has. Read this as
+> orientation, never as ground truth.
 
 You are the principal architect for **Motus**, working with **Davide**, founder
 of Vitruvyan. Answer him in Italian. He sets scope and accepts ADRs; you hold
@@ -31,9 +31,9 @@ gh issue list --state open
 gh pr list --state open
 ```
 
-Expected at the time of writing: tag `v0.10.0`, **19 unreleased commits on
-`main`**, **832 kernel tests passing**, 14 open issues, 1 open PR (#72, held
-open deliberately). The plug suite runs separately:
+Expected at the time of writing: tag `v0.11.0`, **971 kernel tests passing**,
+17 open issues, and open PRs #72 (held open deliberately) plus any documentation
+branch in flight. The plug suite runs separately:
 
 ```bash
 PYTHONPATH=plugs/motus-anchor-opentimestamps/src:src \
@@ -88,25 +88,41 @@ Four Notion pages matter, and only one is yours to operate from:
 
 ## 3. Where things stand
 
-**v0.10.0 is released**, tagged at `c861c9151c99ec5ec158aaf5b5eb5cddb1cf1710`.
-Roadmap phase 1 is complete: the commitment log, the `BEGIN`/`END` run
-lifecycle, the resume link, the anchoring-cadence arithmetic, and the commitment
-contract.
+**v0.11.0 is released**, tagged at `4243cd017f00aecae145fca8b03e6c38a977cda8`.
+It carries the receipt verifier, the OpenTimestamps anchor plug, rule `J2`
+(ADR-024) and the integration MCP (ADR-022, ADR-025).
 
-**Nineteen commits sit on `main` unreleased** — the receipt verifier and the
-OpenTimestamps anchor plug. They become 0.11.0, and releasing them is the next
-work package.
+It ships with the **cumulative performance gate failing** — +91.4 %, +133.8 %,
++27.5 % against the v0.6.1 anchor — under ADR-018 §3 with all four conditions
+met and none inherited. The per-release arm passes at −0.1 %, −0.0 %, +0.4 %,
+every one smaller than the measurement's own paired spread, so the honest report
+is that the instrument cannot resolve this release's cost. The real-workload
+share was re-taken for it: **0.055 %**, stated as an upper bound because it
+still contains the consumer's own node code. **Issue #38 stays open.**
 
-**ADR-020, 021, 022 and 023 are ACCEPTED.** Three of them were corrected *after*
+**ADR-020 through ADR-025 are ACCEPTED.** Four of them were corrected *after*
 acceptance by defects found in review, and one correction **reversed a decision
 the founder had already accepted**. That is normal here, and it is exactly why
 an agent never accepts an ADR.
+
+**Two rules were written and withdrawn the same day they shipped**, both by
+adversarial rounds: `J3` (string escapes — it covered half its own surface and
+refused one of our own frozen production goldens; the hole is #98 and a test
+asserts it) and the stand-in refusal (it rejected `xmlrpc.client.ServerProxy`
+from the standard library, and the defect it claimed to fix is declared
+behaviour under ADR-016 — #73 stays open). **Read both before proposing a
+general fix for anything.**
+
+**The MCP's own describing half was rebuilt by a round before it landed.** It
+computed an effect class from word matching and was wrong on most realistic
+descriptions in both directions. The verdict is withdrawn (ADR-025): it reports
+which marked terms your text contains and hands over the table.
 
 **Motus is not on PyPI.** PR #72 prepares publication by Trusted Publishing and
 is held open deliberately. Install is:
 
 ```bash
-pip install "git+https://github.com/vitruvyan/motus@v0.10.0"
+pip install "git+https://github.com/vitruvyan/motus@v0.11.0"
 ```
 
 **Terraveler is the first external integrator** and completed all three phases
@@ -118,26 +134,30 @@ brief was stricter than the contract, and the brief was the one that was wrong.
 
 ## 4. What is next
 
-**WP-M01 — release 0.11.0.** It is a `release_act`: the founder authorises it
-and no worker performs it. ADR-006 couples the version string to committed
-performance evidence, so the bump and the re-characterization are **one act**;
-ADR-018 requires the real-workload measurement re-taken *for this release* and
-forbids inheriting the previous one. Read `.claude/skills/release/SKILL.md`
-before touching any of it.
+**The pilot: one real flow from `vitruvyan-core` through Motus.** It is the
+next thing, it comes **before** the format freeze, and `docs/HANDOFF-PILOT.md`
+is the brief. Read that file rather than this paragraph if the pilot is your
+job.
 
-Then the work packages in the program page. **Only M07 (#74) and M09 (1.0.0)
-are granted access to `src/` and `contract/`**, and neither runs in parallel
-with anything that touches them — the contract is the deliverable, and it is
-about to be frozen.
+The order is load-bearing. 1.0.0 is the promise that a receipt written today
+verifies in ten years, and the pilot is the last thing that can still say the
+format is wrong while changing it costs an afternoon rather than a major
+version. Terraveler found no Motus defect — but they used Motus as an outside
+integrator would; `vitruvyan-core` is our own code, with our own nodes, already
+orchestrated by something else.
 
-**Hermes PoC-00 runs on Motus**, on WP-M03 / M02 / M06: disjoint paths, no
-kernel access. The adversarial target is M03, and the reason is in the program
-page — we already know the defect class a competent reviewer should find there,
-because its sibling implementation shipped with it.
+**Orbis does not exist.** It is the name of a refactor that has not started, and
+a plan written against it is a plan against nothing. What exists is
+`vitruvyan-core`, running LangGraph today. Anything in Notion that says
+otherwise predates 2026-08-14 and is wrong.
 
-**Do not open a work package until Davide has approved the five robustness
-conditions** in §4 of the program page. They are the contract between the Motus
-program and the Orbis one: Orbis opens when they hold.
+**Then 1.0.0**, which freezes the commitment, checkpoint and receipt formats,
+proves the `attestations` block extensible by actually adding one, and lands the
+compatibility corpus that later versions must keep verifying.
+
+**Only work packages granted access to `src/` and `contract/` may touch them**,
+and none runs in parallel with anything else that does — the contract is the
+deliverable, and it is about to be frozen.
 
 ---
 
@@ -218,8 +238,8 @@ to one of them, and there is no reason it should be the authoritative one.
 
 1. Run §1 and tell Davide what you actually found, **including anything that
    disagrees with this document**.
-2. Read the Motus program page in Notion and `docs/ROADMAP.md`, and report any
-   place they have already diverged.
-3. State what you can reach — Hermes, WSL, GitHub, Notion — and what you cannot.
-4. Wait for approval of the five robustness conditions before opening a work
-   package.
+2. Read `docs/ROADMAP.md` and the Motus page in Notion, and report any place
+   they have already diverged. When they disagree, **the repository is right**.
+3. State what you can reach — Hermes, WSL, GitHub, Notion, `vitruvyan-core` —
+   and what you cannot. Be specific about the last one.
+4. If the pilot is your job, stop here and read `docs/HANDOFF-PILOT.md`.
