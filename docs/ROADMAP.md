@@ -299,6 +299,34 @@ test — including us.
 
 ---
 
+## What the format freeze now knows that it did not
+
+*Added 2026-08-14, because two findings in one day changed what "the format" is
+understood to commit to, and phase 4 freezes exactly that.*
+
+**The digest commits to a document only up to what the parser flattens.**
+ADR-024 states the line — a text difference may be absorbed only if a reader
+reads the same thing — and closes the two families that fail it: numeric
+lexemes (`J2`) and string escapes (`J3`). The string case is the one nobody
+reported: `appro\u0076ed` and `approved` share a root, the first renders as
+*approved* in any viewer, and `grep approved` over the raw file does not find
+it. Whitespace and member order stay absorbed, deliberately, and the reason is
+written down.
+
+**The guarantee belongs to whoever holds the bytes.** `Trace.from_json` applies
+both rules; `Trace.from_dict` provably cannot, because by the time it is called
+the two documents are one object. That residual is asserted by a test rather
+than described, so that somebody setting out to fix it finds out there is
+nothing to fix.
+
+**And the freeze must inherit the rule that produced these**, not only their
+outcomes: *a finding names an instance, repair the class*. Both of today's
+second sites were worse than the reported first, and neither was reported by
+anybody. It is now in `AGENTS.md` and in the adversarial-round skill, with the
+six known classes listed for sweeping.
+
+---
+
 ## Phase 4 — 1.0.0, which means the format stops moving
 
 *The milestone that matters for adoption, and it is NOT the last phase.*
@@ -395,11 +423,24 @@ Built by a separate agent in frontier, from a brief written here.
 
 **The residues**, each needing its own ADR and its own round:
 
-- **#75** — a resumed run's segments are not chained to each other, so an anchor
-  covers one segment. Listed under phase 1 above, where it is now due: phase 1
-  is open, and this touches the commitment design directly;
-- **#74** — the root commits to numbers at binary64 precision;
-- **#73** — a trace cannot say whether its evidence reached the sink;
+- ~~**#75**~~ — **closed 2026-08-13** by ADR-023 and the `continues` link. See
+  phase 1;
+- ~~**#74**~~ — **closed 2026-08-14** by ADR-024, and it turned out to be the
+  cheapest thing on the critical path rather than the most expensive. The digest
+  is over PARSED values, so a genuine `5e+18` rewritten to
+  `5000000000000000511.0` was the same double and shared a root. **No digest
+  recipe changed and no genuine root moved**: `_canonical_bytes` already
+  serializes through `json.dumps`, so what we write was always canonical — the
+  defect was that a *verifier* re-serializes what it parses, and
+  re-serialization launders the difference. Rules `J2` and `J3` refuse a
+  document whose lexemes are not the ones this contract writes;
+- **#73** — a trace cannot say whether its evidence reached the sink. **Now
+  known to be sharper than filed.** `RunResult.evidence` reports what the
+  runtime told the session, not what a sink did with it, and until 2026-08-14 a
+  `Mock()` sink produced status `completed` with evidence `persisted` and
+  nothing written anywhere. The stand-in is refused now; **the general question
+  #73 asks is still open**, because a real sink that silently drops is
+  indistinguishable from one that persisted;
 - **#52** — `result_fingerprint`, superseding ADR-013.
 
 **Engineering debt that will bite on schedule:** #70 (the SLO gate depends on
