@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import json.scanner
 import math
 import re
 from dataclasses import dataclass
@@ -179,49 +178,39 @@ def _canonical_number(lexeme: str, cast: Any) -> Any:
     return value
 
 
-def _canonical_string(lexeme: str) -> None:
-    """ADR-024 rule J3 — the same class as J2, for string escapes.
-
-    `{"decision":"appro\\u0076ed"}` and `{"decision":"approved"}` parse to the
-    same string and share a root, and the first renders as "approved" while
-    `grep approved` over the raw file does not find it.
-    """
-    canonical = json.dumps(json.loads(lexeme), ensure_ascii=False)
-    if canonical != lexeme:
-        raise NonCanonicalNumber(
-            f"the string {lexeme} is not written the way this contract writes "
-            f"the value it denotes, which is {canonical}. Both parse to the "
-            "same characters and would share a root, and an escape can hide a "
-            "word from a reader grepping the file (ADR-024, rule J3)")
-
-
-class _CanonicalDecoder(json.JSONDecoder):
-    """A decoder that sees the lexemes the C scanner discards.
-
-    The C scanner ignores a custom `parse_string`, so the pure-Python one is
-    built explicitly. It is ~13x slower and that cost is paid at LOADING, never
-    on the write path.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            parse_float=lambda lexeme: _canonical_number(lexeme, float),
-            parse_int=lambda lexeme: _canonical_number(lexeme, int),
-        )
-        scan_string = self.parse_string
-
-        def parse_string(source: str, end: int, strict: bool = True):
-            value, next_end = scan_string(source, end, strict)
-            _canonical_string(source[end - 1:next_end])
-            return value, next_end
-
-        self.parse_string = parse_string
-        self.scan_once = json.scanner.py_make_scanner(self)
+def _refuse_repeated_members(pairs: list) -> dict:
+    """RFC 8259 J1's duplicate-member half, at the loader that holds the text."""
+    seen: dict = {}
+    for key, value in pairs:
+        if key in seen:
+            raise NonCanonicalNumber(
+                f"the member {key!r} appears more than once. A reader and every "
+                "first-wins parser take the first; Python takes the last, so "
+                "this document says two different things and would earn the "
+                "root of one of them")
+        seen[key] = value
+    return seen
 
 
 def _loads_canonical(text: str) -> Any:
-    """`json.loads` with J2 and J3 applied to every lexeme the parser meets."""
-    return _CanonicalDecoder().decode(text)
+    """`json.loads` with the text rules a loader holding bytes can apply.
+
+    J2 (numeric lexemes) and J1's duplicate-member half, which this loader did
+    not have: a document repeating a member reads as the FIRST value to a human
+    and to every first-wins parser, parses to the genuine object in Python, and
+    was earning the genuine root here while `contract/validate.py` refused the
+    same bytes. Two loaders disagreeing about what a Motus document is, at the
+    one place ADR-024 introduces as where the guarantee lives.
+
+    **String escapes are not checked**, and ADR-024 records why as an open
+    residual rather than a closed rule — see #98.
+    """
+    return json.loads(
+        text,
+        object_pairs_hook=_refuse_repeated_members,
+        parse_float=lambda lexeme: _canonical_number(lexeme, float),
+        parse_int=lambda lexeme: _canonical_number(lexeme, int),
+    )
 
 
 def _canonical_bytes(value: Any) -> bytes:

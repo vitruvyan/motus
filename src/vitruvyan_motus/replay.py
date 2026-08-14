@@ -14,7 +14,7 @@ from vitruvyan_motus.errors import ReplayMismatch, ReplayUnsupported, UnsafeResu
 from vitruvyan_motus.graph import GraphSpec, TransitionKind
 from vitruvyan_motus.runtime import RunResult, Runtime
 from vitruvyan_motus.state import State
-from vitruvyan_motus.trace import Trace, _canonical_bytes
+from vitruvyan_motus.trace import _loads_canonical, Trace, _canonical_bytes
 
 __all__ = ["TraceBundle", "ReplayResult", "ReplayEngine"]
 
@@ -257,7 +257,15 @@ class TraceBundle:
 
     @classmethod
     def from_json(cls, value: str) -> "TraceBundle":
-        return cls.from_dict(json.loads(value))
+        """A loader that holds the document TEXT, so it applies the text rules.
+
+        It did not, and ADR-024 decision 3 enumerates where the guarantee lives
+        and did not name this one — which is the single thing that decision
+        exists to prevent. The #74 tamper and a repeated member both reached a
+        genuine root and a genuine bundle fingerprint through the public replay
+        and verify entry point.
+        """
+        return cls.from_dict(_loads_canonical(value))
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -85,7 +85,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import json.scanner
 import math
 import re
 import sys
@@ -168,10 +167,6 @@ class NonCanonicalNumberError(StrictJSONError):
     """A number written in characters our own serializer would not produce (J2)."""
 
 
-class NonCanonicalStringError(StrictJSONError):
-    """A string written with escapes our own serializer would not produce (J3)."""
-
-
 def _canonical_number(lexeme: str, cast: Any) -> Any:
     """Refuse a numeric lexeme that is not the canonical form of its value.
 
@@ -203,64 +198,28 @@ def _canonical_number(lexeme: str, cast: Any) -> Any:
     return value
 
 
-def _canonical_string(lexeme: str) -> str:
-    """Refuse a string written with escapes this contract would not produce (J3).
-
-    The same defect class as J2, and the one the reported instance did not
-    include. `{"decision":"appro\\u0076ed"}` and `{"decision":"approved"}` parse
-    to the same string, digest identically and share a root -- and the first
-    renders as "approved" in any viewer while `grep approved` over the raw file
-    **does not find it**. Somebody auditing files by hand counts the approvals
-    wrong.
-
-    Whitespace and member order are laundered too, and that is correct: nobody
-    reads them, and the JSON <-> JSONL equivalence depends on it. The line
-    between the two groups is stated in ADR-024 and is the whole content of
-    these rules -- **a text difference may be absorbed only if a reader reads
-    the same thing.**
-    """
-    value = json.loads(lexeme)
-    canonical = json.dumps(value, ensure_ascii=False)
-    if canonical != lexeme:
-        raise NonCanonicalStringError(
-            f"the string {lexeme} is not written the way this contract writes "
-            f"the value it denotes, which is {canonical}. Both parse to the "
-            "same characters and would share a root, and an escape can hide a "
-            "word from a reader grepping the file (ADR-024, rule J3)")
-    return value
-
-
-class _CanonicalDecoder(json.JSONDecoder):
-    """A decoder that sees the LEXEMES the C scanner discards.
-
-    The C scanner is ~13x faster and ignores a custom `parse_string`, so the
-    pure-Python one is built explicitly. That cost is paid at VERIFICATION and
-    never on the write path -- 1.2 ms for a 200-record document.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            parse_constant=_refuse_non_finite,
-            object_pairs_hook=_refuse_duplicate_keys,
-            parse_float=lambda lexeme: _canonical_number(lexeme, float),
-            parse_int=lambda lexeme: _canonical_number(lexeme, int),
-        )
-        scan_string = self.parse_string
-
-        def parse_string(source: str, end: int, strict: bool = True):
-            value, next_end = scan_string(source, end, strict)
-            _canonical_string(source[end - 1:next_end])
-            return value, next_end
-
-        self.parse_string = parse_string
-        self.scan_once = json.scanner.py_make_scanner(self)
-
-
 def _loads_strict(text: str) -> Any:
     """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
-    names (RFC 8259, J1), non-canonical numeric lexemes (J2) and non-canonical
-    string escapes (J3). ADR-024."""
-    return _CanonicalDecoder().decode(text)
+    names (RFC 8259, J1) and non-canonical numeric lexemes (ADR-024, J2).
+
+    **String escapes are NOT checked, and that is a stated hole rather than an
+    oversight** — see ADR-024's residual and #98. A rule for them was written,
+    reviewed and withdrawn: object KEYS are structurally unreachable through
+    CPython's decoder hooks (`JSONObject` calls the module-global `scanstring`,
+    never `context.parse_string`), so it covered half its own surface; and its
+    canonical form refused a FROZEN production artifact of ours,
+    `tests/compat/terraveler/golden/production-ingestion-trace.json`, for a
+    `\u2014`.
+
+    Numbers need no such machinery: the C scanner honours `parse_float` and
+    `parse_int`, so J2 costs a hook and not a scanner.
+    """
+    return json.loads(
+        text, parse_constant=_refuse_non_finite,
+        object_pairs_hook=_refuse_duplicate_keys,
+        parse_float=lambda lexeme: _canonical_number(lexeme, float),
+        parse_int=lambda lexeme: _canonical_number(lexeme, int),
+    )
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:
@@ -3581,7 +3540,8 @@ def main(argv: list[str] | None = None) -> int:
         except StrictJSONError as exc:
             # Rule J1 applies to the spec input too; an unusable spec keeps
             # the established exit-2 semantics ("invalid --spec").
-            print(f"J1 spec:$: {exc}")
+            rule = "J2" if isinstance(exc, NonCanonicalNumberError) else "J1"
+            print(f"{rule} spec:$: {exc}")
             print(f"error: cannot load --spec {args.spec}: {exc}", file=sys.stderr)
             return 2
         except (OSError, ValueError) as exc:
@@ -3606,9 +3566,6 @@ def main(argv: list[str] | None = None) -> int:
     else:
         try:
             doc = _loads_strict(raw)
-        except NonCanonicalStringError as exc:
-            print(f"J3 $: {exc}")
-            return 1
         except NonCanonicalNumberError as exc:
             # J2 before J1: a non-canonical number IS strict RFC 8259, so
             # reporting it as J1 would name the wrong rule and send a reader to

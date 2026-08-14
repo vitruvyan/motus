@@ -205,11 +205,16 @@ CLASS_MEMBERS = [
      "a reader reads a different number"),
     (_reformat_number, "REFUSED", "J2",
      "a reader reads different characters where a value is"),
-    (_escape_an_ascii_letter, "REFUSED", "J3",
+    # OPEN, and named rather than absent. A rule for these was written,
+    # reviewed and WITHDRAWN — see #98 and ADR-024's residual. Two reasons, both
+    # measured: object KEYS are structurally unreachable through CPython's
+    # decoder hooks, so it covered half its own surface; and its canonical form
+    # refused a FROZEN production artifact of ours for a `\u2014`.
+    (_escape_an_ascii_letter, "OPEN", "#98",
      "renders as 'approved' and `grep approved` does not find it"),
-    (_escape_a_non_ascii_letter, "REFUSED", "J3",
+    (_escape_a_non_ascii_letter, "OPEN", "#98",
      "same characters, different bytes, and the file no longer greps"),
-    (_escape_the_solidus, "REFUSED", "J3",
+    (_escape_the_solidus, "OPEN", "#98",
      "an escape this contract never writes"),
     (_insert_whitespace, "ABSORBED", None,
      "nobody reads whitespace, and the JSON<->JSONL equivalence needs it"),
@@ -238,7 +243,7 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
         "the class and proves nothing about laundering"
     )
 
-    if outcome == "ABSORBED":
+    if outcome in ("ABSORBED", "OPEN"):
         assert validate._loads_strict(mutated) == json.loads(SUBJECT), reason
     else:
         with pytest.raises(validate.StrictJSONError) as caught:
@@ -249,67 +254,39 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
             f"{rule} was expected and the wrong rule fired: {caught.value}")
 
 
-def test_the_absorbed_column_is_exactly_two_and_both_are_justified():
-    """If a third thing is ever absorbed, this fails and somebody has to write
-    down why a reader does not read it."""
-    absorbed = [(f.__name__, reason)
-                for f, outcome, _, reason in CLASS_MEMBERS if outcome == "ABSORBED"]
-    assert len(absorbed) == 2, absorbed
-    assert all(reason for _, reason in absorbed)
+def test_every_row_carries_a_verdict_and_a_reason():
+    """The table's purpose is that a member of the class forces a decision.
+    `ABSORBED` is a decision; `OPEN` with an issue number is a decision; a row
+    with neither is somebody having noticed and moved on."""
+    assert {o for _, o, _, _ in CLASS_MEMBERS} <= {"REFUSED", "ABSORBED", "OPEN"}
+    for name, outcome, rule, reason in [(f.__name__, o, r, why)
+                                        for f, o, r, why in CLASS_MEMBERS]:
+        assert reason, name
+        if outcome == "OPEN":
+            assert rule and rule.startswith("#"), (
+                f"{name} is open and names no issue, so nobody is going to "
+                "come back to it")
+    absorbed = [f.__name__ for f, o, _, _ in CLASS_MEMBERS if o == "ABSORBED"]
+    assert absorbed == ["_insert_whitespace", "_reorder_members"], absorbed
 
 
-@pytest.mark.parametrize("hidden", ["approved", "rejected", "5000000"])
-def test_no_escape_can_hide_a_word_from_a_reader_grepping_the_file(hidden):
-    """The evasion that makes J3 sharp rather than cosmetic. Every single-
-    character escape of the word is refused, so a file that renders as the word
-    contains the word."""
-    for index in range(len(hidden)):
-        escaped = (hidden[:index]
-                   + "\\u%04x" % ord(hidden[index])
-                   + hidden[index + 1:])
-        document = '{"v":"%s"}' % escaped
-        assert json.loads(document)["v"] == hidden, "the fixture is wrong"
-        with pytest.raises(validate.NonCanonicalStringError):
-            validate._loads_strict(document)
+@pytest.mark.parametrize("hidden", ["approved", "rejected"])
+def test_an_escape_can_still_hide_a_word_from_grep_and_this_is_open(hidden):
+    """**A defect, kept visible rather than kept quiet.** #98.
+
+    A rule for this was written and withdrawn, for two measured reasons: object
+    KEYS are structurally unreachable through CPython's decoder hooks, so it
+    covered half its own surface; and its canonical form refused a frozen
+    production artifact of ours for a `\\u2014`.
+
+    This test asserts the hole so that closing it breaks the test and forces
+    somebody to come back here and read why the first attempt failed."""
+    escaped = "\\u%04x" % ord(hidden[0]) + hidden[1:]
+    document = '{"v":"%s"}' % escaped
+    assert json.loads(document)["v"] == hidden
+    assert validate._loads_strict(document) == {"v": hidden}, (
+        "string escapes are refused now — good. Close #98, delete this test, "
+        "and read ADR-024's residual before choosing the canonical form"
+    )
 
 
-def test_a_control_character_must_use_the_short_escape(run):
-    """`"\\u000a"` and `"\\n"` are the same character. Only one is what this
-    contract writes, and accepting both would reopen the class through the one
-    family of characters that MUST be escaped."""
-    assert validate._loads_strict('{"v":"line\\nbreak"}') == {"v": "line\nbreak"}
-    with pytest.raises(validate.NonCanonicalStringError):
-        validate._loads_strict('{"v":"line\\u000abreak"}')
-
-
-def test_the_cli_names_j3_for_a_string_and_not_j2(tmp_path, run):
-    """A mutation probe survived because nothing checked which rule the CLI
-    names for the string family. Reporting J3 as J2 sends a reader to look at
-    numbers in a document whose numbers are all fine."""
-    import subprocess
-
-    document = tmp_path / "trace.json"
-    text = run.to_json()
-    assert '"test"' in text, "the fixture no longer contains the string to escape"
-    document.write_text(text.replace('"test"', '"t\\u0065st"', 1))
-
-    done = subprocess.run(
-        [sys.executable, str(ROOT / "contract" / "validate.py"), "trace",
-         str(document)],
-        capture_output=True, text=True, cwd=str(ROOT), timeout=60)
-    assert done.returncode == 1
-    assert done.stdout.startswith("J3 $:"), done.stdout
-
-
-def test_from_json_refuses_a_hidden_word_too(run):
-    """The other survivor: `Trace.from_json` applied J2 and nothing asserted it
-    also applied J3, so the trace-side loader could have shipped catching half
-    the class."""
-    text = run.to_json()
-    assert '"test"' in text
-    escaped = text.replace('"test"', '"t\\u0065st"', 1)
-    assert json.loads(escaped) == json.loads(text), "not a member of the class"
-
-    assert Trace.from_json(text).root == run.root
-    with pytest.raises(NonCanonicalNumber, match="rule J3"):
-        Trace.from_json(escaped)

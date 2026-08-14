@@ -795,6 +795,11 @@ the evidence, and a parser destroys them, so `from_dict` cannot make this check
 and no implementation could: by the time it is called, the two documents are
 one object (ADR-024).
 
+**String escapes are not checked, and that is a known hole rather than an
+oversight** — `"appro\u0076ed"` and `"approved"` still share a root. A rule for
+it was written and withdrawn the same day; #98 carries the measurements, and
+ADR-024 §1b carries the reasons.
+
 Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the two
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),
 not copied. `validate_trace`, `validate_graphspec` and `validate_jsonl` are

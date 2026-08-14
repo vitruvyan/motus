@@ -1,8 +1,13 @@
-# ADR-024 — a value commits to the characters it was written as
+# ADR-024 — a number commits to the characters it was written as
 
 - **Status:** ACCEPTED
 - **Date:** 2026-08-14
 - **Accepted:** 2026-08-14 by the founder
+- **Corrected:** 2026-08-14, hours after acceptance, by an adversarial round.
+  **Rule `J3` — string escapes — is WITHDRAWN and the hole is named as a
+  residual (#98).** It was written into this ADR as decision 1b, passed its
+  tests, and failed the round for two measured reasons, either sufficient. No
+  mechanism of `J2` changed
 - **Authority:** CTO. #74 says the choice "needs its own ADR and its own
   adversarial round: making this call two days after two schema revisions,
   without one, is exactly how the defect ADR-019 corrects was introduced"
@@ -113,14 +118,52 @@ ours to normalise away.
 refuse rather than interpret, and both exist because a parser hands you a value
 that has already discarded the evidence.
 
-### 1b. A string's escapes must be the ones the canonical serializer produces
+### 1b. WITHDRAWN — a string's escapes are NOT checked, and #98 says why
 
-Rule `J3`, and it is the same rule as `J2` applied to the other lexeme family.
-A string written with an escape this contract does not write is refused.
+*Written, accepted, and withdrawn the same day. The text below is kept so the
+next attempt starts from the measurement rather than from the idea.*
 
-It costs more than `J2` and the cost is stated: Python's C scanner ignores a
-custom `parse_string`, so the pure-Python scanner must be used — **13× slower**,
-1.2 ms for a 200-record document, paid at loading and never on the write path.
+`J3` refused a string whose escapes were not what
+`json.dumps(value, ensure_ascii=False)` produces. It is the same rule as `J2` on
+the other lexeme family, and both reasons it failed are about implementation
+rather than about the principle — decision 0 still holds, and the hole it leaves
+is named rather than closed.
+
+**Object keys are structurally unreachable.** `parse_string` is honoured for
+values only; `json.decoder.JSONObject` reads member names with the module-global
+`scanstring`, so overriding the hook and rebuilding the scanner buys nothing for
+keys. This ADR's own demonstration, moved from a value to a key, was accepted:
+
+```
+{"decision":"appro\u0076ed"}   REFUSED
+{"decisi\u006fn":"approved"}   ACCEPTED
+```
+
+The rule covered half its own surface while paying the full cost of the
+pure-Python scanner.
+
+**Its canonical form refuses our own frozen evidence.**
+`tests/compat/terraveler/golden/production-ingestion-trace.json`, a golden
+lifted from production into a corpus CI forbids editing, contains `—` and is
+refused. So `ensure_ascii=False` is **not** the string form this project has
+been writing, and adopting it retroactively invalidates real historical
+evidence.
+
+Two costs went with it: the pure-Python scanner is ~13× slower, and its
+recursion budget **depends on the caller's stack depth** — a genuine trace
+nested 489 deep is written by this runtime, read by `json.loads`, and raised
+`RecursionError` from the new reader. **`J2` needs none of that machinery**: the
+C scanner honours `parse_float` and `parse_int`, so it costs a hook and not a
+scanner.
+
+### 1c. What the withdrawal leaves open, stated rather than implied
+
+**Two documents whose strings differ only in escaping still share a root**, and
+`grep approved` over a file rendering as *approved* can fail. That is a defect,
+it is #98, and `tests/test_number_lexeme.py` keeps it in its enumeration table
+with the verdict `OPEN` — plus a test that **asserts the hole**, so closing it
+breaks that test and sends whoever closes it back to read why the first attempt
+failed.
 
 **A rule about characters cannot be enforced by a pattern over the text**, for
 both families. `parse_float`, `parse_int` and `parse_string` are called only for
@@ -209,6 +252,22 @@ reformatted numbers. It can no longer. **The convenience was the defect.**
 **`Trace.from_dict` keeps a hole that cannot be closed.** Decision 3.
 
 ## Wrong turns
+
+**0b. And the repair for the class did not work, which the round caught.**
+Decision 0 — the line about what may be absorbed — survives every finding and
+is the durable part. What did not survive is `J3`, and the reason is worth more
+than the rule was: **I chose an instrument without measuring what it reaches.**
+`parse_string` looked like the symmetric counterpart of `parse_float`, and it is
+not — the stdlib reads member names by a different route entirely. The check
+passed its tests, refused every value I thought of, and covered half its
+surface. *A hook you did not measure is a hook you assumed.*
+
+The second reason is worse and simpler: **I asserted that our own writers
+produce canonical output, and measured only one of them.** Decision 2 says "a
+document we produced already contains canonical lexemes — measured across
+`5e18`, `0.0`…". That measurement covered `Trace.to_json()`. A frozen production
+golden in this repository disagreed, and so did the commitment log's own
+checkpoint writer.
 
 **0. I repaired the instance and not the class, and the founder caught it.**
 #74 reports numbers, so I wrote a rule about numbers, verified it thoroughly and

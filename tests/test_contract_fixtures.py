@@ -93,8 +93,6 @@ def _run_fixture(wrapper: dict):
         # a string in `raw`, and the loader sees exactly what a file would hold.
         try:
             validate._loads_strict(wrapper["raw"])
-        except validate.NonCanonicalStringError as exc:
-            return [validate.Violation("J3", "$", str(exc))]
         except validate.NonCanonicalNumberError as exc:
             return [validate.Violation("J2", "$", str(exc))]
         except validate.StrictJSONError as exc:
@@ -218,7 +216,7 @@ ADVERTISED_RULES = {
     # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
     "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6",
     # A number commits to the characters it was written as (ADR-024)
-    "J2", "J3",
+    "J2",
 }
 
 
