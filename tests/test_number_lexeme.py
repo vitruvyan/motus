@@ -155,3 +155,128 @@ def test_the_cli_names_j2_and_not_j1(tmp_path, run):
         capture_output=True, text=True, cwd=str(ROOT), timeout=60)
     assert done.returncode == 1
     assert done.stdout.startswith("J2 $:"), done.stdout
+
+
+# --------------------------------------------------------------------------- #
+# The class, enumerated — not the instance                                     #
+#                                                                              #
+# #74 reported one member: a number rewritten to another lexeme with the same  #
+# double. Fixing that alone would have left the class open, and the founder    #
+# said so before the second member was found.                                  #
+#                                                                              #
+# The line between the two columns is the whole content of ADR-024:            #
+# **a text difference may be absorbed only if a reader reads the same thing.** #
+# --------------------------------------------------------------------------- #
+
+def _reformat_number(text):
+    return text.replace('"n":1.5', '"n":1.50')
+
+
+def _rewrite_number_to_the_same_double(text):
+    return text.replace('"big":5e+18', '"big":5000000000000000511.0')
+
+
+def _escape_an_ascii_letter(text):
+    return text.replace('"decision":"approved"', '"decision":"appro\\u0076ed"')
+
+
+def _escape_a_non_ascii_letter(text):
+    return text.replace('"note":"café"', '"note":"caf\\u00e9"')
+
+
+def _escape_the_solidus(text):
+    return text.replace('"path":"a/b"', '"path":"a\\/b"')
+
+
+def _insert_whitespace(text):
+    return text.replace(",", " , ").replace(":", " : ")
+
+
+def _reorder_members(text):
+    return json.dumps(json.loads(text), sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"))
+
+
+#: Every value-preserving text transformation we know of, and what must happen
+#: to it. A new member of the class goes in this table, and the table forces a
+#: decision rather than allowing a quiet default.
+CLASS_MEMBERS = [
+    (_rewrite_number_to_the_same_double, "REFUSED", "J2",
+     "a reader reads a different number"),
+    (_reformat_number, "REFUSED", "J2",
+     "a reader reads different characters where a value is"),
+    (_escape_an_ascii_letter, "REFUSED", "J3",
+     "renders as 'approved' and `grep approved` does not find it"),
+    (_escape_a_non_ascii_letter, "REFUSED", "J3",
+     "same characters, different bytes, and the file no longer greps"),
+    (_escape_the_solidus, "REFUSED", "J3",
+     "an escape this contract never writes"),
+    (_insert_whitespace, "ABSORBED", None,
+     "nobody reads whitespace, and the JSON<->JSONL equivalence needs it"),
+    (_reorder_members, "ABSORBED", None,
+     "nobody reads member order, and canonical JSON sorts it"),
+]
+
+SUBJECT = json.dumps(
+    {"decision": "approved", "note": "café", "path": "a/b",
+     "big": 5e18, "n": 1.5, "z": 0},
+    ensure_ascii=False, separators=(",", ":"))
+
+
+@pytest.mark.parametrize(
+    ("transform", "outcome", "rule", "reason"), CLASS_MEMBERS,
+    ids=[f.__name__ for f, _, _, _ in CLASS_MEMBERS])
+def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, reason):
+    """Three assertions per row, and the middle one is what makes the table
+    honest: each transformation must genuinely be a member of the class —
+    meaning it would otherwise have produced the same root. A row that changes
+    the parsed value is not evidence of anything."""
+    mutated = transform(SUBJECT)
+    assert mutated != SUBJECT, "this transformation changed nothing"
+    assert json.loads(mutated) == json.loads(SUBJECT), (
+        "this transformation changed the parsed value, so it is not a member of "
+        "the class and proves nothing about laundering"
+    )
+
+    if outcome == "ABSORBED":
+        assert validate._loads_strict(mutated) == json.loads(SUBJECT), reason
+    else:
+        with pytest.raises(validate.StrictJSONError) as caught:
+            validate._loads_strict(mutated)
+        expected = (validate.NonCanonicalNumberError if rule == "J2"
+                    else validate.NonCanonicalStringError)
+        assert isinstance(caught.value, expected), (
+            f"{rule} was expected and the wrong rule fired: {caught.value}")
+
+
+def test_the_absorbed_column_is_exactly_two_and_both_are_justified():
+    """If a third thing is ever absorbed, this fails and somebody has to write
+    down why a reader does not read it."""
+    absorbed = [(f.__name__, reason)
+                for f, outcome, _, reason in CLASS_MEMBERS if outcome == "ABSORBED"]
+    assert len(absorbed) == 2, absorbed
+    assert all(reason for _, reason in absorbed)
+
+
+@pytest.mark.parametrize("hidden", ["approved", "rejected", "5000000"])
+def test_no_escape_can_hide_a_word_from_a_reader_grepping_the_file(hidden):
+    """The evasion that makes J3 sharp rather than cosmetic. Every single-
+    character escape of the word is refused, so a file that renders as the word
+    contains the word."""
+    for index in range(len(hidden)):
+        escaped = (hidden[:index]
+                   + "\\u%04x" % ord(hidden[index])
+                   + hidden[index + 1:])
+        document = '{"v":"%s"}' % escaped
+        assert json.loads(document)["v"] == hidden, "the fixture is wrong"
+        with pytest.raises(validate.NonCanonicalStringError):
+            validate._loads_strict(document)
+
+
+def test_a_control_character_must_use_the_short_escape(run):
+    """`"\\u000a"` and `"\\n"` are the same character. Only one is what this
+    contract writes, and accepting both would reopen the class through the one
+    family of characters that MUST be escaped."""
+    assert validate._loads_strict('{"v":"line\\nbreak"}') == {"v": "line\nbreak"}
+    with pytest.raises(validate.NonCanonicalStringError):
+        validate._loads_strict('{"v":"line\\u000abreak"}')

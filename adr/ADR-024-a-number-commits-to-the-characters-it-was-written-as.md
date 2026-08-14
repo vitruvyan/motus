@@ -1,4 +1,4 @@
-# ADR-024 — a number commits to the characters it was written as
+# ADR-024 — a value commits to the characters it was written as
 
 - **Status:** ACCEPTED
 - **Date:** 2026-08-14
@@ -63,6 +63,41 @@ whose cumulative performance gate is already failing.
 
 ## Decision
 
+### 0. The line, stated before the rules that implement it
+
+> **A difference in a document's text may be absorbed by the digest only if a
+> reader reads the same thing.**
+
+The digest is taken over parsed values, so *every* text difference the parser
+flattens is a candidate collision. #74 reported one — numbers. It is not the
+only one, and repairing it alone would have closed an instance and left the
+class open. Measured:
+
+| text difference | same root | verdict |
+|---|---|---|
+| a number rewritten to another lexeme with the same double | yes | **refused** — a reader reads a different number |
+| a string escape (`appro\u0076ed`) | yes | **refused** — see below |
+| the solidus escape, non-ASCII escapes | yes | **refused** |
+| whitespace | yes | **absorbed** — nobody reads it |
+| member order | yes | **absorbed** — nobody reads it, and canonical JSON sorts it |
+| Unicode normalisation (`é` vs `e´`) | **no** | not a member; the values differ |
+
+**The string case is sharp rather than cosmetic**, and it is the one this ADR
+would have missed:
+
+```
+dd0397dbad6f6b07  {"decision":"approved"}
+dd0397dbad6f6b07  {"decision":"appro\u0076ed"}
+```
+
+Same root. The second renders as *approved* in any viewer, and `grep approved`
+over the raw file **does not find it** — so somebody auditing files by hand
+counts the approvals wrong.
+
+Whitespace and member order must stay absorbed: the JSON ⟷ JSONL equivalence
+that T11 and the fixtures pin depends on it, and a pretty-printed document is
+the same evidence.
+
 ### 1. A numeric lexeme must be the one the canonical serializer produces
 
 > **A JSON number in a Motus document is well-formed only if its characters are
@@ -77,6 +112,22 @@ ours to normalise away.
 `J2` sits beside `J1` deliberately: both are rules about the **text**, both
 refuse rather than interpret, and both exist because a parser hands you a value
 that has already discarded the evidence.
+
+### 1b. A string's escapes must be the ones the canonical serializer produces
+
+Rule `J3`, and it is the same rule as `J2` applied to the other lexeme family.
+A string written with an escape this contract does not write is refused.
+
+It costs more than `J2` and the cost is stated: Python's C scanner ignores a
+custom `parse_string`, so the pure-Python scanner must be used — **13× slower**,
+1.2 ms for a 200-record document, paid at loading and never on the write path.
+
+**A rule about characters cannot be enforced by a pattern over the text**, for
+both families. `parse_float`, `parse_int` and `parse_string` are called only for
+real JSON tokens; a regular expression over the raw bytes flags
+`{"note": "cost 5.10 eur"}`, where `5.10` is somebody's prose. The first probe
+written for this ADR was a regular expression and had exactly that false
+positive.
 
 ### 2. No digest recipe changes, and no genuine root moves
 
@@ -158,6 +209,21 @@ reformatted numbers. It can no longer. **The convenience was the defect.**
 **`Trace.from_dict` keeps a hole that cannot be closed.** Decision 3.
 
 ## Wrong turns
+
+**0. I repaired the instance and not the class, and the founder caught it.**
+#74 reports numbers, so I wrote a rule about numbers, verified it thoroughly and
+was ready to merge. The objection was general — *"my fear with a pattern is that
+it solves the single problem and does not fix the problem globally"* — and it
+was right about something more specific than it claimed: the question is not
+which tool matches the text, it is **what else the parser discards**. Ten
+minutes of measurement found string escapes, and the grep evasion inside them.
+
+The repair is not "and also strings". It is decision 0, which states the line,
+plus a test that **enumerates the class**: every value-preserving text
+transformation we know of, each declared refused or absorbed with a reason, and
+each asserted to genuinely produce the same root — because a row that changes
+the parsed value proves nothing. A new member goes in that table, and the table
+forces a decision instead of allowing a quiet default.
 
 **1. A `float` subclass whose `__repr__` returns the lexeme.** The obvious
 first idea, and it does not work: `json.dumps` ignores it. The C-accelerated
