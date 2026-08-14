@@ -1,7 +1,8 @@
 # ADR-025 — the protocol names its operations, and no program classifies a sentence
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-14
+- **Accepted:** 2026-08-14 by the founder
 - **Authority:** CTO. `contract/README.md` rule 4 — *"Amendments leave a
   record. A contract change is a PR touching this directory plus an ADR stating
   what changed, why, and what migrates"* — and ADR-001, *"a change to any

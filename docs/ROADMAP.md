@@ -144,7 +144,7 @@ the kind of invariant that erodes one convenient import at a time.
 
 ---
 
-## Phase 1b — the integration MCP — **BUILT, not yet released**
+## Phase 1b — the integration MCP — **MERGED, not yet released**
 
 *Built on 2026-08-14 against ADR-022. It touches no receipt, no anchor, and
 promises nothing about audit. What follows is the argument that put it here;
@@ -300,9 +300,9 @@ a valid Python expression and `ast.parse` accepted it.
 after the row was edited and after the document was **deleted**. The test meant
 to catch that patched the reader, so it tested a mock of the mechanism.
 
-Still owed before it is released: **ADR-025 accepted by the founder** — the
-round found §4.4 and §6.4 had landed with no ADR at all — and a first
-integrator using the MCP instead of a brief.
+**ADR-025 was accepted on 2026-08-14**, which closes the amendment the round
+found missing. Still owed before it is released: a first integrator using the
+MCP instead of a brief.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
