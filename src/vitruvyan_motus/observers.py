@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import threading
+import traceback
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any, Protocol, runtime_checkable
@@ -166,6 +167,63 @@ class InMemoryTraceSink:
         )
 
 
+def _detached(exc: BaseException) -> BaseException:
+    """A stand-in for ``exc`` that holds no reference to the stack that raised it.
+
+    **This exists because storing an exception on a long-lived object pins
+    every frame beneath it.** An exception keeps its ``__traceback__``, a
+    traceback keeps the frame that raised, and a frame keeps ``f_back`` — so
+    latching one failure on an object that outlives the call keeps the whole
+    call stack alive, along with every local in it.
+
+    That is not a leak in the abstract. It wedged the Runtime (#99): a stream
+    driver whose sink failed at ``bind`` was pinned by the very stack the
+    failure had captured, so the finaliser that releases the run never fired
+    and the Runtime claimed a run that had not executed one node, for good.
+
+    The original is never mutated. It is still propagating to whoever raised
+    it, with its traceback intact, and taking that away to protect a copy would
+    trade one caller's diagnosis for another's. What is stored is a copy with
+    ``__traceback__``, ``__cause__`` and ``__context__`` cleared — the chain
+    matters too, because a chained exception pins its own stack.
+
+    The formatted original is attached as ``__motus_origin__`` so nothing is
+    actually lost: the re-raise will carry a traceback from the persistence
+    boundary, which is a true statement about where the caller met the failure
+    and a useless one about where the sink broke.
+    """
+    origin = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    clone: BaseException
+    try:
+        clone = copy.copy(exc)
+        if type(clone) is not type(exc) or clone.args != exc.args:
+            raise TypeError("copy did not preserve the exception")
+    except BaseException:
+        # An exception whose `__init__` refuses its own args — this project's
+        # own `DeclarationViolation` is one. Build it without calling
+        # `__init__` at all, so the TYPE and the ARGS survive, which is what a
+        # caller reads off `SinkFailed.cause`. Custom attributes do not, and
+        # that is the stated cost: they can hold further exceptions, and
+        # copying those would rebuild the chain this function exists to cut.
+        clone = type(exc).__new__(type(exc))
+        try:
+            clone.args = exc.args
+        except BaseException:  # pragma: no cover - an exception without args
+            pass
+    clone.__traceback__ = None
+    clone.__cause__ = None
+    clone.__context__ = None
+    clone.__suppress_context__ = True
+    try:
+        clone.__motus_origin__ = origin  # type: ignore[attr-defined]
+    except BaseException:  # pragma: no cover - an exception that refuses attributes
+        # The origin is a diagnostic, not the repair. An exception whose class
+        # refuses attribute assignment still gets a stand-in that pins nothing,
+        # which is the property #99 is about.
+        pass
+    return clone
+
+
 class _ObservationHub:
     """Runtime-owned delivery coordinator; deliberately not public."""
 
@@ -207,6 +265,16 @@ class _ObservationHub:
         self._run_sink: TraceRunSink | None = None
         self._saw_terminal = False
 
+    def _latch(self, exc: BaseException) -> None:
+        """Record a failure this hub must refuse on, without pinning its stack.
+
+        The only place `_async_failure` is assigned outside `__init__`, and a
+        test asserts that by parsing this module. A rule that has to be
+        remembered is a rule that will be broken: there were three assignment
+        sites and every one of them had to remember to detach.
+        """
+        self._async_failure = _detached(exc)
+
     @property
     def evidence(self) -> str:
         """Whether this run's durable evidence is whole, and answerable to a caller.
@@ -238,7 +306,7 @@ class _ObservationHub:
                 raise TypeError("TraceSink.open_run must return a TraceRunSink")
             self._run_sink = session
         except BaseException as exc:
-            self._async_failure = exc
+            self._latch(exc)
 
     def _cancel_timer_locked(self) -> None:
         timer, self._timer = self._timer, None
@@ -265,7 +333,7 @@ class _ObservationHub:
         try:
             self._run_sink.write(batch)
         except BaseException as exc:
-            self._async_failure = exc
+            self._latch(exc)
             raise
         if any(record["kind"] in _TERMINAL_KINDS for record in batch):
             self._saw_terminal = True
@@ -303,7 +371,7 @@ class _ObservationHub:
                 # `seq` and, on the terminal, one artifact asserting both that
                 # the run completed and that it failed. OPEN-08 licenses a
                 # truncated prefix; it does not license a corrupted suffix.
-                self._async_failure = exc
+                self._latch(exc)
                 raise
             if record["kind"] in _TERMINAL_KINDS:
                 self._saw_terminal = True
