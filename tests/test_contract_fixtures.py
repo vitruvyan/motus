@@ -86,6 +86,18 @@ def _run_fixture(wrapper: dict):
             spec=wrapper.get("spec"),
             expect_complete=wrapper.get("expect_complete", True),
         )
+    if artifact == "text":
+        # A rule about CHARACTERS cannot be carried by a fixture whose instance
+        # the harness has already parsed: `json.loads` of the wrapper destroys
+        # the very lexeme under test. So a text fixture carries its document as
+        # a string in `raw`, and the loader sees exactly what a file would hold.
+        try:
+            validate._loads_strict(wrapper["raw"])
+        except validate.NonCanonicalNumberError as exc:
+            return [validate.Violation("J2", "$", str(exc))]
+        except validate.StrictJSONError as exc:
+            return [validate.Violation("J1", "$", str(exc))]
+        return []
     if artifact == "commitment":
         return validate.validate_commitment(wrapper["instance"])
     if artifact == "checkpoint":
@@ -203,6 +215,8 @@ ADVERTISED_RULES = {
     "H1", "H2", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
     # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
     "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6",
+    # A number commits to the characters it was written as (ADR-024)
+    "J2",
 }
 
 
@@ -222,10 +236,13 @@ def test_corpus_minimums_and_wrapper_shape():
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {
             "graphspec", "trace", "jsonl", "commitment", "checkpoint", "receipt",
+            "text",
         }, path.name
-        if wrapper["artifact"] == "jsonl":
+        if wrapper["artifact"] == "text":
+            assert isinstance(wrapper["raw"], str) and wrapper["raw"], path.name
+        elif wrapper["artifact"] == "jsonl":
             assert isinstance(wrapper["lines"], list) and wrapper["lines"], path.name
-        else:
+        elif wrapper["artifact"] != "text":
             assert "instance" in wrapper, path.name
         assert "spec" in wrapper, path.name
         if wrapper["expect"] == "invalid":

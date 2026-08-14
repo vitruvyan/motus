@@ -1,0 +1,10 @@
+{
+  "artifact": "text",
+  "expect": "invalid",
+  "spec": null,
+  "layer": "schema",
+  "rule": "J2",
+  "reason_contains": "is not written the way this contract writes",
+  "note": "The two documents parse to the same IEEE-754 double, so every digest over parsed values agrees and the root does not move -- while jq, git diff and a human read a different number. ADR-024.",
+  "raw": "{\"schema_version\":\"3.0.0\",\"v\":5000000000000000511.0}"
+}

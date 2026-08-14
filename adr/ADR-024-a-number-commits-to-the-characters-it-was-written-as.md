@@ -1,7 +1,8 @@
 # ADR-024 — a number commits to the characters it was written as
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-08-14
+- **Accepted:** 2026-08-14 by the founder
 - **Authority:** CTO. #74 says the choice "needs its own ADR and its own
   adversarial round: making this call two days after two schema revisions,
   without one, is exactly how the defect ADR-019 corrects was introduced"

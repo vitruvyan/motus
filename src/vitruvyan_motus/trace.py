@@ -151,6 +151,36 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
     )
 
 
+class NonCanonicalNumber(ValueError):
+    """A number written in characters this contract would not produce (J2)."""
+
+
+def _canonical_number(lexeme: str, cast: Any) -> Any:
+    """ADR-024 rule J2, hooked into the parser rather than matched by pattern.
+
+    `parse_float` and `parse_int` are called only for real JSON numbers and
+    receive the exact characters. A regular expression over the raw text would
+    flag `{"note": "cost 5.10 eur"}`, where 5.10 is somebody's prose.
+    """
+    value = cast(lexeme)
+    if json.dumps(value) != lexeme:
+        raise NonCanonicalNumber(
+            f"the number {lexeme} is not written the way this contract writes "
+            f"the value it denotes, which is {json.dumps(value)}. The digest is "
+            "taken over parsed values, so accepting this lexeme would let it "
+            "share a root with the genuine document (ADR-024, rule J2)")
+    return value
+
+
+def _loads_canonical(text: str) -> Any:
+    """`json.loads` with J2 applied to every number the parser meets."""
+    return json.loads(
+        text,
+        parse_float=lambda lexeme: _canonical_number(lexeme, float),
+        parse_int=lambda lexeme: _canonical_number(lexeme, int),
+    )
+
+
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
@@ -338,8 +368,31 @@ class Trace:
         return instance
 
     @classmethod
+    def from_json(cls, text: str) -> "Trace":
+        """Load a trace from the TEXT of a document, which is the only place the
+        whole guarantee is available.
+
+        ADR-024. A number's digest is taken over its parsed value, so a genuine
+        `5e+18` and a rewritten `5000000000000000511.0` are the same double and
+        would share a root — while `jq`, `git diff` and a human read different
+        numbers. The characters are the evidence, and a parser destroys them.
+
+        So this refuses a numeric lexeme that is not what serializing its value
+        produces (rule J2), before the document becomes objects.
+        `from_dict` cannot do this and no implementation can: by the time it is
+        called, the two documents are indistinguishable. A caller holding bytes
+        should come through here.
+        """
+        return cls.from_dict(_loads_canonical(text))
+
+    @classmethod
     def from_dict(cls, document: dict[str, Any]) -> "Trace":
-        """Load an isolated trace document while preserving its wire version."""
+        """Load an isolated trace document while preserving its wire version.
+
+        **The caller has already discarded the numeric lexemes**, so the J2
+        guarantee of ADR-024 is not available here. Use :meth:`from_json` when
+        the document's text is in reach.
+        """
         plain = _strict_plain_json(document, reserve_redacted=False)
         if not isinstance(plain, dict):
             raise TypeError("trace document must be an object")

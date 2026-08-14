@@ -163,11 +163,49 @@ def _refuse_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
     return dict(pairs)
 
 
+class NonCanonicalNumberError(StrictJSONError):
+    """A number written in characters our own serializer would not produce (J2)."""
+
+
+def _canonical_number(lexeme: str, cast: Any) -> Any:
+    """Refuse a numeric lexeme that is not the canonical form of its value.
+
+    ADR-024. T11 digests PARSED values, so a number commits to its IEEE-754
+    double and not to the characters in the file: a genuine `5e+18` rewritten
+    to `5000000000000000511.0` left the validator green and the root unchanged,
+    while `jq`, `git diff` and a human read a different number. A genuine `0.0`
+    accepted `1e-400` on the same terms.
+
+    The check is a PRECONDITION ON LOADING and not a change to hashing.
+    `_canonical_bytes` already serializes through `json.dumps`, so a document
+    we produced already carries canonical lexemes; the defect was that a
+    VERIFIER re-serializes what it parses, and re-serialization launders the
+    difference. Every genuine root is unchanged by this rule.
+
+    Hooked into the parser rather than matched with a regular expression, and
+    that is not a style preference: `parse_float` and `parse_int` receive the
+    lexeme and are never called for a number inside a STRING. A regex over the
+    raw text flags `{"note": "cost 5.10 eur"}`, which is not a number at all.
+    """
+    value = cast(lexeme)
+    if json.dumps(value) != lexeme:
+        raise NonCanonicalNumberError(
+            f"the number {lexeme} is not written the way this contract writes "
+            f"the value it denotes, which is {json.dumps(value)}. Two documents "
+            "that differ here are two documents, and the digest is taken over "
+            "parsed values -- so accepting this lexeme would let it share a "
+            "root with the genuine one (ADR-024, rule J2)")
+    return value
+
+
 def _loads_strict(text: str) -> Any:
     """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
-    names (RFC 8259, J1)."""
+    names (RFC 8259, J1), and non-canonical numeric lexemes (ADR-024, J2)."""
     return json.loads(
-        text, parse_constant=_refuse_non_finite, object_pairs_hook=_refuse_duplicate_keys,
+        text, parse_constant=_refuse_non_finite,
+        object_pairs_hook=_refuse_duplicate_keys,
+        parse_float=lambda lexeme: _canonical_number(lexeme, float),
+        parse_int=lambda lexeme: _canonical_number(lexeme, int),
     )
 
 
@@ -3514,6 +3552,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         try:
             doc = _loads_strict(raw)
+        except NonCanonicalNumberError as exc:
+            # J2 before J1: a non-canonical number IS strict RFC 8259, so
+            # reporting it as J1 would name the wrong rule and send a reader to
+            # look for a duplicate key or a NaN.
+            print(f"J2 $: {exc}")
+            return 1
         except StrictJSONError as exc:
             # A parseable-but-non-strict document is a CONTRACT violation
             # (J1), not an I/O problem: report it like any other violation
