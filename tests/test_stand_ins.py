@@ -39,18 +39,33 @@ def _nodes():
 
 
 #: Every caller-supplied protocol the Runtime accepts. A new one belongs here.
+#:
+#: Each entry wires the double into ONE boundary and everything else real. The
+#: first version passed the same double as both the commitment log and the
+#: witness, so the log's check fired and the witness's was never reached — a
+#: mutation probe removing it survived. A test that asserts the right sentence
+#: while exercising the wrong thing is this project's most repeated defect, and
+#: it took a probe to notice it here too.
 BOUNDARIES = [
-    ("sink", lambda double: {"sink": double}),
-    ("commitments", lambda double: {"commitments": double}),
-    ("witness", lambda double: {"commitments": double, "witness": double}),
+    ("sink", lambda double, tmp: {"sink": double}),
+    ("commitments", lambda double, tmp: {"commitments": double}),
+    ("witness", lambda double, tmp: {"commitments": _real_log(tmp),
+                                     "witness": double}),
 ]
+
+
+def _real_log(tmp_path):
+    from vitruvyan_motus.commitlog import CommitmentLog
+    return CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False,
+                         witness_deadline=5.0)
 
 
 @pytest.mark.parametrize(("name", "wire"), BOUNDARIES, ids=[n for n, _ in BOUNDARIES])
 @pytest.mark.parametrize("double", [Mock, MagicMock], ids=["Mock", "MagicMock"])
-def test_no_boundary_accepts_an_object_that_answers_everything(name, wire, double):
+def test_no_boundary_accepts_an_object_that_answers_everything(
+        name, wire, double, tmp_path):
     with pytest.raises(TypeError, match="no protocol declares"):
-        Runtime(SPEC, _nodes(), **wire(double()))
+        Runtime(SPEC, _nodes(), **wire(double(), tmp_path))
 
 
 def test_the_sink_was_the_site_that_stayed_open(monkeypatch):
