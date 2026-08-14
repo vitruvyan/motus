@@ -113,6 +113,38 @@ def test_every_quotation_is_in_the_document_it_names(corpus):
                     f"{answer.tool} quotes {span.source} with text that is not in it")
 
 
+def test_a_quotation_that_drifted_from_its_source_cannot_be_built():
+    """The construction-time check, exercised rather than assumed.
+
+    Found by a mutation probe: disabling this check left every test in this
+    file passing, because every quotation the tools produce today is genuine.
+    A check nothing can distinguish from its absence is a check that will be
+    removed by the next person who finds it expensive.
+    """
+    genuine = protocol.clause("4.1")
+    assert Quoted(protocol.SECTION, genuine).text == genuine
+
+    with pytest.raises(ValueError) as caught:
+        Quoted(protocol.SECTION, "a sentence nobody wrote in that document")
+    assert protocol.SECTION in str(caught.value)
+
+
+def test_a_source_the_installation_lacks_raises_rather_than_pointing_at_it(
+        monkeypatch, tmp_path):
+    """`resolve` refuses; it does not hand back a path that is not there.
+
+    Also found by a probe. Returning `root / relative` unchecked would turn a
+    broken installation into a `FileNotFoundError` from somewhere deeper — a
+    failure that reads as a bug in the caller's machine rather than as this
+    distribution being incomplete, which is what it is.
+    """
+    monkeypatch.setattr(sources, "_roots", lambda: (tmp_path,))
+    with pytest.raises(sources.SourceMissing) as caught:
+        sources.resolve(protocol.SECTION)
+    assert str(tmp_path) in str(caught.value), (
+        "the refusal must say where it looked")
+
+
 def test_a_tool_with_nothing_to_say_says_so(corpus):
     """4d: `I cannot tell` is a permitted answer and must be reachable.
 
@@ -372,6 +404,10 @@ def test_running_a_graph_does_not_load_the_server():
     ("it POSTs the result to their API", "external_effect"),
     ("we send an email when the run finishes", "external_effect"),
     ("it reads the file and then writes the report", "external_effect"),
+    # pure and recorded together, which is the pair alphabetical order gets
+    # wrong: `pure` sorts first and is the softer class. A probe found that
+    # nothing here covered it.
+    ("it derives a total and reads a file", "recorded_effect"),
 ])
 def test_the_measured_misreading_is_answered(description, expected):
     """#77 inverted this twice in one pull request, and a field report against
