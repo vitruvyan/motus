@@ -357,3 +357,38 @@ def test_j2_does_not_reach_evidence_written_before_it_existed():
 
     with pytest.raises(validate.NonCanonicalNumberError):
         validate._loads_strict(tampered % "3.0.0")
+
+
+def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
+    """The obvious attack on a version-scoped rule: the attacker declares a
+    version the rule does not govern.
+
+    It fails, and the reason is structural rather than lucky. `schema_version`
+    is inside the header digest that seeds the chain (ADR-019), so relabelling
+    a genuine 3.0.0 document to `2.0.0` — without resealing, which an attacker
+    who does not hold the run cannot do — leaves a document J2 no longer
+    governs and that **derives no root at all**. There is then nothing for an
+    anchor or a receipt to bind to, which is exactly the state J2 exists to
+    protect.
+
+    Pinned because the scope key being covered is the load-bearing half of the
+    argument in `_lexically_governed`, and it lives in a different module."""
+    genuine = run.to_json()
+    assert run.root is not None
+
+    key = json.dumps("schema_version")
+    before, after = genuine.split(key, 1)
+    relabelled = before + key + after.replace("3.0.0", "2.0.0", 1)
+    assert relabelled != genuine, "the fixture no longer declares 3.0.0 as written"
+
+    document = json.loads(relabelled)
+    assert validate._lexically_governed(document) is False, (
+        "the relabelling did escape J2 — that half is expected")
+    assert validate.derived_root(document) is None, (
+        "escaping the scope must cost the root; if this ever holds a value, "
+        "the version is no longer inside the digest and J2's scoping is unsafe")
+
+    tampered = relabelled.replace("5e+18", "5000000000000000511.0")
+    assert validate._loads_strict(tampered)["records"] != [], (
+        "J2 does not fire outside its scope, by design")
+    assert validate.derived_root(json.loads(tampered)) is None
