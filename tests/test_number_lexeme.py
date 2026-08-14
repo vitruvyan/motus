@@ -280,3 +280,36 @@ def test_a_control_character_must_use_the_short_escape(run):
     assert validate._loads_strict('{"v":"line\\nbreak"}') == {"v": "line\nbreak"}
     with pytest.raises(validate.NonCanonicalStringError):
         validate._loads_strict('{"v":"line\\u000abreak"}')
+
+
+def test_the_cli_names_j3_for_a_string_and_not_j2(tmp_path, run):
+    """A mutation probe survived because nothing checked which rule the CLI
+    names for the string family. Reporting J3 as J2 sends a reader to look at
+    numbers in a document whose numbers are all fine."""
+    import subprocess
+
+    document = tmp_path / "trace.json"
+    text = run.to_json()
+    assert '"test"' in text, "the fixture no longer contains the string to escape"
+    document.write_text(text.replace('"test"', '"t\\u0065st"', 1))
+
+    done = subprocess.run(
+        [sys.executable, str(ROOT / "contract" / "validate.py"), "trace",
+         str(document)],
+        capture_output=True, text=True, cwd=str(ROOT), timeout=60)
+    assert done.returncode == 1
+    assert done.stdout.startswith("J3 $:"), done.stdout
+
+
+def test_from_json_refuses_a_hidden_word_too(run):
+    """The other survivor: `Trace.from_json` applied J2 and nothing asserted it
+    also applied J3, so the trace-side loader could have shipped catching half
+    the class."""
+    text = run.to_json()
+    assert '"test"' in text
+    escaped = text.replace('"test"', '"t\\u0065st"', 1)
+    assert json.loads(escaped) == json.loads(text), "not a member of the class"
+
+    assert Trace.from_json(text).root == run.root
+    with pytest.raises(NonCanonicalNumber, match="rule J3"):
+        Trace.from_json(escaped)
