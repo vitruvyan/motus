@@ -56,7 +56,15 @@ fixes made for the previous round.
    check standing in for a thing check*; *a value read back instead of
    recomputed*; *a text difference the parser flattens*; *the first match won
    where several were possible*; *a failure path that leaks a lock the success
-   path releases*.
+   path releases*; *a pattern answering a question about meaning*.
+
+   That last one is worth its own line, because the tool chosen decides which
+   defects are reachable. **A regular expression matches characters and knows
+   nothing about what they mean**, so over structured text it answers a
+   different question from the one asked — a rule about JSON numbers, written
+   as a pattern over raw bytes, flags `{"note": "cost 5.10 eur"}` where `5.10`
+   is somebody's prose. Where a parser, a grammar or an AST exists, go through
+   it. A regex is for a single opaque token whose grammar you own.
 
 3. **Fix, with a test that fails without the fix.** Where the class has more
    than one member, the test enumerates the members and each one carries its

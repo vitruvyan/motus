@@ -86,6 +86,25 @@ every model tier:
   nothing written. **Both second sites were worse than the first, and neither
   was reported by anybody.** When the class cannot be closed, say where it
   stays open and leave a test that fails when a new member appears.
+- **Build the general solution, not the particular one.** A fix that handles
+  the reported case and nothing else is a fix that will be reported again from
+  the next case. Where the general form costs more, pay it or say why you did
+  not — *"this closes the reported instance and leaves X open"* is an
+  acceptable sentence; leaving X open silently is not.
+- **Avoid a regular expression where a parser exists, and this is not a style
+  preference.** A regex matches *characters* and knows nothing about what they
+  mean, so over structured text it answers a different question from the one
+  being asked. Today's example, and it was one line from shipping: a rule about
+  JSON numbers, written as a pattern over the raw bytes, flags
+  `{"note": "cost 5.10 eur"}` — where `5.10` is somebody's prose and not a
+  number at all. Hooked into the parser instead (`parse_float`, `parse_int`,
+  `parse_string`), it sees exactly the tokens it is about and nothing else.
+
+  A regex is fine for a **single opaque token whose grammar you own** —
+  `sha256:[0-9a-f]{64}`, an identifier shape — and this repository uses it that
+  way. It is not fine for finding structure inside a document that has a
+  parser, a grammar, or an AST. **If you are matching a pattern to answer a
+  question about meaning, you are answering the wrong question.**
 - **No new runtime dependencies.** The package declares zero, and that is a
   claim the packaging tests check against a real built wheel.
 - **Every fix carries a test that fails without it**, proved by neutering the
