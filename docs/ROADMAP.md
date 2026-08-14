@@ -267,8 +267,42 @@ needed an answer, so the *document* got one.
 construction-time check on a quotation — disabling it changed no test, because
 every quotation the tools produce today is genuine.
 
-Still owed before it is released: the adversarial round, and a first integrator
-using it instead of a brief.
+### Then the round ran, and both halves of it were wrong
+
+*Three lenses, independent, all three landing on the same component. This is
+the strongest signal this project has produced, and it is recorded here rather
+than in a commit message because it changes what the component is.*
+
+**The describing half computed a class from word matching, and was wrong on
+most realistic descriptions** — 15 of 20 on one lens, 6 of 6 on another, in
+both directions, never refusing. *"Computes the invoice total and stores it in
+Postgres"* was answered `pure`, because `compute` is a marked term and `stores`
+is not; a lens then demonstrated verify-replay re-executing such a node and
+**sending its mail a second time** while reporting it verified. The same defect
+sat in `review_node` over Python identifiers, where it accused **our own
+shipped example** of implying `external_effect` because it calls `payload.get`.
+
+It is a class this project had already written down: *a pattern answering a
+question about meaning*. Adding terms repairs the instance, so the terms were
+not added. **The verdict is withdrawn** (ADR-025): the tool reports which
+marked terms the caller's text contains and hands over the table, the costs,
+the strictest rule and 4.1. What the measurement asked for was never a matcher
+— it was that somebody be told what the conservative choice costs.
+
+**The debug half ran the shipped rules over a document the shipped reader had
+never seen.** A trace containing `records` twice was reported as verifying with
+a derived root while its own reproduce line refused it as J1; one invalid byte
+was laundered and reported clean; and every JSONL trace **the only durable sink
+we ship** writes was answered *I cannot tell*, because a JSON object literal is
+a valid Python expression and `ast.parse` accepted it.
+
+**And a cache had made "derived" false.** A long-lived server kept answering
+after the row was edited and after the document was **deleted**. The test meant
+to catch that patched the reader, so it tested a mock of the mechanism.
+
+Still owed before it is released: **ADR-025 accepted by the founder** — the
+round found §4.4 and §6.4 had landed with no ADR at all — and a first
+integrator using the MCP instead of a brief.
 
 **The failure mode to watch:** the MCP becoming the place where documentation
 gaps hide. A question the MCP answers well is evidence the *document* should
