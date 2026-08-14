@@ -39,8 +39,31 @@ fixes made for the previous round.
 
 1. **Verify each one yourself** before acting. Agents are sometimes wrong, and
    twice in this project a finding evaporated under scrutiny.
-2. **Fix, with a test that fails without the fix.**
-3. **Mutation-probe every fix** with `tools/mutation_probe.py`, never by hand.
+2. **Name the class before writing the fix.** A finding is an instance of
+   something, and the instance is where it happened to be noticed. Ask: *what
+   else in this codebase has this shape?* — then go and look, with a grep or a
+   probe, not with a judgement. Twice now the answer has been a second site
+   that was worse than the reported one, and neither was reported by anybody:
+
+   - a number's lexeme could be rewritten without moving the root (#74). The
+     same held for string escapes, where `appro\u0076ed` renders as *approved*
+     and `grep approved` does not find it;
+   - a commitment log was satisfied by a `Mock()`. So was the sink, on the
+     primary evidence path, reporting evidence `persisted` with nothing
+     written anywhere.
+
+   The known classes, worth sweeping when a finding resembles one: *a shape
+   check standing in for a thing check*; *a value read back instead of
+   recomputed*; *a text difference the parser flattens*; *the first match won
+   where several were possible*; *a failure path that leaks a lock the success
+   path releases*.
+
+3. **Fix, with a test that fails without the fix.** Where the class has more
+   than one member, the test enumerates the members and each one carries its
+   verdict and its reason — so a new member forces a decision instead of
+   passing by default. Where the class cannot be closed, say where it stays
+   open in the source, at the place somebody would otherwise try to close it.
+4. **Mutation-probe every fix** with `tools/mutation_probe.py`, never by hand.
    Neuter the fix, re-run, confirm the suite notices. Five tests in the 0.7
    cycle passed for the wrong reason and only this caught them.
 
@@ -59,14 +82,14 @@ fixes made for the previous round.
    the tool.** That is the general form, and it is the more useful half of this
    entry.
 
-4. **A surviving mutant is not automatically a defect.** An *equivalent* mutant
+5. **A surviving mutant is not automatically a defect.** An *equivalent* mutant
    — one provably indistinguishable given the code around it — is a real
    category, and the honest response is to record why in the source so a later
    reader does not invent a contrived test to "cover" it. What is never
    acceptable is leaving a survivor unexplained.
-5. **Re-run the agent's own scripts**, not just your new test. Twice the thing
+6. **Re-run the agent's own scripts**, not just your new test. Twice the thing
    that caught a bad fix was the agent's script rather than mine.
-6. **Report honestly**, including what did not reproduce and why. A finding
+7. **Report honestly**, including what did not reproduce and why. A finding
    that turns out to be a non-finding is information, not an embarrassment.
 
 ## Closing a round

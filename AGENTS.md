@@ -76,6 +76,16 @@ every model tier:
 - **Never edit** `tests/contract/` or `tests/compat/`. CI enforces this from
   the trusted base branch.
 - **Never weaken, skip or delete an assertion** to make something pass.
+- **A finding names an instance. Repair the class.** Before fixing what was
+  reported, ask what *else* has the same shape, and go and look — the answer
+  has twice been "a second site, and the worse one". #74 reported a number
+  whose lexeme could be rewritten without moving the root; string escapes had
+  the same hole, and an escaped letter renders as the word while `grep` for it
+  fails. A round found a commitment log satisfied by a `Mock()`; the sink had
+  the same hole, on the primary evidence path, and reported `persisted` with
+  nothing written. **Both second sites were worse than the first, and neither
+  was reported by anybody.** When the class cannot be closed, say where it
+  stays open and leave a test that fails when a new member appears.
 - **No new runtime dependencies.** The package declares zero, and that is a
   claim the packaging tests check against a real built wheel.
 - **Every fix carries a test that fails without it**, proved by neutering the

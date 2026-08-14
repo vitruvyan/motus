@@ -279,7 +279,12 @@ def test_a_failed_end_costs_the_result_and_not_the_runtime(tmp_path, surface):
 def test_a_log_that_records_nothing_is_refused_before_a_node_runs(tmp_path):
     """A Mock has every attribute, satisfies any Protocol, accepts every call
     and returns another Mock. A run reported `completed` with an audit trail
-    that was never written, indistinguishable from one that was."""
+    that was never written, indistinguishable from one that was.
+
+    It is now refused at CONSTRUCTION rather than at the first run, by the
+    general rule that an object answering to a name no protocol declares is
+    answering to anything — so the node never runs and there is no run to
+    report on."""
     from unittest.mock import Mock
 
     ran: list[str] = []
@@ -288,9 +293,32 @@ def test_a_log_that_records_nothing_is_refused_before_a_node_runs(tmp_path):
         ran.append("yes")
         return state.with_fact(Fact("done", True, "test", NOW))
 
+    with pytest.raises(TypeError, match="no protocol declares"):
+        Runtime(SPEC, {"work": work}, sink=InMemoryTraceSink(),
+                commitments=Mock())
+    assert ran == [], "a node executed against a log that records nothing"
+
+
+def test_a_hand_rolled_log_that_returns_nothing_is_still_refused(tmp_path):
+    """The general rule catches an object that answers everything. It does not
+    catch a deliberate stand-in that answers only the protocol — so the
+    return-value check that #82 added stays, and this is what still needs it."""
+    ran: list[str] = []
+
+    def work(state: State) -> State:
+        ran.append("yes")
+        return state.with_fact(Fact("done", True, "test", NOW))
+
+    class _RecordsNothing:
+        def begin(self, *args, **kwargs):
+            return None
+
+        def end(self, *args, **kwargs):
+            return None
+
     with pytest.raises(TypeError, match="must return the Commitment"):
         Runtime(SPEC, {"work": work}, sink=InMemoryTraceSink(),
-                commitments=Mock()).run(State.empty("x"), run_id="r1")
+                commitments=_RecordsNothing()).run(State.empty("x"), run_id="r1")
     assert ran == [], "a node executed against a log that records nothing"
 
 

@@ -26,6 +26,7 @@ from vitruvyan_motus.errors import (
 )
 from vitruvyan_motus.graph import GraphSpec, NodeDecl, TransitionKind
 from vitruvyan_motus.observers import (
+    refuse_a_stand_in,
     AsyncStreamDriver,
     Listener,
     StreamDriver,
@@ -511,6 +512,12 @@ class Runtime:
                 "this commitment log has no witness_deadline, so a slow "
                 "witness would stop its writer for as long as it likes. Open "
                 "the log with witness_deadline=<seconds>")
+        # Every caller-supplied protocol, at construction rather than at the
+        # first run: a configuration mistake found on the hot path of the first
+        # real decision is found at the worst possible moment.
+        refuse_a_stand_in(sink, "the sink")
+        refuse_a_stand_in(commitments, "the commitment log")
+        refuse_a_stand_in(witness, "the witness")
         self._commitments = commitments
         self._witness = witness
         self.spec = spec
