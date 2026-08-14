@@ -76,6 +76,42 @@ every model tier:
 - **Never edit** `tests/contract/` or `tests/compat/`. CI enforces this from
   the trusted base branch.
 - **Never weaken, skip or delete an assertion** to make something pass.
+- **A finding names an instance. Repair the class.** Before fixing what was
+  reported, ask what *else* has the same shape, and go and look — the answer
+  has twice been "a second site, and the worse one". #74 reported a number
+  whose lexeme could be rewritten without moving the root; string escapes had
+  the same hole, and an escaped letter renders as the word while `grep` for it
+  fails. A round found a commitment log satisfied by a `Mock()`; the sink had
+  the same hole. **Neither second site was reported by anybody.** When the class
+  cannot be closed, say where it stays open and leave a test that fails when a
+  new member appears.
+
+  **And the class being real does not make your repair for it right.** Both
+  repairs written under this rule on 2026-08-14 were killed by the round that
+  followed: one covered half its own surface and refused a frozen artifact of
+  ours; the other refused `xmlrpc.client.ServerProxy` from the standard library
+  while missing the doubles the stdlib documentation recommends. **Generalising
+  a fix widens its blast radius, so it raises the bar on measuring it, not
+  lowers it.**
+- **Build the general solution, not the particular one.** A fix that handles
+  the reported case and nothing else is a fix that will be reported again from
+  the next case. Where the general form costs more, pay it or say why you did
+  not — *"this closes the reported instance and leaves X open"* is an
+  acceptable sentence; leaving X open silently is not.
+- **Avoid a regular expression where a parser exists, and this is not a style
+  preference.** A regex matches *characters* and knows nothing about what they
+  mean, so over structured text it answers a different question from the one
+  being asked. Today's example, and it was one line from shipping: a rule about
+  JSON numbers, written as a pattern over the raw bytes, flags
+  `{"note": "cost 5.10 eur"}` — where `5.10` is somebody's prose and not a
+  number at all. Hooked into the parser instead (`parse_float`, `parse_int`,
+  `parse_string`), it sees exactly the tokens it is about and nothing else.
+
+  A regex is fine for a **single opaque token whose grammar you own** —
+  `sha256:[0-9a-f]{64}`, an identifier shape — and this repository uses it that
+  way. It is not fine for finding structure inside a document that has a
+  parser, a grammar, or an AST. **If you are matching a pattern to answer a
+  question about meaning, you are answering the wrong question.**
 - **No new runtime dependencies.** The package declares zero, and that is a
   claim the packaging tests check against a real built wheel.
 - **Every fix carries a test that fails without it**, proved by neutering the
