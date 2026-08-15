@@ -476,7 +476,22 @@ def test_the_finding_is_structural_so_nothing_downstream_is_attempted(run, where
 # that document from the tag and it is frozen beside this file.                #
 # --------------------------------------------------------------------------- #
 
-LEGACY = ROOT / "tests/compat/legacy/v0.5.0-trace-with-a-surrogateescape-filename.json"
+LEGACY = ROOT / "tests/legacy/v0.5.0-trace-with-a-surrogateescape-filename.json"
+
+#: The artefact's own digest, pinned here rather than relied on from its path.
+#:
+#: It first landed under `tests/compat/`, and `check_frozen_paths.py` refused
+#: it — correctly: that is the frozen contract corpus, and adding to it is a
+#: contract act the founder approves, not something an implementation PR does
+#: on its way past. The founder moved it here instead, and pinning the digest
+#: is the stronger half of that decision: a path guard protects a location, and
+#: this protects the BYTES. Edit the file anywhere and this test fails.
+#:
+#: Whether it belongs in the compatibility corpus is a question for 1.0.0,
+#: which is when that corpus is actually built. It is a good candidate: a
+#: document a prior release produced, that later releases must keep verifying,
+#: is exactly what such a corpus is for.
+LEGACY_SHA256 = "8e12ff83c4fd5b9959e04a128e006c614857f187287c92b7166bc7a41710e7bb"
 
 
 def test_a_trace_v0_5_0_wrote_and_v0_5_0_called_valid_is_still_valid():
@@ -488,7 +503,15 @@ def test_a_trace_v0_5_0_wrote_and_v0_5_0_called_valid_is_still_valid():
     what makes "somebody still holds one of these" the default assumption
     rather than a hypothesis.
     """
-    raw = LEGACY.read_text(encoding="utf-8")
+    import hashlib
+
+    payload = LEGACY.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == LEGACY_SHA256, (
+        "this artefact is evidence: v0.5.0 wrote these exact bytes and v0.5.0's "
+        "own validator called them valid. Regenerating it from today's code "
+        "would make it prove nothing, so it is pinned rather than described")
+
+    raw = payload.decode("utf-8")
     assert raw.isascii(), "the fixture stopped being wire-safe; re-take this"
     assert "udcff" in raw.lower(), "the fixture no longer carries the surrogate"
 
