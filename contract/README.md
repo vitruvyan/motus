@@ -110,6 +110,15 @@ never over the bytes of a particular encoding (JSON vs JSONL).
 declared name, qualified name, source hash, config fingerprint — per the
 exact recipe in `node-protocol.md` §6.3.
 
+**What that means for storage, said here because an integrator's first
+question is exactly this one.** Integrity digests are computed over the
+canonical serialisation, so **a store may reorder object keys freely**: a
+trace kept in a Postgres `jsonb` column, read back with its keys in a
+different order, validates. The first external integrator wrote the opposite
+into their own notes in three places — *never store a trace as `jsonb`,
+Postgres reorders keys and the chain is over bytes* — and only found out by
+testing it. Guessing wrong here costs a column type and a migration.
+
 ## Executable fence
 
 The schemas alone cannot enforce the R-rules and T-rules. The fence is

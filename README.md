@@ -363,6 +363,9 @@ inverted it twice in one pull request, and once by an integrator who declared
 read-only HTTP calls `external_effect` believing it conservative. The contract
 permits that; nothing told them it costs safe resumes, silently, forever.
 
+Install it into a virtualenv of its own or with `pipx`: the kernel takes no
+dependencies, and this extra takes twenty-three.
+
 It answers narrowly on purpose. `motus_classify` reports which of the
 protocol's marked terms your description contains and hands you the table; it
 does not decide the class, because a version that did was measured wrong on

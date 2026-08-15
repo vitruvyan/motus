@@ -1,7 +1,16 @@
 # The integration MCP
 
 `pip install vitruvyan-motus[mcp]`, then point your coding agent at
-`motus-mcp`. It answers questions about the Motus protocol **from the documents
+`motus-mcp`.
+
+**Install it into a virtualenv of its own, or with `pipx` — never into a
+shared `--user` site-packages.** The kernel declares zero runtime
+dependencies and that is checked against a built wheel; **the `[mcp]` extra
+takes twenty-three**, because the MCP SDK brings `starlette`, `uvicorn`,
+`pydantic`, `httpx2` and `cryptography` with it. The first integrator to
+install it this way pulled a `starlette` that an unrelated `fastapi` on the
+same machine refused (#109). Their containerised services were untouched, and
+so was Motus — but their host tooling was not. It answers questions about the Motus protocol **from the documents
 in the installation**, and runs the shipped validator over artefacts you name
 by path.
 
