@@ -42,7 +42,7 @@ has happened here once already.
 cd ~/refactor/motus
 git fetch --all --tags && git describe --tags --abbrev=0    # expect v0.11.0
 .venv/bin/python -c "import vitruvyan_motus; print(vitruvyan_motus.__version__)"
-.venv/bin/python -m pytest -q                                # expect 971 passed
+.venv/bin/python -m pytest -q                                # expect green, not a count
 ```
 
 Then find `vitruvyan-core` **on the machine you are on**. If it is not there,
@@ -220,3 +220,10 @@ back as it stands. If you get through §4 and the list is empty, say that
 plainly and say what you searched for — **an empty list from a real search is
 what unblocks the freeze, and an empty list from a shallow one would freeze a
 defect into a ten-year promise.**
+
+
+**A count is deliberately not written above.** It read `971` and was true only
+at the v0.11.0 tag; `main` runs a different number and so does any branch. It
+also depends on the environment — CI skips one test because the MCP SDK is not
+installed there, so the same commit counts one fewer in CI than locally. A
+number that cannot be true in both places is worse than no number.

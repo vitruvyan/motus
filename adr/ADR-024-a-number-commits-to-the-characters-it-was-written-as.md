@@ -8,6 +8,11 @@
   residual (#98).** It was written into this ADR as decision 1b, passed its
   tests, and failed the round for two measured reasons, either sufficient. No
   mechanism of `J2` changed
+- **Superseded in part by ADR-026** (accepted 2026-08-15), which closed #98 the
+  other way: the escape residual is **not a hole**, it is intended behaviour,
+  because two spellings of one JSON string are one JSON string. §1c below is
+  kept as written and marked, because the reasoning that produced it is worth
+  reading and the conclusion it reached is not
 - **Authority:** CTO. #74 says the choice "needs its own ADR and its own
   adversarial round: making this call two days after two schema revisions,
   without one, is exactly how the defect ADR-019 corrects was introduced"
@@ -86,8 +91,8 @@ class open. Measured:
 | text difference | same root | verdict |
 |---|---|---|
 | a number rewritten to another lexeme with the same double | yes | **refused** — a reader reads a different number |
-| a string escape (`appro\u0076ed`) | yes | **refused** — see below |
-| the solidus escape, non-ASCII escapes | yes | **refused** |
+| a string escape (`appro\u0076ed`) | yes | **absorbed** — ADR-026, see below |
+| the solidus escape, non-ASCII escapes | yes | **absorbed** — ADR-026 |
 | whitespace | yes | **absorbed** — nobody reads it |
 | member order | yes | **absorbed** — nobody reads it, and canonical JSON sorts it |
 | Unicode normalisation (`é` vs `e´`) | **no** | not a member; the values differ |
@@ -162,6 +167,19 @@ C scanner honours `parse_float` and `parse_int`, so it costs a hook and not a
 scanner.
 
 ### 1c. What the withdrawal leaves open, stated rather than implied
+
+> **Superseded by ADR-026, and kept because being wrong here is instructive.**
+> This section called the escape case a defect. It is not: two spellings of one
+> JSON string are one JSON string, every conforming reader gets the same value
+> from both, and refusing one would be a false accusation against a document
+> identical in meaning to one we accept. The enumeration table now reads
+> `ABSORBED`, and the test that asserted the hole asserts the decision.
+>
+> What survives is the *observation* — `grep` does not find the escaped form —
+> and what changed is whose problem that is. `grep` matches bytes and is not a
+> JSON reader. The answer is a linter, which says *this evidence is authentic
+> and may mislead a tool that is not JSON-aware*; a validator says *this
+> evidence is not authentic*. Collapsing those two sentences is what `J3` did.
 
 **Two documents whose strings differ only in escaping still share a root**, and
 `grep approved` over a file rendering as *approved* can fail. That is a defect,

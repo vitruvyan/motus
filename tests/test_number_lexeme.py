@@ -206,17 +206,27 @@ CLASS_MEMBERS = [
      "a reader reads a different number"),
     (_reformat_number, "REFUSED", "J2",
      "a reader reads different characters where a value is"),
-    # OPEN, and named rather than absent. A rule for these was written,
-    # reviewed and WITHDRAWN — see #98 and ADR-024's residual. Two reasons, both
-    # measured: object KEYS are structurally unreachable through CPython's
-    # decoder hooks, so it covered half its own surface; and its canonical form
-    # refused a FROZEN production artifact of ours for a `\u2014`.
-    (_escape_an_ascii_letter, "OPEN", "#98",
-     "renders as 'approved' and `grep approved` does not find it"),
-    (_escape_a_non_ascii_letter, "OPEN", "#98",
-     "same characters, different bytes, and the file no longer greps"),
-    (_escape_the_solidus, "OPEN", "#98",
-     "an escape this contract never writes"),
+    # ABSORBED, and these rows read `OPEN #98` until 2026-08-15. The change is
+    # not a repair: ADR-026 DECIDED them. Every conforming reader gets the same
+    # value from an escaped and an unescaped spelling, so they are the same JSON
+    # string and sharing a root is correct — refusing one would be a false
+    # accusation against a document identical in meaning to one we accept.
+    #
+    # `OPEN` says "somebody noticed and has not decided". Leaving it there after
+    # the decision would advertise an unresolved integrity defect in a format
+    # about to be frozen, which is a worse document than an out-of-date one.
+    #
+    # A rule for these WAS written, reviewed and withdrawn (`J3`), and the two
+    # measured reasons are why it could not have been the answer: object KEYS
+    # are structurally unreachable through CPython's decoder hooks, so it
+    # covered half its own surface; and its canonical form refused a FROZEN
+    # production artifact of ours for a `\u2014`.
+    (_escape_an_ascii_letter, "ABSORBED", None,
+     "the same JSON string spelled differently; `grep` is not a JSON reader"),
+    (_escape_a_non_ascii_letter, "ABSORBED", None,
+     "same value to every conforming reader, so the same commitment"),
+    (_escape_the_solidus, "ABSORBED", None,
+     "an escape this contract never writes, and denoting the same character"),
     (_insert_whitespace, "ABSORBED", None,
      "nobody reads whitespace, and the JSON<->JSONL equivalence needs it"),
     (_reorder_members, "ABSORBED", None,
@@ -249,8 +259,18 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
     else:
         with pytest.raises(validate.StrictJSONError) as caught:
             validate._loads_strict(mutated)
-        expected = (validate.NonCanonicalNumberError if rule == "J2"
-                    else validate.NonCanonicalStringError)
+        # By rule id, from a table, so a new REFUSED row has to name a class
+        # that exists. This used to read `NonCanonicalStringError` in an else
+        # branch — a class `J3`'s withdrawal deleted, so the row that reached
+        # it would have got `AttributeError` instead of a verdict. Unreachable
+        # today is not the same as correct.
+        expected = {
+            "J1": validate.UnpairedSurrogateError,
+            "J2": validate.NonCanonicalNumberError,
+        }.get(rule)
+        assert expected is not None, (
+            f"row {rule!r} is REFUSED and names no exception this contract "
+            "raises; add it here rather than letting the row pass by default")
         assert isinstance(caught.value, expected), (
             f"{rule} was expected and the wrong rule fired: {caught.value}")
 
@@ -258,30 +278,53 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
 def test_every_row_carries_a_verdict_and_a_reason():
     """The table's purpose is that a member of the class forces a decision.
     `ABSORBED` is a decision; `OPEN` with an issue number is a decision; a row
-    with neither is somebody having noticed and moved on."""
+    with neither is somebody having noticed and moved on.
+
+    `OPEN` therefore has to carry the issue, and this now asserts it — the
+    three escape rows sat at `OPEN #98` until ADR-026 decided them, and an
+    `OPEN` row with no issue number would have been indistinguishable from one
+    that had simply been forgotten."""
     assert {o for _, o, _, _ in CLASS_MEMBERS} <= {"REFUSED", "ABSORBED", "OPEN"}
     for name, outcome, rule, reason in [(f.__name__, o, r, why)
                                         for f, o, r, why in CLASS_MEMBERS]:
         assert reason, name
         if outcome == "OPEN":
             assert rule and rule.startswith("#"), (
-                f"{name} is open and names no issue, so nobody is going to "
-                "come back to it")
+                f"{name} is OPEN and names no issue, which is indistinguishable "
+                "from having been forgotten")
+        if outcome == "REFUSED":
+            assert rule, f"{name} is REFUSED and names no rule"
     absorbed = [f.__name__ for f, o, _, _ in CLASS_MEMBERS if o == "ABSORBED"]
-    assert absorbed == ["_insert_whitespace", "_reorder_members"], absorbed
+    assert absorbed == [
+        # ADR-026: the same JSON string spelled differently. These three sat at
+        # `OPEN #98` for a day and were then decided, not repaired.
+        "_escape_an_ascii_letter",
+        "_escape_a_non_ascii_letter",
+        "_escape_the_solidus",
+        "_insert_whitespace",
+        "_reorder_members",
+    ], absorbed
 
 
 @pytest.mark.parametrize("hidden", ["approved", "rejected"])
-def test_an_escape_can_still_hide_a_word_from_grep_and_this_is_open(hidden):
-    """**A defect, kept visible rather than kept quiet.** #98.
+def test_an_escape_hides_a_word_from_grep_and_that_is_grep(hidden):
+    """**Not a defect. A fact about `grep`, decided by ADR-026.** #98 closed.
 
-    A rule for this was written and withdrawn, for two measured reasons: object
-    KEYS are structurally unreachable through CPython's decoder hooks, so it
-    covered half its own surface; and its canonical form refused a frozen
-    production artifact of ours for a `\\u2014`.
+    This test asserted a HOLE for a day, under the name
+    `..._and_this_is_open`, and told whoever closed it to delete the test. The
+    founder read #98 and ADR-024 and decided the other way: `"appro\\u0076ed"`
+    and `"approved"` are the same JSON string, every conforming reader gets the
+    same value from both, and sharing a root is correct. Refusing one would be a
+    false accusation against a document identical in meaning to one we accept.
 
-    This test asserts the hole so that closing it breaks the test and forces
-    somebody to come back here and read why the first attempt failed."""
+    What remains true is that `grep approved` does not find the escaped form —
+    and `grep` matches bytes and is not a JSON reader. The answer is a linter
+    saying *this evidence is authentic and may mislead a tool that is not
+    JSON-aware*, which is a different sentence from what a validator says.
+    Collapsing the two is what the withdrawn `J3` did.
+
+    The behaviour asserted below has not changed by one line. Only the verdict
+    on it has, which is the whole reason the assertion was worth pinning."""
     escaped = "\\u%04x" % ord(hidden[0]) + hidden[1:]
     document = '{"schema_version":"3.0.0","v":"%s"}' % escaped
     assert json.loads(document)["v"] == hidden

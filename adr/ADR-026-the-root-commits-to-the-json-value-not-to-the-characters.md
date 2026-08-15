@@ -22,6 +22,15 @@
 - **Advances:** roadmap phase 4. This is a question the freeze makes permanent,
   which is why it is decided before it and not after
 
+> **A note on this file's own worked example.** It writes
+> `` `"appro\u0076ed"` `` — a `v` written as a `` \u0076 `` escape. An
+> adversarial round found that three of the four occurrences had **lost the
+> escape** to the heredoc that first wrote this document, so the ADR's central
+> demonstration read *"`\"approved\"` and `\"approved\"` are the same JSON
+> string"*, which says nothing. Fixed 2026-08-15. If you edit this file through
+> a shell, check those four places afterwards: a document about escapes is the
+> one document where losing one is fatal.
+
 ## Context
 
 ADR-024 drew this line:
@@ -46,7 +55,7 @@ prevents it, and ADR-024 was right.
 
 ### Strings: one value, two spellings
 
-`"approved"` and `"approved"` are **the same JSON string**. Not two values
+`"approved"` and `"appro\u0076ed"` are **the same JSON string**. Not two values
 a reader happens to conflate — two lexical representations that RFC 8259
 defines as denoting the same sequence of code points. Every conforming reader
 produces `approved` from both.
@@ -111,7 +120,7 @@ exception is about **what an implementation loses**, not about what JSON means.
 
 ### 3. #98 is closed as intended behaviour
 
-`"approved"` and `"approved"` share a root because they are the same
+`"approved"` and `"appro\u0076ed"` share a root because they are the same
 string. That is correct and it is now written down as correct, rather than
 left open as a hole a reader of the issue list would take for an unresolved
 defect in 1.0.0.
@@ -326,7 +335,7 @@ with its keys reordered).
 | canonical | yes |
 | indented | yes |
 | compact | yes |
-| `approved` | **no** |
+| `appro\u0076ed` | **no** |
 
 Whitespace and member order do not hide a value from a raw-text search;
 escapes do. The escape case is **not** symmetric with the absorptions, so the

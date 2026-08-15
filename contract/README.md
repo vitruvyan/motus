@@ -135,7 +135,15 @@ unpaired surrogate (U+D800–U+DFFF with no partner) denotes no character, has
 no UTF-8 encoding, and conforming JSON implementations disagree about what to
 do with one — some refuse it, some substitute U+FFFD, some pass it through. A
 document containing one therefore has more than one reading and is refused
-(rule `J1`, ADR-026), on the producing side and the verifying side alike.
+(rule `J1`, ADR-026).
+
+**The two sides are scoped differently, and deliberately.** A producer refuses
+always: it writes trace schema 3.0.0 and that is where the format is defined. A
+READER refuses from trace schema `2.0.0`, because releases up to 0.7.0 wrote
+schema 1.x traces carrying such a string and the validators shipped alongside
+them called those traces valid. Refusing them now would break the promise one
+paragraph up — that evidence written before a rule stays valid without being
+rewritten — and this contract ranks a wrong refusal above a missed violation.
 
 **This is not a rule about escape forms.** `"appro\u0076ed"` and `"approved"`
 are the same JSON string, share a root, and both stay valid; so do
@@ -164,9 +172,10 @@ The schemas alone cannot enforce the R-rules and T-rules. The fence is
 executable and versioned in this repository:
 
 - `contract/validate.py` — the semantic validator: GraphSpec R1–R12; trace
-  T1–T10 (record coherence, including replay monotonicity), E1–E11 (the
-  execution state machine), SB1–SB4 (spec binding, including recomputed
-  graph fingerprints), H1–H2, J1, JSONL1–3; JSON and JSONL forms. H2 binds
+  T1–T12 (record coherence, including replay monotonicity, and from 3.0.0 the
+  terminal digest that makes a root anchorable), E1–E11 (the execution state
+  machine), SB1–SB4 (spec binding, including recomputed graph fingerprints),
+  H1–H2, J1–J2, JSONL1–3; JSON and JSONL forms. H2 binds
   resume provenance to a distinct run identity. It reads its input as BYTES
   and decodes explicitly — a reader that laundered CRLF into
   LF would judge a document the file does not contain.

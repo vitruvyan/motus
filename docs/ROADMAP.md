@@ -390,18 +390,36 @@ existed stays valid. The canonical number form is **frozen as a vector table in
 the ADR** and checked against the live interpreter, because *"what CPython's
 `json.dumps` emits"* names no version and `pyproject` supports `>=3.10` openly.
 
-**String escapes (`J3`) were written, accepted, and withdrawn the same day
-(#98 open).** It covered half its own surface: `parse_string` reaches values,
-while `JSONObject` reads member *names* through the module-global `scanstring`,
-so the ADR's own demonstration moved from a value to a key was accepted. And
-its canonical form **refused our own frozen golden** —
+**String escapes (`J3`) were written, accepted, and withdrawn the same day.**
+It covered half its own surface: `parse_string` reaches values, while
+`JSONObject` reads member *names* through the module-global `scanstring`, so
+the ADR's own demonstration moved from a value to a key was accepted. And its
+canonical form **refused our own frozen golden** —
 `tests/compat/terraveler/golden/production-ingestion-trace.json`, taken from
-production and unmodifiable by CI, contains a `\u2014`. So `appro\u0076ed` and
-`approved` still share a root: the first renders as *approved* in any viewer,
-and `grep approved` over the raw file does not find it. The enumeration table in
-`tests/test_number_lexeme.py` carries that row with the verdict `OPEN` and the
-issue number, and **a test asserts the hole**, so closing it breaks that test
-and sends whoever closes it to read why the first attempt failed.
+production and unmodifiable by CI, contains a `\u2014`.
+
+**#98 is closed by ADR-026, and it was decided rather than repaired.**
+`"appro\u0076ed"` and `"approved"` are the same JSON string; every conforming
+reader gets the same value from both, so sharing a root is correct. Refusing
+one would be a false accusation against a document identical in meaning to one
+we accept, which `contract/README.md` ranks as the worst answer a verifier
+gives. The rule, stated once: **same JSON value and structure, same commitment;
+different value or structure, different commitment.** `J2` is not an exception
+to it but its second half enforced where binary64 would break it.
+
+It remains true that `grep approved` does not find the escaped form. That is a
+fact about `grep`, which matches bytes and is not a JSON reader. The answer is
+a linter — *this evidence is authentic and may mislead a tool that is not
+JSON-aware* — which is a different sentence from what a validator says, and
+collapsing the two is what `J3` did.
+
+**What ADR-026 does refuse is a string that denotes nothing.** An unpaired
+surrogate has no UTF-8 encoding and conforming implementations disagree about
+it, so a document carrying one has more than one reading (rule `J1`). Scoped by
+the document's own declared trace schema version to `2.0.0` and above, because
+v0.5.0 through v0.7.0 **wrote** such traces and their own validators called
+them valid — measured against the tags, after the first draft of the ADR
+asserted the opposite. The producing side is scoped by nothing.
 
 Whitespace and member order stay absorbed, deliberately, and the reason is
 written down.
@@ -560,7 +578,10 @@ Built by a separate agent in frontier, from a brief written here.
   defect was that a *verifier* re-serializes what it parses, and
   re-serialization launders the difference. Rule `J2` refuses a document whose
   numeric lexemes are not the ones this contract writes, from schema `3.0.0`;
-  `J3` would have done the same for string escapes and was **withdrawn** (#98);
+  `J3` would have done the same for string escapes and was **withdrawn**;
+  #98 is closed by ADR-026 as intended behaviour, and the same ADR draws the
+  line that `J3` could not: what is refused is a string denoting nothing, not a
+  string spelled differently;
 - **#73** — a trace cannot say whether its evidence reached the sink. **Still
   open, and the attempt to close it on 2026-08-14 was withdrawn the same day.**
   `RunResult.evidence` reports what the runtime told the session, not what a
