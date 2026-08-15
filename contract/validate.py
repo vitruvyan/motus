@@ -333,10 +333,27 @@ def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
     Numbers need no such machinery either: the C scanner honours `parse_float`
     and `parse_int`, so J2 costs a hook.
     """
-    document = json.loads(
-        text, parse_constant=_refuse_non_finite,
-        object_pairs_hook=_refuse_duplicate_keys,
-    )
+    try:
+        document = json.loads(
+            text, parse_constant=_refuse_non_finite,
+            object_pairs_hook=_refuse_duplicate_keys,
+            parse_float=lambda lexeme: _canonical_number(lexeme, float),
+            parse_int=lambda lexeme: _canonical_number(lexeme, int),
+        )
+    except NonCanonicalNumberError:
+        # J2 is scoped by the document's own version, and the version is INSIDE
+        # the document — so the obvious order is parse-then-maybe-parse-again,
+        # which is what this did and what cost every governed document a second
+        # full parse. Inverted: the hooks run on the first pass, and the only
+        # documents that pay for a second one are the ones a hook already
+        # refused. A round measured the obvious order at +110% on
+        # `Trace.from_json`, against a claimed +16%.
+        document = json.loads(
+            text, parse_constant=_refuse_non_finite,
+            object_pairs_hook=_refuse_duplicate_keys,
+        )
+        if _governing_version(document, governed_as) in _LEXICALLY_GOVERNED:
+            raise
     # `governed_as` is for a FRAGMENT of a document that declares its version
     # elsewhere. A JSONL record line is `{"seq":..,"kind":..}` with no
     # `schema_version` in it, so every version-scoped rule silently switched
@@ -347,21 +364,8 @@ def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
     # root. The two encodings are declared equivalent by the same README that
     # says hashes are over the object form and never over the bytes of a
     # particular encoding.
-    if governed_as is not None and not _looks_like_a_trace(document):
-        scalars = governed_as in _SCALAR_GOVERNED
-        lexemes = governed_as in _LEXICALLY_GOVERNED
-    else:
-        scalars = _scalar_governed(document)
-        lexemes = _lexically_governed(document)
-    if scalars:
+    if _governing_version(document, governed_as) in _SCALAR_GOVERNED:
         _refuse_unpaired_surrogates(document)
-    if lexemes:
-        json.loads(
-            text, parse_constant=_refuse_non_finite,
-            object_pairs_hook=_refuse_duplicate_keys,
-            parse_float=lambda lexeme: _canonical_number(lexeme, float),
-            parse_int=lambda lexeme: _canonical_number(lexeme, int),
-        )
     return document
 
 
@@ -388,7 +392,14 @@ def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
 #: would be a breaking change to a contract surface without a major version,
 #: which `guarantees.md` §7 forbids and which `contract/README.md` calls the
 #: worst answer a verifier gives: *a refusal outranks a violation.*
-_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0"})
+#: What a document is governed by when nothing declares a version: today's
+#: rules. Failing closed here is the safe direction — a document with no older
+#: TRACE contract to appeal to gets the current one — and it is why this is a
+#: sentinel rather than `None` meaning "ungoverned".
+_UNDECLARED = "__undeclared__"
+
+
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", _UNDECLARED})
 
 
 def _looks_like_a_trace(document: Any) -> bool:
@@ -413,6 +424,26 @@ def _looks_like_a_trace(document: Any) -> bool:
     return isinstance(document, dict) and "run" in document
 
 
+def _governing_version(document: Any, governed_as: str | None = None) -> str:
+    """Which trace schema version's rules apply to this document.
+
+    Three cases, and they were three tangled conditions before a JSONL test
+    caught them disagreeing:
+
+    - a trace (or a JSONL header) declares its own version, and that decides;
+    - a JSONL RECORD line declares nothing, so the stream's header decides —
+      `governed_as` carries it down;
+    - anything else — a GraphSpec, a receipt, a bare fragment — is governed by
+      today's rules, because it has no older trace contract to appeal to.
+    """
+    if _looks_like_a_trace(document):
+        declared = document.get("schema_version")
+        return declared if isinstance(declared, str) else _UNDECLARED
+    if governed_as is not None:
+        return governed_as
+    return _UNDECLARED
+
+
 def _scalar_governed(document: Any) -> bool:
     """Does the unpaired-surrogate refusal apply to this document?
 
@@ -420,9 +451,7 @@ def _scalar_governed(document: Any) -> bool:
     the same reason stated one function down. The producer is NOT scoped: it
     writes 3.0.0 and refuses always, which is where the format is defined.
     """
-    if not _looks_like_a_trace(document):
-        return True  # a fragment, a receipt, a spec: nothing older to honour
-    return document.get("schema_version") in _SCALAR_GOVERNED
+    return _governing_version(document) in _SCALAR_GOVERNED
 
 
 #: The trace schema versions at which the terminal digest became an anchorable
@@ -430,7 +459,7 @@ def _scalar_governed(document: Any) -> bool:
 #: collision to attack, so J2 has nothing to protect and refusing an older
 #: document would break `contract/README.md`'s promise that old evidence stays
 #: valid without rewriting.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", _UNDECLARED})
 
 
 def _lexically_governed(document: Any) -> bool:
@@ -447,12 +476,7 @@ def _lexically_governed(document: Any) -> bool:
     non-canonical numeric lexemes. So this scope costs nothing today and is
     about what a rule may do to evidence written before it existed.
     """
-    if not _looks_like_a_trace(document):
-        # Not a trace, so its `schema_version` is some other namespace's — a
-        # GraphSpec's 1.0.0 is not a trace's 1.0.0. Governed: a document with
-        # no older trace contract to honour gets the current rules.
-        return True
-    return document.get("schema_version") in _LEXICALLY_GOVERNED
+    return _governing_version(document) in _LEXICALLY_GOVERNED
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:

@@ -167,12 +167,20 @@ def _canonical_number(lexeme: str, cast: Any) -> Any:
     return value
 
 
+class _RepeatedMember(NonCanonicalNumber):
+    """A repeated member name, which is J1 and is governed by no version.
+
+    It has its own type only so the loader can tell it apart: J2 is version
+    scoped and this is not, and both were raised as `NonCanonicalNumber`.
+    """
+
+
 def _refuse_repeated_members(pairs: list) -> dict:
     """RFC 8259 J1's duplicate-member half, at the loader that holds the text."""
     seen: dict = {}
     for key, value in pairs:
         if key in seen:
-            raise NonCanonicalNumber(
+            raise _RepeatedMember(
                 f"the member {key!r} appears more than once. A reader and every "
                 "first-wins parser take the first; Python takes the last, so "
                 "this document says two different things and would earn the "
@@ -206,15 +214,34 @@ def _loads_canonical(text: str) -> Any:
     # the runtime refused 1.x and 2.x documents its own verifier accepts — a
     # false accusation, which `contract/README.md` ranks as the worst answer,
     # and the third instance of this docstring's own defect in one function.
-    document = json.loads(text, object_pairs_hook=_refuse_repeated_members)
-    if _governed(document, _LEXICALLY_GOVERNED):
-        json.loads(
+    try:
+        document = json.loads(
             text,
             object_pairs_hook=_refuse_repeated_members,
             parse_float=lambda lexeme: _canonical_number(lexeme, float),
             parse_int=lambda lexeme: _canonical_number(lexeme, int),
         )
+    except NonCanonicalNumber as refusal:
+        if isinstance(refusal, _RepeatedMember):
+            raise
+        # The version that decides whether J2 applies is inside the document,
+        # so the naive order parses twice for every governed document. Only a
+        # document a hook already refused pays for the second parse here.
+        document = json.loads(text, object_pairs_hook=_refuse_repeated_members)
+        if _governed(document, _LEXICALLY_GOVERNED):
+            raise
     if _governed(document, _SCALAR_GOVERNED):
+        # **Redundant, and kept deliberately.** Both callers of this loader
+        # (`Trace.from_json` and `ReplayResult.from_json`) hand the result
+        # straight to `from_dict`, which checks every string again through
+        # `_strict_plain_json`. Dropping this would return ~30% of the read
+        # path, measured -- and it would make the loader's answer depend on
+        # what a caller does two frames later, which is precisely the coupling
+        # that produced the defect ADR-026 repairs: a producer refused and a
+        # reader did not, and neither could see the other. A loader holding
+        # bytes decides what a Motus document is; that is what this function is
+        # for. Anyone reading this to optimise it: measure `_loads_canonical`
+        # BY ITSELF first, because that is the surface the frontier table names.
         _refuse_unpaired_surrogates(document)
     return document
 

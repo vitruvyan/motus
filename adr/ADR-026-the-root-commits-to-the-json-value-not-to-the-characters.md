@@ -1,7 +1,9 @@
 # ADR-026 — the root commits to the JSON value, not to the characters
 
-- **Status:** PROPOSED
-- **Date:** 2026-08-15
+- **Status:** ACCEPTED
+- **Date:** 2026-08-15, accepted 2026-08-15 after three adversarial
+  rounds refuted two of its six claims and the corrections landed with the
+  measurements that killed them
 - **Authority:** the founder, who read #98 and ADR-024 and found that ADR-024
   had put two unlike problems in one container, and who then closed decision 4
   against the CTO's recommendation to leave it open. The argument in decisions
@@ -9,9 +11,14 @@
 - **Corrects:** ADR-024, decision 0 — the line it drew is sharpened, not
   reversed. `J2` is unchanged and stays; `J3` stays withdrawn
 - **Closes:** #98, as **accepted semantic equivalence and not a defect**
-- **Amends:** nothing executable. **No schema version moves, no digest recipe
-  changes, no root moves, and no existing evidence becomes invalid** —
-  including Terraveler's anchored traces
+- **Amends:** `contract/validate.py`, `src/vitruvyan_motus/trace.py`,
+  `effects.py`, `graph.py`, `commitlog.py`, `commitments.py`, and the rule text
+  in `contract/README.md`, `node-protocol.md` §2.2 and `guarantees.md`. The
+  first draft said *"nothing executable"*, which was already false when it was
+  written and is the shape this project has recorded before: an ADR making a
+  false claim about itself. **What does not change: no schema version moves, no
+  digest recipe changes, no root moves, and no document any release produced
+  becomes invalid** — including Terraveler's anchored traces
 - **Advances:** roadmap phase 4. This is a question the freeze makes permanent,
   which is why it is decided before it and not after
 
@@ -207,10 +214,38 @@ the C scanner keeps running, keys are covered because keys are in the document,
 and the frozen golden — which writes `—` as the escape `\u2014`, the exact
 artefact `J3` refused — is accepted. That golden is now a test.
 
-The cost, measured on a 54 KiB trace: one C-level serialise decides and the
-walk runs only to locate a string in a document already known to be bad, so
-`_loads_strict` is **+15%** and `Trace.from_json` **+16%**; the naive walk was
-+63%. `validate_trace` is **+0.2%** — schema validation dominates it.
+#### The cost, re-measured after a round refuted the first figures
+
+The first draft quoted +15% / +16% / +0.2% from **one document I chose**. An
+independent measurement — interleaved, `guarantees.md` §3 statistic, sizes I
+did not pick — found 1.4× to 7× those numbers, and up to **+110%** on the
+runtime's reader. It was right, and it found the cause: scoping a rule by a
+version that lives *inside* the document invites the order
+parse-then-maybe-parse-again, and that charges every governed document a second
+full parse.
+
+Inverting it — run the lexeme hooks on the **first** pass, and re-parse only
+when a hook has already refused, which is the only case that needs to ask
+whether the document was governed — changes the sign on the surface that
+matters most. Median of 3 interleaved runs, real traces from the kernel:
+
+| | `main` | now |
+|---|---:|---:|
+| `_loads_strict` (the verifier; a third party's path) | — | **−11% to −15%** |
+| `_loads_canonical` (the runtime's reader) | — | **+28% to +38%** |
+| `Trace.from_json` | — | **+17% to +41%** |
+| `validate_trace` | — | +0.2% |
+
+`validate_trace`'s figure is true and was quoted misleadingly: it is +0.2%
+because jsonschema takes ~950 ms and swamps everything, while the component
+this actually touches is 16–66% slower. The remaining cost on the runtime's
+reader is the surrogate walk itself, which is the rule's price and is stated
+rather than amortised into a larger number.
+
+**Nothing in `benchmarks/` measures the read path** — not `from_json`, not
+`_loads_strict`, not `validate_trace`. Two commits changed it by 25–120% with
+no gate noticing, and that absence is why the first figures could be written
+from a single hand-picked document at all.
 
 ### 5. What does not change, each with the measurement that says so
 
@@ -241,6 +276,17 @@ walk runs only to locate a string in a document already known to be bad, so
   always, which is where the format is defined. One such trace is frozen in
   `tests/compat/legacy/` so the measurement is re-taken rather than quoted.
 
+  **The other contract surfaces are governed unconditionally, and that is
+  measured too.** A round found 34 hand-built documents — 15 GraphSpecs, 13
+  commitments, 6 checkpoints — that `main`'s validator accepts and this branch
+  refuses, and asked whether that breaks surfaces 3 and 5. It does not, and the
+  half the round did not measure is why: on `main`, `GraphSpec.from_dict` and
+  `CommitmentLog` **both raise `UnicodeEncodeError`** on those same values. No
+  release could ever have written one. So the validator was accepting what the
+  runtime refused — a producer/verifier asymmetry that already existed, which
+  this closes from the correct side. Traces at schema 1.x are the opposite
+  case and the only one: there the producer **succeeded**.
+
   Two things this scope is not. It is not an escape hatch: relabelling a 3.0.0
   trace to 1.0.0 to smuggle a value past also escapes the root, because
   `derived_root` derives nothing below 3.0.0 — the same structural reason
@@ -251,9 +297,14 @@ walk runs only to locate a string in a document already known to be bad, so
   serialise exactly as before; the only addition is a `try/except` that renames
   an exception on a path that was already raising, and costs nothing on the
   path that does not.
-- **No root moves.** Every JSON and JSONL document in the tree was scanned:
-  **zero** carry an unpaired surrogate. That scan is a test, so it is re-taken
-  on every run rather than quoted from here.
+- **No root moves.** Every JSON and JSONL document in the tree was scanned
+  through the reader a caller actually holds. Exactly **one** carries an
+  unpaired surrogate, and this branch put it there: the v0.5.0 trace in
+  `tests/compat/legacy/`, which is accepted, and whose acceptance is the point.
+  Every other document is unaffected. The scan is a test, so it is re-taken on
+  every run rather than quoted from here — and its own guard was wrong once,
+  calibrated against 480 gitignored agent worktrees, which is why it now walks
+  the repository rather than the working directory.
 - **The external integrator's evidence stays valid**, including the anchored
   traces and the frozen production golden.
 

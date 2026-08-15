@@ -323,10 +323,27 @@ def test_no_document_in_this_repository_is_refused_by_the_new_rule():
     # reader a caller actually holds. This test asserted the primitive, passed,
     # and then failed the day a genuine v0.5.0 trace joined the corpus — which
     # is the measurement it was supposed to be making.
-    skip = {".venv", "build", "node_modules", ".git", "dist"}
-    documents = [p for pattern in ("*.json", "*.jsonl")
-                 for p in ROOT.rglob(pattern) if not skip & set(p.parts)]
-    assert len(documents) > 400, "the corpus shrank; re-take this measurement"
+    # Every DOT-DIRECTORY, not a list of names. That is the general form of
+    # the mistake this line made: it skipped `.venv`, `.git` and three build
+    # outputs, and missed `.claude/worktrees/`, where agent scratch checkouts
+    # live. The working tree held 675 documents, **480 of them gitignored
+    # scratch**, and the guard below was calibrated on that number — so it
+    # asserted `> 400` and could not pass on a clean checkout, which holds 193.
+    # A round found it by running the suite from a `git archive` export
+    # instead of from the working tree, which is what CI clones.
+    #
+    # Agent worktrees, editor caches, tox environments and virtualenvs are all
+    # dot-directories, and none of them is the repository.
+    documents = [
+        path for pattern in ("*.json", "*.jsonl") for path in ROOT.rglob(pattern)
+        if not any(part.startswith(".") for part in path.relative_to(ROOT).parts)
+        and not {"build", "dist", "node_modules"} & set(path.parts)
+    ]
+    tracked = len(documents)
+    assert tracked > 150, (
+        f"the corpus is {tracked} documents; a clean checkout has ~193. Either "
+        "it shrank, or this walk is picking up something that is not the "
+        "repository — re-take the measurement rather than lowering the number")
 
     refused = []
     for path in documents:
