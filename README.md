@@ -19,52 +19,58 @@ The trace is not reconstructed from logs after execution.
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.11.0 **still does not pass its own cumulative performance gate**, and ships
+0.12.0 **still does not pass its own cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+91.4 %** | +20 % |
-| 100-node no-op | **+133.8 %** | +20 % |
-| Trace materialization | **+27.5 %** | +20 % |
+| Per-node overhead | **+80.9 %** | +20 % |
+| 100-node no-op | **+107.5 %** | +20 % |
+| Trace materialization | **+27.9 %** | +20 % |
 
 The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0.
 
 **This release added none of it, and the measurement cannot prove it added
-anything at all.** Against v0.10.0, in the same jobs on the same runners, the
-three figures are **−0.1 %, −0.0 % and +0.4 %** — inside the per-release budget
+anything at all.** Against v0.11.0, in the same jobs on the same runners, the
+three figures are **+0.5 %, +0.4 % and +2.0 %** — inside the per-release budget
 with no exception declared, and every one of them *smaller than the paired
-spread of the measurement* (6.0 %, 106.0 %, 5.3 %). The honest report is that
+spread of the measurement* (8.1 %, 87.8 %, 16.9 %). The honest report is that
 this release's effect is below what this instrument can resolve, which is not
 the same sentence as "there is no difference" and is not written as one. The
-100-node no-op's spread is worth reading twice: at 106 % it is **wider than the
-cumulative effect it is being used to measure**, and the checker says so in its
-own output rather than leaving it to be noticed.
+100-node no-op's spread is worth reading twice: at 87.8 % it is **wider than
+the cumulative effect it is being used to measure**, and the checker says so in
+its own output rather than leaving it to be noticed.
 
-It is also what you would expect from a release whose new machinery — the
-integration MCP — is not imported on any runtime path, which a subprocess test
-asserts by running a real graph and inspecting `sys.modules`.
-
-Trace materialization reads 3 points worse against the anchor than 0.10.0's
-+24.2 %, and this release is not where it came from: the per-release delta is
-+0.4 % on the same hardware in the same jobs, against a paired spread of 5.3 %.
-Where the difference actually lives is **not separated here**, and it is not
-claimed to be.
+**And there is a change this instrument cannot see at all.** 0.12.0 moved the
+READ path — `_loads_strict` 11–15 % faster, `Trace.from_json` 17–41 % slower —
+and none of the figures above shifted, because nothing in `benchmarks/`
+measures reading. Two commits changed that path by 25–120 % with no gate
+noticing, and an ADR quoted a figure taken from a single hand-picked document
+until an adversarial round re-measured it. That is **#113**, filed rather than
+left implicit: a gate that cannot see a change is not evidence the change was
+free.
 
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.10.0 says nothing about 0.11.0, and an inherited number is
-the same error as an inherited baseline. Measured on 2026-08-14 against the
+measured against 0.11.0 says nothing about 0.12.0, and an inherited number is
+the same error as an inherited baseline. Measured on 2026-08-15 against the
 live `api_graph` service (`frontier_graph`, `POST /run`) with five real Italian
 user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137, CPython
-3.12.3: **4.4, 2.9, 3.9, 3.4 and 2.5 ms** of Motus against requests of 51.6 s,
-11.2 s, 31.4 s, 6.1 s and 6.4 s. The honest share is the worst cost over the
-fastest response — 3.4 ms of 6.1 s — which is **0.055 %**. That figure is an
-upper bound: it contains the consumer's own node code, not only Motus. Every
-run's trace validated clean against the contract, schema 3.0.0, integrity chain
+3.12.3: **5.4, 3.0, 3.0, 4.0 and 3.6 ms** of Motus against requests of 44.9 s,
+22.2 s, 12.5 s, 19.6 s and 23.2 s. The honest share is the worst cost over the
+fastest response — 5.4 ms of 12.5 s — which is **0.043 %**. That figure is an
+upper bound: it contains the consumer's own node code, not only Motus. All five
+traces validated clean against the contract, schema 3.0.0, integrity chain
 present, with a derived root.
+
+One of the five is worth naming because it is the point of the product rather
+than a blemish on it: the consumer's pipeline answered a question asked in
+Italian with 64 characters of German, and the trace carries
+`pipeline_health = degraded` and the reason it was decided —
+`language chiesta=it rilevata=de`. Motus did not judge that; it recorded what
+happened, and the recording is checkable by somebody who was not there.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
@@ -740,19 +746,26 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.11.0 against v0.10.0 — three independent dispatches, canonical value is the
+0.12.0 against v0.11.0 — three independent dispatches, canonical value is the
 median of the job ratios:
 
 | metric | canonical | across jobs | budget |
 |---|---:|---:|---:|
-| per-node overhead | **−0.1 %** | −0.5 … +0.4 % | +10 % |
-| 100-node no-op overhead | **−0.0 %** | −0.8 … +1.9 % | +10 % |
-| trace materialization | **+0.4 %** | +0.2 … +0.4 % | +10 % |
+| per-node overhead | **+0.5 %** | +0.4 … +1.4 % | +10 % |
+| 100-node no-op overhead | **+0.4 %** | −2.6 … +0.7 % | +10 % |
+| trace materialization | **+2.0 %** | −1.1 … +2.2 % | +10 % |
 
-The 100-node row's paired spread is **106 %** — wider than the effect it
+The 100-node row's paired spread is **87.8 %** — wider than the effect it
 measures — and the checker prints that rather than letting the number stand
 alone. *Within noise* is not *no difference*; it is the measurement saying it
 cannot answer.
+
+**And what this table does not contain is worth as much as what it does.**
+0.12.0 changed the READ path: `_loads_strict` got 11–15 % faster and
+`Trace.from_json` 17–41 % slower. Not one figure above moved, because nothing
+in `benchmarks/` measures reading — not `from_json`, not `_loads_strict`, not
+`validate_trace`. That is #113. A gate that cannot see a change is not evidence
+that the change was free.
 
 No exception is declared and none is needed: 0.9.0 adds a contract revision and
 a new module, and costs almost nothing to run. The worst paired spread across
@@ -813,7 +826,7 @@ recorded here rather than left implicit. The relative gate had no such problem:
 it measures both versions on the same host in the same job, which is the point.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.11.0/` for the committed observations.
+`benchmarks/relative-0.12.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -829,8 +842,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.11.0-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.11.0/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.12.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.12.0/*.json
 ```
 
 ## Native package surface
