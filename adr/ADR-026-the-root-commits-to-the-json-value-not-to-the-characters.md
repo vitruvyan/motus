@@ -3,9 +3,9 @@
 - **Status:** PROPOSED
 - **Date:** 2026-08-15
 - **Authority:** the founder, who read #98 and ADR-024 and found that ADR-024
-  had put two unlike problems in one container. The argument below is his; the
-  measurements, one rejected leg of it, and the residual in decision 4 are the
-  CTO's
+  had put two unlike problems in one container, and who then closed decision 4
+  against the CTO's recommendation to leave it open. The argument in decisions
+  1–3 is his; the measurements and one rejected leg of it are the CTO's
 - **Corrects:** ADR-024, decision 0 — the line it drew is sharpened, not
   reversed. `J2` is unchanged and stays; `J3` stays withdrawn
 - **Closes:** #98, as **accepted semantic equivalence and not a defect**
@@ -87,6 +87,10 @@ A text difference that every conforming JSON reader resolves to the same
 value is **not tampering**: whitespace, member order, and equivalent string
 escapes. A text difference that changes what a reader gets **is**.
 
+The rule's premise is *every conforming reader resolves it to the same value*,
+and one input fails that premise rather than the rule. Decision 4 removes it
+from the format instead of weakening the sentence.
+
 ### 2. Numbers are the exception, and the exception has a reason
 
 `J2` stands, from trace schema 3.0.0, scoped by the document's own declared
@@ -125,36 +129,110 @@ same rule from the other side: *a refusal outranks a violation*, because
 saying "this document is wrong" of a document that may be perfectly correct is
 the wrong answer.
 
-### 4. The residual, named rather than closed
+### 4. Unpaired surrogates are outside the Motus format
 
 Decision 1 says *escapes that every conforming reader resolves to the same
-value*. **One escape is outside that set, and it is measured rather than
-supposed.**
+value*. **One escape is outside that set**, and the first draft of this ADR
+left it open as a question for 1.0.0. The founder closed it instead, and the
+reason is decision 1 itself: a rule whose premise fails for some input is not a
+rule with an exception, it is a rule with a hole.
 
-A lone surrogate — `"\ud800"`, a high surrogate with no low one — is accepted
-by this contract's strict reader today and re-serialises unchanged. It does
-not denote a code point, and conforming JSON implementations disagree about
-it: some refuse, some substitute U+FFFD, some pass it through. So for that one
-input, *same JSON value in every reader* is not true, and decision 1's premise
-does not hold.
+> **A Motus string MUST represent a valid sequence of Unicode scalar values.**
 
-**No rule is added for it here, deliberately.** Three times this month a
-correct generalisation of a real defect has been shipped and withdrawn for
-refusing legitimate documents, and a Python string can carry a lone surrogate
-honestly — `surrogateescape` decoding produces them from bytes a filesystem
-handed over. Adding a refusal now would be the fourth, made at the worst
-possible moment.
+A surrogate code point (U+D800–U+DFFF) is not a scalar value. Unpaired, it
+denotes no character, has no UTF-8 encoding, and conforming JSON
+implementations disagree about it — some refuse, some substitute U+FFFD, some
+pass it through. A document containing one has more than one reading, which is
+the same disqualification a duplicate member name carries, and it belongs to
+the same rule: **`J1`, not a new rule**, because `J1` has always meant *strict
+RFC 8259* and the producer has always refused these under it.
 
-It is recorded as an open, measured question for 1.0.0: **either the freeze
-declares lone surrogates outside the format, or it declares that a producer
-may emit them and readers may disagree.** Both are answers; silence is not.
+A surrogate **pair** is a character and stays: `"\ud83d\ude00"` is U+1F600,
+the decoder joins it before anyone sees it, and what reaches a document is one
+scalar value. **This does not touch escape forms.** `"appro\u0076ed"` and
+`"approved"` are the same string, share a root, and are both accepted, exactly
+as decision 1 says. What is refused is a string that denotes nothing.
 
-### 5. What does not change
+**`surrogateescape` is not a reason to admit them**, and this is the argument
+the first draft made and the founder rejected. Python's convention for
+carrying undecodable bytes through a `str` is one language's workaround; it
+does not travel to a reader in another language, and adopting it would write a
+runtime's private mechanism into the meaning of the format. A producer that
+must preserve bytes which are not Unicode — a filename a filesystem handed
+over, a payload from a legacy source — encodes them explicitly: base64, hex, or
+bytes with a declared encoding.
 
-No schema version moves. No digest recipe changes. No root moves. Every trace
-and receipt that validates today validates after this, including the external
-integrator's anchored ones. This ADR changes what the project *says* it is
-committing to, and nothing about what it computes.
+#### What this actually repaired, which was not what the question looked like
+
+Measured before writing any of it. **The producer has refused unpaired
+surrogates since 0.11.0** (`trace._encodable`, added 2026-08-12). Both readers
+accepted them. So this was never a question about what the format permits — it
+was **a producer/verifier asymmetry**, the same class this project already
+found once in the same function, where the runtime's loader accepted duplicate
+members that the contract validator refused.
+
+And *"we accept lone surrogates today"* is false. A trace carrying one does not
+validate — it **crashes**, with `UnicodeEncodeError` raised from inside
+`canonical_json`, naming the codec rather than the document and naming no rule
+at all. Turning an unattributable crash into an attributable refusal is not a
+change to a supported behaviour, which is what settles the schema version.
+
+The sweep found the class had two more members than the report did:
+
+| frontier | before | after |
+|---|---|---|
+| `validate._loads_strict` | accepted | refuses, naming the JSON path |
+| `trace._loads_canonical` | accepted | refuses |
+| `validate._j1_violations` (Python objects, no text) | **passed silently** | `J1`, structural |
+| `validate.canonical_json` / `fingerprint` | `UnicodeEncodeError` | attributable refusal |
+| `trace._canonical_bytes` | `UnicodeEncodeError` | attributable refusal |
+| producer: fact values, run_id, metadata | already refused | unchanged |
+| producer: a node's exception message | never copied into the trace | unchanged |
+
+The two that no report named — the Python-object path and the fingerprint —
+were found by the ordered sweep, and the Python-object path was then found
+*again* by a mutation probe, which is what forced it to be tested rather than
+merely fixed.
+
+#### Why this is not `J3` under another name
+
+`J3` asked **which escape form was written**. Only the lexeme answers that, so
+it needed `parse_string`, which needed CPython's pure-Python scanner: 13× slower,
+a recursion budget that depended on the caller's stack depth, and object
+**keys** structurally out of reach because `JSONObject` calls the module-global
+`scanstring`. It also refused a frozen production golden for an em-dash.
+
+This asks **what value did the reader get**. The parsed document answers, so
+the C scanner keeps running, keys are covered because keys are in the document,
+and the frozen golden — which writes `—` as the escape `\u2014`, the exact
+artefact `J3` refused — is accepted. That golden is now a test.
+
+The cost, measured on a 54 KiB trace: one C-level serialise decides and the
+walk runs only to locate a string in a document already known to be bad, so
+`_loads_strict` is **+15%** and `Trace.from_json` **+16%**; the naive walk was
++63%. `validate_trace` is **+0.2%** — schema validation dominates it.
+
+### 5. What does not change, each with the measurement that says so
+
+- **No schema version moves.** A lone-surrogate document was never accepted end
+  to end; it crashed mid-verification. `J2`'s version scoping does not apply
+  here and must not be copied: `J2` was scoped to 3.0.0+ because documents
+  written under earlier rules did not have it, whereas `J1` has meant *strict
+  RFC 8259* at every version and the producer has enforced it — before
+  `_encodable` existed, such a run raised at the seal rather than writing a
+  trace.
+- **No digest recipe changes.** `canonical_json` and `_canonical_bytes`
+  serialise exactly as before; the only addition is a `try/except` that renames
+  an exception on a path that was already raising, and costs nothing on the
+  path that does not.
+- **No root moves.** Every JSON and JSONL document in the tree was scanned:
+  **zero** carry an unpaired surrogate. That scan is a test, so it is re-taken
+  on every run rather than quoted from here.
+- **The external integrator's evidence stays valid**, including the anchored
+  traces and the frozen production golden.
+
+This ADR changes what the project *says* it is committing to. The code change
+under it makes two readers agree with a producer that was already right.
 
 ## An argument for this decision that does not work, recorded so it is not reused
 
@@ -195,6 +273,19 @@ between now and then the only mitigation is this paragraph.
 against one.** Our conformance evidence is Python's. A second implementation
 is what would turn decision 1 from a claim into a checked property, and #49's
 distribution work is where that would start.
+
+**A producer that was relying on `surrogateescape` to carry filesystem bytes
+through a Motus string now has work to do**, and this refuses their documents
+where 0.11.0 crashed on them. We know of none, the corpus contains none, and
+the honest statement is that the crash was never a supported path — but a
+clearer failure is still a failure, arriving at a different time.
+
+**The predicate is duplicated** between the package and the contract validator,
+because the kernel is stdlib-only and cannot import `jsonschema`. Duplication
+is how two sides drift, which is this defect exactly. The mitigation is a test
+running both over one table of strings and asserting they agree, which is
+weaker than sharing the code and is the strongest thing available under the
+zero-dependency constraint.
 
 **Somebody will read decision 3 as leniency.** *We decided the hole is fine*
 is a shorter sentence than *the two documents are the same document*, and it
