@@ -110,6 +110,33 @@ never over the bytes of a particular encoding (JSON vs JSONL).
 declared name, qualified name, source hash, config fingerprint — per the
 exact recipe in `node-protocol.md` §6.3.
 
+**What that means for storage, said here because an integrator's first
+question is exactly this one, and it has two halves that point opposite ways.**
+
+**A store may reorder object keys freely.** Integrity digests are computed
+over the canonical serialisation, so a trace read back with its keys in a
+different order validates. The first external integrator wrote the opposite
+into their own notes in three places — *never store a trace as `jsonb`,
+Postgres reorders keys and the chain is over bytes* — and found out by testing
+it.
+
+**A store may not renumber.** From trace schema 3.0.0, rule `J2` (ADR-024)
+requires every numeric lexeme to be what serializing its parsed value
+produces. Motus writes `1e-06`; a store that hands back `0.000001` has written
+the same *value* and a different *document*, and the validator refuses it —
+correctly, because that is the whole point of `J2`. The two halves are not
+inconsistent: **whitespace and member order are absorbed by the digest and
+numeric lexemes are not**, which is exactly the line ADR-024 draws.
+
+So: keep the bytes if you want a stored trace to keep validating, or satisfy
+yourself that your column type preserves numeric lexemes before you rely on
+one that parses them. A `text` column always does.
+
+**And note when the first half was measured.** That test ran against 0.10.0,
+before `J2` existed; it was true then and is conditional now. A measured fact
+carried past the change that invalidated it is the most convincing kind of
+wrong, which is why the version is named here rather than left out.
+
 ## Executable fence
 
 The schemas alone cannot enforce the R-rules and T-rules. The fence is

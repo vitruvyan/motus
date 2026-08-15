@@ -495,24 +495,44 @@ def _module_summaries() -> tuple[tuple[str, str], ...]:
 
 
 def where(intent: str) -> Answer:
-    """Which module of the kernel owns which kind of code.
+    """Which module of the kernel owns which kind of code, and which of them
+    your words touch.
 
     The answer is the modules' own docstrings. Motus states what each file is
     for on its first line (ADR-001 gives `errors.py` its subject outright), so
     the question has a source and does not need one written for it.
 
-    **The whole map travels every time, and the intent selects nothing.** A
-    round found `where("the")` naming seven of fourteen modules and `where("a")`
-    naming four: matching on shared words, articles included, produced a
-    selection carrying no signal while presenting itself as *which module
-    already owns this kind of code*. Fourteen one-line docstrings is a short
-    answer; a wrong seven of them is not a shorter one.
+    **The whole map travels every time, and the intent decides nothing** — it
+    is reported as a lexical fact about the caller's text, the same shape
+    `classify` took and for the same reason. Two rounds cost this tool its
+    verdict: matching on shared words named seven of fourteen modules for the
+    intent `"the"`, and then returning everything while keeping an `intent`
+    parameter it never read. **An argument that is ignored is a lie in the
+    signature**, and it is worse than the wrong selection it replaced, because
+    the caller cannot see that their question was never read.
     """
     reproduce = _command("where", intent)
-    return Answer(tool="motus_where", spans=tuple(
+    summaries = _module_summaries()
+    words = _words(intent)
+    spans: list[object] = []
+
+    touched = [(module, sorted(words & _words(module + " " + summary)))
+               for module, summary in summaries]
+    shared = {module: terms for module, terms in touched if terms}
+    if shared:
+        spans.append(Computed(
+            by=f"{_ME}.where", reproduce=reproduce,
+            text="words your text shares with a module's own line: "
+                 + "; ".join(f"{module} ({', '.join(terms)})"
+                             for module, terms in sorted(shared.items()))))
+    else:
+        spans.append(Cannot(tried=(reproduce,)))
+
+    spans.extend(
         Computed(by=f"vitruvyan_motus.{module}.__doc__", reproduce=reproduce,
                  text=f"{module}.py — {summary}")
-        for module, summary in _module_summaries()))
+        for module, summary in summaries)
+    return Answer(tool="motus_where", spans=tuple(spans))
 
 
 #: The advertised describing surface, named once. The test that walks it reads

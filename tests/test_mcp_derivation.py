@@ -579,3 +579,32 @@ def test_the_advertised_descriptions_make_no_claim_about_the_protocol():
         lowered = text.lower()
         for phrase in forbidden:
             assert phrase not in lowered, f"{phrase!r} in {text!r}"
+
+
+def test_where_reports_what_the_intent_touched_and_hides_nothing():
+    """#110: it accepted an intent and ignored it.
+
+    Two repairs overshot each other. Matching on shared words named seven of
+    fourteen modules for the intent `"the"`; returning everything instead left
+    the parameter in the signature, unread — **an argument that is ignored is a
+    lie in the signature**, and worse than the wrong selection it replaced,
+    because the caller cannot see that their question was never read.
+
+    So the intent is reported as a lexical fact and the whole map travels
+    regardless: `sinks (a, durable, sink)` beside `commitlog (a)` shows the
+    caller which match is theirs and which is an article.
+    """
+    answer = tools.where("I want to add a durable sink")
+    reported = next(span for span in answer.spans if isinstance(span, Computed))
+    assert reported.text.startswith("words your text shares with")
+    assert "sinks (a, durable, sink)" in reported.text
+
+    modules = {span.text.split(".py")[0] for span in answer.spans
+               if isinstance(span, Computed) and ".py — " in span.text}
+    assert {"sinks", "runtime", "trace", "errors"} <= modules, (
+        "the whole map travels whatever the intent matched")
+
+    # And an intent that touches nothing says so, rather than selecting at random.
+    empty = tools.where("zzzz")
+    assert empty.is_refusal
+    assert len([s for s in empty.spans if isinstance(s, Computed)]) == len(modules)
