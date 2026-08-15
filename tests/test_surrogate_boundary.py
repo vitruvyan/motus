@@ -379,3 +379,64 @@ def test_the_digest_recipe_did_not_change(run):
     assert (validate.canonical_json(json.loads(text))
             == json.dumps(json.loads(text), sort_keys=True,
                           separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+
+
+# --------------------------------------------------------------------------- #
+# The path an API caller takes, which has no text in it at all                 #
+#                                                                             #
+# Both of these were written because a mutation probe survived. The frontier   #
+# table above covers every path that HOLDS TEXT; `validate_trace(doc)` holds   #
+# Python objects, and a lone surrogate is a `str` — so it passed every check   #
+# and blew up later, in `canonical_json`, where the message is about a codec.  #
+# --------------------------------------------------------------------------- #
+
+def _with_a_surrogate_in_it(run, where):
+    document = json.loads(run.to_json())
+    stack = [document]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            for key, item in list(value.items()):
+                if item == "approved":
+                    if where == "value":
+                        value[key] = "approved" + HIGH
+                    else:
+                        del value[key]
+                        value["name" + HIGH] = item
+                    return document
+                stack.append(item)
+        elif isinstance(value, list):
+            stack.extend(value)
+    raise AssertionError("the fixture no longer carries the value under test")
+
+
+@pytest.mark.parametrize("where", ["value", "member name"])
+def test_a_caller_who_never_serialises_is_told_which_rule_and_where(run, where):
+    """It must REPORT, not raise — a validator that crashes has not validated."""
+    findings = validate.validate_trace(_with_a_surrogate_in_it(run, where))
+
+    assert [f.rule for f in findings] == ["J1"], (
+        "the Python-object path lets a lone surrogate through; it will surface "
+        "as UnicodeEncodeError from canonical_json, blaming the codec")
+    assert "unpaired surrogate" in findings[0].message
+    assert findings[0].path != "$", "reported without saying where"
+
+
+@pytest.mark.parametrize("where", ["value", "member name"])
+def test_the_finding_is_structural_so_nothing_downstream_is_attempted(run, where):
+    """`structural` is what makes `validate_trace` report and stop.
+
+    Without it the run continues into schema validation and the T-rules, which
+    compute digests — and a string with no UTF-8 encoding has no canonical
+    form, so there is nothing there to compute. The finding would arrive buried
+    under schema noise about a document whose real problem is that it cannot be
+    written down at all.
+    """
+    document = _with_a_surrogate_in_it(run, where)
+    _, structural = validate._j1_violations(document)
+    assert structural is True
+
+    findings = validate.validate_trace(document)
+    assert len(findings) == 1, (
+        f"reported alongside {[f.rule for f in findings]} — the document was "
+        "carried past the point where it stopped being computable")
