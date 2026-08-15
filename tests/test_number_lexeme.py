@@ -422,3 +422,71 @@ def test_a_store_that_renumbers_produces_a_document_j2_refuses(stored, written):
     validate._loads_strict('{"schema_version":"3.0.0","v":%s}' % written)
     with pytest.raises(validate.NonCanonicalNumberError):
         validate._loads_strict('{"schema_version":"3.0.0","v":%s}' % stored)
+
+
+# -- ADR-026: the root commits to the JSON value, not to the characters -----
+
+def test_the_same_string_written_two_ways_shares_a_root_and_that_is_correct():
+    """ADR-026 decision 3, and the reason #98 is closed rather than open.
+
+    `"approved"` and `"appro\\u0076ed"` are the same JSON string — not two
+    values a reader conflates, two spellings RFC 8259 defines as denoting the
+    same code points. Refusing one would be accusing a document of tampering
+    that is identical in meaning to one we accept, which is the worst thing a
+    verifier does.
+
+    This test exists so that the day somebody sets out to close #98, they find
+    out it was decided rather than forgotten.
+    """
+    plain = '{"schema_version":"3.0.0","decision":"approved"}'
+    escaped = '{"schema_version":"3.0.0","decision":"appro\\u0076ed"}'
+
+    assert validate._loads_strict(plain) == validate._loads_strict(escaped)
+    assert validate.canonical_json(validate._loads_strict(plain)) == \
+           validate.canonical_json(validate._loads_strict(escaped))
+
+    # And the fact that made it look like a defect is still true, and is a
+    # fact about `grep` rather than about the evidence.
+    assert "approved" in plain and "approved" not in escaped
+
+
+def test_the_absorptions_do_not_hide_a_value_and_the_escape_does():
+    """The leg of the argument for ADR-026 that does NOT work, pinned so it is
+    not reused.
+
+    The proposal reasoned that refusing escapes would force Motus to constrain
+    whitespace and member order too. Measured, it would not: those do not hide
+    a value from a raw-text search. The decision stands on its other leg, and
+    this test is here because a true constraint reused one question past where
+    it applies is more dangerous than an ordinary mistake.
+    """
+    value = {"decision": "approved"}
+    for document in (json.dumps(value), json.dumps(value, indent=2),
+                     json.dumps(value, separators=(",", ":")),
+                     json.dumps({"z": 1, "decision": "approved"}, sort_keys=True)):
+        assert "approved" in document
+
+    assert "approved" not in '{"decision":"appro\\u0076ed"}'
+
+
+def test_a_lone_surrogate_is_the_residual_and_it_is_still_accepted():
+    """ADR-026 decision 4, asserted rather than described.
+
+    Decision 1 says *escapes every conforming reader resolves to the same
+    value*. A lone surrogate is outside that set: it denotes no code point and
+    implementations disagree — some refuse, some substitute U+FFFD, some pass
+    it through. It is accepted here today.
+
+    **No rule is added for it**, and this test pins the current answer so that
+    1.0.0 decides deliberately. Three correct generalisations of real defects
+    were shipped and withdrawn this month for refusing legitimate documents,
+    and a Python string can carry a lone surrogate honestly — `surrogateescape`
+    produces them from bytes a filesystem handed over.
+    """
+    document = '{"schema_version":"3.0.0","v":"\\ud800"}'
+    parsed = validate._loads_strict(document)
+    assert parsed["v"] == "\ud800"
+    assert json.dumps(parsed["v"]) == '"\\ud800"'
+
+    with pytest.raises(UnicodeEncodeError):
+        parsed["v"].encode("utf-8")
