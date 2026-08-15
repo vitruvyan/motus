@@ -317,6 +317,12 @@ def test_no_document_in_this_repository_is_refused_by_the_new_rule():
     producer has refused since 0.11.0, and before that the run raised at the
     seal rather than writing a trace.
     """
+    # Through `_loads_strict`, the scoped entry point, and NOT through
+    # `_refuse_unpaired_surrogates` directly. The primitive is unscoped by
+    # design; what decides whether a document we shipped is refused is the
+    # reader a caller actually holds. This test asserted the primitive, passed,
+    # and then failed the day a genuine v0.5.0 trace joined the corpus — which
+    # is the measurement it was supposed to be making.
     skip = {".venv", "build", "node_modules", ".git", "dist"}
     documents = [p for pattern in ("*.json", "*.jsonl")
                  for p in ROOT.rglob(pattern) if not skip & set(p.parts)]
@@ -336,18 +342,18 @@ def test_no_document_in_this_repository_is_refused_by_the_new_rule():
             except ValueError:
                 continue
             try:
-                validate._refuse_unpaired_surrogates(parsed)
+                validate._loads_strict(line)
             except validate.UnpairedSurrogateError:
                 refused.append(str(path.relative_to(ROOT)))
+            except ValueError:
+                pass  # some other rule, or not a Motus document at all
         if raw.strip():
             try:
-                parsed = json.loads(raw)
-            except ValueError:
-                continue
-            try:
-                validate._refuse_unpaired_surrogates(parsed)
+                validate._loads_strict(raw)
             except validate.UnpairedSurrogateError:
                 refused.append(str(path.relative_to(ROOT)))
+            except ValueError:
+                pass
     assert refused == [], f"the new rule refuses documents we already shipped: {refused}"
 
 
@@ -440,3 +446,279 @@ def test_the_finding_is_structural_so_nothing_downstream_is_attempted(run, where
     assert len(findings) == 1, (
         f"reported alongside {[f.rule for f in findings]} — the document was "
         "carried past the point where it stopped being computable")
+
+
+# --------------------------------------------------------------------------- #
+# The scope — the half ADR-026's first draft got wrong                        #
+#                                                                             #
+# The draft said J2's version scoping "does not apply here and must not be    #
+# copied", because J1 has meant strict RFC 8259 at every version. True of the #
+# prose and false of the product: v0.5.0 ran to completion, wrote a schema     #
+# 1.0.0 trace holding a surrogateescape filename, and its own shipped          #
+# validator returned []. So did `main` today. An adversarial round produced    #
+# that document from the tag and it is frozen beside this file.                #
+# --------------------------------------------------------------------------- #
+
+LEGACY = ROOT / "tests/compat/legacy/v0.5.0-trace-with-a-surrogateescape-filename.json"
+
+
+def test_a_trace_v0_5_0_wrote_and_v0_5_0_called_valid_is_still_valid():
+    """The evidence `contract/README.md` promises stays valid without rewriting.
+
+    `report\\udcff.csv` is exactly what `surrogateescape` yields for filesystem
+    byte 0xFF. Serialised with `ensure_ascii` the document is pure ASCII, so it
+    survives `jsonb`, a text column, HTTP — anything — byte for byte, which is
+    what makes "somebody still holds one of these" the default assumption
+    rather than a hypothesis.
+    """
+    raw = LEGACY.read_text(encoding="utf-8")
+    assert raw.isascii(), "the fixture stopped being wire-safe; re-take this"
+    assert "udcff" in raw.lower(), "the fixture no longer carries the surrogate"
+
+    document = json.loads(raw)
+    assert document["schema_version"] == "1.0.0"
+
+    assert validate.validate_trace(document) == []
+    validate._loads_strict(raw)
+    motus_trace._loads_canonical(raw)
+    assert Trace.from_json(raw).to_dict()["schema_version"] == "1.0.0"
+
+
+@pytest.mark.parametrize(("version", "verdict"), [
+    ("1.0.0", "accept"),   # v0.5.0 wrote these
+    ("1.1.0", "accept"),   # v0.6.1 and v0.7.0 wrote these
+    ("2.0.0", "refuse"),   # v0.8.1 raised at the seal: no genuine one exists
+    ("3.0.0", "refuse"),
+])
+def test_the_surrogate_refusal_is_scoped_by_the_documents_own_version(version, verdict):
+    """Measured against the shipped releases, not reasoned about.
+
+    The boundary is 2.0.0 because that is where the per-record digest arrived
+    and `_canonical_bytes` began refusing a string with no UTF-8 encoding — by
+    accident at first, by name since 0.11.0.
+    """
+    document = '{"schema_version":"%s","v":"x\\ud800"}' % version
+    for name, reader in (("verifier", validate._loads_strict),
+                         ("runtime", motus_trace._loads_canonical)):
+        try:
+            reader(document)
+            got = "accept"
+        except ValueError:
+            got = "refuse"
+        assert got == verdict, f"{name} says {got} for schema {version}"
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0", "2.0.0", "3.0.0"])
+def test_the_two_sides_agree_about_J2_at_every_version_too(version):
+    """Found by the same round, and it is the same defect one rule over: the
+    runtime applied J2 unconditionally while the verifier scoped it to 3.0.0,
+    so `Trace.from_json` refused 1.x and 2.x documents `validate.py` accepts.
+
+    A false accusation, which `contract/README.md` ranks as the worst answer a
+    verifier gives — and this one came from the library, about evidence.
+    """
+    document = '{"schema_version":"%s","v":5000000000000000511.0}' % version
+    verdicts = []
+    for reader in (validate._loads_strict, motus_trace._loads_canonical):
+        try:
+            reader(document)
+            verdicts.append("accept")
+        except ValueError:
+            verdicts.append("refuse")
+    assert verdicts[0] == verdicts[1], f"schema {version}: {verdicts}"
+    assert verdicts[0] == ("refuse" if version == "3.0.0" else "accept")
+
+
+def test_the_producer_is_scoped_by_nothing_because_it_writes_3_0_0():
+    """The scope is a property of READING old evidence. Writing is not scoped:
+    a run produces 3.0.0 and refuses at the boundary, always."""
+    with pytest.raises(ValueError):
+        motus_trace._strict_plain_json({"v": HIGH})
+    with pytest.raises(ValueError):
+        motus_trace._encodable(HIGH)
+
+
+# --------------------------------------------------------------------------- #
+# Every string position that reaches a record, swept rather than listed       #
+# --------------------------------------------------------------------------- #
+
+def _fact_key(text):
+    return Fact(text, "v", "src", NOW)
+
+
+def _fact_source(text):
+    return Fact("k", "v", text, NOW)
+
+
+def _fact_value(text):
+    return Fact("k", text, "src", NOW)
+
+
+def _decision_key(text):
+    from vitruvyan_motus import Decision
+    return Decision(text, "v", NOW)
+
+
+def _decision_reason(text):
+    from vitruvyan_motus import Decision
+    return Decision("k", "v", NOW, reason=text)
+
+
+def _rejection_what(text):
+    from vitruvyan_motus import Rejection
+    return Rejection(text, "r", NOW)
+
+
+def _rejection_reason(text):
+    from vitruvyan_motus import Rejection
+    return Rejection("w", text, NOW)
+
+
+def _redact_policy(text):
+    from vitruvyan_motus import redact
+    return redact({"a": 1}, text)
+
+
+def _receipt_id(text):
+    from vitruvyan_motus import EffectReceipt
+    return EffectReceipt(text)
+
+
+def _effect_description(text):
+    from vitruvyan_motus import EffectClass, EffectDescriptor
+    return EffectDescriptor(EffectClass.EXTERNAL_EFFECT, text)
+
+
+def _effect_idempotency_key(text):
+    from vitruvyan_motus import EffectClass, EffectDescriptor
+    return EffectDescriptor(EffectClass.EXTERNAL_EFFECT, "d", idempotency_key=text)
+
+
+POSITIONS = [
+    ("Fact.key", _fact_key), ("Fact.source", _fact_source),
+    ("Fact.value", _fact_value),
+    ("Decision.key", _decision_key), ("Decision.reason", _decision_reason),
+    ("Rejection.what", _rejection_what), ("Rejection.reason", _rejection_reason),
+    ("RedactedValue.policy_ref", _redact_policy),
+    ("EffectReceipt.receipt_id", _receipt_id),
+    ("EffectDescriptor.description", _effect_description),
+    ("EffectDescriptor.idempotency_key", _effect_idempotency_key),
+]
+
+
+@pytest.mark.parametrize(("name", "build"), POSITIONS, ids=[p[0] for p in POSITIONS])
+def test_every_string_position_refuses_at_construction(name, build):
+    """`Fact.value` was the only one checked. The other ten were `isinstance`
+    and nothing else, so the string travelled to `_canonical_bytes` at seal
+    time and raised THERE — out of `Runtime.run()` rather than as `NodeFailed`,
+    so the caller got no state and no trace and the sink kept a run with no
+    terminal record.
+
+    That is verbatim the outcome `_encodable`'s docstring describes as the
+    defect it closed in 0.11.0. It closed it at one position out of eleven, and
+    the surrogate-boundary work then wrote a §2.2 sentence promising all of
+    them: *the runtime never carries what it cannot write.*
+
+    `EffectReceipt.receipt_id` and `idempotency_key` are the realistic ones:
+    guarantees.md section 2 makes them an adapter's strings by definition, so
+    they are external input by construction.
+    """
+    with pytest.raises(ValueError) as caught:
+        build("before " + HIGH + " after")
+    assert "surrogate" in str(caught.value).lower()
+
+    build("perfectly ordinary — with an em-dash and " + PAIR)
+
+
+@pytest.mark.parametrize(("name", "build"), POSITIONS, ids=[p[0] for p in POSITIONS])
+def test_a_refusal_inside_a_node_is_a_node_failure_and_keeps_the_evidence(name, build):
+    """The property §2.2's boundary clause is really about: refusing at
+    construction means the run fails as a NODE failure, so the caller still has
+    state and trace and the sink still received a terminal record."""
+    if name.startswith(("EffectReceipt", "EffectDescriptor", "RedactedValue")):
+        pytest.skip("not constructed inside a state write in this fixture")
+
+    def node(state):
+        built = build("x" + HIGH)
+        return state.with_fact(built) if isinstance(built, Fact) else state
+
+    from vitruvyan_motus import NodeFailed
+    with pytest.raises(NodeFailed) as caught:
+        Runtime(SPEC, {"a": node}, sink=InMemoryTraceSink()).run(
+            State.empty("x"), run_id="r")
+    assert caught.value.trace is not None, "no trace: the caller cannot see what ran"
+    assert caught.value.state is not None
+
+
+# --------------------------------------------------------------------------- #
+# Two defects the repair itself introduced, found by attacking it             #
+# --------------------------------------------------------------------------- #
+
+def test_a_clean_document_deeper_than_the_encoder_goes_is_accepted():
+    """The `RecursionError` arm fell through to the unconditional refusal, so a
+    document with no surrogate anywhere was refused with a message saying that
+    should be impossible.
+
+    The C encoder failing to answer is not the encoder refusing. The walk below
+    it is iterative precisely so that it can answer, and it did — 'clean'.
+    """
+    deep = current = {}
+    for _ in range(12000):
+        current["n"] = {}
+        current = current["n"]
+    current["v"] = "no surrogate anywhere in here"
+
+    assert validate._refuse_unpaired_surrogates(deep) is None
+    assert motus_trace._refuse_unpaired_surrogates(deep) is None
+
+
+def test_a_finding_about_a_member_name_can_actually_be_printed():
+    """`_j1_violations` reported the bad member name and kept descending with
+    `f"{path}.{key}"`, so every deeper finding's `path` embedded the surrogate
+    and `validate.main` raised `UnicodeEncodeError` trying to print its own
+    report. Naming the place with a string that cannot be written down is the
+    crash one step later."""
+    document = {"schema_version": "3.0.0", "run": {"run_id": "r"},
+                "records": [{"seq": 1, "kind": "run_started",
+                             "payload": {"a" + HIGH: {"b": "x" + HIGH}}}]}
+    findings = validate.validate_trace(document)
+    assert findings
+    for finding in findings:
+        rendered = f"{finding.rule} {finding.path}: {finding.message}"
+        rendered.encode("utf-8")          # this is what printing does
+        json.dumps(rendered)              # and this is what logging does
+
+
+@pytest.mark.parametrize(("name", "build"), [
+    ("GraphSpec.from_dict, the graph name", lambda text: GraphSpec.from_dict({
+        "schema_version": "1.0.0", "name": text, "version": "1.0.0", "entry": "a",
+        "nodes": [{"name": "a", "effect_class": "pure"}],
+        "transitions": {"a": {"kind": "terminal"}}})),
+])
+def test_two_frontiers_the_first_sweep_missed(name, build):
+    """The sweep presented itself as complete and was not. Both of these
+    refused — with a bare `UnicodeEncodeError`, which says the codec is unhappy
+    rather than that the document is not a Motus document."""
+    with pytest.raises(Exception) as caught:
+        build("g" + HIGH)
+    assert not isinstance(caught.value, UnicodeEncodeError), name
+    assert "surrogate" in str(caught.value).lower()
+
+    build("an ordinary — name " + PAIR)
+
+
+def test_a_commitment_log_refuses_a_tenant_it_cannot_digest():
+    """The same frontier on the commitment side, and the one with teeth: this
+    string reached `_stem` (a directory name) and `_canonical_bytes` (a leaf
+    digest), and `CommitmentLog.begin` had already fsynced a window line by the
+    time the second one raised."""
+    import tempfile
+
+    from vitruvyan_motus import commitlog
+
+    for field in ("tenant", "writer_id"):
+        arguments = {"tenant": "acme", "writer_id": "w1", field: "x" + HIGH}
+        with pytest.raises(ValueError) as caught:
+            commitlog.CommitmentLog(
+                Path(tempfile.mkdtemp()) / "store", **arguments)
+        assert "surrogate" in str(caught.value).lower(), field

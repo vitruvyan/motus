@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+from vitruvyan_motus._text import encodable as _encodable
 
 __all__ = ["EffectClass", "EffectReceipt", "EffectDescriptor"]
 
@@ -53,6 +54,10 @@ class EffectReceipt:
     def __post_init__(self) -> None:
         if not isinstance(self.receipt_id, str) or not self.receipt_id:
             raise ValueError("receipt_id must be a non-empty string")
+        # An adapter's own string, by definition (guarantees.md section 2), so
+        # this is EXTERNAL input reaching a digest -- the likeliest position in
+        # the whole runtime to carry a surrogate, and the last one checked.
+        _encodable(self.receipt_id)
         if self.status not in ("completed", "unknown"):
             raise ValueError("receipt status must be 'completed' or 'unknown'")
         if self.result_fingerprint is not None:
@@ -87,12 +92,15 @@ class EffectDescriptor:
             raise ValueError("an effect descriptor cannot have class pure")
         if not isinstance(self.description, str):
             raise TypeError("effect description must be a string")
+        _encodable(self.description)
         if (
             self.idempotency_key is not _MISSING
             and self.idempotency_key is not None
             and not isinstance(self.idempotency_key, str)
         ):
             raise TypeError("idempotency_key must be a string or null")
+        if isinstance(self.idempotency_key, str):
+            _encodable(self.idempotency_key)
         if self.receipt is not None and not isinstance(self.receipt, EffectReceipt):
             raise TypeError("receipt must be EffectReceipt or null")
 

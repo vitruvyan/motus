@@ -80,10 +80,28 @@ def _canonical_json_bytes(obj: Any) -> bytes:
     validation has already refused floats anywhere but a JSON-Schema-integer
     ``max_transitions``, non-string keys, and non-JSON types. A general-
     purpose strict canonicalizer for arbitrary input is J1's concern, out of
-    scope for Milestone B (see contract/validate.py's own J1 machinery)."""
-    return json.dumps(
-        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    scope for Milestone B (see contract/validate.py's own J1 machinery).
+
+    **That paragraph was true of floats and non-string keys and false of
+    strings.** The schema's `name` pattern is `.+`, so a graph named with an
+    unpaired surrogate passes every validation above and arrives here — and
+    raised a bare `UnicodeEncodeError` mid-fingerprint, blaming the codec for a
+    document the caller could not have known was wrong. Found by an adversarial
+    round attacking ADR-026's own sweep, which had missed this frontier and
+    `commitlog._stem` while enumerating "every frontier"."""
+    try:
+        return json.dumps(
+            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # Unreachable through `GraphSpec.from_dict`, which now refuses this in
+        # `_shape_violations` and reports it as a violation with a path. Kept
+        # because "unreachable" is what the paragraph above claimed and it was
+        # wrong, and because a bare codec error is the worst way to find out.
+        raise ValueError(
+            "this GraphSpec has no canonical JSON encoding and therefore no "
+            f"fingerprint: {exc}. A JSON string denotes a sequence of Unicode "
+            "scalar values (rule J1, ADR-026)") from None
 
 
 def _fingerprint(kind: str, obj: Any) -> str:
@@ -173,12 +191,73 @@ def _is_string_array(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+def _first_unencodable_string(document: Any) -> tuple[str, int, str] | None:
+    """The first string in ``document`` that is not Unicode text, with its path.
+
+    One C-level serialise decides and the walk only locates -- the same shape
+    `trace._refuse_unpaired_surrogates` takes, and iterative for the same
+    reason: a refusal a document does not deserve is the worst answer, and a
+    `RecursionError` from a deeply nested spec would be one.
+    """
+    try:
+        json.dumps(document, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        pass
+    except (RecursionError, TypeError, ValueError):
+        return None  # not this rule's business; the shape checks below say so
+    else:
+        return None
+
+    def at(text: str) -> int | None:
+        if text.isascii():
+            return None
+        try:
+            text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            return exc.start
+        return None
+
+    stack: list[tuple[Any, str]] = [(document, "$")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str):
+            index = at(value)
+            if index is not None:
+                return path, index, value
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str):
+                    index = at(key)
+                    if index is not None:
+                        return f"{path}.{key!r}", index, key
+                stack.append((item, f"{path}.{key}"))
+        elif isinstance(value, list):
+            for position, item in enumerate(value):
+                stack.append((item, f"{path}[{position}]"))
+    return None
+
+
 def _shape_violations(data: Any) -> list[GraphSpecViolation]:
     """The hand-rolled equivalent of jsonschema.Draft202012Validator against
     graphspec.v1.schema.json. Returns as soon as further checking would
     require assuming a shape that plainly is not there."""
     if not isinstance(data, dict):
         return [GraphSpecViolation("SCHEMA", "$", f"expected an object, got {type(data).__name__}")]
+
+    unencodable = _first_unencodable_string(data)
+    if unencodable is not None:
+        path, index, text = unencodable
+        # Before every other check, because a document with no encoding has no
+        # canonical form and therefore no fingerprint -- there is nothing for
+        # the rest of this function to be about. The schema's `name` pattern is
+        # `.+`, so this got all the way to `_canonical_json_bytes` and raised
+        # `UnicodeEncodeError` there, naming the codec instead of the spec.
+        return [GraphSpecViolation(
+            "SCHEMA", path,
+            f"U+{ord(text[index]):04X} at index {index} is an unpaired "
+            "surrogate: it denotes no character and has no UTF-8 encoding, so "
+            "this spec has no canonical form and no graph_fingerprint "
+            "(rule J1, ADR-026)")]
 
     v: list[GraphSpecViolation] = []
 

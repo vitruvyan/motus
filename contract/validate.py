@@ -234,12 +234,18 @@ def _refuse_unpaired_surrogates(document: Any) -> None:
     and the refusal is raised without a path rather than swallowed.
     `tests/test_surrogate_boundary.py` asserts they agree over the table.
     """
+    encoder_refused = False
     try:
         json.dumps(document, ensure_ascii=False).encode("utf-8")
     except UnicodeEncodeError:
-        pass
+        encoder_refused = True
     except RecursionError:
-        pass  # deeper than the C encoder goes; the iterative walk still answers
+        # Deeper than the C encoder goes. It did not refuse the document, it
+        # failed to answer -- and the walk below is iterative precisely so it
+        # can. The first version of this fell through to the unconditional
+        # refusal at the end, so a clean document nested past the encoder's
+        # budget was refused with a message saying that should be impossible.
+        pass
     else:
         return
 
@@ -263,6 +269,8 @@ def _refuse_unpaired_surrogates(document: Any) -> None:
             for position, item in enumerate(value):
                 stack.append((item, f"{path}[{position}]"))
 
+    if not encoder_refused:
+        return  # the encoder never objected; only its recursion budget ran out
     raise UnpairedSurrogateError(
         "this document cannot be encoded as JSON text, and the walk that "
         "locates the reason found nothing -- which should be impossible. "
@@ -329,7 +337,8 @@ def _loads_strict(text: str) -> Any:
         text, parse_constant=_refuse_non_finite,
         object_pairs_hook=_refuse_duplicate_keys,
     )
-    _refuse_unpaired_surrogates(document)
+    if _scalar_governed(document):
+        _refuse_unpaired_surrogates(document)
     if _lexically_governed(document):
         json.loads(
             text, parse_constant=_refuse_non_finite,
@@ -338,6 +347,47 @@ def _loads_strict(text: str) -> Any:
             parse_int=lambda lexeme: _canonical_number(lexeme, int),
         )
     return document
+
+
+#: The trace schema versions at which a genuine document could not carry an
+#: unpaired surrogate, measured against the shipped releases rather than
+#: reasoned about (ADR-026 decision 4):
+#:
+#:     v0.5.0  schema 1.0.0  wrote the trace, and its own validator said valid
+#:     v0.6.1  schema 1.1.0  wrote the trace
+#:     v0.7.0  schema 1.1.0  wrote the trace
+#:     v0.8.1  schema 2.0.0  raised at the seal; no trace exists
+#:
+#: 2.0.0 introduced the per-record digest, and `_canonical_bytes` has refused a
+#: string with no UTF-8 encoding ever since — incidentally at first, and by
+#: name since 0.11.0. So from 2.0.0 no genuine document can carry one, and
+#: below it some can.
+#:
+#: **The first draft of ADR-026 asserted the opposite** — that `J2`'s version
+#: scoping "does not apply here and must not be copied", because `J1` had meant
+#: strict RFC 8259 at every version. That is true of the prose and false of the
+#: product: a v0.5.0 trace holding `report\udcff.csv`, the exact string
+#: `surrogateescape` produces from filesystem byte 0xFF, is declared VALID by
+#: the validator of its own release and by this one on `main`. Refusing it now
+#: would be a breaking change to a contract surface without a major version,
+#: which `guarantees.md` §7 forbids and which `contract/README.md` calls the
+#: worst answer a verifier gives: *a refusal outranks a violation.*
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0"})
+
+
+def _scalar_governed(document: Any) -> bool:
+    """Does the unpaired-surrogate refusal apply to this document?
+
+    Scoped by the document's OWN declared version, exactly as `J2` is, and for
+    the same reason stated one function down. The producer is NOT scoped: it
+    writes 3.0.0 and refuses always, which is where the format is defined.
+    """
+    if not isinstance(document, dict):
+        return True  # not a trace document; nothing declares an older contract
+    version = document.get("schema_version")
+    if version is None:
+        return True  # a fragment, a receipt, a spec: governed
+    return version in _SCALAR_GOVERNED
 
 
 #: The trace schema versions at which the terminal digest became an anchorable
@@ -384,6 +434,10 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
     """
     out: list[Violation] = []
     structural = False
+    # Read once, at the top, from the whole document: the walk below descends
+    # into fragments that declare nothing, and a rule scoped by a document's
+    # own version must not be re-decided at every depth.
+    scalars_governed = _scalar_governed(instance)
     stack: list[tuple[Any, str]] = [(instance, prefix)]
     while stack:
         value, path = stack.pop()
@@ -394,7 +448,7 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
             # the document (ADR-026). Structural, because a string with no
             # UTF-8 encoding has no canonical form — so no digest, no root,
             # and nothing downstream of here is computable.
-            index = _surrogate_at(value)
+            index = _surrogate_at(value) if scalars_governed else None
             if index is not None:
                 structural = True
                 out.append(
@@ -440,12 +494,21 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
                         )
                     )
                 else:
-                    index = _surrogate_at(key)
+                    index = _surrogate_at(key) if scalars_governed else None
                     if index is not None:
                         structural = True
                         out.append(
                             Violation("J1", path, _surrogate_complaint(
                                 key, index, "used as a member name here")))
+                        # Do NOT descend. Every path below this point would
+                        # embed the member name, and a finding whose `path`
+                        # carries an unpaired surrogate cannot be printed,
+                        # serialised or logged -- `validate.main` raised
+                        # UnicodeEncodeError trying to report it. The document
+                        # is structural now, so nothing deeper will be read
+                        # anyway; naming the place with a string that cannot be
+                        # written down is the crash one step later.
+                        continue
                 stack.append((item, f"{path}.{key}"))
         elif isinstance(value, list):
             for index, item in enumerate(value):

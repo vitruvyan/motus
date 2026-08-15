@@ -13,6 +13,7 @@ from typing import Any, Generic, Iterable, Iterator, TypeVar
 
 from vitruvyan_motus import TRACE_SCHEMA_VERSION
 from vitruvyan_motus.effects import EffectDescriptor
+from vitruvyan_motus._text import encodable as _encodable, surrogate_at as _surrogate_at
 
 __all__ = [
     "RedactedValue", "Fact", "Decision", "Rejection",
@@ -96,53 +97,20 @@ def _wire_timestamp(value: str | datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _encodable(text: str) -> str:
-    """Refuse a str that has no UTF-8 encoding (J1).
+def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
+                      scalars_required: bool = True) -> Any:
+    """Validate and isolate one RFC 8259 value without coercion.
 
-    A lone surrogate is a Python `str` and passes every other J1 check, so it
-    reached the seal and raised UnicodeEncodeError out of `Runtime.run()` —
-    not NodeFailed, so the caller got no state and no trace, and the sink kept
-    a run with no terminal record. It is not an exotic input: `json.loads` of
-    an escaped `\\ud800` produces one silently, which is any node parsing an
-    external payload with a broken surrogate pair in it.
-
-    `isascii()` is a C-level flag check and answers for the overwhelming
-    majority of strings without encoding anything, so the cost of this on the
-    hot path is a branch.
+    `scalars_required=False` is for READING a document that declares a schema
+    version written before the unpaired-surrogate refusal existed. This
+    function is the producing boundary and also the isolation step `from_dict`
+    takes, and those two are not the same question: 0.11.0 gave `_encodable`
+    to both, so from that release the library could no longer READ a v0.5.0
+    trace that its own validator still calls valid. Nothing said so and no test
+    covered it (ADR-026 decision 4).
     """
-    index = _surrogate_at(text)
-    if index is not None:
-        raise ValueError(
-            f"U+{ord(text[index]):04X} at index {index} is an unpaired "
-            "surrogate: it denotes no character, has no UTF-8 encoding, and is "
-            "not an RFC 8259 JSON string (rule J1, ADR-026)")
-    return text
-
-
-def _surrogate_at(text: str) -> int | None:
-    """The index of the first surrogate code point in ``text``, or None.
-
-    The producing half of the pair `contract/validate.py::_surrogate_at` forms.
-    **The two are deliberately the same test and deliberately not the same
-    code**: this package is stdlib-only and the contract validator imports
-    `jsonschema`, so the kernel cannot import it. A duplicated predicate is how
-    two sides drift, which is the exact defect ADR-026 closes -- so
-    `tests/test_surrogate_boundary.py` runs both over one table of strings and
-    asserts they return the same verdict for every one.
-    """
-    if text.isascii():
-        return None
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        return exc.start
-    return None
-
-
-def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
-    """Validate and isolate one RFC 8259 value without coercion."""
     if isinstance(value, str):
-        return _encodable(value)
+        return _encodable(value) if scalars_required else value
     if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, float):
@@ -150,16 +118,20 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
             raise ValueError("NaN and Infinity are not RFC 8259 JSON values")
         return value
     if isinstance(value, list):
-        return [_strict_plain_json(item, reserve_redacted=reserve_redacted) for item in value]
+        return [_strict_plain_json(item, reserve_redacted=reserve_redacted,
+                                   scalars_required=scalars_required)
+                for item in value]
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("JSON object keys must be strings")
-        for key in value:
-            _encodable(key)
+        if scalars_required:
+            for key in value:
+                _encodable(key)
         if reserve_redacted and value.get("kind") == "redacted":
             raise ValueError("redacted values are reserved for redact()")
         return {
-            key: _strict_plain_json(item, reserve_redacted=reserve_redacted)
+            key: _strict_plain_json(item, reserve_redacted=reserve_redacted,
+                                    scalars_required=scalars_required)
             for key, item in value.items()
         }
     raise TypeError(
@@ -228,14 +200,48 @@ def _loads_canonical(text: str) -> Any:
     same defect this docstring already records against duplicate members, found
     a second time in the same function.
     """
-    document = json.loads(
-        text,
-        object_pairs_hook=_refuse_repeated_members,
-        parse_float=lambda lexeme: _canonical_number(lexeme, float),
-        parse_int=lambda lexeme: _canonical_number(lexeme, int),
-    )
-    _refuse_unpaired_surrogates(document)
+    # Parse once with no lexical hooks to learn what the document DECLARES
+    # ITSELF to be, then apply the rules that version was written under. Both
+    # of these were unscoped here while `contract/validate.py` scoped them, so
+    # the runtime refused 1.x and 2.x documents its own verifier accepts — a
+    # false accusation, which `contract/README.md` ranks as the worst answer,
+    # and the third instance of this docstring's own defect in one function.
+    document = json.loads(text, object_pairs_hook=_refuse_repeated_members)
+    if _governed(document, _LEXICALLY_GOVERNED):
+        json.loads(
+            text,
+            object_pairs_hook=_refuse_repeated_members,
+            parse_float=lambda lexeme: _canonical_number(lexeme, float),
+            parse_int=lambda lexeme: _canonical_number(lexeme, int),
+        )
+    if _governed(document, _SCALAR_GOVERNED):
+        _refuse_unpaired_surrogates(document)
     return document
+
+
+#: Where each text rule starts applying, by the document's own declared trace
+#: schema version. The two constants differ and the difference is measured:
+#:
+#: `J2` (ADR-024) protects the anchorable terminal digest, which arrives at
+#: 3.0.0 — below it there is no root for a lexical collision to attack.
+#:
+#: The unpaired-surrogate refusal (ADR-026) starts at 2.0.0, where the
+#: per-record digest made `_canonical_bytes` refuse such a string as a side
+#: effect. v0.5.0 (schema 1.0.0) and v0.7.0 (schema 1.1.0) both WROTE traces
+#: holding `report\udcff.csv`, and the validators of those releases called them
+#: valid. Refusing them now would break `contract/README.md`'s promise that old
+#: evidence stays valid without rewriting.
+#:
+#: The producing side is scoped by neither: it writes 3.0.0 and refuses always.
+_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0"})
+
+
+def _governed(document: Any, versions: frozenset[str]) -> bool:
+    if not isinstance(document, dict):
+        return True
+    declared = document.get("schema_version")
+    return True if declared is None else declared in versions
 
 
 def _refuse_unpaired_surrogates(document: Any) -> None:
@@ -253,12 +259,18 @@ def _refuse_unpaired_surrogates(document: Any) -> None:
     exists to name the string. Measured on a 54 KiB trace: +24% on
     `Trace.from_json` became +16%.
     """
+    encoder_refused = False
     try:
         json.dumps(document, ensure_ascii=False).encode("utf-8")
     except UnicodeEncodeError:
-        pass
+        encoder_refused = True
     except RecursionError:
-        pass  # deeper than the C encoder goes; the iterative walk still answers
+        # Deeper than the C encoder goes. It did not refuse the document, it
+        # failed to answer -- and the walk below is iterative precisely so it
+        # can. The first version of this fell through to the unconditional
+        # refusal at the end, so a clean document nested past the encoder's
+        # budget was refused with a message saying that should be impossible.
+        pass
     else:
         return
 
@@ -274,6 +286,8 @@ def _refuse_unpaired_surrogates(document: Any) -> None:
         elif isinstance(value, list):
             stack.extend(value)
 
+    if not encoder_refused:
+        return  # the encoder never objected; only its recursion budget ran out
     raise ValueError(
         "this document has no JSON encoding and the walk that locates the "
         "reason found nothing, which should be impossible. Refusing it anyway "
@@ -313,6 +327,7 @@ class RedactedValue:
             raise ValueError("redacted hash must contain a lowercase SHA-256 digest")
         if not isinstance(self.policy_ref, str) or not self.policy_ref:
             raise ValueError("redaction policy_ref must be a non-empty string")
+        _encodable(self.policy_ref)
 
     def to_dict(self) -> dict[str, str]:
         return {"kind": "redacted", "hash": self.hash, "policy_ref": self.policy_ref}
@@ -342,6 +357,16 @@ class Fact:
     def __post_init__(self) -> None:
         if not isinstance(self.key, str) or not isinstance(self.source, str):
             raise TypeError("Fact key and source must be strings")
+        # Only `value` went through `_strict_plain_json`. `key` and `source`
+        # were checked for being `str` and nothing else, so a string with no
+        # UTF-8 encoding reached `_canonical_bytes` at seal time and raised
+        # there -- out of `Runtime.run()`, not as NodeFailed, so the caller got
+        # no state and no trace and the sink kept a run with no terminal
+        # record. That is verbatim the outcome `_encodable`'s docstring
+        # describes as the defect it closed in 0.11.0; it closed it at one
+        # position out of several (ADR-026 decision 4).
+        _encodable(self.key)
+        _encodable(self.source)
         object.__setattr__(self, "value", _value(self.value))
         object.__setattr__(self, "ts", _wire_timestamp(self.ts))
 
@@ -361,6 +386,9 @@ class Decision:
             raise TypeError("Decision key must be a string")
         if self.reason is not None and not isinstance(self.reason, str):
             raise TypeError("Decision reason must be a string when present")
+        _encodable(self.key)
+        if self.reason is not None:
+            _encodable(self.reason)
         object.__setattr__(self, "value", _value(self.value))
         object.__setattr__(self, "ts", _wire_timestamp(self.ts))
 
@@ -381,6 +409,8 @@ class Rejection:
     def __post_init__(self) -> None:
         if not isinstance(self.what, str) or not isinstance(self.reason, str):
             raise TypeError("Rejection what and reason must be strings")
+        _encodable(self.what)
+        _encodable(self.reason)
         object.__setattr__(self, "ts", _wire_timestamp(self.ts))
         if self.evidence is not _MISSING:
             object.__setattr__(self, "evidence", _value(self.evidence))
@@ -503,7 +533,14 @@ class Trace:
         guarantee of ADR-024 is not available here. Use :meth:`from_json` when
         the document's text is in reach.
         """
-        plain = _strict_plain_json(document, reserve_redacted=False)
+        # The declared version decides which rules this document was written
+        # under, so it is read before the document is isolated rather than
+        # after — `contract/README.md` promises old evidence stays valid
+        # without rewriting, and that promise is the library's too, not only
+        # the validator's.
+        plain = _strict_plain_json(
+            document, reserve_redacted=False,
+            scalars_required=_governed(document, _SCALAR_GOVERNED))
         if not isinstance(plain, dict):
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:

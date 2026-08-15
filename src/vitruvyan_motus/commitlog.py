@@ -126,6 +126,18 @@ def _require_identifier(value: Any, what: str) -> str:
     """
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"a commitment log names its {what}")
+    if not value.isascii():
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            # Before NFC, because `unicodedata.normalize` is happy to return a
+            # string that still cannot be encoded -- and before `_stem`, which
+            # hashed it and raised a bare codec error from a directory name.
+            raise ValueError(
+                f"{what} carries U+{ord(value[exc.start]):04X} at index "
+                f"{exc.start}, an unpaired surrogate: it denotes no character "
+                "and has no UTF-8 encoding, so it can neither name a directory "
+                "nor be digested (rule J1, ADR-026)") from None
     if unicodedata.normalize("NFC", value) != value:
         raise ValueError(
             f"{what} is not in Unicode NFC form: {value!r}. Two normalisations "
