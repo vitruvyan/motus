@@ -214,13 +214,39 @@ walk runs only to locate a string in a document already known to be bad, so
 
 ### 5. What does not change, each with the measurement that says so
 
-- **No schema version moves.** A lone-surrogate document was never accepted end
-  to end; it crashed mid-verification. `J2`'s version scoping does not apply
-  here and must not be copied: `J2` was scoped to 3.0.0+ because documents
-  written under earlier rules did not have it, whereas `J1` has meant *strict
-  RFC 8259* at every version and the producer has enforced it — before
-  `_encodable` existed, such a run raised at the seal rather than writing a
-  trace.
+- **No schema version moves, and the refusal is scoped to trace schema 2.0.0
+  and above.** The first draft of this ADR said the opposite — that `J2`'s
+  version scoping "does not apply here and must not be copied", because `J1`
+  has meant *strict RFC 8259* at every version and a run that tried this raised
+  at the seal rather than writing a trace. **That sentence is mine and it is
+  false.** An adversarial round checked it out and ran it:
+
+  | release | trace schema | a lone surrogate |
+  |---|---|---|
+  | v0.5.0 | 1.0.0 | **wrote the trace**, and v0.5.0's own validator returned `[]` |
+  | v0.6.1 | 1.1.0 | **wrote the trace** |
+  | v0.7.0 | 1.1.0 | **wrote the trace** |
+  | v0.8.1 | 2.0.0 | raised at the seal; no genuine document exists |
+
+  The seal that refuses this arrived with the per-record digest at 2.0.0. Below
+  it there was nothing to raise from, so documents exist — and `report\udcff.csv`
+  is not exotic, it is what `surrogateescape` yields for filesystem byte 0xFF.
+  Written with `ensure_ascii` such a document is **pure ASCII**, so it survives
+  `jsonb`, a text column and HTTP byte for byte; "somebody still holds one" is
+  the default assumption rather than a hypothesis.
+
+  So the disanalogy I asserted is an exact analogy, and the mechanism was
+  already in the file. The reader is scoped by the document's own declared
+  version; **the producer is scoped by nothing** — it writes 3.0.0 and refuses
+  always, which is where the format is defined. One such trace is frozen in
+  `tests/compat/legacy/` so the measurement is re-taken rather than quoted.
+
+  Two things this scope is not. It is not an escape hatch: relabelling a 3.0.0
+  trace to 1.0.0 to smuggle a value past also escapes the root, because
+  `derived_root` derives nothing below 3.0.0 — the same structural reason
+  recorded for `J2`. And it does not read `schema_version` alone: a GraphSpec
+  declares that key in its own namespace, so the scope reads `run`, and
+  everything that is not a trace is governed.
 - **No digest recipe changes.** `canonical_json` and `_canonical_bytes`
   serialise exactly as before; the only addition is a `try/except` that renames
   an exception on a path that was already raising, and costs nothing on the
@@ -234,7 +260,7 @@ walk runs only to locate a string in a document already known to be bad, so
 This ADR changes what the project *says* it is committing to. The code change
 under it makes two readers agree with a producer that was already right.
 
-## An argument for this decision that does not work, recorded so it is not reused
+## Two arguments that do not work, recorded so they are not reused
 
 The proposal reached this conclusion partly by arguing that refusing escapes
 would force Motus to constrain whitespace, pretty-printing and member order
@@ -261,6 +287,22 @@ tampered would be a false accusation. It is recorded because *a true
 constraint reused one question past where it applies is more dangerous than an
 ordinary mistake* — the confidence is borrowed from something real — and this
 project has already paid for that once, in ADR-023.
+
+### And the second, which was the CTO's
+
+*"`J1` has meant strict RFC 8259 at every version, so this refusal needs no
+version scope."* True of the prose and false of the product, and decision 5
+carries the measurement. The failure mode is worth naming separately from the
+first one, because it is the opposite: the first was a true constraint reused
+one question too far, this was **a claim about behaviour derived from a
+document instead of from the behaviour.** The contract said the rule applied;
+the releases did not enforce it; and what a verifier owes an integrator is
+consistency with what was shipped, not with what was written.
+
+The corpus scan that was supposed to establish "no existing evidence becomes
+invalid" scanned **this repository**, which contains no such document. The
+generalisation from that to all evidence anywhere is the step that hid it, and
+the ADR made it in a sentence.
 
 ## The costs accepted
 
