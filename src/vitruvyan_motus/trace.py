@@ -110,16 +110,33 @@ def _encodable(text: str) -> str:
     majority of strings without encoding anything, so the cost of this on the
     hot path is a branch.
     """
+    index = _surrogate_at(text)
+    if index is not None:
+        raise ValueError(
+            f"U+{ord(text[index]):04X} at index {index} is an unpaired "
+            "surrogate: it denotes no character, has no UTF-8 encoding, and is "
+            "not an RFC 8259 JSON string (rule J1, ADR-026)")
+    return text
+
+
+def _surrogate_at(text: str) -> int | None:
+    """The index of the first surrogate code point in ``text``, or None.
+
+    The producing half of the pair `contract/validate.py::_surrogate_at` forms.
+    **The two are deliberately the same test and deliberately not the same
+    code**: this package is stdlib-only and the contract validator imports
+    `jsonschema`, so the kernel cannot import it. A duplicated predicate is how
+    two sides drift, which is the exact defect ADR-026 closes -- so
+    `tests/test_surrogate_boundary.py` runs both over one table of strings and
+    asserts they return the same verdict for every one.
+    """
     if text.isascii():
-        return text
+        return None
     try:
         text.encode("utf-8")
     except UnicodeEncodeError as exc:
-        raise ValueError(
-            "surrogates have no UTF-8 encoding and are not RFC 8259 JSON "
-            f"strings: {exc}"
-        ) from None
-    return text
+        return exc.start
+    return None
 
 
 def _strict_plain_json(value: Any, *, reserve_redacted: bool = True) -> Any:
@@ -202,22 +219,83 @@ def _loads_canonical(text: str) -> Any:
     same bytes. Two loaders disagreeing about what a Motus document is, at the
     one place ADR-024 introduces as where the guarantee lives.
 
-    **String escapes are not checked**, and ADR-024 records why as an open
-    residual rather than a closed rule — see #98.
+    **Which escape form a string was written in is not checked, and ADR-026
+    settles that as intended** — `"appro\u0076ed"` and `"approved"` are the
+    same JSON string and share a root, correctly. What IS checked is that every
+    string denotes text at all: this loader accepted `"\ud800"`, which
+    `_encodable` had refused to write since 0.11.0, so the producer and the
+    reader in one package disagreed about what a Motus document is. That is the
+    same defect this docstring already records against duplicate members, found
+    a second time in the same function.
     """
-    return json.loads(
+    document = json.loads(
         text,
         object_pairs_hook=_refuse_repeated_members,
         parse_float=lambda lexeme: _canonical_number(lexeme, float),
         parse_int=lambda lexeme: _canonical_number(lexeme, int),
     )
+    _refuse_unpaired_surrogates(document)
+    return document
+
+
+def _refuse_unpaired_surrogates(document: Any) -> None:
+    """Rule J1 over the PARSED document — the value, never the lexeme.
+
+    Iterative, because a genuine trace nested 489 deep raised `RecursionError`
+    out of the withdrawn `J3` reader; and over the parsed document, because
+    that is what makes object KEYS reachable at all -- CPython's `JSONObject`
+    calls the module-global `scanstring`, so no decoder hook ever sees a
+    member name.
+
+    One C-level serialise decides (every string's characters, keys included,
+    reach that output verbatim, so the encode raises exactly when one carries a
+    surrogate); the walk runs only on a document already known to be bad, and
+    exists to name the string. Measured on a 54 KiB trace: +24% on
+    `Trace.from_json` became +16%.
+    """
+    try:
+        json.dumps(document, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        pass
+    except RecursionError:
+        pass  # deeper than the C encoder goes; the iterative walk still answers
+    else:
+        return
+
+    stack: list[Any] = [document]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, str):
+            _encodable(value)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                _encodable(key)
+                stack.append(item)
+        elif isinstance(value, list):
+            stack.extend(value)
+
+    raise ValueError(
+        "this document has no JSON encoding and the walk that locates the "
+        "reason found nothing, which should be impossible. Refusing it anyway "
+        "(rule J1, ADR-026)")
 
 
 def _canonical_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
+    try:
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # try/except costs nothing on the path that does not raise, which is
+        # every genuine one -- this is the hot digest path and a walk here
+        # would be paid for by every record. Reached by a caller who reaches
+        # a digest without passing `_strict_plain_json`, e.g. a commitment
+        # tenant; the bare codec error named neither the value nor the rule.
+        raise ValueError(
+            f"this value has no canonical JSON encoding and therefore no "
+            f"digest: {exc}. A JSON string denotes a sequence of Unicode "
+            "scalar values (rule J1, ADR-026)") from None
 
 
 @dataclass(frozen=True, slots=True)

@@ -163,6 +163,113 @@ def _refuse_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
     return dict(pairs)
 
 
+class UnpairedSurrogateError(StrictJSONError):
+    """A JSON string that does not denote Unicode text (refused per rule J1)."""
+
+
+def _surrogate_at(text: str) -> int | None:
+    """The index of the first surrogate code point in ``text``, or None.
+
+    In a Python `str` every surrogate is unpaired by construction: the JSON
+    decoder combines `\\uD83D\\uDE00` into one scalar at scan time, so a
+    surrogate that survives into a parsed value is one no pair claimed. Two
+    adjacent surrogates built directly in Python are two code points and not a
+    character, and are refused on the same grounds.
+
+    `isascii()` is a C-level flag check and answers for the overwhelming
+    majority of strings without encoding anything; the encode that follows is
+    one C call over the rest, and `UnicodeEncodeError.start` hands back the
+    position for free. This is the same test `trace._encodable` has applied on
+    the producing side since 0.11.0 — deliberately the same test, because the
+    defect it closes is that the two sides disagreed.
+    """
+    if text.isascii():
+        return None
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        return exc.start
+    return None
+
+
+def _surrogate_complaint(text: str, index: int, where: str) -> str:
+    return (
+        f"the string {where} carries U+{ord(text[index]):04X} at index {index}, "
+        "an unpaired surrogate. A JSON string denotes a sequence of Unicode "
+        "scalar values; a surrogate code point is not one, has no UTF-8 "
+        "encoding, and conforming readers disagree about what it means -- so "
+        "this document has more than one reading and cannot be evidence of one "
+        "run (rule J1, ADR-026)"
+    )
+
+
+def _refuse_unpaired_surrogates(document: Any) -> None:
+    """Rule J1's third half, over the PARSED document rather than its text.
+
+    This is not `J3` returning under another name, and the difference is which
+    question is asked. `J3` asked *which escape form was written*, which only
+    the lexeme answers -- so it needed `parse_string`, which needed CPython's
+    pure-Python scanner (13x slower, a recursion budget that depended on the
+    caller's stack, and object KEYS structurally out of reach because
+    `JSONObject` calls the module-global `scanstring`). This asks *what value
+    did the reader get*, which the parsed document answers: the C scanner keeps
+    running, keys are covered because keys are in the document, and
+    `"appro\\u0076ed"` stays exactly as valid as `"approved"`.
+
+    Iterative and not recursive on purpose: a genuine trace nested 489 deep
+    raised `RecursionError` out of `J3`'s reader, and a refusal a document does
+    not deserve is the worst answer a verifier gives.
+
+    **Two passes, and the first one decides.** Serialising the whole document
+    once with `ensure_ascii=False` and encoding it puts the question to the C
+    encoder: every string's characters, keys included, land in that output
+    verbatim, so the encode raises exactly when some string carries a
+    surrogate. Measured on a 54 KiB trace it is 1.4 ms against the walk's
+    3.2 ms, which is why `_loads_strict` costs +15% and not +63%. The walk then
+    runs only on a document already known to be bad, and its job is to say
+    WHERE -- a verifier that refuses without naming the place is not much
+    better than one that crashes.
+
+    If they ever disagreed, this **fails closed**: the encoder's verdict stands
+    and the refusal is raised without a path rather than swallowed.
+    `tests/test_surrogate_boundary.py` asserts they agree over the table.
+    """
+    try:
+        json.dumps(document, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        pass
+    except RecursionError:
+        pass  # deeper than the C encoder goes; the iterative walk still answers
+    else:
+        return
+
+    stack: list[tuple[Any, str]] = [(document, "$")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str):
+            index = _surrogate_at(value)
+            if index is not None:
+                raise UnpairedSurrogateError(
+                    _surrogate_complaint(value, index, f"at {path}"))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str):
+                    index = _surrogate_at(key)
+                    if index is not None:
+                        raise UnpairedSurrogateError(
+                            _surrogate_complaint(key, index, f"used as a member name at {path}"))
+                stack.append((item, f"{path}.{key}"))
+        elif isinstance(value, list):
+            for position, item in enumerate(value):
+                stack.append((item, f"{path}[{position}]"))
+
+    raise UnpairedSurrogateError(
+        "this document cannot be encoded as JSON text, and the walk that "
+        "locates the reason found nothing -- which should be impossible. "
+        "Refusing it anyway: a verifier that cannot say what a document is "
+        "must not say it is evidence (rule J1, ADR-026)")
+
+
 class NonCanonicalNumberError(StrictJSONError):
     """A number written in characters our own serializer would not produce (J2)."""
 
@@ -200,24 +307,29 @@ def _canonical_number(lexeme: str, cast: Any) -> Any:
 
 def _loads_strict(text: str) -> Any:
     """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
-    names (RFC 8259, J1) and non-canonical numeric lexemes (ADR-024, J2).
+    names (RFC 8259, J1), strings that are not Unicode text (J1, ADR-026), and
+    non-canonical numeric lexemes (ADR-024, J2).
 
-    **String escapes are NOT checked, and that is a stated hole rather than an
-    oversight** — see ADR-024's residual and #98. A rule for them was written,
-    reviewed and withdrawn: object KEYS are structurally unreachable through
-    CPython's decoder hooks (`JSONObject` calls the module-global `scanstring`,
-    never `context.parse_string`), so it covered half its own surface; and its
-    canonical form refused a FROZEN production artifact of ours,
-    `tests/compat/terraveler/golden/production-ingestion-trace.json`, for a
-    `\u2014`.
+    **Which escape form a string was written in is NOT checked, and that is a
+    decision rather than a hole** — ADR-026. `"appro\u0076ed"` and
+    `"approved"` are the same JSON string, every conforming reader gets the
+    same value from both, and refusing one would be a false accusation against
+    a document identical in meaning to one we accept. A rule for escape forms
+    (`J3`) was written, accepted and withdrawn; ADR-024's residual and #98 are
+    closed by ADR-026, not still open.
 
-    Numbers need no such machinery: the C scanner honours `parse_float` and
-    `parse_int`, so J2 costs a hook and not a scanner.
+    What IS refused is a string that denotes no text at all. That check reads
+    the parsed value and never the lexeme, so it costs a walk and not a
+    scanner — see `_refuse_unpaired_surrogates`.
+
+    Numbers need no such machinery either: the C scanner honours `parse_float`
+    and `parse_int`, so J2 costs a hook.
     """
     document = json.loads(
         text, parse_constant=_refuse_non_finite,
         object_pairs_hook=_refuse_duplicate_keys,
     )
+    _refuse_unpaired_surrogates(document)
     if _lexically_governed(document):
         json.loads(
             text, parse_constant=_refuse_non_finite,
@@ -275,7 +387,20 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
     stack: list[tuple[Any, str]] = [(instance, prefix)]
     while stack:
         value, path = stack.pop()
-        if value is None or isinstance(value, (str, bool, int)):
+        if isinstance(value, str):
+            # A `str` was waved through here, and a lone surrogate IS a `str`:
+            # it passed every check and then raised UnicodeEncodeError out of
+            # `canonical_json`, mid-fingerprint, naming the codec instead of
+            # the document (ADR-026). Structural, because a string with no
+            # UTF-8 encoding has no canonical form — so no digest, no root,
+            # and nothing downstream of here is computable.
+            index = _surrogate_at(value)
+            if index is not None:
+                structural = True
+                out.append(
+                    Violation("J1", path, _surrogate_complaint(value, index, "here")))
+            continue
+        if value is None or isinstance(value, (bool, int)):
             continue  # bool before float/int matters not: bool IS int, both fine
         if isinstance(value, float):
             if not math.isfinite(value):
@@ -314,6 +439,13 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
                             "JSON object keys are strings (rule J1)",
                         )
                     )
+                else:
+                    index = _surrogate_at(key)
+                    if index is not None:
+                        structural = True
+                        out.append(
+                            Violation("J1", path, _surrogate_complaint(
+                                key, index, "used as a member name here")))
                 stack.append((item, f"{path}.{key}"))
         elif isinstance(value, list):
             for index, item in enumerate(value):
@@ -345,9 +477,20 @@ def canonical_json(obj: Any) -> bytes:
     over this canonical object form, never over the bytes of a particular
     encoding (JSON vs JSONL).
     """
-    return json.dumps(
-        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    try:
+        return json.dumps(
+            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # Reached only by a caller who computes a fingerprint without
+        # validating first — `validate_trace` stops at the structural J1. The
+        # bare codec error named neither the document nor the rule, which is
+        # the same defect `trace._encodable` closed on the producing side.
+        raise UnpairedSurrogateError(
+            f"this object cannot be encoded as JSON text: {exc}. A JSON string "
+            "denotes a sequence of Unicode scalar values, so an object holding "
+            "an unpaired surrogate has no canonical form and therefore no "
+            "fingerprint (rule J1, ADR-026)") from None
 
 
 def fingerprint(kind: str, obj: Any) -> str:

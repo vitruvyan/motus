@@ -73,7 +73,9 @@ wins on read, and the overwrite is visible in the trace rather than silent.
 2.2. Every value written MUST be a strict RFC 8259 JSON value or an explicit
 redacted value (§5). Strict means: object keys are strings; NaN and Infinity
 are refused (Python's `json` accepts them by default — the Motus boundary
-does not); the value round-trips structurally (what you wrote is what a
+does not); every string denotes a sequence of Unicode scalar values, so an
+unpaired surrogate is refused (rule `J1`, ADR-026) while every escape form of
+a real character is accepted; the value round-trips structurally (what you wrote is what a
 reader decodes — tuples become lists *before* the boundary or are refused,
 never silently reshaped after it). A value that cannot be written down under
 these rules is refused at the boundary — the runtime never carries what it

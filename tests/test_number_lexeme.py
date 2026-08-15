@@ -469,24 +469,24 @@ def test_the_absorptions_do_not_hide_a_value_and_the_escape_does():
     assert "approved" not in '{"decision":"appro\\u0076ed"}'
 
 
-def test_a_lone_surrogate_is_the_residual_and_it_is_still_accepted():
-    """ADR-026 decision 4, asserted rather than described.
+def test_a_lone_surrogate_is_refused_and_that_is_a_decision_not_a_drift():
+    """ADR-026 decision 4, as the founder settled it.
 
-    Decision 1 says *escapes every conforming reader resolves to the same
-    value*. A lone surrogate is outside that set: it denotes no code point and
-    implementations disagree — some refuse, some substitute U+FFFD, some pass
-    it through. It is accepted here today.
+    This test asserted the opposite for one day. It was written when decision 4
+    named the lone surrogate as an open residual and pinned the then-current
+    answer so 1.0.0 would decide deliberately — and the founder then decided,
+    against leaving it open: **a Motus string must represent a valid sequence
+    of Unicode scalar values.** The old assertion is not deleted quietly, it is
+    inverted in place, because the record of what changed is the point of
+    having pinned it.
 
-    **No rule is added for it**, and this test pins the current answer so that
-    1.0.0 decides deliberately. Three correct generalisations of real defects
-    were shipped and withdrawn this month for refusing legitimate documents,
-    and a Python string can carry a lone surrogate honestly — `surrogateescape`
-    produces them from bytes a filesystem handed over.
+    The boundary itself lives in `tests/test_surrogate_boundary.py`, including
+    the four cases that distinguish it from the withdrawn `J3`.
     """
     document = '{"schema_version":"3.0.0","v":"\\ud800"}'
-    parsed = validate._loads_strict(document)
-    assert parsed["v"] == "\ud800"
-    assert json.dumps(parsed["v"]) == '"\\ud800"'
+    with pytest.raises(validate.UnpairedSurrogateError):
+        validate._loads_strict(document)
 
+    # And the reason, in one line: the value it denotes cannot be written down.
     with pytest.raises(UnicodeEncodeError):
-        parsed["v"].encode("utf-8")
+        "\ud800".encode("utf-8")

@@ -97,7 +97,8 @@ point of the tool rather than limitations of it:
 
 Where a schema references a fingerprint, it means: SHA-256 over the canonical
 JSON encoding of the object — UTF-8, keys sorted lexicographically, no
-insignificant whitespace, strict RFC 8259 (string keys only, no NaN/Infinity),
+insignificant whitespace, strict RFC 8259 (string keys only, no NaN/Infinity,
+strings that are Unicode text — see below),
 integers only in fingerprinted numeric positions (floats forbidden there
 precisely because their canonical representation is not settled until the
 integrity schema 1.1 fixes it) — prefixed with the fingerprint kind, e.g.
@@ -127,6 +128,26 @@ the same *value* and a different *document*, and the validator refuses it —
 correctly, because that is the whole point of `J2`. The two halves are not
 inconsistent: **whitespace and member order are absorbed by the digest and
 numeric lexemes are not**, which is exactly the line ADR-024 draws.
+
+**A Motus string is Unicode text.** Every string in a Motus document — a value
+or a member name — MUST denote a sequence of Unicode scalar values. An
+unpaired surrogate (U+D800–U+DFFF with no partner) denotes no character, has
+no UTF-8 encoding, and conforming JSON implementations disagree about what to
+do with one — some refuse it, some substitute U+FFFD, some pass it through. A
+document containing one therefore has more than one reading and is refused
+(rule `J1`, ADR-026), on the producing side and the verifying side alike.
+
+**This is not a rule about escape forms.** `"appro\u0076ed"` and `"approved"`
+are the same JSON string, share a root, and both stay valid; so do
+`"\ud83d\ude00"` and the character it denotes, because a surrogate *pair* is
+a character. What is refused is a string that denotes nothing.
+
+A producer carrying bytes that are not Unicode — a filename a filesystem
+handed over, a payload from a legacy source — encodes them explicitly:
+base64, hex, or bytes with a declared encoding. A runtime's private convention
+for smuggling such bytes through a string (Python's `surrogateescape` is the
+one this project met) does not travel to a reader in another language, and the
+format does not adopt one language's workaround as its meaning.
 
 So: keep the bytes if you want a stored trace to keep validating, or satisfy
 yourself that your column type preserves numeric lexemes before you rely on
