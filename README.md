@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.11.0](https://github.com/vitruvyan/motus/releases/tag/v0.11.0)
+> **Current release:** [Motus 0.12.0](https://github.com/vitruvyan/motus/releases/tag/v0.12.0)
 > · not on PyPI — build the wheel from a checkout
 >
 > Apache-2.0 · stdlib-only kernel · validator included
