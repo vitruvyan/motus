@@ -859,3 +859,47 @@ def test_a_legacy_jsonl_stream_is_read_under_the_version_its_header_declares():
     violations, _ = validate.validate_jsonl(modern)
     assert [v.rule for v in violations if v.rule in ("J1", "J2")] == ["J2", "J2"], (
         f"the same lines under 3.0.0 must be refused: {violations}")
+
+
+# --------------------------------------------------------------------------- #
+# The package's own text, held to the rule the package enforces                #
+# --------------------------------------------------------------------------- #
+
+def test_no_docstring_in_this_package_carries_a_lone_surrogate():
+    """`_loads_canonical`'s docstring contained a real one, in the function
+    whose subject is refusing them.
+
+    The cause is ordinary and will recur: a docstring is a string LITERAL, so
+    writing the six characters of an escape inside a non-raw one builds the
+    code point rather than the text about it. A document about escapes is the
+    one place where losing that distinction is guaranteed.
+
+    The consequence is not cosmetic. `__doc__` is data this package hands out —
+    `motus_explain` returns exception docstrings and `motus_where` returns
+    module docstrings, verbatim — so a docstring that cannot be UTF-8 encoded
+    is an MCP answer that cannot be rendered, logged or serialised. Found by an
+    automated reviewer on the pull request, not by any test here, which is why
+    there is now a test here.
+    """
+    import importlib
+    import pkgutil
+
+    import vitruvyan_motus
+
+    offenders = []
+    for module_info in pkgutil.walk_packages(
+            vitruvyan_motus.__path__, vitruvyan_motus.__name__ + "."):
+        try:
+            module = importlib.import_module(module_info.name)
+        except ImportError:
+            continue  # an optional extra that is not installed here
+        for name in ["__doc__"] + dir(module):
+            holder = module if name == "__doc__" else getattr(module, name, None)
+            text = holder if name == "__doc__" else getattr(holder, "__doc__", None)
+            if isinstance(text, str) and motus_trace._surrogate_at(text) is not None:
+                offenders.append(f"{module_info.name}.{name}")
+
+    assert offenders == [], (
+        "these docstrings cannot be encoded as UTF-8, in a package that refuses "
+        f"exactly that in a trace: {offenders}. Write the escape as a literal "
+        "backslash, or make the docstring raw")

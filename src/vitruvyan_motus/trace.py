@@ -202,7 +202,7 @@ def _loads_canonical(text: str) -> Any:
     **Which escape form a string was written in is not checked, and ADR-026
     settles that as intended** — `"appro\u0076ed"` and `"approved"` are the
     same JSON string and share a root, correctly. What IS checked is that every
-    string denotes text at all: this loader accepted `"\ud800"`, which
+    string denotes text at all: this loader accepted `"\\ud800"`, which
     `_encodable` had refused to write since 0.11.0, so the producer and the
     reader in one package disagreed about what a Motus document is. That is the
     same defect this docstring already records against duplicate members, found
