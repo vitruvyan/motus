@@ -73,7 +73,9 @@ wins on read, and the overwrite is visible in the trace rather than silent.
 2.2. Every value written MUST be a strict RFC 8259 JSON value or an explicit
 redacted value (§5). Strict means: object keys are strings; NaN and Infinity
 are refused (Python's `json` accepts them by default — the Motus boundary
-does not); the value round-trips structurally (what you wrote is what a
+does not); every string denotes a sequence of Unicode scalar values, so an
+unpaired surrogate is refused (rule `J1`, ADR-026) while every escape form of
+a real character is accepted; the value round-trips structurally (what you wrote is what a
 reader decodes — tuples become lists *before* the boundary or are refused,
 never silently reshaped after it). A value that cannot be written down under
 these rules is refused at the boundary — the runtime never carries what it
@@ -275,6 +277,36 @@ instances or closures:
   `motus_config()` — contributes `"opaque"`, and an opaque entry downgrades
   the run's `replay_capability` at most to `partial` with the constraint
   `node:<name>:opaque_config`.
+
+**If you arrived here from `node:<name>:opaque_config` in a real trace, this
+is the paragraph you want.** A factory that closes over a config object is the
+obvious way to write a parameterised graph in Python, and it is the one shape
+this recipe cannot re-identify — a captured object is not a JSON value, so the
+run header would record a configuration nobody can reconstruct. The first
+external integrator wrote exactly that and forfeited replay on seven of nine
+nodes. The two bullets above are the way out and neither is a workaround: a
+`functools.partial` over strict-JSON keywords, or a callable instance whose
+`motus_config()` returns the same configuration as a JSON value. Both turn
+`opaque` into a fingerprint, so a reader can tell whether two runs were judged
+by the same rules — which is what the constraint was protecting.
+`examples/04_parameterised_nodes.py` runs all three shapes side by side and
+prints what each does to the fingerprint.
+
+**Rewriting a closure as a callable instance is mechanical**: the captured
+names become `__init__` parameters, the inner `def` becomes `__call__`, and
+`motus_config()` returns them as a JSON value. The behaviour is unchanged; what
+changes is that the configuration is now written down.
+
+```python
+def make_nodes(cfg):                       # every inner def captures cfg
+    def check(state): ...                  # -> node:check:opaque_config
+    return {"check": check}
+
+class Check:                               # the same behaviour, fingerprinted
+    def __init__(self, cfg): self.cfg = cfg
+    def motus_config(self): return asdict(self.cfg)
+    def __call__(self, state): ...
+```
 
 The fingerprint is the SHA-256 of the canonical JSON encoding
 (contract/README.md) of the list of those arrays. Nodes whose source is

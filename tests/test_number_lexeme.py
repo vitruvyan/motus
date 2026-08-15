@@ -206,17 +206,27 @@ CLASS_MEMBERS = [
      "a reader reads a different number"),
     (_reformat_number, "REFUSED", "J2",
      "a reader reads different characters where a value is"),
-    # OPEN, and named rather than absent. A rule for these was written,
-    # reviewed and WITHDRAWN — see #98 and ADR-024's residual. Two reasons, both
-    # measured: object KEYS are structurally unreachable through CPython's
-    # decoder hooks, so it covered half its own surface; and its canonical form
-    # refused a FROZEN production artifact of ours for a `\u2014`.
-    (_escape_an_ascii_letter, "OPEN", "#98",
-     "renders as 'approved' and `grep approved` does not find it"),
-    (_escape_a_non_ascii_letter, "OPEN", "#98",
-     "same characters, different bytes, and the file no longer greps"),
-    (_escape_the_solidus, "OPEN", "#98",
-     "an escape this contract never writes"),
+    # ABSORBED, and these rows read `OPEN #98` until 2026-08-15. The change is
+    # not a repair: ADR-026 DECIDED them. Every conforming reader gets the same
+    # value from an escaped and an unescaped spelling, so they are the same JSON
+    # string and sharing a root is correct — refusing one would be a false
+    # accusation against a document identical in meaning to one we accept.
+    #
+    # `OPEN` says "somebody noticed and has not decided". Leaving it there after
+    # the decision would advertise an unresolved integrity defect in a format
+    # about to be frozen, which is a worse document than an out-of-date one.
+    #
+    # A rule for these WAS written, reviewed and withdrawn (`J3`), and the two
+    # measured reasons are why it could not have been the answer: object KEYS
+    # are structurally unreachable through CPython's decoder hooks, so it
+    # covered half its own surface; and its canonical form refused a FROZEN
+    # production artifact of ours for a `\u2014`.
+    (_escape_an_ascii_letter, "ABSORBED", None,
+     "the same JSON string spelled differently; `grep` is not a JSON reader"),
+    (_escape_a_non_ascii_letter, "ABSORBED", None,
+     "same value to every conforming reader, so the same commitment"),
+    (_escape_the_solidus, "ABSORBED", None,
+     "an escape this contract never writes, and denoting the same character"),
     (_insert_whitespace, "ABSORBED", None,
      "nobody reads whitespace, and the JSON<->JSONL equivalence needs it"),
     (_reorder_members, "ABSORBED", None,
@@ -249,8 +259,18 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
     else:
         with pytest.raises(validate.StrictJSONError) as caught:
             validate._loads_strict(mutated)
-        expected = (validate.NonCanonicalNumberError if rule == "J2"
-                    else validate.NonCanonicalStringError)
+        # By rule id, from a table, so a new REFUSED row has to name a class
+        # that exists. This used to read `NonCanonicalStringError` in an else
+        # branch — a class `J3`'s withdrawal deleted, so the row that reached
+        # it would have got `AttributeError` instead of a verdict. Unreachable
+        # today is not the same as correct.
+        expected = {
+            "J1": validate.UnpairedSurrogateError,
+            "J2": validate.NonCanonicalNumberError,
+        }.get(rule)
+        assert expected is not None, (
+            f"row {rule!r} is REFUSED and names no exception this contract "
+            "raises; add it here rather than letting the row pass by default")
         assert isinstance(caught.value, expected), (
             f"{rule} was expected and the wrong rule fired: {caught.value}")
 
@@ -258,30 +278,53 @@ def test_every_known_member_of_the_class_is_decided(transform, outcome, rule, re
 def test_every_row_carries_a_verdict_and_a_reason():
     """The table's purpose is that a member of the class forces a decision.
     `ABSORBED` is a decision; `OPEN` with an issue number is a decision; a row
-    with neither is somebody having noticed and moved on."""
+    with neither is somebody having noticed and moved on.
+
+    `OPEN` therefore has to carry the issue, and this now asserts it — the
+    three escape rows sat at `OPEN #98` until ADR-026 decided them, and an
+    `OPEN` row with no issue number would have been indistinguishable from one
+    that had simply been forgotten."""
     assert {o for _, o, _, _ in CLASS_MEMBERS} <= {"REFUSED", "ABSORBED", "OPEN"}
     for name, outcome, rule, reason in [(f.__name__, o, r, why)
                                         for f, o, r, why in CLASS_MEMBERS]:
         assert reason, name
         if outcome == "OPEN":
             assert rule and rule.startswith("#"), (
-                f"{name} is open and names no issue, so nobody is going to "
-                "come back to it")
+                f"{name} is OPEN and names no issue, which is indistinguishable "
+                "from having been forgotten")
+        if outcome == "REFUSED":
+            assert rule, f"{name} is REFUSED and names no rule"
     absorbed = [f.__name__ for f, o, _, _ in CLASS_MEMBERS if o == "ABSORBED"]
-    assert absorbed == ["_insert_whitespace", "_reorder_members"], absorbed
+    assert absorbed == [
+        # ADR-026: the same JSON string spelled differently. These three sat at
+        # `OPEN #98` for a day and were then decided, not repaired.
+        "_escape_an_ascii_letter",
+        "_escape_a_non_ascii_letter",
+        "_escape_the_solidus",
+        "_insert_whitespace",
+        "_reorder_members",
+    ], absorbed
 
 
 @pytest.mark.parametrize("hidden", ["approved", "rejected"])
-def test_an_escape_can_still_hide_a_word_from_grep_and_this_is_open(hidden):
-    """**A defect, kept visible rather than kept quiet.** #98.
+def test_an_escape_hides_a_word_from_grep_and_that_is_grep(hidden):
+    """**Not a defect. A fact about `grep`, decided by ADR-026.** #98 closed.
 
-    A rule for this was written and withdrawn, for two measured reasons: object
-    KEYS are structurally unreachable through CPython's decoder hooks, so it
-    covered half its own surface; and its canonical form refused a frozen
-    production artifact of ours for a `\\u2014`.
+    This test asserted a HOLE for a day, under the name
+    `..._and_this_is_open`, and told whoever closed it to delete the test. The
+    founder read #98 and ADR-024 and decided the other way: `"appro\\u0076ed"`
+    and `"approved"` are the same JSON string, every conforming reader gets the
+    same value from both, and sharing a root is correct. Refusing one would be a
+    false accusation against a document identical in meaning to one we accept.
 
-    This test asserts the hole so that closing it breaks the test and forces
-    somebody to come back here and read why the first attempt failed."""
+    What remains true is that `grep approved` does not find the escaped form —
+    and `grep` matches bytes and is not a JSON reader. The answer is a linter
+    saying *this evidence is authentic and may mislead a tool that is not
+    JSON-aware*, which is a different sentence from what a validator says.
+    Collapsing the two is what the withdrawn `J3` did.
+
+    The behaviour asserted below has not changed by one line. Only the verdict
+    on it has, which is the whole reason the assertion was worth pinning."""
     escaped = "\\u%04x" % ord(hidden[0]) + hidden[1:]
     document = '{"schema_version":"3.0.0","v":"%s"}' % escaped
     assert json.loads(document)["v"] == hidden
@@ -351,12 +394,26 @@ def test_j2_does_not_reach_evidence_written_before_it_existed():
     Below 3.0.0 the terminal digest covers one record rather than the run
     (ADR-019), so there is no anchorable root for a lexical collision to
     attack: the rule would refuse without protecting anything."""
-    tampered = '{"schema_version":"%s","v":5000000000000000511.0}'
+    # A TRACE-shaped document. This test used a bare `{"schema_version", "v"}`
+    # fragment as a stand-in and passed, and the stand-in turned out to matter:
+    # a GraphSpec declares `schema_version` in ITS namespace, so a scope that
+    # read the version key alone switched a trace rule off for a spec, and
+    # `{"schema_version":"1.0.0","name":"g","max_transitions":0.10}` sailed
+    # through J2. The scope now reads `run`, and everything that is not a trace
+    # is governed.
+    tampered = ('{"schema_version":"%s","run":{"run_id":"r"},"records":[],'
+                '"v":5000000000000000511.0}')
     for older in ("1.0.0", "1.1.0", "2.0.0"):
         assert validate._loads_strict(tampered % older)["v"] == 5e18
 
     with pytest.raises(validate.NonCanonicalNumberError):
         validate._loads_strict(tampered % "3.0.0")
+
+    # And what the stand-in was hiding, pinned so it cannot come back.
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict(
+            '{"schema_version":"1.0.0","name":"g","version":"1.0.0",'
+            '"entry":"a","nodes":[],"max_transitions":0.10}')
 
 
 def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
@@ -469,24 +526,116 @@ def test_the_absorptions_do_not_hide_a_value_and_the_escape_does():
     assert "approved" not in '{"decision":"appro\\u0076ed"}'
 
 
-def test_a_lone_surrogate_is_the_residual_and_it_is_still_accepted():
-    """ADR-026 decision 4, asserted rather than described.
+def test_a_lone_surrogate_is_refused_and_that_is_a_decision_not_a_drift():
+    """ADR-026 decision 4, as the founder settled it.
 
-    Decision 1 says *escapes every conforming reader resolves to the same
-    value*. A lone surrogate is outside that set: it denotes no code point and
-    implementations disagree — some refuse, some substitute U+FFFD, some pass
-    it through. It is accepted here today.
+    This test asserted the opposite for one day. It was written when decision 4
+    named the lone surrogate as an open residual and pinned the then-current
+    answer so 1.0.0 would decide deliberately — and the founder then decided,
+    against leaving it open: **a Motus string must represent a valid sequence
+    of Unicode scalar values.** The old assertion is not deleted quietly, it is
+    inverted in place, because the record of what changed is the point of
+    having pinned it.
 
-    **No rule is added for it**, and this test pins the current answer so that
-    1.0.0 decides deliberately. Three correct generalisations of real defects
-    were shipped and withdrawn this month for refusing legitimate documents,
-    and a Python string can carry a lone surrogate honestly — `surrogateescape`
-    produces them from bytes a filesystem handed over.
+    The boundary itself lives in `tests/test_surrogate_boundary.py`, including
+    the four cases that distinguish it from the withdrawn `J3`.
     """
     document = '{"schema_version":"3.0.0","v":"\\ud800"}'
-    parsed = validate._loads_strict(document)
-    assert parsed["v"] == "\ud800"
-    assert json.dumps(parsed["v"]) == '"\\ud800"'
+    with pytest.raises(validate.UnpairedSurrogateError):
+        validate._loads_strict(document)
 
+    # And the reason, in one line: the value it denotes cannot be written down.
     with pytest.raises(UnicodeEncodeError):
-        parsed["v"].encode("utf-8")
+        "\ud800".encode("utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# The encoding that persists, which is the one that was not checked           #
+#                                                                             #
+# `contract/README.md`: "Hashes are computed over the canonical object form,  #
+# never over the bytes of a particular encoding (JSON vs JSONL)." ADR-024     #
+# leans on that equivalence twice, including in Alternatives rejected.        #
+#                                                                             #
+# `validate_jsonl` reads each line with `_loads_strict`, and a record line is  #
+# `{"seq":..,"kind":..}` — no `schema_version`, so every version-scoped rule   #
+# switched itself off for every record in the stream. J2 fired on the JSON     #
+# form of a trace and not on the JSONL form of the SAME trace.                #
+# --------------------------------------------------------------------------- #
+
+def test_the_renumbering_the_contract_warns_about_is_refused_in_both_encodings(run):
+    """`contract/README.md`'s own worked example, run both ways.
+
+    A store hands back `0.000001` where Motus wrote `1e-06`: the same value, a
+    different document. Refused as JSON since ADR-024; accepted as JSONL until
+    record lines were governed by the header's declared version.
+    """
+    as_json, as_jsonl = run.to_json(), run.to_jsonl()
+    assert "5e+18" in as_json and "5e+18" in as_jsonl
+
+    tampered_json = as_json.replace("5e+18", "5000000000000000511.0")
+    tampered_jsonl = as_jsonl.replace("5e+18", "5000000000000000511.0")
+
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict(tampered_json)
+
+    violations, reassembled = validate.validate_jsonl(tampered_jsonl)
+    assert [v.rule for v in violations] == ["J2"], (
+        "the tamper ADR-024 exists to stop passed clean in the encoding "
+        "JsonlTraceSink actually writes")
+    assert reassembled is None, (
+        "a stream with a refused line must not reassemble into a document that "
+        "then earns the genuine root")
+
+
+def test_the_same_trace_gets_the_same_verdict_in_both_encodings(run):
+    """The property nothing pinned, which is why the gap survived J2 landing.
+
+    `validate_jsonl` already returns the reassembled document *"so callers can
+    pin JSON <-> JSONL equivalence"*. Nothing did.
+    """
+    tampers = [
+        ("genuine", lambda text: text),
+        ("a renumbered float", lambda text: text.replace("5e+18", "5000000000000000511.0")),
+        ("a trailing zero", lambda text: text.replace('"score","value":0.87', '"score","value":0.870')),
+        ("an underflow", lambda text: text.replace('"zero","value":0.0', '"zero","value":1e-400')),
+        ("an unpaired surrogate", lambda text: text.replace('"test"', '"te\\ud800st"')),
+    ]
+    for label, tamper in tampers:
+        as_json = tamper(run.to_json())
+        as_jsonl = tamper(run.to_jsonl())
+
+        try:
+            validate._loads_strict(as_json)
+            json_verdict = "accept"
+        except validate.StrictJSONError as exc:
+            json_verdict = type(exc).__name__
+
+        jsonl_violations, _ = validate.validate_jsonl(as_jsonl)
+        strict = [v for v in jsonl_violations if v.rule in ("J1", "J2")]
+        jsonl_verdict = "accept" if not strict else strict[0].rule
+
+        expected = {"accept": "accept",
+                    "NonCanonicalNumberError": "J2",
+                    "UnpairedSurrogateError": "J1",
+                    "NonFiniteJSONError": "J1"}[json_verdict]
+        assert jsonl_verdict == expected, (
+            f"{label}: JSON says {json_verdict}, JSONL says {jsonl_verdict} — "
+            "one trace, two encodings, two answers")
+
+
+def test_a_fingerprint_is_never_taken_over_something_that_is_not_json():
+    """`json.dumps` has exactly two ways to emit what is not JSON. The
+    surrogate arm was closed by ADR-026; this is the other one, still open in
+    the same function: `canonical_json` produced b'{"a":NaN}' — bytes its own
+    strict reader refuses, and which `trace._canonical_bytes` (which has always
+    passed `allow_nan=False`) will not produce.
+    """
+    for obj in ({"a": float("nan")}, {"a": float("inf")}, {"a": float("-inf")},
+                {"nested": [{"deep": float("nan")}]}):
+        with pytest.raises(validate.NonFiniteJSONError):
+            validate.canonical_json(obj)
+        with pytest.raises(validate.NonFiniteJSONError):
+            validate.fingerprint("graph", obj)
+
+    # and nothing legitimate moved
+    assert validate.canonical_json({"a": 1, "b": "x"}) == b'{"a":1,"b":"x"}'

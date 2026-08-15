@@ -1,18 +1,23 @@
 # The integration MCP
 
-`pip install vitruvyan-motus[mcp]`, then point your coding agent at
+`.venv/bin/pip install ".[mcp]"` from a checkout — **Motus is not on PyPI**, so
+there is no index to install from — then point your coding agent at
 `motus-mcp`.
 
 **Install it into a virtualenv of its own, or with `pipx` — never into a
-shared `--user` site-packages.** The kernel declares zero runtime
-dependencies and that is checked against a built wheel; **the `[mcp]` extra
-takes twenty-three**, because the MCP SDK brings `starlette`, `uvicorn`,
-`pydantic`, `httpx2` and `cryptography` with it. The first integrator to
-install it this way pulled a `starlette` that an unrelated `fastapi` on the
-same machine refused (#109). Their containerised services were untouched, and
-so was Motus — but their host tooling was not. It answers questions about the Motus protocol **from the documents
-in the installation**, and runs the shipped validator over artefacts you name
-by path.
+shared `--user` site-packages.** The kernel *imports* nothing outside the
+standard library and a test proves that against a running interpreter; the
+**distribution** installs one thing, `jsonschema`, which the shipped validator
+needs. Those are two different claims and this page said the stronger one.
+**The `[mcp]` extra pulls about two dozen more**, because the MCP SDK brings
+`starlette`, `uvicorn`, `pydantic`, `httpx2` and `cryptography` with it. The
+first integrator to install it this way pulled a `starlette` that an unrelated
+`fastapi` on the same machine refused (#109). Their containerised services were
+untouched, and so was Motus — but their host tooling was not.
+
+It answers questions about the Motus protocol **from the documents in the
+installation**, and runs the shipped validator over artefacts you name by
+path.
 
 It is off until installed. Nothing on any runtime path imports it, and a
 subprocess test runs a real graph and asserts no module with `mcp` in its name
@@ -136,7 +141,7 @@ It proves three things a configuration file cannot: the process starts, it
 **carries its source**. If any of the three is missing you find out here, where
 the failure is legible.
 
-**The client lists seven tools**, all prefixed `motus_`. Fewer than seven means
+**The client lists eight tools**, all prefixed `motus_`. Fewer than eight means
 the server started and part of its surface did not register — and the check
 above tells you whether that is Motus or the client.
 
@@ -156,6 +161,24 @@ above tells you whether that is Motus or the client.
 - **`motus_where(intent)`** — every kernel module with its own one-line
   docstring. The whole map every time: selecting by shared words named seven of
   fourteen modules for the intent `"the"`;
+- **`motus_find(term)`** — every passage in the shipped sources that contains
+  the term, quoted verbatim with the file it came from. The sources are
+  enumerated in `mcp/sources.py` and travel inside the wheel:
+  `contract/node-protocol.md`, `contract/README.md`, `contract/guarantees.md`,
+  `adr/ADR-022`, and three of the examples.
+  **This is the one to reach for when a trace, an error or a review names
+  something you do not recognise** — `opaque_config`, `durability_profile`,
+  `effect_class`, or a rule id the prose actually defines. It reaches what the
+  citable documents say, so `J2` and `J1` answer and `T11` does not — the
+  T-rules live in `contract/validate.py`, which is code and not citable prose.
+  A term it cannot find gets *I cannot tell* plus the list of what was searched,
+  never a guess. It exists because the first
+  external integrator held `node:check:opaque_config` from a real trace, asked
+  this server what to do about it, and nothing here could reach the answer:
+  `explain` knows exception class names, `where` returns the module map, and
+  the paragraph they needed was in `contract/node-protocol.md` the whole time
+  (#107). Every span is a quotation, so this tool has nowhere to put a sentence
+  of its own;
 - **`motus_diagnose(path, symptom)`** — the shipped code, run over your
   artefact, reporting what it said.
 

@@ -44,6 +44,33 @@ class Policy(str, Enum):
 
 
 class DurabilityProfile(str, Enum):
+    """How this RUNTIME hands records to a sink. Not a claim about the sink.
+
+    The name invites the wrong reading and an integrator took it (#108): they
+    attached a `JsonlTraceSink` writing to disk, read `durability_profile:
+    "in-memory"` in the header, and concluded the evidence was never durable —
+    while the same run's `RunResult` said `evidence: "persisted"` and the file
+    was on disk. Both were correct. They answer different questions.
+
+    - `IN_MEMORY`, written `"in-memory"` — no sink is required. One may still
+      be attached, and then it receives every record as the run proceeds. The
+      default, because a run with no sink at all has to say something.
+    - `BUFFERED`, written `"buffered"` — requires a sink, and batches. The only
+      profile with a loss window, declared in the header's `sink` object
+      (`flush_interval_ms`, `chunk_records`) and required there by rule H1.
+    - `SYNCHRONOUS`, written `"synchronous"` — requires a sink, delivers record
+      by record.
+
+    The value is what a header carries, so both spellings are here: somebody
+    arriving from `"in-memory"` in a trace is not holding the member name.
+
+    So `IN_MEMORY` and `SYNCHRONOUS` deliver identically; what separates them
+    is whether a sink is REQUIRED. Read the header this way: `sink` present
+    means a sink was attached, `durability_profile` says how it was fed, and
+    `RunResult.evidence` says whether it accepted everything. Crash guarantees
+    belong to the profile alone — `contract/guarantees.md` invariant II.
+    """
+
     IN_MEMORY = "in-memory"
     BUFFERED = "buffered"
     SYNCHRONOUS = "synchronous"

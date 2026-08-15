@@ -163,6 +163,121 @@ def _refuse_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict:
     return dict(pairs)
 
 
+class UnpairedSurrogateError(StrictJSONError):
+    """A JSON string that does not denote Unicode text (refused per rule J1)."""
+
+
+def _surrogate_at(text: str) -> int | None:
+    """The index of the first surrogate code point in ``text``, or None.
+
+    In a Python `str` every surrogate is unpaired by construction: the JSON
+    decoder combines `\\uD83D\\uDE00` into one scalar at scan time, so a
+    surrogate that survives into a parsed value is one no pair claimed. Two
+    adjacent surrogates built directly in Python are two code points and not a
+    character, and are refused on the same grounds.
+
+    `isascii()` is a C-level flag check and answers for the overwhelming
+    majority of strings without encoding anything; the encode that follows is
+    one C call over the rest, and `UnicodeEncodeError.start` hands back the
+    position for free. This is the same test `trace._encodable` has applied on
+    the producing side since 0.11.0 — deliberately the same test, because the
+    defect it closes is that the two sides disagreed.
+    """
+    if text.isascii():
+        return None
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        return exc.start
+    return None
+
+
+def _surrogate_complaint(text: str, index: int, where: str) -> str:
+    return (
+        f"the string {where} carries U+{ord(text[index]):04X} at index {index}, "
+        "an unpaired surrogate. A JSON string denotes a sequence of Unicode "
+        "scalar values; a surrogate code point is not one, has no UTF-8 "
+        "encoding, and conforming readers disagree about what it means -- so "
+        "this document has more than one reading and cannot be evidence of one "
+        "run (rule J1, ADR-026)"
+    )
+
+
+def _refuse_unpaired_surrogates(document: Any) -> None:
+    """Rule J1's third half, over the PARSED document rather than its text.
+
+    This is not `J3` returning under another name, and the difference is which
+    question is asked. `J3` asked *which escape form was written*, which only
+    the lexeme answers -- so it needed `parse_string`, which needed CPython's
+    pure-Python scanner (13x slower, a recursion budget that depended on the
+    caller's stack, and object KEYS structurally out of reach because
+    `JSONObject` calls the module-global `scanstring`). This asks *what value
+    did the reader get*, which the parsed document answers: the C scanner keeps
+    running, keys are covered because keys are in the document, and
+    `"appro\\u0076ed"` stays exactly as valid as `"approved"`.
+
+    Iterative and not recursive on purpose: a genuine trace nested 489 deep
+    raised `RecursionError` out of `J3`'s reader, and a refusal a document does
+    not deserve is the worst answer a verifier gives.
+
+    **Two passes, and the first one decides.** Serialising the whole document
+    once with `ensure_ascii=False` and encoding it puts the question to the C
+    encoder: every string's characters, keys included, land in that output
+    verbatim, so the encode raises exactly when some string carries a
+    surrogate. Measured on a 54 KiB trace it is 1.4 ms against the walk's
+    3.2 ms, which is why `_loads_strict` costs +15% and not +63%. The walk then
+    runs only on a document already known to be bad, and its job is to say
+    WHERE -- a verifier that refuses without naming the place is not much
+    better than one that crashes.
+
+    If they ever disagreed, this **fails closed**: the encoder's verdict stands
+    and the refusal is raised without a path rather than swallowed.
+    `tests/test_surrogate_boundary.py` asserts they agree over the table.
+    """
+    encoder_refused = False
+    try:
+        json.dumps(document, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        encoder_refused = True
+    except RecursionError:
+        # Deeper than the C encoder goes. It did not refuse the document, it
+        # failed to answer -- and the walk below is iterative precisely so it
+        # can. The first version of this fell through to the unconditional
+        # refusal at the end, so a clean document nested past the encoder's
+        # budget was refused with a message saying that should be impossible.
+        pass
+    else:
+        return
+
+    stack: list[tuple[Any, str]] = [(document, "$")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str):
+            index = _surrogate_at(value)
+            if index is not None:
+                raise UnpairedSurrogateError(
+                    _surrogate_complaint(value, index, f"at {path}"))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str):
+                    index = _surrogate_at(key)
+                    if index is not None:
+                        raise UnpairedSurrogateError(
+                            _surrogate_complaint(key, index, f"used as a member name at {path}"))
+                stack.append((item, f"{path}.{key}"))
+        elif isinstance(value, list):
+            for position, item in enumerate(value):
+                stack.append((item, f"{path}[{position}]"))
+
+    if not encoder_refused:
+        return  # the encoder never objected; only its recursion budget ran out
+    raise UnpairedSurrogateError(
+        "this document cannot be encoded as JSON text, and the walk that "
+        "locates the reason found nothing -- which should be impossible. "
+        "Refusing it anyway: a verifier that cannot say what a document is "
+        "must not say it is evidence (rule J1, ADR-026)")
+
+
 class NonCanonicalNumberError(StrictJSONError):
     """A number written in characters our own serializer would not produce (J2)."""
 
@@ -198,34 +313,145 @@ def _canonical_number(lexeme: str, cast: Any) -> Any:
     return value
 
 
-def _loads_strict(text: str) -> Any:
+def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
     """``json.loads`` that refuses NaN/Infinity/-Infinity and repeated member
-    names (RFC 8259, J1) and non-canonical numeric lexemes (ADR-024, J2).
+    names (RFC 8259, J1), strings that are not Unicode text (J1, ADR-026), and
+    non-canonical numeric lexemes (ADR-024, J2).
 
-    **String escapes are NOT checked, and that is a stated hole rather than an
-    oversight** — see ADR-024's residual and #98. A rule for them was written,
-    reviewed and withdrawn: object KEYS are structurally unreachable through
-    CPython's decoder hooks (`JSONObject` calls the module-global `scanstring`,
-    never `context.parse_string`), so it covered half its own surface; and its
-    canonical form refused a FROZEN production artifact of ours,
-    `tests/compat/terraveler/golden/production-ingestion-trace.json`, for a
-    `\u2014`.
+    **Which escape form a string was written in is NOT checked, and that is a
+    decision rather than a hole** — ADR-026. `"appro\u0076ed"` and
+    `"approved"` are the same JSON string, every conforming reader gets the
+    same value from both, and refusing one would be a false accusation against
+    a document identical in meaning to one we accept. A rule for escape forms
+    (`J3`) was written, accepted and withdrawn; ADR-024's residual and #98 are
+    closed by ADR-026, not still open.
 
-    Numbers need no such machinery: the C scanner honours `parse_float` and
-    `parse_int`, so J2 costs a hook and not a scanner.
+    What IS refused is a string that denotes no text at all. That check reads
+    the parsed value and never the lexeme, so it costs a walk and not a
+    scanner — see `_refuse_unpaired_surrogates`.
+
+    Numbers need no such machinery either: the C scanner honours `parse_float`
+    and `parse_int`, so J2 costs a hook.
     """
-    document = json.loads(
-        text, parse_constant=_refuse_non_finite,
-        object_pairs_hook=_refuse_duplicate_keys,
-    )
-    if _lexically_governed(document):
-        json.loads(
+    try:
+        document = json.loads(
             text, parse_constant=_refuse_non_finite,
             object_pairs_hook=_refuse_duplicate_keys,
             parse_float=lambda lexeme: _canonical_number(lexeme, float),
             parse_int=lambda lexeme: _canonical_number(lexeme, int),
         )
+    except NonCanonicalNumberError:
+        # J2 is scoped by the document's own version, and the version is INSIDE
+        # the document — so the obvious order is parse-then-maybe-parse-again,
+        # which is what this did and what cost every governed document a second
+        # full parse. Inverted: the hooks run on the first pass, and the only
+        # documents that pay for a second one are the ones a hook already
+        # refused. A round measured the obvious order at +110% on
+        # `Trace.from_json`, against a claimed +16%.
+        document = json.loads(
+            text, parse_constant=_refuse_non_finite,
+            object_pairs_hook=_refuse_duplicate_keys,
+        )
+        if _governing_version(document, governed_as) in _LEXICALLY_GOVERNED:
+            raise
+    # `governed_as` is for a FRAGMENT of a document that declares its version
+    # elsewhere. A JSONL record line is `{"seq":..,"kind":..}` with no
+    # `schema_version` in it, so every version-scoped rule silently switched
+    # itself off for every record in the stream: the exact tamper ADR-024
+    # exists to stop -- a store rewriting `1e-06` as `0.000001`, which is
+    # `contract/README.md`'s own worked example -- was refused as JSON and
+    # accepted as JSONL, with the reassembled document earning the genuine
+    # root. The two encodings are declared equivalent by the same README that
+    # says hashes are over the object form and never over the bytes of a
+    # particular encoding.
+    if _governing_version(document, governed_as) in _SCALAR_GOVERNED:
+        _refuse_unpaired_surrogates(document)
     return document
+
+
+#: The trace schema versions at which a genuine document could not carry an
+#: unpaired surrogate, measured against the shipped releases rather than
+#: reasoned about (ADR-026 decision 4):
+#:
+#:     v0.5.0  schema 1.0.0  wrote the trace, and its own validator said valid
+#:     v0.6.1  schema 1.1.0  wrote the trace
+#:     v0.7.0  schema 1.1.0  wrote the trace
+#:     v0.8.1  schema 2.0.0  raised at the seal; no trace exists
+#:
+#: 2.0.0 introduced the per-record digest, and `_canonical_bytes` has refused a
+#: string with no UTF-8 encoding ever since — incidentally at first, and by
+#: name since 0.11.0. So from 2.0.0 no genuine document can carry one, and
+#: below it some can.
+#:
+#: **The first draft of ADR-026 asserted the opposite** — that `J2`'s version
+#: scoping "does not apply here and must not be copied", because `J1` had meant
+#: strict RFC 8259 at every version. That is true of the prose and false of the
+#: product: a v0.5.0 trace holding `report\udcff.csv`, the exact string
+#: `surrogateescape` produces from filesystem byte 0xFF, is declared VALID by
+#: the validator of its own release and by this one on `main`. Refusing it now
+#: would be a breaking change to a contract surface without a major version,
+#: which `guarantees.md` §7 forbids and which `contract/README.md` calls the
+#: worst answer a verifier gives: *a refusal outranks a violation.*
+#: What a document is governed by when nothing declares a version: today's
+#: rules. Failing closed here is the safe direction — a document with no older
+#: TRACE contract to appeal to gets the current one — and it is why this is a
+#: sentinel rather than `None` meaning "ungoverned".
+_UNDECLARED = "__undeclared__"
+
+
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", _UNDECLARED})
+
+
+def _looks_like_a_trace(document: Any) -> bool:
+    """Is this document's `schema_version` a TRACE schema version?
+
+    **Two version namespaces share one key name.** A GraphSpec declares
+    `"schema_version": "1.0.0"` meaning graphspec schema 1.0.0, and a version
+    scope written for traces read that as "trace schema 1.0.0, before this rule
+    existed" and switched itself off — so a spec carrying an unpaired surrogate
+    or a non-canonical lexeme sailed through both rules. Found immediately
+    after the scoping landed, by a probe that had been checking something else.
+
+    The discriminator is `run`: a whole trace has it and so does a JSONL
+    header line, which is the same document's first line and must be read under
+    the same rules. A GraphSpec, a receipt, a commitment and a bare fragment do
+    not. Everything that is not a trace is governed — failing closed here costs
+    a refusal on a document that has no older TRACE contract to appeal to, and
+    `test_escaping_j2s_scope_costs_the_attacker_the_root` is why that is safe
+    in the other direction: relabelling a 3.0.0 trace to escape a scoped rule
+    also escapes the root, since `derived_root` derives nothing below 3.0.0.
+    """
+    return isinstance(document, dict) and "run" in document
+
+
+def _governing_version(document: Any, governed_as: str | None = None) -> str:
+    """Which trace schema version's rules apply to this document.
+
+    Three cases, and they were three tangled conditions before a JSONL test
+    caught them disagreeing:
+
+    - a trace (or a JSONL header) declares its own version, and that decides;
+    - a JSONL RECORD line declares nothing, so the stream's header decides —
+      `governed_as` carries it down;
+    - anything else — a GraphSpec, a receipt, a bare fragment — is governed by
+      today's rules, because it has no older trace contract to appeal to.
+    """
+    if _looks_like_a_trace(document):
+        declared = document.get("schema_version")
+        return declared if isinstance(declared, str) else _UNDECLARED
+    if governed_as is not None:
+        return governed_as
+    return _UNDECLARED
+
+
+def _scalar_governed(document: Any) -> bool:
+    """Does the unpaired-surrogate refusal apply to this document?
+
+    Scoped by the document's OWN declared version, exactly as `J2` is, and for
+    the same reason stated one function down. The producer is NOT scoped: it
+    writes 3.0.0 and refuses always, which is where the format is defined.
+    """
+    return _governing_version(document) in _SCALAR_GOVERNED
 
 
 #: The trace schema versions at which the terminal digest became an anchorable
@@ -233,7 +459,7 @@ def _loads_strict(text: str) -> Any:
 #: collision to attack, so J2 has nothing to protect and refusing an older
 #: document would break `contract/README.md`'s promise that old evidence stays
 #: valid without rewriting.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", _UNDECLARED})
 
 
 def _lexically_governed(document: Any) -> bool:
@@ -250,9 +476,7 @@ def _lexically_governed(document: Any) -> bool:
     non-canonical numeric lexemes. So this scope costs nothing today and is
     about what a rule may do to evidence written before it existed.
     """
-    if not isinstance(document, dict):
-        return False
-    return document.get("schema_version") in _LEXICALLY_GOVERNED
+    return _governing_version(document) in _LEXICALLY_GOVERNED
 
 
 def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], bool]:
@@ -272,10 +496,27 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
     """
     out: list[Violation] = []
     structural = False
+    # Read once, at the top, from the whole document: the walk below descends
+    # into fragments that declare nothing, and a rule scoped by a document's
+    # own version must not be re-decided at every depth.
+    scalars_governed = _scalar_governed(instance)
     stack: list[tuple[Any, str]] = [(instance, prefix)]
     while stack:
         value, path = stack.pop()
-        if value is None or isinstance(value, (str, bool, int)):
+        if isinstance(value, str):
+            # A `str` was waved through here, and a lone surrogate IS a `str`:
+            # it passed every check and then raised UnicodeEncodeError out of
+            # `canonical_json`, mid-fingerprint, naming the codec instead of
+            # the document (ADR-026). Structural, because a string with no
+            # UTF-8 encoding has no canonical form — so no digest, no root,
+            # and nothing downstream of here is computable.
+            index = _surrogate_at(value) if scalars_governed else None
+            if index is not None:
+                structural = True
+                out.append(
+                    Violation("J1", path, _surrogate_complaint(value, index, "here")))
+            continue
+        if value is None or isinstance(value, (bool, int)):
             continue  # bool before float/int matters not: bool IS int, both fine
         if isinstance(value, float):
             if not math.isfinite(value):
@@ -314,6 +555,22 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
                             "JSON object keys are strings (rule J1)",
                         )
                     )
+                else:
+                    index = _surrogate_at(key) if scalars_governed else None
+                    if index is not None:
+                        structural = True
+                        out.append(
+                            Violation("J1", path, _surrogate_complaint(
+                                key, index, "used as a member name here")))
+                        # Do NOT descend. Every path below this point would
+                        # embed the member name, and a finding whose `path`
+                        # carries an unpaired surrogate cannot be printed,
+                        # serialised or logged -- `validate.main` raised
+                        # UnicodeEncodeError trying to report it. The document
+                        # is structural now, so nothing deeper will be read
+                        # anyway; naming the place with a string that cannot be
+                        # written down is the crash one step later.
+                        continue
                 stack.append((item, f"{path}.{key}"))
         elif isinstance(value, list):
             for index, item in enumerate(value):
@@ -345,9 +602,39 @@ def canonical_json(obj: Any) -> bytes:
     over this canonical object form, never over the bytes of a particular
     encoding (JSON vs JSONL).
     """
-    return json.dumps(
-        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    try:
+        return json.dumps(
+            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+            # `json.dumps` has exactly two ways to emit something that is not
+            # JSON. The surrogate arm is handled below; this is the other one,
+            # and it was open: `canonical_json` produced b'{"a":NaN}' -- bytes
+            # its OWN strict reader refuses and `trace._canonical_bytes` (which
+            # has always passed this keyword) will not produce. A fingerprint
+            # over non-JSON is a digest of something that is not a document.
+            allow_nan=False,
+        ).encode("utf-8")
+    # UnicodeEncodeError IS a ValueError, so this clause has to come first --
+    # the first version put the non-finite clause above it, re-raised the codec
+    # error bare, and undid the surrogate repair in the same function it was
+    # made in. Caught by the branch's own frontier test.
+    except UnicodeEncodeError as exc:
+        # The first version of this comment said "reached only by a caller who
+        # computes a fingerprint without validating first — `validate_trace`
+        # stops at the structural J1". A round measured it false:
+        # `validate_trace(doc, spec)` was that caller, because the SPEC
+        # argument was never J1-checked. It is now, so this is again the
+        # fingerprint-without-validating path — and the comment is written
+        # differently, because "unreachable" is a claim and this one was wrong.
+        raise UnpairedSurrogateError(
+            f"this object cannot be encoded as JSON text: {exc}. A JSON string "
+            "denotes a sequence of Unicode scalar values, so an object holding "
+            "an unpaired surrogate has no canonical form and therefore no "
+            "fingerprint (rule J1, ADR-026)") from None
+    except ValueError as exc:
+        raise NonFiniteJSONError(
+            f"this object cannot be encoded as JSON text: {exc}. NaN and "
+            "Infinity are not RFC 8259 values, so an object holding one has no "
+            "canonical form and therefore no fingerprint (rule J1)") from None
 
 
 def fingerprint(kind: str, obj: Any) -> str:
@@ -2582,6 +2869,24 @@ def validate_trace(
     j1_violations, structural = _j1_violations(doc)
     if structural:
         return j1_violations
+    if spec is not None:
+        # The spec argument went straight to `fingerprint("graph", spec)` in
+        # `_trace_semantics` with nothing between. A caller handing this
+        # function a Python object -- which is the whole point of this entry
+        # point -- got `TypeError` from `json.dumps` or `UnicodeEncodeError`
+        # from the codec, RAISED out of a function whose contract is to RETURN
+        # findings. And for a NaN or a non-string key it did worse: it reported
+        # SB2, "the recomputed graph fingerprint does not match", when the truth
+        # is "your spec is not a JSON document".
+        spec_j1, _ = _j1_violations(spec, prefix="spec:$")
+        if spec_j1:
+            # ANY J1 finding on the spec is terminal, not only a structural
+            # one. The spec's only use here is to be fingerprinted, and a
+            # non-finite float is a structurally valid NUMBER that
+            # `canonical_json` still cannot write -- so "report it and carry
+            # on" reaches the fingerprint anyway and raises there. That is the
+            # first repair of this defect, and it was not enough.
+            return spec_j1
     schema = load_trace_schema()
     schema_violations = _schema_violations(schema, _trace_validator(), doc)
     if schema_violations:
@@ -2650,10 +2955,10 @@ def validate_jsonl(
         header = _loads_strict(header_line)
     except StrictJSONError as exc:
         # The line IS parseable JSON in Python's lax reading — the problem is
-        # strictness, not brokenness: J1, not JSONL1.
+        # strictness, not brokenness: J1 or J2, never JSONL1.
         violations.append(
             Violation(
-                "J1",
+                "J2" if isinstance(exc, NonCanonicalNumberError) else "J1",
                 f"$.lines[{header_index}]",
                 f"header line is not strict RFC 8259 JSON: {exc}",
             )
@@ -2678,6 +2983,10 @@ def validate_jsonl(
     )
     violations.extend(header_violations)
 
+    # Every record line is read under the version the HEADER declares. Without
+    # this the stream is strictly more permissive than the same trace as JSON.
+    stream_version = header.get("schema_version") if isinstance(header, dict) else None
+
     records: list[dict] = []
     lines_clean = True
     truncated = False
@@ -2685,15 +2994,24 @@ def validate_jsonl(
     for position, (line_index, line) in enumerate(record_lines):
         is_final = position == total - 1
         try:
-            obj = _loads_strict(line)
+            obj = _loads_strict(line, governed_as=stream_version)
         except StrictJSONError as exc:
             # Not crash truncation and not malformed JSON: the line parses in
             # Python's lax reading but carries a non-finite constant.  That is
-            # a strictness violation — J1, never JSONL2, on any line.
+            # a strictness violation — never JSONL2, on any line.
+            #
+            # And the RULE has to be the right one. `main` already makes this
+            # distinction for `--spec` and the JSON path, with the reason
+            # written in a test: a non-canonical number IS strict RFC 8259, so
+            # reporting it as J1 sends a reader looking for a duplicate key or
+            # a NaN. This arm called everything J1, which mattered from the
+            # moment record lines became version-governed and J2 could fire
+            # here at all.
             lines_clean = False
+            rule = "J2" if isinstance(exc, NonCanonicalNumberError) else "J1"
             violations.append(
                 Violation(
-                    "J1",
+                    rule,
                     f"$.lines[{line_index}]",
                     f"line is not strict RFC 8259 JSON: {exc}",
                 )

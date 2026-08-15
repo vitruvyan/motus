@@ -14,8 +14,8 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.9.0](https://github.com/vitruvyan/motus/releases/tag/v0.9.0)
-> · `pip install vitruvyan-motus`
+> **Current release:** [Motus 0.11.0](https://github.com/vitruvyan/motus/releases/tag/v0.11.0)
+> · not on PyPI — build the wheel from a checkout
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
@@ -312,11 +312,22 @@ being designed.
 
 ## Install for development
 
-Motus is on PyPI. Install it the ordinary way:
+**Motus is not on PyPI, and `pip install vitruvyan-motus` fails as written.**
+The index answers 404 for the name while every dependency named in this file
+answers 200. Publication is a separate, explicit release action and it has not
+happened — PR #72 carries the machinery and is held open deliberately.
+
+What works is a build from a checkout, which needs no index:
 
 ```console
-pip install vitruvyan-motus
+python -m venv .venv
+.venv/bin/pip install .
 ```
+
+A consumer who cannot run a build inside each container vendors the wheel
+instead, and pays for it: the first integration carried three byte-identical
+copies, one per service image, with nothing keeping them identical through the
+next release. #49 holds that cost and closes when the upload happens.
 
 To work on Motus itself, from a checkout:
 
@@ -327,7 +338,8 @@ python -m venv .venv
 
 On Windows, use `.venv\Scripts\python.exe` in place of
 `.venv/bin/python`. The wheel contains `vitruvyan_motus`, `py.typed`, and the
-contract validator with the two schemas it checks against.
+contract validator with the five schemas it checks against — trace, graphspec,
+commitment, checkpoint and receipt.
 
 Two claims about dependencies, and they are not the same claim:
 
@@ -346,9 +358,13 @@ motus-validate trace run.json --spec graph.json
 motus-validate jsonl run.jsonl
 ```
 
-The contract prose and the frozen conformance fixtures stay in this
-repository. The reader who needs those is already reading it; the validator is
-needed by everyone, without having to know it exists.
+The frozen conformance fixtures stay in this repository — 660 KB of corpus,
+and whoever needs it is already reading the repository. **Some of the prose
+now travels**: `README.md`, `node-protocol.md` and `guarantees.md` ship inside
+the wheel, because the MCP quotes them at call time and a citation an agent
+cannot resolve after installing is not a citation (ADR-022). The set is exactly
+what `mcp/sources.py` declares citable, and a packaging test holds the two
+lists equal so neither can grow alone.
 
 ## Building against Motus with an agent
 
@@ -363,8 +379,9 @@ inverted it twice in one pull request, and once by an integrator who declared
 read-only HTTP calls `external_effect` believing it conservative. The contract
 permits that; nothing told them it costs safe resumes, silently, forever.
 
-Install it into a virtualenv of its own or with `pipx`: the kernel takes no
-dependencies, and this extra takes twenty-three.
+Install it into a virtualenv of its own or with `pipx`: the kernel imports
+nothing outside the standard library, and this extra pulls about two dozen
+packages.
 
 It answers narrowly on purpose. `motus_classify` reports which of the
 protocol's marked terms your description contains and hands you the table; it
@@ -372,9 +389,16 @@ does not decide the class, because a version that did was measured wrong on
 most realistic descriptions and wrong in the direction that costs correctness.
 
 ```
-pip install "vitruvyan-motus[mcp]"
-python -m vitruvyan_motus.mcp classify "I need to INSERT a row"
+.venv/bin/pip install ".[mcp]"
+.venv/bin/python -m vitruvyan_motus.mcp classify "I need to INSERT a row"
 ```
+
+`motus_find` is the one to reach for when a trace, an error or a review names
+something you do not recognise — `opaque_config`, `durability_profile`, a rule
+id like `J2`. It quotes every passage in the shipped contract and examples that
+contains the term, with the file each came from. It exists because the first
+external integrator held `node:check:opaque_config` from a real trace, asked
+this server what to do about it, and no tool could reach the answer (#107).
 
 See [`docs/MCP.md`](docs/MCP.md) for the surface, the client configuration, and
 the two things it refuses to do. It is off until installed: nothing on any
@@ -716,14 +740,19 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.9.0 against v0.8.1 — three independent dispatches, canonical value is the
+0.11.0 against v0.10.0 — three independent dispatches, canonical value is the
 median of the job ratios:
 
 | metric | canonical | across jobs | budget |
 |---|---:|---:|---:|
-| per-node overhead | **+2.7 %** | +2.7 … +3.1 % | +10 % |
-| 100-node no-op overhead | **+3.7 %** | +3.1 … +4.0 % | +10 % |
-| trace materialization | **+0.4 %** | −0.8 … +2.1 % | +10 % |
+| per-node overhead | **−0.1 %** | −0.5 … +0.4 % | +10 % |
+| 100-node no-op overhead | **−0.0 %** | −0.8 … +1.9 % | +10 % |
+| trace materialization | **+0.4 %** | +0.2 … +0.4 % | +10 % |
+
+The 100-node row's paired spread is **106 %** — wider than the effect it
+measures — and the checker prints that rather than letting the number stand
+alone. *Within noise* is not *no difference*; it is the measurement saying it
+cannot answer.
 
 No exception is declared and none is needed: 0.9.0 adds a contract revision and
 a new module, and costs almost nothing to run. The worst paired spread across
@@ -784,7 +813,7 @@ recorded here rather than left implicit. The relative gate had no such problem:
 it measures both versions on the same host in the same job, which is the point.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.9.0/` for the committed observations.
+`benchmarks/relative-0.11.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -800,8 +829,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.9.0-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.9.0/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.11.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.11.0/*.json
 ```
 
 ## Native package surface
@@ -833,14 +862,28 @@ the evidence, and a parser destroys them, so `from_dict` cannot make this check
 and no implementation could: by the time it is called, the two documents are
 one object (ADR-024).
 
-**String escapes are not checked, and that is a known hole rather than an
-oversight** — `"appro\u0076ed"` and `"approved"` still share a root. A rule for
-it was written and withdrawn the same day; #98 carries the measurements, and
-ADR-024 §1b carries the reasons.
+**Which escape form a string was written in is not checked, and ADR-026 settles
+that as intended rather than as a hole.** `"appro\u0076ed"` and `"approved"`
+are the same JSON string: every conforming reader gets the same value from
+both, so they share a root, correctly. Refusing one would be a false accusation
+against a document identical in meaning to one we accept. A rule for escape
+forms was written and withdrawn the same day; #98 is closed with the reasons.
 
-Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the two
+**What a string may not be is text that denotes nothing.** An unpaired
+surrogate — U+D800–U+DFFF with no partner — denotes no character, has no UTF-8
+encoding, and conforming JSON implementations disagree about it, so a document
+carrying one has more than one reading and is refused (rule `J1`, ADR-026). A
+surrogate *pair* is a character and is accepted. The refusal is scoped by the
+document's own declared trace schema version, because releases up to 0.7.0
+wrote such traces and their own validators called them valid; the producing
+side is scoped by nothing. If you need to carry bytes that are not Unicode —
+a filename a filesystem handed over — encode them explicitly rather than
+smuggling them through a string.
+
+Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the five
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),
-not copied. `validate_trace`, `validate_graphspec` and `validate_jsonl` are
+not copied. `validate_trace`, `validate_graphspec`, `validate_jsonl`,
+`validate_commitment`, `validate_checkpoint` and `validate_receipt` are
 importable directly for a consumer who would rather check in-process than
 shell out.
 

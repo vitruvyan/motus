@@ -107,8 +107,10 @@ an agent never accepts an ADR.
 
 **Two rules were written and withdrawn the same day they shipped**, both by
 adversarial rounds: `J3` (string escapes — it covered half its own surface and
-refused one of our own frozen production goldens; the hole is #98 and a test
-asserts it) and the stand-in refusal (it rejected `xmlrpc.client.ServerProxy`
+refused one of our own frozen production goldens; **#98 is now closed by
+ADR-026 as intended behaviour**, because `"appro\u0076ed"` and `"approved"`
+are the same JSON string and sharing a root is correct) and the stand-in
+refusal (it rejected `xmlrpc.client.ServerProxy`
 from the standard library, and the defect it claimed to fix is declared
 behaviour under ADR-016 — #73 stays open). **Read both before proposing a
 general fix for anything.**

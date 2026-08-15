@@ -80,6 +80,17 @@ def build() -> Any:
         """Return every kernel module with its own one-line docstring."""
         return tools.where(intent).render()
 
+    @server.tool(name="motus_find")
+    def motus_find(term: str) -> str:
+        """Quote every passage in the shipped contract, ADRs and examples that
+        contains TERM, with the file each one came from.
+
+        Use this when a trace, an error or a review names something and you
+        need what the contract says about it -- `opaque_config`,
+        `durability_profile`, `effect_class`, a rule id like J2 or T11.
+        """
+        return tools.find(term).render()
+
     @server.tool(name="motus_diagnose")
     def motus_diagnose(path: str, symptom: str = "") -> str:
         """Run the shipped validator over an artefact named by PATH.

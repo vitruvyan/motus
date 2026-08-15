@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from .answers import Answer, Cannot, Computed, Quoted
-from . import protocol
+from . import protocol, sources
 from .protocol import SECTION
 
 __all__ = ["classify", "review_graph", "review_node", "explain",
@@ -535,6 +535,114 @@ def where(intent: str) -> Answer:
     return Answer(tool="motus_where", spans=tuple(spans))
 
 
+# -- motus_find -------------------------------------------------------------
+
+#: How much of a document travels with a hit. A paragraph is the unit a
+#: normative document is written in, and a line is not: the sentence that
+#: DEFINES a term is regularly not the line the term appears on.
+_MAX_PASSAGES = 6
+
+
+def _blocks(document: str) -> list[str]:
+    """Paragraphs, with a fenced code block kept whole.
+
+    Splitting on blank lines alone cut the answer to #107 in half: the
+    paragraph that names the closure case carries the closure as fenced Python,
+    and a fence has blank lines in it. **A passage that ends mid-sentence is
+    worse than no passage** -- it reads as the whole answer.
+
+    Line-by-line with a fence flag, not a pattern over the document: a regular
+    expression matching ``` pairs has no idea which of them are inside a fence
+    that started earlier, and this file has already paid once for a pattern
+    answering a question about structure.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    fenced = False
+    for line in document.splitlines():
+        if line.lstrip().startswith("```"):
+            if not fenced and not current and blocks:
+                # A fence illustrates the prose above it -- that is what a
+                # fence MEANS in these documents. Quoting it away from that
+                # prose hands a reader code with no sentence saying what it is.
+                current = [blocks.pop(), ""]
+            fenced = not fenced
+            current.append(line)
+            continue
+        if not line.strip() and not fenced:
+            if current:
+                blocks.append("\n".join(current).strip())
+                current = []
+            continue
+        current.append(line)
+    if current:
+        blocks.append("\n".join(current).strip())
+    return [block for block in blocks if block]
+
+
+def _passages(document: str, term: str) -> list[str]:
+    """The paragraphs of ``document`` containing ``term``, longest first.
+
+    Case-insensitive, because a reader arrives holding `opaque_config` from a
+    trace and the contract may have written it inside a sentence. Substring and
+    not word-boundary: `motus_config()` and `opaque_config` are the shapes
+    these questions actually take, and a word boundary does not see either.
+    """
+    needle = term.casefold()
+    hits = [block for block in _blocks(document) if needle in block.casefold()]
+    # Longest first: the paragraph that DEFINES a term says more about it than
+    # the one that mentions it, and length is the only signal available here
+    # that does not require this server to have an opinion about meaning.
+    hits.sort(key=len, reverse=True)
+    return hits[:_MAX_PASSAGES]
+
+
+def find(term: str) -> Answer:
+    """Where a term is written down in this installation, quoted verbatim.
+
+    The gap this closes was measured, not supposed. The first external
+    integrator forfeited replay on seven of nine nodes to `opaque_config`, went
+    to the MCP for the way out, and no tool could reach it: `explain` knows only
+    exception class names, `where` returns the module map, and the answer was in
+    `contract/node-protocol.md` all along (#107).
+
+    **Every span is `Quoted`, so this tool cannot say anything.** A `Quoted`
+    verifies at construction that its text is in the named source, so the worst
+    this can do is quote the wrong paragraph -- and the caller sees the file it
+    came from and can go and read the rest. That is the whole design: ADR-022
+    decision 2 keeps prose out of the server, and the way to keep it out is to
+    have no place to put it.
+
+    A term that is in no citable source gets 4d's answer and the list of what
+    was searched -- never a guess, and never a fallback to the internet
+    (`sources.py` refuses to fetch, and a test parses this package to prove no
+    network import exists).
+    """
+    wanted = term.strip()
+    reproduce = _command("find", wanted)
+    if not wanted:
+        return Answer(tool="motus_find", spans=(Cannot(tried=(reproduce,)),))
+
+    spans: list[object] = []
+    for relative in sources.CITABLE:
+        try:
+            document = sources.read(relative)
+        except sources.SourceMissing:
+            # A missing source is a broken installation, and it must not look
+            # like a term that is absent. The other sources still answer.
+            continue
+        for passage in _passages(document, wanted):
+            spans.append(Quoted(source=relative, text=passage))
+
+    if not spans:
+        return Answer(tool="motus_find", spans=(
+            Cannot(tried=(reproduce,)),
+            Computed(by=f"{_ME}.find", reproduce=reproduce,
+                     text="searched, and the term is in none of them: "
+                          + ", ".join(sources.CITABLE)),))
+    return Answer(tool="motus_find", spans=tuple(spans))
+
+
 #: The advertised describing surface, named once. The test that walks it reads
 #: this, so a tool added without being listed here is a tool nobody checked.
 ADVERTISED = {
@@ -544,4 +652,5 @@ ADVERTISED = {
     "motus_explain": explain,
     "motus_start_here": start_here,
     "motus_where": where,
+    "motus_find": find,
 }

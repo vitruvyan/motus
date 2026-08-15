@@ -27,6 +27,18 @@ the profile bought is a contract violation. An explicitly supplied sink under
 `in-memory` is synchronous (`flush_interval_ms: 0`, `chunk_records: 1`) and its
 configuration is recorded in the header, but it adds no crash-survival claim.
 
+**And the reading that is wrong, written down because an integrator made it
+and was right to.** `durability_profile` describes how the RUNTIME hands
+records to a sink; it does not say whether a sink exists, whether it writes
+anywhere durable, or whether it succeeded. A header carrying
+`"durability_profile": "in-memory"` beside a `"sink"` object is not
+contradicting itself — it says the caller required no sink, attached one
+anyway, and that sink received every record as the run proceeded. Three fields,
+three questions: `sink` present means one was attached, `durability_profile`
+says how it was fed, and `RunResult.evidence` says whether it accepted
+everything. A run reporting `evidence: "persisted"` under `in-memory` is
+ordinary and not a discrepancy.
+
 **III. The kernel does not interpret the domain.** Motus imports and embeds no
 LLM, no Vitruvyan OS, no LangChain, no Orders, no epistemic categories.
 Deterministic explanations only; semantic meaning belongs to the consumer.

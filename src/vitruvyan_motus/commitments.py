@@ -70,9 +70,30 @@ def _require_text(value: Any, what: str) -> str:
     `if not value` accepts three spaces, which names nothing. A round found the
     same hole at five sites: a tenant, a writer, a witness, a termination
     reason and an anchor's transaction reference could each be blank-but-true.
+
+    **And a second round found a worse one at the same five sites.** A string
+    that is not Unicode text passed here, reached `_canonical_bytes` two layers
+    down, and raised there — by which time `CommitmentLog.begin` had already
+    fsynced a window line the store could never digest, leaving a chain that
+    raises `CommitmentLogFork` on every future open. Refusing at the gate costs
+    an `isascii()` branch and makes that state unreachable through this API.
+
+    The refusal is the boundary's, not this function's invention: a Motus
+    string denotes a sequence of Unicode scalar values (rule J1, ADR-026), and
+    ADR-021 decision 6 leaves the FORMAT of an identifier to the embedder
+    without leaving them a string that cannot be written down.
     """
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{what} must be a non-blank string")
+    if not value.isascii():
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                f"{what} carries U+{ord(value[exc.start]):04X} at index "
+                f"{exc.start}, an unpaired surrogate: it denotes no character "
+                "and has no UTF-8 encoding, so a commitment naming it has no "
+                "digest (rule J1, ADR-026)") from None
     return value
 
 
