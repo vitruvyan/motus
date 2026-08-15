@@ -207,7 +207,7 @@
             "buffered",
             "synchronous"
           ],
-          "description": "Which crash guarantee this run bought. See guarantees.md invariant II."
+          "description": "How this RUNTIME hands records to a sink, declared by the caller — not a statement about the sink. `in-memory` and `synchronous` both deliver record by record as the run proceeds; they differ in that `synchronous` and `buffered` REQUIRE a sink and `in-memory` does not, which is why it is the default. Only `buffered` batches, and only it has a loss window (see `sink`). Whether a sink was attached at all is `sink` being present; whether it accepted every record is `evidence` on the RunResult, which is where `persisted` comes from. So `in-memory` beside a `sink` object is not a contradiction: it means the caller required no sink and supplied one anyway, and that sink received everything synchronously. Crash guarantees: guarantees.md invariant II."
         },
         "sink": {
           "type": "object",
@@ -222,7 +222,7 @@
               "minimum": 1
             }
           },
-          "description": "Sink configuration disclosing the delivery window. Validator rule H1: when durability_profile is `buffered`, `sink` MUST be present WITH BOTH disclosure keys (flush_interval_ms and chunk_records) — an empty sink object discloses nothing and does not satisfy the rule. Optional otherwise. When a caller explicitly supplies a sink under `in-memory` or `synchronous`, the runtime records its effective synchronous delivery as flush_interval_ms 0 and chunk_records 1; this disclosure does not strengthen the profile's crash guarantee."
+          "description": "Sink configuration disclosing the delivery window. PRESENT EXACTLY WHEN A SINK WAS ATTACHED, whatever `durability_profile` says — the two fields answer different questions and #108 was filed because the pair reads as a contradiction when they are not compared. Validator rule H1: when durability_profile is `buffered`, `sink` MUST be present WITH BOTH disclosure keys (flush_interval_ms and chunk_records) — an empty sink object discloses nothing and does not satisfy the rule. Optional otherwise. When a caller explicitly supplies a sink under `in-memory` or `synchronous`, the runtime records its effective synchronous delivery as flush_interval_ms 0 and chunk_records 1; this disclosure does not strengthen the profile's crash guarantee."
         },
         "replay": {
           "$ref": "#/$defs/ReplayStatus",

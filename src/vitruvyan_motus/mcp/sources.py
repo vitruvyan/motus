@@ -49,6 +49,13 @@ CITABLE: tuple[str, ...] = (
     "examples/01_first_run.py",
     "examples/04_parameterised_nodes.py",
     "examples/06_effects_and_receipts.py",
+    # Added, withdrawn, and added back on a measurement rather than a
+    # preference. #108's answer — what `durability_profile` describes and what
+    # it does not — lives in invariant II, and `find("durability_profile")`
+    # said "I cannot tell" while the term sat in a file this list omitted. The
+    # 17 KB is a decision; an integrator holding a term from their own header
+    # and being told it is written nowhere is a worse one.
+    "contract/guarantees.md",
 )
 
 

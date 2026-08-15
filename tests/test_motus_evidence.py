@@ -756,3 +756,83 @@ def test_a_node_failure_with_no_sink_behind_it_reports_not_required():
 
     bare = NodeFailed("legacy", None)
     assert bare.evidence == EvidenceStatus.NOT_REQUIRED
+
+
+# --------------------------------------------------------------------------- #
+# #108 — durability_profile reads as a statement about durability, and is not  #
+#                                                                             #
+# The defect was a reporting one: an integrator attached a JsonlTraceSink      #
+# writing to disk, read `"durability_profile": "in-memory"` in the header, and #
+# concluded the evidence was never durable — while the same run reported       #
+# `evidence: "persisted"` and the file was on disk. Both were correct.         #
+#                                                                             #
+# The repair is prose, so what a test can hold is that the prose stays: the    #
+# three fields are documented where a reader meets each of them, and each      #
+# points at the others. A description that drops its cross-reference fails     #
+# here rather than being noticed by the next integrator.                       #
+# --------------------------------------------------------------------------- #
+
+def test_the_reported_combination_is_reproducible_and_is_not_a_contradiction():
+    """The exact header Terraveler reported, produced on purpose.
+
+    If this ever stops reproducing, the documentation added for #108 is
+    describing behaviour that no longer exists — which is worse than the
+    ambiguity it replaced.
+    """
+    from pathlib import Path
+    import tempfile
+
+    from vitruvyan_motus import GraphSpec, JsonlTraceSink, Runtime, State
+
+    spec = GraphSpec.from_dict({
+        "schema_version": "1.0.0", "name": "d", "version": "1.0.0", "entry": "a",
+        "nodes": [{"name": "a", "effect_class": "pure"}],
+        "transitions": {"a": {"kind": "terminal"}}})
+    directory = Path(tempfile.mkdtemp())
+
+    # No durability_profile given: the default.
+    result = Runtime(spec, {"a": lambda state: state},
+                     sink=JsonlTraceSink(directory / "out")).run(
+        State.empty("x"), run_id="r")
+    header = result.trace.header["run"]
+
+    assert header["durability_profile"] == "in-memory"
+    assert header["sink"] == {"flush_interval_ms": 0, "chunk_records": 1}
+    assert result.evidence == "persisted"
+    written = [p for p in (directory / "out").rglob("*") if p.is_file()]
+    assert len(written) == 1 and written[0].stat().st_size > 0, (
+        "the header says in-memory and the bytes are on disk — which is the "
+        "whole point: the field is not about the sink")
+
+
+def test_the_three_fields_that_answer_three_questions_each_name_the_others():
+    """Put the rule in the tool: a cross-reference that has to be remembered
+    when editing a description is a cross-reference that will be dropped."""
+    import json
+    from pathlib import Path
+
+    from vitruvyan_motus import DurabilityProfile
+
+    root = Path(__file__).resolve().parent.parent
+    schema = json.loads((root / "contract" / "trace.v1.schema.json")
+                        .read_text(encoding="utf-8"))
+    header = schema["$defs"]["RunHeader"]["properties"]
+
+    profile = header["durability_profile"]["description"]
+    assert "sink" in profile and "evidence" in profile, (
+        "the field an integrator misread must point at the two that disambiguate it")
+    assert "not a statement about the sink" in profile
+
+    sink = header["sink"]["description"]
+    assert "durability_profile" in sink, "the back-reference is gone"
+
+    # And the caller's side: the enum that had no docstring at all while the
+    # EvidenceStatus enum ten lines below it had three paragraphs.
+    doc = DurabilityProfile.__doc__ or ""
+    assert "Not a claim about the sink" in doc
+    for member in ("in-memory", "buffered", "synchronous"):
+        assert member in doc, f"{member} is undocumented"
+    assert "invariant II" in doc, "the crash guarantees still live in guarantees.md"
+
+    guarantees = (root / "contract" / "guarantees.md").read_text(encoding="utf-8")
+    assert "the reading that is wrong" in guarantees
