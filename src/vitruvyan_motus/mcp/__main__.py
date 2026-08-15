@@ -56,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     where = sub.add_parser("where", help="which module already owns this kind of code")
     where.add_argument("intent")
 
+    find = sub.add_parser("find", help="where a term is written down, quoted verbatim")
+    find.add_argument("term")
+
     diagnose = sub.add_parser("diagnose", help="run the shipped code over an artefact")
     diagnose.add_argument("path", help="a filesystem path; content is refused")
     diagnose.add_argument("--symptom", default="")
@@ -76,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         answer = tools.start_here()
     elif args.command == "where":
         answer = tools.where(args.intent)
+    elif args.command == "find":
+        answer = tools.find(args.term)
     else:
         answer = diagnose_module.diagnose(args.path, symptom=args.symptom)
 

@@ -78,6 +78,16 @@ def corpus(tmp_path_factory) -> tuple:
         tools.start_here(),
         tools.where("I want to add a durable sink"),
         tools.where("zzzz"),
+        # Every citable source, because `find` is the tool that reaches all of
+        # them -- a term each document contains, so this corpus walks the whole
+        # declared surface instead of the two examples `start_here` quotes.
+        tools.find("opaque_config"),
+        tools.find("durability_profile"),
+        tools.find("effect_class"),
+        tools.find("guarantee"),
+        tools.find("Motus"),
+        tools.find("zzzz-no-such-term"),
+        tools.find(""),
         diagnose_module.diagnose(str(trace)),
         diagnose_module.diagnose(str(directory / "absent.json")),
         # Content where a path belongs — the branch that quotes decision 4e.
@@ -571,7 +581,7 @@ def test_the_advertised_descriptions_make_no_claim_about_the_protocol():
     server = build()
     advertised = [tool.description or "" for tool in asyncio.run(server.list_tools())]
     advertised.append(server.instructions or "")
-    assert len(advertised) == 8
+    assert len(advertised) == 9
 
     forbidden = tuple(EFFECT_CLASSES) + (
         "from memory", "nothing here", "always", "cannot drift", "honest")
@@ -608,3 +618,96 @@ def test_where_reports_what_the_intent_touched_and_hides_nothing():
     empty = tools.where("zzzz")
     assert empty.is_refusal
     assert len([s for s in empty.spans if isinstance(s, Computed)]) == len(modules)
+
+
+# -- motus_find -------------------------------------------------------------
+#
+# The tool #107 is about. The first external integrator held
+# `node:check:opaque_config` from a real trace, asked this server what to do
+# about it, and no tool could reach the answer: `explain` knows exception class
+# names, `where` returns the module map, `classify` reads a description. The
+# answer was in `contract/node-protocol.md` the whole time.
+
+def test_find_answers_the_question_that_was_asked_and_could_not_be():
+    answer = tools.find("opaque_config")
+    assert not answer.is_refusal
+    sources_named = {span.source for span in answer.spans}
+    assert protocol.SECTION in sources_named, (
+        "the term is defined in the node protocol and the answer must reach it")
+    assert any("motus_config" in span.text for span in answer.spans), (
+        "found the constraint and not the way out of it")
+
+
+def test_find_can_only_quote(corpus):
+    """The design, asserted: `find` has no `Computed` span carrying prose and
+    no place to put one. Its every hit is a `Quoted`, which verifies at
+    construction that the text is in the file it names -- so the worst this
+    tool can do is quote the wrong paragraph, and the caller can see which
+    file to go and read."""
+    for answer in corpus:
+        if answer.tool != "motus_find" or answer.is_refusal:
+            continue
+        assert all(isinstance(span, Quoted) for span in answer.spans), (
+            [type(span).__name__ for span in answer.spans])
+
+
+def test_find_refuses_rather_than_guessing():
+    answer = tools.find("a term nobody has ever written here")
+    assert answer.is_refusal
+    rendered = answer.render()
+    for relative in sources.CITABLE:
+        assert relative in rendered, (
+            "a refusal must say what was searched, or it reads as 'nowhere'")
+
+
+def test_find_with_nothing_to_find_asks_nothing_of_the_filesystem():
+    assert tools.find("").is_refusal
+    assert tools.find("   ").is_refusal
+
+
+def test_a_fenced_block_travels_with_the_paragraph_that_introduces_it():
+    """A passage that ends mid-sentence reads as the whole answer.
+
+    Found by using the tool: the §6.3 answer to #107 introduces a closure in
+    fenced Python, and splitting on blank lines alone cut the sentence off at
+    the fence. A fence illustrates the prose above it -- quoting it away from
+    that prose hands a reader code with nothing saying what it is.
+    """
+    document = "intro paragraph\n\nsays this:\n\n```python\nx = 1\n\ny = 2\n```\n\nafter\n"
+    blocks = tools._blocks(document)
+    assert "intro paragraph" in blocks
+    fenced = [block for block in blocks if "```" in block]
+    assert len(fenced) == 1, blocks
+    assert fenced[0].startswith("says this:"), "the fence lost its sentence"
+    assert "y = 2" in fenced[0], "the fence was split at its own blank line"
+
+
+def test_find_is_derived_from_the_file_and_not_from_memory(monkeypatch, tmp_path):
+    """The strongest property this server has, applied to the new tool.
+
+    Copy the citable set into a temporary root, edit one document, and the
+    answer must change. A tool that kept answering from the shipped text would
+    pass every other test in this file.
+    """
+    for relative in sources.CITABLE:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(sources.read(relative), encoding="utf-8")
+
+    edited = tmp_path / protocol.SECTION
+    edited.write_text(
+        "A paragraph naming zzzzunique that the shipped document does not have.\n",
+        encoding="utf-8")
+    monkeypatch.setattr(sources, "_roots", lambda: (tmp_path,))
+
+    answer = tools.find("zzzzunique")
+    assert not answer.is_refusal, "the tool did not read the file it was pointed at"
+    assert any("zzzzunique" in span.text for span in answer.spans)
+
+    # And the other direction: the protocol section no longer answers for a
+    # term it defines in the shipped tree. The example still does -- it was
+    # copied unedited -- which is the tool reading each file rather than
+    # remembering what any of them said.
+    still = tools.find("opaque_config")
+    assert protocol.SECTION not in {span.source for span in still.spans}
+    assert "examples/04_parameterised_nodes.py" in {span.source for span in still.spans}

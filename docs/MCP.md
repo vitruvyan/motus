@@ -136,7 +136,7 @@ It proves three things a configuration file cannot: the process starts, it
 **carries its source**. If any of the three is missing you find out here, where
 the failure is legible.
 
-**The client lists seven tools**, all prefixed `motus_`. Fewer than seven means
+**The client lists eight tools**, all prefixed `motus_`. Fewer than eight means
 the server started and part of its surface did not register — and the check
 above tells you whether that is Motus or the client.
 
@@ -156,6 +156,17 @@ above tells you whether that is Motus or the client.
 - **`motus_where(intent)`** — every kernel module with its own one-line
   docstring. The whole map every time: selecting by shared words named seven of
   fourteen modules for the intent `"the"`;
+- **`motus_find(term)`** — every passage in the shipped contract, ADR-022 and
+  examples that contains the term, quoted verbatim with the file it came from.
+  **This is the one to reach for when a trace, an error or a review names
+  something you do not recognise** — `opaque_config`, `durability_profile`,
+  `effect_class`, a rule id like `J2` or `T11`. It exists because the first
+  external integrator held `node:check:opaque_config` from a real trace, asked
+  this server what to do about it, and nothing here could reach the answer:
+  `explain` knows exception class names, `where` returns the module map, and
+  the paragraph they needed was in `contract/node-protocol.md` the whole time
+  (#107). Every span is a quotation, so this tool has nowhere to put a sentence
+  of its own;
 - **`motus_diagnose(path, symptom)`** — the shipped code, run over your
   artefact, reporting what it said.
 

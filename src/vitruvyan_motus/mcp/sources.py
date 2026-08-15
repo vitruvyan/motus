@@ -47,6 +47,7 @@ CITABLE: tuple[str, ...] = (
     "contract/README.md",
     "adr/ADR-022-the-integration-mcp.md",
     "examples/01_first_run.py",
+    "examples/04_parameterised_nodes.py",
     "examples/06_effects_and_receipts.py",
 )
 
