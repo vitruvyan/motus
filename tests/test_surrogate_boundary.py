@@ -728,3 +728,94 @@ def test_a_commitment_log_refuses_a_tenant_it_cannot_digest():
             commitlog.CommitmentLog(
                 Path(tempfile.mkdtemp()) / "store", **arguments)
         assert "surrogate" in str(caught.value).lower(), field
+
+
+# --------------------------------------------------------------------------- #
+# Four mutation probes survived these, and none was an equivalent mutant.     #
+# Two of them passed because `UnicodeEncodeError`'s own message contains the  #
+# word "surrogates" — the test asserted the right sentence about the wrong    #
+# thing, which is the failure this project names most often.                  #
+# --------------------------------------------------------------------------- #
+
+def test_a_graphspec_refusal_is_a_violation_with_a_path_not_an_exception():
+    """`_canonical_json_bytes` keeps a defensive `ValueError` whose message
+    also says "surrogate", so asserting only that was indistinguishable from
+    the shape check being absent. What the caller is owed is a *violation*:
+    which rule, and where."""
+    from vitruvyan_motus import GraphSpecValidationError
+
+    with pytest.raises(GraphSpecValidationError) as caught:
+        GraphSpec.from_dict({
+            "schema_version": "1.0.0", "name": "g" + HIGH, "version": "1.0.0",
+            "entry": "a", "nodes": [{"name": "a", "effect_class": "pure"}],
+            "transitions": {"a": {"kind": "terminal"}}})
+
+    paths = [violation.path for violation in caught.value.violations]
+    assert "$.name" in paths, (
+        f"refused without saying where: {caught.value.violations}")
+    assert any("surrogate" in v.message for v in caught.value.violations)
+
+
+def test_a_commitment_log_refusal_does_not_come_from_the_codec():
+    """`UnicodeEncodeError` says "surrogates not allowed", so a test looking
+    only for that word could not tell the guard from its absence — and behind
+    the guard is `_stem`, which hashes the value into a directory name."""
+    import tempfile
+
+    from vitruvyan_motus import commitlog
+
+    with pytest.raises(ValueError) as caught:
+        commitlog.CommitmentLog(
+            Path(tempfile.mkdtemp()) / "store", tenant="acme" + HIGH, writer_id="w")
+    assert not isinstance(caught.value, UnicodeEncodeError), (
+        "the codec is doing the accusing; the guard is gone")
+    assert "ADR-026" in str(caught.value)
+
+
+def test_validate_trace_reports_a_bad_spec_and_does_not_raise():
+    """The `spec` argument reached `fingerprint("graph", spec)` with nothing
+    between, so a Python-object caller got an exception out of a function whose
+    contract is to RETURN findings. Nothing tested it; a probe removing the
+    check survived."""
+    run_result = Runtime(SPEC, {"a": lambda state: state},
+                         sink=InMemoryTraceSink()).run(State.empty("x"), run_id="r")
+    document = json.loads(run_result.trace.to_json())
+    spec = json.loads(json.dumps({
+        "schema_version": "1.0.0", "name": "boundary", "version": "1.0.0",
+        "entry": "a", "nodes": [{"name": "a", "effect_class": "pure"}],
+        "transitions": {"a": {"kind": "terminal"}}}))
+
+    for label, broken in (("a lone surrogate", {**spec, "name": "b" + HIGH}),
+                          ("a NaN", {**spec, "extra": float("nan")}),
+                          ("a set", {**spec, "extra": {1, 2}})):
+        findings = validate.validate_trace(document, broken)
+        assert findings, label
+        assert all(f.rule == "J1" for f in findings), (
+            f"{label}: reported as {[f.rule for f in findings]} — SB2 says the "
+            "fingerprint does not match, when the truth is that the spec is "
+            "not a JSON document")
+        assert any(f.path.startswith("spec:$") for f in findings), (
+            f"{label}: the finding does not say it is about the SPEC")
+
+
+def test_a_legacy_jsonl_stream_is_read_under_the_version_its_header_declares():
+    """The direction the first test of this pair missed.
+
+    Governing record lines by the header protects old evidence as much as it
+    closes the tamper: without `governed_as` a record line declares nothing, so
+    it falls to the fail-closed default and gets TODAY's rules — and a 1.0.0
+    stream written before J2 existed would be refused line by line.
+    """
+    stream = (
+        '{"schema_version":"1.0.0","run":{"run_id":"r"}}\n'
+        '{"seq":1,"kind":"run_started","v":5000000000000000511.0}\n'
+        '{"seq":2,"kind":"run_completed","v":0.10}\n'
+    )
+    violations, _ = validate.validate_jsonl(stream)
+    assert not [v for v in violations if v.rule in ("J1", "J2")], (
+        f"a 1.0.0 stream was refused by rules written after it: {violations}")
+
+    modern = stream.replace('"schema_version":"1.0.0"', '"schema_version":"3.0.0"')
+    violations, _ = validate.validate_jsonl(modern)
+    assert [v.rule for v in violations if v.rule in ("J1", "J2")] == ["J2", "J2"], (
+        f"the same lines under 3.0.0 must be refused: {violations}")

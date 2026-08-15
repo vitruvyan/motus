@@ -2854,10 +2854,15 @@ def validate_trace(
         # findings. And for a NaN or a non-string key it did worse: it reported
         # SB2, "the recomputed graph fingerprint does not match", when the truth
         # is "your spec is not a JSON document".
-        spec_j1, spec_structural = _j1_violations(spec, prefix="spec:$")
-        if spec_structural:
+        spec_j1, _ = _j1_violations(spec, prefix="spec:$")
+        if spec_j1:
+            # ANY J1 finding on the spec is terminal, not only a structural
+            # one. The spec's only use here is to be fingerprinted, and a
+            # non-finite float is a structurally valid NUMBER that
+            # `canonical_json` still cannot write -- so "report it and carry
+            # on" reaches the fingerprint anyway and raises there. That is the
+            # first repair of this defect, and it was not enough.
             return spec_j1
-        j1_violations = j1_violations + spec_j1
     schema = load_trace_schema()
     schema_violations = _schema_violations(schema, _trace_validator(), doc)
     if schema_violations:
