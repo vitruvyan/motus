@@ -398,3 +398,27 @@ def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
     assert validate._loads_strict(tampered)["records"] != [], (
         "J2 does not fire outside its scope, by design")
     assert validate.derived_root(json.loads(tampered)) is None
+
+
+@pytest.mark.parametrize(("stored", "written"), [
+    ("0.000001", "1e-06"),      # a store that expands the exponent
+    ("1E-06", "1e-06"),         # and one that capitalises it
+    ("1e+15", "1000000000000000.0"),   # and one that contracts it
+])
+def test_a_store_that_renumbers_produces_a_document_j2_refuses(stored, written):
+    """`contract/README.md`'s storage guidance, pinned to the code.
+
+    A store may reorder object keys freely and may not renumber, and the two
+    halves point opposite ways. The first was measured by an integrator against
+    0.10.0 — before `J2` existed — and carried forward into guidance that would
+    have been wrong by the time anybody followed it.
+
+    A column type that parses numbers and re-renders them writes the same
+    VALUE and a different DOCUMENT. That is the whole point of `J2`, so the
+    refusal is correct and the guidance has to say it.
+    """
+    assert json.dumps(json.loads(stored)) == written, "the fixture drifted"
+
+    validate._loads_strict('{"schema_version":"3.0.0","v":%s}' % written)
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict('{"schema_version":"3.0.0","v":%s}' % stored)
