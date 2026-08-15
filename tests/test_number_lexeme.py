@@ -351,12 +351,26 @@ def test_j2_does_not_reach_evidence_written_before_it_existed():
     Below 3.0.0 the terminal digest covers one record rather than the run
     (ADR-019), so there is no anchorable root for a lexical collision to
     attack: the rule would refuse without protecting anything."""
-    tampered = '{"schema_version":"%s","v":5000000000000000511.0}'
+    # A TRACE-shaped document. This test used a bare `{"schema_version", "v"}`
+    # fragment as a stand-in and passed, and the stand-in turned out to matter:
+    # a GraphSpec declares `schema_version` in ITS namespace, so a scope that
+    # read the version key alone switched a trace rule off for a spec, and
+    # `{"schema_version":"1.0.0","name":"g","max_transitions":0.10}` sailed
+    # through J2. The scope now reads `run`, and everything that is not a trace
+    # is governed.
+    tampered = ('{"schema_version":"%s","run":{"run_id":"r"},"records":[],'
+                '"v":5000000000000000511.0}')
     for older in ("1.0.0", "1.1.0", "2.0.0"):
         assert validate._loads_strict(tampered % older)["v"] == 5e18
 
     with pytest.raises(validate.NonCanonicalNumberError):
         validate._loads_strict(tampered % "3.0.0")
+
+    # And what the stand-in was hiding, pinned so it cannot come back.
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict(
+            '{"schema_version":"1.0.0","name":"g","version":"1.0.0",'
+            '"entry":"a","nodes":[],"max_transitions":0.10}')
 
 
 def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
@@ -490,3 +504,95 @@ def test_a_lone_surrogate_is_refused_and_that_is_a_decision_not_a_drift():
     # And the reason, in one line: the value it denotes cannot be written down.
     with pytest.raises(UnicodeEncodeError):
         "\ud800".encode("utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# The encoding that persists, which is the one that was not checked           #
+#                                                                             #
+# `contract/README.md`: "Hashes are computed over the canonical object form,  #
+# never over the bytes of a particular encoding (JSON vs JSONL)." ADR-024     #
+# leans on that equivalence twice, including in Alternatives rejected.        #
+#                                                                             #
+# `validate_jsonl` reads each line with `_loads_strict`, and a record line is  #
+# `{"seq":..,"kind":..}` — no `schema_version`, so every version-scoped rule   #
+# switched itself off for every record in the stream. J2 fired on the JSON     #
+# form of a trace and not on the JSONL form of the SAME trace.                #
+# --------------------------------------------------------------------------- #
+
+def test_the_renumbering_the_contract_warns_about_is_refused_in_both_encodings(run):
+    """`contract/README.md`'s own worked example, run both ways.
+
+    A store hands back `0.000001` where Motus wrote `1e-06`: the same value, a
+    different document. Refused as JSON since ADR-024; accepted as JSONL until
+    record lines were governed by the header's declared version.
+    """
+    as_json, as_jsonl = run.to_json(), run.to_jsonl()
+    assert "5e+18" in as_json and "5e+18" in as_jsonl
+
+    tampered_json = as_json.replace("5e+18", "5000000000000000511.0")
+    tampered_jsonl = as_jsonl.replace("5e+18", "5000000000000000511.0")
+
+    with pytest.raises(validate.NonCanonicalNumberError):
+        validate._loads_strict(tampered_json)
+
+    violations, reassembled = validate.validate_jsonl(tampered_jsonl)
+    assert [v.rule for v in violations] == ["J2"], (
+        "the tamper ADR-024 exists to stop passed clean in the encoding "
+        "JsonlTraceSink actually writes")
+    assert reassembled is None, (
+        "a stream with a refused line must not reassemble into a document that "
+        "then earns the genuine root")
+
+
+def test_the_same_trace_gets_the_same_verdict_in_both_encodings(run):
+    """The property nothing pinned, which is why the gap survived J2 landing.
+
+    `validate_jsonl` already returns the reassembled document *"so callers can
+    pin JSON <-> JSONL equivalence"*. Nothing did.
+    """
+    tampers = [
+        ("genuine", lambda text: text),
+        ("a renumbered float", lambda text: text.replace("5e+18", "5000000000000000511.0")),
+        ("a trailing zero", lambda text: text.replace('"score","value":0.87', '"score","value":0.870')),
+        ("an underflow", lambda text: text.replace('"zero","value":0.0', '"zero","value":1e-400')),
+        ("an unpaired surrogate", lambda text: text.replace('"test"', '"te\\ud800st"')),
+    ]
+    for label, tamper in tampers:
+        as_json = tamper(run.to_json())
+        as_jsonl = tamper(run.to_jsonl())
+
+        try:
+            validate._loads_strict(as_json)
+            json_verdict = "accept"
+        except validate.StrictJSONError as exc:
+            json_verdict = type(exc).__name__
+
+        jsonl_violations, _ = validate.validate_jsonl(as_jsonl)
+        strict = [v for v in jsonl_violations if v.rule in ("J1", "J2")]
+        jsonl_verdict = "accept" if not strict else strict[0].rule
+
+        expected = {"accept": "accept",
+                    "NonCanonicalNumberError": "J2",
+                    "UnpairedSurrogateError": "J1",
+                    "NonFiniteJSONError": "J1"}[json_verdict]
+        assert jsonl_verdict == expected, (
+            f"{label}: JSON says {json_verdict}, JSONL says {jsonl_verdict} — "
+            "one trace, two encodings, two answers")
+
+
+def test_a_fingerprint_is_never_taken_over_something_that_is_not_json():
+    """`json.dumps` has exactly two ways to emit what is not JSON. The
+    surrogate arm was closed by ADR-026; this is the other one, still open in
+    the same function: `canonical_json` produced b'{"a":NaN}' — bytes its own
+    strict reader refuses, and which `trace._canonical_bytes` (which has always
+    passed `allow_nan=False`) will not produce.
+    """
+    for obj in ({"a": float("nan")}, {"a": float("inf")}, {"a": float("-inf")},
+                {"nested": [{"deep": float("nan")}]}):
+        with pytest.raises(validate.NonFiniteJSONError):
+            validate.canonical_json(obj)
+        with pytest.raises(validate.NonFiniteJSONError):
+            validate.fingerprint("graph", obj)
+
+    # and nothing legitimate moved
+    assert validate.canonical_json({"a": 1, "b": "x"}) == b'{"a":1,"b":"x"}'

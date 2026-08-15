@@ -497,7 +497,12 @@ def test_the_surrogate_refusal_is_scoped_by_the_documents_own_version(version, v
     and `_canonical_bytes` began refusing a string with no UTF-8 encoding — by
     accident at first, by name since 0.11.0.
     """
-    document = '{"schema_version":"%s","v":"x\\ud800"}' % version
+    # A TRACE-shaped document, and that is load-bearing rather than tidy: a
+    # GraphSpec declares `schema_version` too, in its own namespace, so the
+    # scope reads `run` and not the version key alone. A bare fragment is not
+    # old trace evidence and is governed.
+    document = ('{"schema_version":"%s","run":{"run_id":"r"},"records":[],'
+                '"v":"x\\ud800"}' % version)
     for name, reader in (("verifier", validate._loads_strict),
                          ("runtime", motus_trace._loads_canonical)):
         try:
@@ -517,7 +522,8 @@ def test_the_two_sides_agree_about_J2_at_every_version_too(version):
     A false accusation, which `contract/README.md` ranks as the worst answer a
     verifier gives — and this one came from the library, about evidence.
     """
-    document = '{"schema_version":"%s","v":5000000000000000511.0}' % version
+    document = ('{"schema_version":"%s","run":{"run_id":"r"},"records":[],'
+                '"v":5000000000000000511.0}' % version)
     verdicts = []
     for reader in (validate._loads_strict, motus_trace._loads_canonical):
         try:

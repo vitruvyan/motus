@@ -238,10 +238,15 @@ _SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0"})
 
 
 def _governed(document: Any, versions: frozenset[str]) -> bool:
-    if not isinstance(document, dict):
+    """A TRACE schema version scopes these rules, and only a trace has one.
+
+    A GraphSpec also declares `schema_version`, in its own namespace, so
+    reading that key without checking the shape switches a trace rule off for
+    a spec. Anything that is not a trace is governed — fail closed.
+    """
+    if not (isinstance(document, dict) and "run" in document):
         return True
-    declared = document.get("schema_version")
-    return True if declared is None else declared in versions
+    return document.get("schema_version") in versions
 
 
 def _refuse_unpaired_surrogates(document: Any) -> None:
