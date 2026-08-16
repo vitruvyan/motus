@@ -1,0 +1,715 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-hiring-review-0421",
+    "graph": {
+      "name": "hiring_review",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:c0a38df6ef6bb4fc640608afa095fcea4e44591e106544d1390e119a4ef92b2d",
+      "code_fingerprint": "code:sha256:d4926589d42808afb52804888d57b5cd7303cfcf3d30f03f49d9c595fbd668a2",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T21:25:27.331710Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T21:25:27.331937Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:859beefd207e3a3e50e10af79e0bec053c008c325ea6d5571d270a4fd8061c14",
+        "prev_hash": "sha256:346f1241f61109ff1d8a2e11dfd34914e488bb4bdaf3ed158d29009eb7909278"
+      },
+      "intent": "Should this candidate be automatically rejected for the job?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T21:25:27.332080Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:e5fc24c6237fe2ec1c467d25551fb418caa5de288b0d0476c9493e8338f8d078",
+        "prev_hash": "sha256:859beefd207e3a3e50e10af79e0bec053c008c325ea6d5571d270a4fd8061c14"
+      },
+      "node": "receive_application",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T21:25:27.332482Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:ebdddbbb1433bac56d1bd107f723cdc0c5c1f215a2cd8d576839c3e2032f4971",
+        "prev_hash": "sha256:e5fc24c6237fe2ec1c467d25551fb418caa5de288b0d0476c9493e8338f8d078"
+      },
+      "node": "receive_application",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "record_is_synthetic",
+            "value": "invented scenario — no real applicant, no real employer",
+            "source": "demo",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "applicant_ref",
+            "value": "APP-2026-00421",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "role",
+            "value": "Maintenance planner, night shift",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "applicant_name",
+            "value": "Nowak, A.",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "date_of_birth",
+            "value": "1979-04-02",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "nationality",
+            "value": "PL",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "photo_reference",
+            "value": "cv-store://APP-2026-00421/photo.jpg",
+            "source": "ats",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "required_qualification",
+            "value": "engineering degree or equivalent",
+            "source": "policy",
+            "ts": "2026-05-12T09:40:00Z"
+          },
+          {
+            "key": "required_experience_months",
+            "value": 60,
+            "source": "policy",
+            "ts": "2026-05-12T09:40:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T21:25:27.332756Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:4acbb7f102e7f744a3fa4c4e4dc35befe0439e9f5ae9d1b72f556a202e0e2508",
+        "prev_hash": "sha256:ebdddbbb1433bac56d1bd107f723cdc0c5c1f215a2cd8d576839c3e2032f4971"
+      },
+      "after": "receive_application",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "parse_cv",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "parse_cv",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T21:25:27.332886Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:8a35fd7a3d83cbb2a6dd3efb44684a2760ac9264514c8d7585d0fbb097479640",
+        "prev_hash": "sha256:4acbb7f102e7f744a3fa4c4e4dc35befe0439e9f5ae9d1b72f556a202e0e2508"
+      },
+      "node": "parse_cv",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T21:25:27.333211Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:17213c7a9f5aff77256a08b9781020fd58beccf6ee794b7703f533d60445bb1f",
+        "prev_hash": "sha256:8a35fd7a3d83cbb2a6dd3efb44684a2760ac9264514c8d7585d0fbb097479640"
+      },
+      "node": "parse_cv",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "qualification_level",
+            "value": "BSc Mechanical Engineering",
+            "source": "cv-parser",
+            "ts": "2026-05-12T09:41:00Z"
+          },
+          {
+            "key": "relevant_experience_months",
+            "value": 54,
+            "source": "cv-parser",
+            "ts": "2026-05-12T09:41:00Z"
+          },
+          {
+            "key": "certifications_count",
+            "value": 2,
+            "source": "cv-parser",
+            "ts": "2026-05-12T09:41:00Z"
+          },
+          {
+            "key": "cv_source",
+            "value": "cv-store document r7, parsed by cv-parser 1.9.2",
+            "source": "cv-parser",
+            "ts": "2026-05-12T09:41:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": [
+          {
+            "what": "reference_check",
+            "reason": "not returned at decision time",
+            "ts": "2026-05-12T09:41:00Z",
+            "evidence": {
+              "requested": true,
+              "returned_at": null
+            }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET cv-store/applications/APP-2026-00421/document"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T21:25:27.333411Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:376e8f42f4902f9c77a79ca2542ddf926c418ae48c6b5c745f807f10eed08734",
+        "prev_hash": "sha256:17213c7a9f5aff77256a08b9781020fd58beccf6ee794b7703f533d60445bb1f"
+      },
+      "after": "parse_cv",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "check_qualification",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "check_qualification",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T21:25:27.333737Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:63d7f54426ac253ad978c595eb46e8d0cf158a9d8859163ad47a0dd02a5a3f58",
+        "prev_hash": "sha256:376e8f42f4902f9c77a79ca2542ddf926c418ae48c6b5c745f807f10eed08734"
+      },
+      "node": "check_qualification",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T21:25:27.334124Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:b921e829c702ea84704d2ee6d206beffaefab3e93c32f8a2fc6f227281c03a04",
+        "prev_hash": "sha256:63d7f54426ac253ad978c595eb46e8d0cf158a9d8859163ad47a0dd02a5a3f58"
+      },
+      "node": "check_qualification",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "qualification_level",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "required_qualification",
+          "origin": {
+            "kind": "transition",
+            "seq": 3,
+            "collection": "facts",
+            "index": 7
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "qualification_met",
+            "value": "yes",
+            "source": "screen",
+            "ts": "2026-05-12T09:42:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T21:25:27.334287Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:128854e338c9a7598d2e47f2341e32043324cb1340481df8cbb287c32d10b05d",
+        "prev_hash": "sha256:b921e829c702ea84704d2ee6d206beffaefab3e93c32f8a2fc6f227281c03a04"
+      },
+      "after": "check_qualification",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "assess_experience",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "assess_experience",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T21:25:27.334377Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:a852008376f0a8222dd8e1092fe810dffcc5c385dcc4f25577fb57795f3c98d9",
+        "prev_hash": "sha256:128854e338c9a7598d2e47f2341e32043324cb1340481df8cbb287c32d10b05d"
+      },
+      "node": "assess_experience",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T21:25:27.334937Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:7d83b3dabcffe90b4889dce944bdaca1e6c2909d564283b8b6b8885d7143e2fb",
+        "prev_hash": "sha256:a852008376f0a8222dd8e1092fe810dffcc5c385dcc4f25577fb57795f3c98d9"
+      },
+      "node": "assess_experience",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "relevant_experience_months",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 1
+          }
+        },
+        {
+          "key": "required_experience_months",
+          "origin": {
+            "kind": "transition",
+            "seq": 3,
+            "collection": "facts",
+            "index": 8
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "experience_met",
+            "value": "no",
+            "source": "screen",
+            "ts": "2026-05-12T09:43:00Z"
+          },
+          {
+            "key": "shortfall_months",
+            "value": 6,
+            "source": "screen",
+            "ts": "2026-05-12T09:43:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T21:25:27.335146Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:c4514fa771d8357539f334aba3d60edc700237cb855da723738033ab6e2af6af",
+        "prev_hash": "sha256:7d83b3dabcffe90b4889dce944bdaca1e6c2909d564283b8b6b8885d7143e2fb"
+      },
+      "after": "assess_experience",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "apply_policy",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "apply_policy",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T21:25:27.335339Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:8ad9b9e3dc2f81ab102a01caedcee2b956bc2d34c84dd04e8b15b44e0712bfb3",
+        "prev_hash": "sha256:c4514fa771d8357539f334aba3d60edc700237cb855da723738033ab6e2af6af"
+      },
+      "node": "apply_policy",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T21:25:27.335822Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:fdd02a291579b7dd80194d0a22e29e9057eda10d73cbea64feee2ce2dae20ce6",
+        "prev_hash": "sha256:8ad9b9e3dc2f81ab102a01caedcee2b956bc2d34c84dd04e8b15b44e0712bfb3"
+      },
+      "node": "apply_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "shortfall_months",
+          "origin": {
+            "kind": "transition",
+            "seq": 12,
+            "collection": "facts",
+            "index": 1
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "hiring-screen v4.2",
+            "source": "policy",
+            "ts": "2026-05-12T09:44:00Z"
+          },
+          {
+            "key": "policy_clause",
+            "value": "§3 — no automated rejection for this role class",
+            "source": "policy",
+            "ts": "2026-05-12T09:44:00Z"
+          },
+          {
+            "key": "screen_result",
+            "value": "reject",
+            "source": "screen",
+            "ts": "2026-05-12T09:44:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "disposition",
+            "value": "human_review",
+            "ts": "2026-05-12T09:44:00Z",
+            "reason": "the screen found a 6-month shortfall against the 60-month minimum. Clause §3 does not permit an automated rejection for this role class, so the shortfall goes to a person"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T21:25:27.336070Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:5984d665a38035bd3494e7aaf4fcdff711680cd0b71fbb449b272cbebb5913f8",
+        "prev_hash": "sha256:fdd02a291579b7dd80194d0a22e29e9057eda10d73cbea64feee2ce2dae20ce6"
+      },
+      "after": "apply_policy",
+      "on": "disposition",
+      "value": "human_review",
+      "origin": {
+        "kind": "transition",
+        "seq": 15,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "human_review",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "auto_reject"
+          },
+          "target": "auto_reject",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "human_review"
+          },
+          "target": "human_review",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "auto_advance"
+          },
+          "target": "auto_advance",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "human_review",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T21:25:27.336325Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:b8dbcbcefee4ffef9ad8722bfbc0adc0466d7c4bba1f1b360ee2a179147000cc",
+        "prev_hash": "sha256:5984d665a38035bd3494e7aaf4fcdff711680cd0b71fbb449b272cbebb5913f8"
+      },
+      "node": "human_review",
+      "attempt": 1
+    },
+    {
+      "seq": 18,
+      "ts": "2026-08-16T21:25:27.336494Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:f328f4a34d0bd4d61e77c3ff7bbcab38397a106e6155710e32068017ae06f9a1",
+        "prev_hash": "sha256:b8dbcbcefee4ffef9ad8722bfbc0adc0466d7c4bba1f1b360ee2a179147000cc"
+      },
+      "node": "human_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "handoff",
+            "value": "hiring panel, queue HR-4",
+            "source": "policy",
+            "ts": "2026-05-12T09:45:00Z"
+          },
+          {
+            "key": "handed_over",
+            "value": "the shortfall, the CV source, and the missing reference check",
+            "source": "policy",
+            "ts": "2026-05-12T09:45:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 19,
+      "ts": "2026-08-16T21:25:27.336873Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:831d1fb8e1159c552673d8fd30ce3bb18a28c0b2685b07cab785b569914d29d6",
+        "prev_hash": "sha256:f328f4a34d0bd4d61e77c3ff7bbcab38397a106e6155710e32068017ae06f9a1"
+      },
+      "after": "human_review",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "final_recommendation",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "final_recommendation",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 20,
+      "ts": "2026-08-16T21:25:27.338640Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:c00bac8d5cb5582263362393f7183397fae61952e81c7cc7893433b82d695fda",
+        "prev_hash": "sha256:831d1fb8e1159c552673d8fd30ce3bb18a28c0b2685b07cab785b569914d29d6"
+      },
+      "node": "final_recommendation",
+      "attempt": 1
+    },
+    {
+      "seq": 21,
+      "ts": "2026-08-16T21:25:27.339089Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:6268e345df1cd2f917aa4a3c4a6158feeadd46a1464efc6d41b1605be0a60ae2",
+        "prev_hash": "sha256:c00bac8d5cb5582263362393f7183397fae61952e81c7cc7893433b82d695fda"
+      },
+      "node": "final_recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "recommendation",
+            "value": "proceed to human review; do not reject automatically",
+            "source": "policy",
+            "ts": "2026-05-12T09:46:00Z"
+          },
+          {
+            "key": "automated_rejection_issued",
+            "value": "no",
+            "source": "policy",
+            "ts": "2026-05-12T09:46:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 22,
+      "ts": "2026-08-16T21:25:27.339261Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:fb61cdaf059d335bd11f4e6c26b5bf4d31739153dc57286c27267e521670d445",
+        "prev_hash": "sha256:6268e345df1cd2f917aa4a3c4a6158feeadd46a1464efc6d41b1605be0a60ae2"
+      },
+      "after": "final_recommendation",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 23,
+      "ts": "2026-08-16T21:25:27.339358Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:e7c7b87bc1c7d1b8909ecf694aacb5c18704015fcf71f0dbf70d56e9bf3d3dc6",
+        "prev_hash": "sha256:fb61cdaf059d335bd11f4e6c26b5bf4d31739153dc57286c27267e521670d445"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}

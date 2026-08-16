@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0.0",
+  "name": "hiring_review",
+  "version": "1.0.0",
+  "entry": "receive_application",
+  "nodes": [
+    {
+      "name": "receive_application",
+      "effect_class": "pure"
+    },
+    {
+      "name": "parse_cv",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "check_qualification",
+      "effect_class": "pure",
+      "reads_declared": [
+        "qualification_level",
+        "required_qualification"
+      ],
+      "writes_declared": [
+        "qualification_met"
+      ]
+    },
+    {
+      "name": "assess_experience",
+      "effect_class": "pure",
+      "reads_declared": [
+        "relevant_experience_months",
+        "required_experience_months"
+      ],
+      "writes_declared": [
+        "experience_met",
+        "shortfall_months"
+      ]
+    },
+    {
+      "name": "apply_policy",
+      "effect_class": "pure",
+      "writes_declared": [
+        "disposition",
+        "policy_version",
+        "policy_clause",
+        "screen_result"
+      ]
+    },
+    {
+      "name": "human_review",
+      "effect_class": "pure"
+    },
+    {
+      "name": "auto_reject",
+      "effect_class": "pure"
+    },
+    {
+      "name": "auto_advance",
+      "effect_class": "pure"
+    },
+    {
+      "name": "final_recommendation",
+      "effect_class": "pure"
+    }
+  ],
+  "transitions": {
+    "receive_application": {
+      "kind": "next",
+      "to": "parse_cv"
+    },
+    "parse_cv": {
+      "kind": "next",
+      "to": "check_qualification"
+    },
+    "check_qualification": {
+      "kind": "next",
+      "to": "assess_experience"
+    },
+    "assess_experience": {
+      "kind": "next",
+      "to": "apply_policy"
+    },
+    "apply_policy": {
+      "kind": "route",
+      "on": "disposition",
+      "map": {
+        "auto_reject": "auto_reject",
+        "human_review": "human_review",
+        "auto_advance": "auto_advance"
+      },
+      "default": "human_review"
+    },
+    "human_review": {
+      "kind": "next",
+      "to": "final_recommendation"
+    },
+    "auto_reject": {
+      "kind": "terminal"
+    },
+    "auto_advance": {
+      "kind": "terminal"
+    },
+    "final_recommendation": {
+      "kind": "terminal"
+    }
+  }
+}

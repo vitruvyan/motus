@@ -38,44 +38,92 @@ from motus_anchor_opentimestamps import OpenTimestampsAnchor
 OUT = Path(__file__).resolve().parent / "out" / "domains"
 
 
+def commit(anchor: "OpenTimestampsAnchor", root: str, out: Path,
+           stem: str) -> dict:
+    """Submit one root and write the proof beside it.
+
+    The bytes committed to are the root STRING as this project writes it,
+    `sha256:<hex>` — not the raw digest. A verifier reproducing this has to
+    know which of the two was submitted, so it is stated here, in the receipt,
+    and in the bundle's VERIFY.txt rather than left to be guessed.
+    """
+    receipt = anchor.publish(root.encode("utf-8"))
+    payload = receipt.to_dict() if hasattr(receipt, "to_dict") else dict(receipt)
+
+    (out / f"{stem}.anchor.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+
+    proof = payload.get("proof") or {}
+    serialized = proof.get("serialized")
+    if serialized:
+        # Named `root.txt.ots` where the bundle carries `root.txt`, because
+        # that is the pair OpenTimestamps' own client expects: `ots verify
+        # root.txt.ots` finds its target by stripping the suffix. A proof whose
+        # target has to be supplied by hand is a proof most people never check.
+        (out / f"{stem}.ots").write_bytes(bytes.fromhex(serialized))
+
+    return {
+        "network": payload.get("network"),
+        "state": payload.get("state"),
+        "checkpoint": payload.get("checkpoint"),
+        "committed_bytes": "the root string, utf-8",
+        "calendars_accepted": proof.get("calendars_accepted", []),
+        "calendars_refused": proof.get("calendars_refused", {}),
+        "submitted_at": proof.get("submitted_at"),
+        "proof_file": f"{out.name}/{stem}.ots",
+        "verify_with": f"ots verify {stem}.ots",
+    }
+
+
+def anchor_hiring(anchor: "OpenTimestampsAnchor") -> None:
+    """The demo's spine, whose index is one object rather than a list."""
+    out = Path(__file__).resolve().parent / "out" / "hiring"
+    index_path = out / "index.json"
+    if not index_path.exists():
+        print("hiring: nothing generated yet — run demo/hiring_review.py first")
+        return
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    if (index.get("anchor") or {}).get("state"):
+        print(f"{'hiring_review':22s} {index['anchor']['state']:9s} "
+              f"already submitted {index['anchor'].get('submitted_at')} "
+              f"\u2014 left alone")
+        return
+    index["anchor"] = commit(anchor, index["root"], out, "root.txt")
+    index_path.write_text(
+        json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"{'hiring_review':22s} {index['anchor']['state']:9s} "
+          f"{len(index['anchor']['calendars_accepted'])} calendars  "
+          f"{index['root'][:26]}\u2026")
+
+
 def main() -> None:
     index = json.loads((OUT / "index.json").read_text(encoding="utf-8"))
     anchor = OpenTimestampsAnchor()
 
     for entry in index:
-        root = entry["root"]
-        # The bytes committed to are the root STRING as this project writes it,
-        # `sha256:<hex>` — not the raw digest. A verifier reproducing this has
-        # to know which of the two was submitted, so it is stated here and in
-        # the receipt rather than left to be guessed.
-        receipt = anchor.publish(root.encode("utf-8"))
-        payload = receipt.to_dict() if hasattr(receipt, "to_dict") else dict(receipt)
-
-        (OUT / f"{entry['name']}.anchor.json").write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8")
-
-        proof = payload.get("proof") or {}
-        serialized = proof.get("serialized")
-        if serialized:
-            (OUT / f"{entry['name']}.ots").write_bytes(bytes.fromhex(serialized))
-
-        entry["anchor"] = {
-            "network": payload.get("network"),
-            "state": payload.get("state"),
-            "checkpoint": payload.get("checkpoint"),
-            "committed_bytes": "the root string, utf-8",
-            "calendars_accepted": proof.get("calendars_accepted", []),
-            "calendars_refused": proof.get("calendars_refused", {}),
-            "submitted_at": proof.get("submitted_at"),
-            "proof_file": f"demo/out/domains/{entry['name']}.ots",
-            "verify_with": f"ots verify demo/out/domains/{entry['name']}.ots",
-        }
-        print(f"{entry['name']:22s} {payload.get('state'):9s} "
-              f"{len(proof.get('calendars_accepted', []))} calendars  {root[:26]}…")
+        # **Do not resubmit what is already submitted.** A second publish
+        # returns a fresh proof whose aggregation starts over, throwing away
+        # however many hours the first one had already spent waiting for a
+        # block. Re-running this script must not make the evidence younger.
+        if (entry.get("anchor") or {}).get("state"):
+            print(f"{entry['name']:22s} {entry['anchor']['state']:9s} "
+                  f"already submitted {entry['anchor'].get('submitted_at')} "
+                  f"\u2014 left alone")
+            continue
+        entry["anchor"] = commit(anchor, entry["root"], OUT, entry["name"])
+        entry["anchor"]["proof_file"] = f"demo/out/domains/{entry['name']}.ots"
+        entry["anchor"]["verify_with"] = (
+            f"ots verify demo/out/domains/{entry['name']}.ots")
+        print(f"{entry['name']:22s} {entry['anchor']['state']:9s} "
+              f"{len(entry['anchor']['calendars_accepted'])} calendars  "
+              f"{entry['root'][:26]}\u2026")
 
     (OUT / "index.json").write_text(
         json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    anchor_hiring(anchor)
+
     print("\nstate is `pending` and stays pending on the page until a Bitcoin "
           "block carries it. That is the honest answer, not a limitation to "
           "design around.")
