@@ -1,0 +1,490 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-pump_prognosis",
+    "graph": {
+      "name": "pump_prognosis",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:41f7cc0f851aff341d493d196da316ffa524d97ebc0184a25e2d2f53e3271c70",
+      "code_fingerprint": "code:sha256:f1534e9e60b69b8dfd6935173acbcd98b6374fc468f62c96aeca4096aa2a0b99",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T18:16:35.946116Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T18:16:35.946290Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:ba536ec68626cc44a729870e216b5a1c577dd21dc5b7e8bc69ed0b8debb5a5e4",
+        "prev_hash": "sha256:467438ffcbed187b11a4182293393b965bd7fd244a66c645f4998138006d786e"
+      },
+      "intent": "Can pump P-114 run to the scheduled June shutdown?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T18:16:35.946406Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:4a9bdb183be2ffaa5baed5fe8662a1fa6ea41cfd1771ffc6f5179632285fbae3",
+        "prev_hash": "sha256:ba536ec68626cc44a729870e216b5a1c577dd21dc5b7e8bc69ed0b8debb5a5e4"
+      },
+      "node": "receive_request",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T18:16:35.946584Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:f2be15da80e18c898acae6914422fef808bfa2f85bc397a0bbf1efe3739bfc38",
+        "prev_hash": "sha256:4a9bdb183be2ffaa5baed5fe8662a1fa6ea41cfd1771ffc6f5179632285fbae3"
+      },
+      "node": "receive_request",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "asset_id",
+            "value": "P-114",
+            "source": "cmms",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "horizon_hours",
+            "value": 500,
+            "source": "cmms",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "contract_tier",
+            "value": "gold",
+            "source": "crm",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T18:16:35.946762Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:9f66deaa3e5b1c13c8aa1e433228bb21660540a011e4c48ce5cdbf018fb22d25",
+        "prev_hash": "sha256:f2be15da80e18c898acae6914422fef808bfa2f85bc397a0bbf1efe3739bfc38"
+      },
+      "after": "receive_request",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "fetch_readings",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "fetch_readings",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T18:16:35.946859Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:080f19070840e6d3f0dc79c8b730259d7321781dd83b64611ee3b4a96ab5b585",
+        "prev_hash": "sha256:9f66deaa3e5b1c13c8aa1e433228bb21660540a011e4c48ce5cdbf018fb22d25"
+      },
+      "node": "fetch_readings",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T18:16:35.947149Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:bec063b7ffddc4e2f7e4711d18c88a4ad8c9ba589ca4aabf06317acfcc9bec14",
+        "prev_hash": "sha256:080f19070840e6d3f0dc79c8b730259d7321781dd83b64611ee3b4a96ab5b585"
+      },
+      "node": "fetch_readings",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "temperature_c",
+            "value": 71.2,
+            "source": "historian",
+            "ts": "2026-03-14T22:15:00Z"
+          },
+          {
+            "key": "flow_rate_m3h",
+            "value": 118.0,
+            "source": "historian",
+            "ts": "2026-03-14T22:15:00Z"
+          },
+          {
+            "key": "channels_read",
+            "value": 2,
+            "source": "historian",
+            "ts": "2026-03-14T22:15:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": [
+          {
+            "what": "vibration_channel",
+            "reason": "sensor offline since 2026-03-03; no samples in the window",
+            "ts": "2026-03-14T22:15:00Z",
+            "evidence": {
+              "expected_channels": 3,
+              "received_channels": 2,
+              "last_sample": "2026-03-03T04:12:00Z"
+            }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET historian/assets/P-114/channels?window=90d"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T18:16:35.947354Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:31b6422c02f77f609312bccdad357876a837481e87cf1e1f9a22e61157a6226f",
+        "prev_hash": "sha256:bec063b7ffddc4e2f7e4711d18c88a4ad8c9ba589ca4aabf06317acfcc9bec14"
+      },
+      "after": "fetch_readings",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "assess",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "assess",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T18:16:35.947455Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:7b5938348127115356a44f8afe59af0b74d6b254f282dd29e710f8c268bbed78",
+        "prev_hash": "sha256:31b6422c02f77f609312bccdad357876a837481e87cf1e1f9a22e61157a6226f"
+      },
+      "node": "assess",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T18:16:35.947586Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:8cdeb64d69fc6453a3edcd58729d7be057c42d60f7c3b3d3b706d71599d46643",
+        "prev_hash": "sha256:7b5938348127115356a44f8afe59af0b74d6b254f282dd29e710f8c268bbed78"
+      },
+      "node": "assess",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "channels_read",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 2
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "band",
+            "value": "partial",
+            "source": "assessor",
+            "ts": "2026-03-14T22:16:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T18:16:35.947790Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:759f531fd04aab0a1c73d4fe028b90cf37771e31e8f3678ae215784d83bcc692",
+        "prev_hash": "sha256:8cdeb64d69fc6453a3edcd58729d7be057c42d60f7c3b3d3b706d71599d46643"
+      },
+      "after": "assess",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "apply_policy",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "apply_policy",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T18:16:35.947885Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:ab901b403a21e8b04874c6da7d1934cb81705d2569f8f05186eee046cf723f6a",
+        "prev_hash": "sha256:759f531fd04aab0a1c73d4fe028b90cf37771e31e8f3678ae215784d83bcc692"
+      },
+      "node": "apply_policy",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T18:16:35.948080Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:7b88a157859b2af175aff5a22ed5587d946d4cf171c7e6f502496a2073e6c4fd",
+        "prev_hash": "sha256:ab901b403a21e8b04874c6da7d1934cb81705d2569f8f05186eee046cf723f6a"
+      },
+      "node": "apply_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "band",
+          "origin": {
+            "kind": "transition",
+            "seq": 9,
+            "collection": "facts",
+            "index": 0
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "rotating-equipment v4.0",
+            "source": "policy",
+            "ts": "2026-03-14T22:17:00Z"
+          },
+          {
+            "key": "threshold",
+            "value": "approve when no channel exceeds its alarm band",
+            "source": "policy",
+            "ts": "2026-03-14T22:17:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "disposition",
+            "value": "approve_run",
+            "ts": "2026-03-14T22:17:00Z",
+            "reason": "the two channels that reported are inside their alarm bands. The vibration channel did not report and was not evaluated"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T18:16:35.948289Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:b73687fa07bfb5826e3bdb00ff750d78d8d9fe338d2b16ba7f22dc1bbebe1f5c",
+        "prev_hash": "sha256:7b88a157859b2af175aff5a22ed5587d946d4cf171c7e6f502496a2073e6c4fd"
+      },
+      "after": "apply_policy",
+      "on": "disposition",
+      "value": "approve_run",
+      "origin": {
+        "kind": "transition",
+        "seq": 12,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "approve_run",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "approve_run"
+          },
+          "target": "approve_run",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "schedule_service"
+          },
+          "target": "schedule_service",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "human_review"
+          },
+          "target": "human_review",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "human_review",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T18:16:35.948478Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:c482b0d2e3f727cbcce078cce8b7ed26c907ccfbb956c75f5608118c8e316851",
+        "prev_hash": "sha256:b73687fa07bfb5826e3bdb00ff750d78d8d9fe338d2b16ba7f22dc1bbebe1f5c"
+      },
+      "node": "approve_run",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T18:16:35.948604Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:40162efdc746c7814cbaeea7d338a3a4a56d68ff94828591c7fb3a3edc49777c",
+        "prev_hash": "sha256:c482b0d2e3f727cbcce078cce8b7ed26c907ccfbb956c75f5608118c8e316851"
+      },
+      "node": "approve_run",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "outcome",
+            "value": "cleared to the June shutdown",
+            "source": "policy",
+            "ts": "2026-03-14T22:18:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T18:16:35.948768Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:c1b2b2cfd328bc33dde7ca14aae1b723dc3cc96fd8948183a8ca35f0ae1aaa29",
+        "prev_hash": "sha256:40162efdc746c7814cbaeea7d338a3a4a56d68ff94828591c7fb3a3edc49777c"
+      },
+      "after": "approve_run",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T18:16:35.948878Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:1ba7c0859574872182c245044c56f68f84443341cb692511859896e7cd616ec7",
+        "prev_hash": "sha256:c1b2b2cfd328bc33dde7ca14aae1b723dc3cc96fd8948183a8ca35f0ae1aaa29"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}
