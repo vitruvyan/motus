@@ -6,7 +6,7 @@
       "name": "pump_prognosis",
       "version": "1.0.0",
       "graph_fingerprint": "graph:sha256:41f7cc0f851aff341d493d196da316ffa524d97ebc0184a25e2d2f53e3271c70",
-      "code_fingerprint": "code:sha256:f1534e9e60b69b8dfd6935173acbcd98b6374fc468f62c96aeca4096aa2a0b99",
+      "code_fingerprint": "code:sha256:b7185286caff3b69706d6a7b5f73da28efe35c355c81bb19c62c05d6c2536167",
       "spec_schema_version": "1.0.0"
     },
     "policy": "strict",
@@ -18,7 +18,7 @@
       ]
     },
     "metadata": {},
-    "created_ts": "2026-08-16T18:16:35.946116Z",
+    "created_ts": "2026-08-16T18:21:24.546882Z",
     "sink": {
       "flush_interval_ms": 0,
       "chunk_records": 1
@@ -27,11 +27,11 @@
   "records": [
     {
       "seq": 1,
-      "ts": "2026-08-16T18:16:35.946290Z",
+      "ts": "2026-08-16T18:21:24.547058Z",
       "kind": "run_started",
       "integrity": {
-        "payload_hash": "sha256:ba536ec68626cc44a729870e216b5a1c577dd21dc5b7e8bc69ed0b8debb5a5e4",
-        "prev_hash": "sha256:467438ffcbed187b11a4182293393b965bd7fd244a66c645f4998138006d786e"
+        "payload_hash": "sha256:a98eb75aba6903493ea00301d57eab413714849a8ec6789df56a83309cd8239b",
+        "prev_hash": "sha256:861983f07f5b9f3ff786ee659e9382d01a52eb3fb101d4c347e65f9ea33b1d4f"
       },
       "intent": "Can pump P-114 run to the scheduled June shutdown?",
       "initial_state": {
@@ -42,22 +42,22 @@
     },
     {
       "seq": 2,
-      "ts": "2026-08-16T18:16:35.946406Z",
+      "ts": "2026-08-16T18:21:24.547188Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:4a9bdb183be2ffaa5baed5fe8662a1fa6ea41cfd1771ffc6f5179632285fbae3",
-        "prev_hash": "sha256:ba536ec68626cc44a729870e216b5a1c577dd21dc5b7e8bc69ed0b8debb5a5e4"
+        "payload_hash": "sha256:3f19152f7ac41466967fa185c9891163599d10ba5277b912532ac60578f81dd9",
+        "prev_hash": "sha256:a98eb75aba6903493ea00301d57eab413714849a8ec6789df56a83309cd8239b"
       },
       "node": "receive_request",
       "attempt": 1
     },
     {
       "seq": 3,
-      "ts": "2026-08-16T18:16:35.946584Z",
+      "ts": "2026-08-16T18:21:24.547387Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:f2be15da80e18c898acae6914422fef808bfa2f85bc397a0bbf1efe3739bfc38",
-        "prev_hash": "sha256:4a9bdb183be2ffaa5baed5fe8662a1fa6ea41cfd1771ffc6f5179632285fbae3"
+        "payload_hash": "sha256:a72d7d3dc6b0485d3eb617f049879296c275addcf19ea970fad2f208260ad96f",
+        "prev_hash": "sha256:3f19152f7ac41466967fa185c9891163599d10ba5277b912532ac60578f81dd9"
       },
       "node": "receive_request",
       "attempt": 1,
@@ -96,11 +96,11 @@
     },
     {
       "seq": 4,
-      "ts": "2026-08-16T18:16:35.946762Z",
+      "ts": "2026-08-16T18:21:24.547560Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:9f66deaa3e5b1c13c8aa1e433228bb21660540a011e4c48ce5cdbf018fb22d25",
-        "prev_hash": "sha256:f2be15da80e18c898acae6914422fef808bfa2f85bc397a0bbf1efe3739bfc38"
+        "payload_hash": "sha256:93e7c2c7a01edd04be64f2454a112fd7693fe4788b5d9a26ce5f1f6a07cca516",
+        "prev_hash": "sha256:a72d7d3dc6b0485d3eb617f049879296c275addcf19ea970fad2f208260ad96f"
       },
       "after": "receive_request",
       "on": null,
@@ -120,22 +120,22 @@
     },
     {
       "seq": 5,
-      "ts": "2026-08-16T18:16:35.946859Z",
+      "ts": "2026-08-16T18:21:24.547663Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:080f19070840e6d3f0dc79c8b730259d7321781dd83b64611ee3b4a96ab5b585",
-        "prev_hash": "sha256:9f66deaa3e5b1c13c8aa1e433228bb21660540a011e4c48ce5cdbf018fb22d25"
+        "payload_hash": "sha256:d8bfdd2da8197785b9bdbb842535832025d192ba20f5b088ef058d44f0f80e5f",
+        "prev_hash": "sha256:93e7c2c7a01edd04be64f2454a112fd7693fe4788b5d9a26ce5f1f6a07cca516"
       },
       "node": "fetch_readings",
       "attempt": 1
     },
     {
       "seq": 6,
-      "ts": "2026-08-16T18:16:35.947149Z",
+      "ts": "2026-08-16T18:21:24.547985Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:bec063b7ffddc4e2f7e4711d18c88a4ad8c9ba589ca4aabf06317acfcc9bec14",
-        "prev_hash": "sha256:080f19070840e6d3f0dc79c8b730259d7321781dd83b64611ee3b4a96ab5b585"
+        "payload_hash": "sha256:85c4c907d887d97e8867b29249cd3aeac242f4ae4c25b085da6104d26c771ce9",
+        "prev_hash": "sha256:d8bfdd2da8197785b9bdbb842535832025d192ba20f5b088ef058d44f0f80e5f"
       },
       "node": "fetch_readings",
       "attempt": 1,
@@ -147,13 +147,13 @@
         "facts": [
           {
             "key": "temperature_c",
-            "value": 71.2,
+            "value": 71,
             "source": "historian",
             "ts": "2026-03-14T22:15:00Z"
           },
           {
             "key": "flow_rate_m3h",
-            "value": 118.0,
+            "value": 118,
             "source": "historian",
             "ts": "2026-03-14T22:15:00Z"
           },
@@ -190,11 +190,11 @@
     },
     {
       "seq": 7,
-      "ts": "2026-08-16T18:16:35.947354Z",
+      "ts": "2026-08-16T18:21:24.548194Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:31b6422c02f77f609312bccdad357876a837481e87cf1e1f9a22e61157a6226f",
-        "prev_hash": "sha256:bec063b7ffddc4e2f7e4711d18c88a4ad8c9ba589ca4aabf06317acfcc9bec14"
+        "payload_hash": "sha256:b8a6611968fe38542ab6d5b159fd4c6caf07287e96ae6cec4a05893628c0e6bf",
+        "prev_hash": "sha256:85c4c907d887d97e8867b29249cd3aeac242f4ae4c25b085da6104d26c771ce9"
       },
       "after": "fetch_readings",
       "on": null,
@@ -214,22 +214,22 @@
     },
     {
       "seq": 8,
-      "ts": "2026-08-16T18:16:35.947455Z",
+      "ts": "2026-08-16T18:21:24.548289Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:7b5938348127115356a44f8afe59af0b74d6b254f282dd29e710f8c268bbed78",
-        "prev_hash": "sha256:31b6422c02f77f609312bccdad357876a837481e87cf1e1f9a22e61157a6226f"
+        "payload_hash": "sha256:8fdcca741187b34553b99a1b2aea38d1c9e4cfded0ae9056455b005931cc29a1",
+        "prev_hash": "sha256:b8a6611968fe38542ab6d5b159fd4c6caf07287e96ae6cec4a05893628c0e6bf"
       },
       "node": "assess",
       "attempt": 1
     },
     {
       "seq": 9,
-      "ts": "2026-08-16T18:16:35.947586Z",
+      "ts": "2026-08-16T18:21:24.548441Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:8cdeb64d69fc6453a3edcd58729d7be057c42d60f7c3b3d3b706d71599d46643",
-        "prev_hash": "sha256:7b5938348127115356a44f8afe59af0b74d6b254f282dd29e710f8c268bbed78"
+        "payload_hash": "sha256:9aff7ba4f70dffabf2650daa4652f5d124a7f90fa846942c7a02421ed46728c9",
+        "prev_hash": "sha256:8fdcca741187b34553b99a1b2aea38d1c9e4cfded0ae9056455b005931cc29a1"
       },
       "node": "assess",
       "attempt": 1,
@@ -266,11 +266,11 @@
     },
     {
       "seq": 10,
-      "ts": "2026-08-16T18:16:35.947790Z",
+      "ts": "2026-08-16T18:21:24.548606Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:759f531fd04aab0a1c73d4fe028b90cf37771e31e8f3678ae215784d83bcc692",
-        "prev_hash": "sha256:8cdeb64d69fc6453a3edcd58729d7be057c42d60f7c3b3d3b706d71599d46643"
+        "payload_hash": "sha256:5ece230444b2fb375b78da44c14446245140b282ee618fed9fb2c089500ee47e",
+        "prev_hash": "sha256:9aff7ba4f70dffabf2650daa4652f5d124a7f90fa846942c7a02421ed46728c9"
       },
       "after": "assess",
       "on": null,
@@ -290,22 +290,22 @@
     },
     {
       "seq": 11,
-      "ts": "2026-08-16T18:16:35.947885Z",
+      "ts": "2026-08-16T18:21:24.548725Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:ab901b403a21e8b04874c6da7d1934cb81705d2569f8f05186eee046cf723f6a",
-        "prev_hash": "sha256:759f531fd04aab0a1c73d4fe028b90cf37771e31e8f3678ae215784d83bcc692"
+        "payload_hash": "sha256:50b222af86e7754b1f492ad018feac82493ec7c2eca60fe109220c37d2ef1b9c",
+        "prev_hash": "sha256:5ece230444b2fb375b78da44c14446245140b282ee618fed9fb2c089500ee47e"
       },
       "node": "apply_policy",
       "attempt": 1
     },
     {
       "seq": 12,
-      "ts": "2026-08-16T18:16:35.948080Z",
+      "ts": "2026-08-16T18:21:24.548928Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:7b88a157859b2af175aff5a22ed5587d946d4cf171c7e6f502496a2073e6c4fd",
-        "prev_hash": "sha256:ab901b403a21e8b04874c6da7d1934cb81705d2569f8f05186eee046cf723f6a"
+        "payload_hash": "sha256:e6b0ea144f92ad3adc060bab66dd012584aa726b0b56aa37ecfb1ba07b3642a0",
+        "prev_hash": "sha256:50b222af86e7754b1f492ad018feac82493ec7c2eca60fe109220c37d2ef1b9c"
       },
       "node": "apply_policy",
       "attempt": 1,
@@ -355,11 +355,11 @@
     },
     {
       "seq": 13,
-      "ts": "2026-08-16T18:16:35.948289Z",
+      "ts": "2026-08-16T18:21:24.549107Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:b73687fa07bfb5826e3bdb00ff750d78d8d9fe338d2b16ba7f22dc1bbebe1f5c",
-        "prev_hash": "sha256:7b88a157859b2af175aff5a22ed5587d946d4cf171c7e6f502496a2073e6c4fd"
+        "payload_hash": "sha256:cef02c26bda1a879c36e6fa54ea68402d8d09535fc964bd1272a0f0eb6abd50c",
+        "prev_hash": "sha256:e6b0ea144f92ad3adc060bab66dd012584aa726b0b56aa37ecfb1ba07b3642a0"
       },
       "after": "apply_policy",
       "on": "disposition",
@@ -407,22 +407,22 @@
     },
     {
       "seq": 14,
-      "ts": "2026-08-16T18:16:35.948478Z",
+      "ts": "2026-08-16T18:21:24.549295Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:c482b0d2e3f727cbcce078cce8b7ed26c907ccfbb956c75f5608118c8e316851",
-        "prev_hash": "sha256:b73687fa07bfb5826e3bdb00ff750d78d8d9fe338d2b16ba7f22dc1bbebe1f5c"
+        "payload_hash": "sha256:4e075bdbe8cfc2dc04aef404ef15774eaf4ad82b49bea2ad11eeab1efe8a4aee",
+        "prev_hash": "sha256:cef02c26bda1a879c36e6fa54ea68402d8d09535fc964bd1272a0f0eb6abd50c"
       },
       "node": "approve_run",
       "attempt": 1
     },
     {
       "seq": 15,
-      "ts": "2026-08-16T18:16:35.948604Z",
+      "ts": "2026-08-16T18:21:24.549409Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:40162efdc746c7814cbaeea7d338a3a4a56d68ff94828591c7fb3a3edc49777c",
-        "prev_hash": "sha256:c482b0d2e3f727cbcce078cce8b7ed26c907ccfbb956c75f5608118c8e316851"
+        "payload_hash": "sha256:05092a3493b1bdaa5d8a3ec039d4feb92bed47ab995dd8f8848374ad27f8bad9",
+        "prev_hash": "sha256:4e075bdbe8cfc2dc04aef404ef15774eaf4ad82b49bea2ad11eeab1efe8a4aee"
       },
       "node": "approve_run",
       "attempt": 1,
@@ -449,11 +449,11 @@
     },
     {
       "seq": 16,
-      "ts": "2026-08-16T18:16:35.948768Z",
+      "ts": "2026-08-16T18:21:24.549541Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:c1b2b2cfd328bc33dde7ca14aae1b723dc3cc96fd8948183a8ca35f0ae1aaa29",
-        "prev_hash": "sha256:40162efdc746c7814cbaeea7d338a3a4a56d68ff94828591c7fb3a3edc49777c"
+        "payload_hash": "sha256:110942838352a8db16ed1c1f3f8eb7f5fe48931a7b97e83c1b265b7dfdf57dac",
+        "prev_hash": "sha256:05092a3493b1bdaa5d8a3ec039d4feb92bed47ab995dd8f8848374ad27f8bad9"
       },
       "after": "approve_run",
       "on": null,
@@ -473,11 +473,11 @@
     },
     {
       "seq": 17,
-      "ts": "2026-08-16T18:16:35.948878Z",
+      "ts": "2026-08-16T18:21:24.549639Z",
       "kind": "run_completed",
       "integrity": {
-        "payload_hash": "sha256:1ba7c0859574872182c245044c56f68f84443341cb692511859896e7cd616ec7",
-        "prev_hash": "sha256:c1b2b2cfd328bc33dde7ca14aae1b723dc3cc96fd8948183a8ca35f0ae1aaa29"
+        "payload_hash": "sha256:fd2282aa3a2bed664974a7c1f86bcb44e411a9b18e7ad804442af0125e7262c7",
+        "prev_hash": "sha256:110942838352a8db16ed1c1f3f8eb7f5fe48931a7b97e83c1b265b7dfdf57dac"
       },
       "replay": {
         "capability": "none",

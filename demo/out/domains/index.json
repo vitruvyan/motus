@@ -2,7 +2,7 @@
   {
     "name": "cold_chain_release",
     "prompt": "Lot FRZ-2291 logged a temperature excursion to -14 °C for 40 minutes. Can we release it?",
-    "root": "sha256:fc50062c8b8a8f506e3ddb44afd6fd80e77d2eba18c3f907352ad35a38c911c1",
+    "root": "sha256:930a4fb44f610a4ad09e8f134ccf164c2e7f9d7a050174c861f9244d5a5a74e8",
     "records": 17,
     "declared_reads": [
       "excursion_minutes",
@@ -16,7 +16,7 @@
     "anchor": {
       "network": "opentimestamps:bitcoin",
       "state": "pending",
-      "checkpoint": "sha256:d44190d3e72bacac4c0786d987e389d9c7a8da0177212c19f132f83b64fd0317",
+      "checkpoint": "sha256:12f12c5ed719ebdf3bb5aa85d8bc390f932437f71ae91ea57b803fdff0c587f9",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
         "https://alice.btc.calendar.opentimestamps.org",
@@ -24,7 +24,7 @@
         "https://finney.calendar.eternitywall.com"
       ],
       "calendars_refused": {},
-      "submitted_at": "2026-08-16T18:17:44Z",
+      "submitted_at": "2026-08-16T18:21:52Z",
       "proof_file": "demo/out/domains/cold_chain_release.ots",
       "verify_with": "ots verify demo/out/domains/cold_chain_release.ots"
     }
@@ -32,7 +32,7 @@
   {
     "name": "pump_prognosis",
     "prompt": "Can pump P-114 run to the scheduled June shutdown?",
-    "root": "sha256:1ba7c0859574872182c245044c56f68f84443341cb692511859896e7cd616ec7",
+    "root": "sha256:fd2282aa3a2bed664974a7c1f86bcb44e411a9b18e7ad804442af0125e7262c7",
     "records": 17,
     "declared_reads": [
       "temperature_c",
@@ -47,7 +47,7 @@
     "anchor": {
       "network": "opentimestamps:bitcoin",
       "state": "pending",
-      "checkpoint": "sha256:b3d298bfcdcb112cbe7d525567eca55a2999b843851c8b7b17364a7a33229e43",
+      "checkpoint": "sha256:0672accb07beac378e7205c92aff34166ff9b141ed2d0521bf1190a6bb59de02",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
         "https://alice.btc.calendar.opentimestamps.org",
@@ -55,7 +55,7 @@
         "https://finney.calendar.eternitywall.com"
       ],
       "calendars_refused": {},
-      "submitted_at": "2026-08-16T18:17:47Z",
+      "submitted_at": "2026-08-16T18:21:55Z",
       "proof_file": "demo/out/domains/pump_prognosis.ots",
       "verify_with": "ots verify demo/out/domains/pump_prognosis.ots"
     }
@@ -63,7 +63,7 @@
   {
     "name": "emergency_triage",
     "prompt": "61-year-old, chest pain, vitals on file. What triage code?",
-    "root": "sha256:996b81c60e6efc9719d011788cfd9fcf44bca0747a1bcfb51afc17fa0ecba571",
+    "root": "sha256:64d4717fa15c501e6a64af236f30253db6753f415bc7d4fa0da6fe026c44e34b",
     "records": 17,
     "declared_reads": [
       "systolic_mmhg",
@@ -79,7 +79,7 @@
     "anchor": {
       "network": "opentimestamps:bitcoin",
       "state": "pending",
-      "checkpoint": "sha256:f0ce7d72634942a155edeec9310c510eda83fbad5e9dce2543f2a7e57292e674",
+      "checkpoint": "sha256:e0337cb897a7fbcd9581ae7b1bc4ec4c24c81ea0295a8ad02b81172eca66d2eb",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
         "https://alice.btc.calendar.opentimestamps.org",
@@ -87,7 +87,7 @@
         "https://finney.calendar.eternitywall.com"
       ],
       "calendars_refused": {},
-      "submitted_at": "2026-08-16T18:17:50Z",
+      "submitted_at": "2026-08-16T18:21:58Z",
       "proof_file": "demo/out/domains/emergency_triage.ots",
       "verify_with": "ots verify demo/out/domains/emergency_triage.ots"
     }

@@ -6,7 +6,7 @@
       "name": "cold_chain_release",
       "version": "1.0.0",
       "graph_fingerprint": "graph:sha256:310c0a8972be0132fb2c94ccb99c42c44f46dd61258326ce2087f0535cbc2997",
-      "code_fingerprint": "code:sha256:0152aedb9c90c4f5e822341220cdcf4528ba67965f3a7f3acca50938adfa9e2d",
+      "code_fingerprint": "code:sha256:7f4b0501abeca100bf3cee10c7b5ff320c455055622f6b3e9a60dc7419a89829",
       "spec_schema_version": "1.0.0"
     },
     "policy": "strict",
@@ -18,7 +18,7 @@
       ]
     },
     "metadata": {},
-    "created_ts": "2026-08-16T18:16:35.937149Z",
+    "created_ts": "2026-08-16T18:21:24.538649Z",
     "sink": {
       "flush_interval_ms": 0,
       "chunk_records": 1
@@ -27,11 +27,11 @@
   "records": [
     {
       "seq": 1,
-      "ts": "2026-08-16T18:16:35.937376Z",
+      "ts": "2026-08-16T18:21:24.538957Z",
       "kind": "run_started",
       "integrity": {
-        "payload_hash": "sha256:f03c6ce7193553f45699a4c6fdc8b0c22cee8ead08a8328fa2a5a8f4b3c6a983",
-        "prev_hash": "sha256:48bf894965a1a36321390c436a886536e1af9302801b5df9f2a8432588b00eae"
+        "payload_hash": "sha256:e734e7fa29b9ade29b7d89f6bd80d10d8fd078a0dfd10a1e555515fd20f80a08",
+        "prev_hash": "sha256:d4191b43274d6c8d909849e6439dd282f6d0a733f7f98aa25eb5727e39e3e0c5"
       },
       "intent": "Lot FRZ-2291 logged a temperature excursion to -14 °C for 40 minutes. Can we release it?",
       "initial_state": {
@@ -42,22 +42,22 @@
     },
     {
       "seq": 2,
-      "ts": "2026-08-16T18:16:35.937563Z",
+      "ts": "2026-08-16T18:21:24.539153Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:c252378538934674723ccf0b888f09499f13c028c1fe03bdb1f2b7e716e88dd4",
-        "prev_hash": "sha256:f03c6ce7193553f45699a4c6fdc8b0c22cee8ead08a8328fa2a5a8f4b3c6a983"
+        "payload_hash": "sha256:5734347f42a4b07eee13ea7f9297089426db306badd43b2c714e82f7d347e6e5",
+        "prev_hash": "sha256:e734e7fa29b9ade29b7d89f6bd80d10d8fd078a0dfd10a1e555515fd20f80a08"
       },
       "node": "receive_request",
       "attempt": 1
     },
     {
       "seq": 3,
-      "ts": "2026-08-16T18:16:35.937859Z",
+      "ts": "2026-08-16T18:21:24.539491Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:90dd3ce54ee7587b6db4c829865f04e7960b02abaf6f1a0de6dcdcde2e8a2c14",
-        "prev_hash": "sha256:c252378538934674723ccf0b888f09499f13c028c1fe03bdb1f2b7e716e88dd4"
+        "payload_hash": "sha256:3c47549a1f61f7da5cfbac40a061aba284c6507c490e208649a424a507daa621",
+        "prev_hash": "sha256:5734347f42a4b07eee13ea7f9297089426db306badd43b2c714e82f7d347e6e5"
       },
       "node": "receive_request",
       "attempt": 1,
@@ -96,11 +96,11 @@
     },
     {
       "seq": 4,
-      "ts": "2026-08-16T18:16:35.938026Z",
+      "ts": "2026-08-16T18:21:24.539698Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:cd5dba96775f38e47d3991da499d50378ac6199723ba0161fe8e15161bf71746",
-        "prev_hash": "sha256:90dd3ce54ee7587b6db4c829865f04e7960b02abaf6f1a0de6dcdcde2e8a2c14"
+        "payload_hash": "sha256:a89a42af7cd02a5eab0d8f2411e1a54046cc7b9597ec2b81a71318b27fd70970",
+        "prev_hash": "sha256:3c47549a1f61f7da5cfbac40a061aba284c6507c490e208649a424a507daa621"
       },
       "after": "receive_request",
       "on": null,
@@ -120,22 +120,22 @@
     },
     {
       "seq": 5,
-      "ts": "2026-08-16T18:16:35.938146Z",
+      "ts": "2026-08-16T18:21:24.539799Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:1e6ba5b2c6b338dfe4fe8dba21ed2691d975d32d6f944860072d38c1e19d5e70",
-        "prev_hash": "sha256:cd5dba96775f38e47d3991da499d50378ac6199723ba0161fe8e15161bf71746"
+        "payload_hash": "sha256:ba8971d1f5b6d148e71dedb3dfedd2434ce1c3fdc862a880259231d26f7c67d6",
+        "prev_hash": "sha256:a89a42af7cd02a5eab0d8f2411e1a54046cc7b9597ec2b81a71318b27fd70970"
       },
       "node": "fetch_readings",
       "attempt": 1
     },
     {
       "seq": 6,
-      "ts": "2026-08-16T18:16:35.938364Z",
+      "ts": "2026-08-16T18:21:24.539954Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:7b2434e2f0ba076d54b21149ecb58c028a25243d3b45777540a80e22485fdfb5",
-        "prev_hash": "sha256:1e6ba5b2c6b338dfe4fe8dba21ed2691d975d32d6f944860072d38c1e19d5e70"
+        "payload_hash": "sha256:092b1573df37f7577e59e7b33c4c55bd1b59998ca8977bd089c657002489973b",
+        "prev_hash": "sha256:ba8971d1f5b6d148e71dedb3dfedd2434ce1c3fdc862a880259231d26f7c67d6"
       },
       "node": "fetch_readings",
       "attempt": 1,
@@ -153,7 +153,7 @@
           },
           {
             "key": "excursion_low_c",
-            "value": -14.0,
+            "value": -14,
             "source": "logger-4471",
             "ts": "2026-03-14T22:15:00Z"
           },
@@ -179,11 +179,11 @@
     },
     {
       "seq": 7,
-      "ts": "2026-08-16T18:16:35.938542Z",
+      "ts": "2026-08-16T18:21:24.540082Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:65866a0ba825e7240486d5c70e3022b45f19a79c0f4c94f7f9245092bf4c0f26",
-        "prev_hash": "sha256:7b2434e2f0ba076d54b21149ecb58c028a25243d3b45777540a80e22485fdfb5"
+        "payload_hash": "sha256:b5093d77e827137d9a5566376bbeac11e906123ad5ddf380b7578ec91eeb22df",
+        "prev_hash": "sha256:092b1573df37f7577e59e7b33c4c55bd1b59998ca8977bd089c657002489973b"
       },
       "after": "fetch_readings",
       "on": null,
@@ -203,22 +203,22 @@
     },
     {
       "seq": 8,
-      "ts": "2026-08-16T18:16:35.938640Z",
+      "ts": "2026-08-16T18:21:24.540146Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:2eb05eb53fb01b1397bfe48ab6a6d2a0ff583c8d3a8406233c2feba3fc57867d",
-        "prev_hash": "sha256:65866a0ba825e7240486d5c70e3022b45f19a79c0f4c94f7f9245092bf4c0f26"
+        "payload_hash": "sha256:ec476724002af42214e937c4344fe8bcf49b7cc0c4aec585a2441f741c7f2c9d",
+        "prev_hash": "sha256:b5093d77e827137d9a5566376bbeac11e906123ad5ddf380b7578ec91eeb22df"
       },
       "node": "assess",
       "attempt": 1
     },
     {
       "seq": 9,
-      "ts": "2026-08-16T18:16:35.938857Z",
+      "ts": "2026-08-16T18:21:24.540270Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:1c9695756b381015e665a244be1d6f608156c085d6ff1e3ba7563e2bba257cc3",
-        "prev_hash": "sha256:2eb05eb53fb01b1397bfe48ab6a6d2a0ff583c8d3a8406233c2feba3fc57867d"
+        "payload_hash": "sha256:d117c422d48927b242e495504a7792382acce5c4d6aa41f2c4cd2b454f97e1ce",
+        "prev_hash": "sha256:ec476724002af42214e937c4344fe8bcf49b7cc0c4aec585a2441f741c7f2c9d"
       },
       "node": "assess",
       "attempt": 1,
@@ -264,11 +264,11 @@
     },
     {
       "seq": 10,
-      "ts": "2026-08-16T18:16:35.938994Z",
+      "ts": "2026-08-16T18:21:24.540389Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:2a1a7c49d61ba712b53020d9bfc6cab80895087af71aade84646af3c97cb7af4",
-        "prev_hash": "sha256:1c9695756b381015e665a244be1d6f608156c085d6ff1e3ba7563e2bba257cc3"
+        "payload_hash": "sha256:07793dc3b47d2849c20f5f5fe6f540c4bf1439705572d8175742c5459ffb8b50",
+        "prev_hash": "sha256:d117c422d48927b242e495504a7792382acce5c4d6aa41f2c4cd2b454f97e1ce"
       },
       "after": "assess",
       "on": null,
@@ -288,22 +288,22 @@
     },
     {
       "seq": 11,
-      "ts": "2026-08-16T18:16:35.939057Z",
+      "ts": "2026-08-16T18:21:24.540449Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:e3e490d16121b5934140cfb008d0c02e75247111ccebfe17f21177ff8a59c5f7",
-        "prev_hash": "sha256:2a1a7c49d61ba712b53020d9bfc6cab80895087af71aade84646af3c97cb7af4"
+        "payload_hash": "sha256:32bd8fab4b80d20837c01dc42b7db4380742ee43677f475ef8b41ae9ce3936ba",
+        "prev_hash": "sha256:07793dc3b47d2849c20f5f5fe6f540c4bf1439705572d8175742c5459ffb8b50"
       },
       "node": "apply_policy",
       "attempt": 1
     },
     {
       "seq": 12,
-      "ts": "2026-08-16T18:16:35.939212Z",
+      "ts": "2026-08-16T18:21:24.540594Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:aa7e7eb57ae6916ee55a5d0d8398321ce3aee0f7ff7d42b01d3461b827b10dc3",
-        "prev_hash": "sha256:e3e490d16121b5934140cfb008d0c02e75247111ccebfe17f21177ff8a59c5f7"
+        "payload_hash": "sha256:3cb90e10a8c743a7bd0cb5ca44c3d59ef61838b5412d8bd2b6d99742d4e6a458",
+        "prev_hash": "sha256:32bd8fab4b80d20837c01dc42b7db4380742ee43677f475ef8b41ae9ce3936ba"
       },
       "node": "apply_policy",
       "attempt": 1,
@@ -353,11 +353,11 @@
     },
     {
       "seq": 13,
-      "ts": "2026-08-16T18:16:35.939383Z",
+      "ts": "2026-08-16T18:21:24.540750Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:cef941098fbc625b52a094dea545e96655702fb387e3982664e205f53c34ee93",
-        "prev_hash": "sha256:aa7e7eb57ae6916ee55a5d0d8398321ce3aee0f7ff7d42b01d3461b827b10dc3"
+        "payload_hash": "sha256:2e918229c1bbaf2f5d9d05bf8d058f39ffc2f38368f63007b9075ceba44a911a",
+        "prev_hash": "sha256:3cb90e10a8c743a7bd0cb5ca44c3d59ef61838b5412d8bd2b6d99742d4e6a458"
       },
       "after": "apply_policy",
       "on": "disposition",
@@ -405,22 +405,22 @@
     },
     {
       "seq": 14,
-      "ts": "2026-08-16T18:16:35.939554Z",
+      "ts": "2026-08-16T18:21:24.540894Z",
       "kind": "attempt_started",
       "integrity": {
-        "payload_hash": "sha256:0bcac1bee2b943a446e50ba0f36be1f0869b78c1f68fad9725a33e48b8d7158d",
-        "prev_hash": "sha256:cef941098fbc625b52a094dea545e96655702fb387e3982664e205f53c34ee93"
+        "payload_hash": "sha256:038fee230bc2485fc5b731f3a2f9a269515880776e51c79b71dea026f07ec687",
+        "prev_hash": "sha256:2e918229c1bbaf2f5d9d05bf8d058f39ffc2f38368f63007b9075ceba44a911a"
       },
       "node": "release",
       "attempt": 1
     },
     {
       "seq": 15,
-      "ts": "2026-08-16T18:16:35.939663Z",
+      "ts": "2026-08-16T18:21:24.540974Z",
       "kind": "transition",
       "integrity": {
-        "payload_hash": "sha256:8390fbb74bb2d2b49228782d0242a20fa15fd368b5ccba68da034aafb706b4ef",
-        "prev_hash": "sha256:0bcac1bee2b943a446e50ba0f36be1f0869b78c1f68fad9725a33e48b8d7158d"
+        "payload_hash": "sha256:661633211c0b6d8a5655bb64d481517c974573df89303b17edde6b4db83ed86f",
+        "prev_hash": "sha256:038fee230bc2485fc5b731f3a2f9a269515880776e51c79b71dea026f07ec687"
       },
       "node": "release",
       "attempt": 1,
@@ -447,11 +447,11 @@
     },
     {
       "seq": 16,
-      "ts": "2026-08-16T18:16:35.939817Z",
+      "ts": "2026-08-16T18:21:24.541196Z",
       "kind": "routing",
       "integrity": {
-        "payload_hash": "sha256:86774b4762eaca6965f9d7d659399108416b45cce946735ee27df028171a21bd",
-        "prev_hash": "sha256:8390fbb74bb2d2b49228782d0242a20fa15fd368b5ccba68da034aafb706b4ef"
+        "payload_hash": "sha256:cf97cc92a46784b8c340fd707d29aef73d30e59c928e0a0457da80e3b129c2f8",
+        "prev_hash": "sha256:661633211c0b6d8a5655bb64d481517c974573df89303b17edde6b4db83ed86f"
       },
       "after": "release",
       "on": null,
@@ -471,11 +471,11 @@
     },
     {
       "seq": 17,
-      "ts": "2026-08-16T18:16:35.939916Z",
+      "ts": "2026-08-16T18:21:24.541265Z",
       "kind": "run_completed",
       "integrity": {
-        "payload_hash": "sha256:fc50062c8b8a8f506e3ddb44afd6fd80e77d2eba18c3f907352ad35a38c911c1",
-        "prev_hash": "sha256:86774b4762eaca6965f9d7d659399108416b45cce946735ee27df028171a21bd"
+        "payload_hash": "sha256:930a4fb44f610a4ad09e8f134ccf164c2e7f9d7a050174c861f9244d5a5a74e8",
+        "prev_hash": "sha256:cf97cc92a46784b8c340fd707d29aef73d30e59c928e0a0457da80e3b129c2f8"
       },
       "replay": {
         "capability": "none",

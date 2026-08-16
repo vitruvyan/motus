@@ -38,6 +38,23 @@ demo that shows the same thing three times has shown it once.
    not exist yet at decision time. Every malpractice case is fought with
    hindsight; this record freezes what was on the table at 22:14.
 
+## Every number here is an integer, and that is a finding rather than a style
+
+The demo recomputes each root **in the visitor's browser**, so the TypeScript
+has to agree with the Python byte for byte. Writing that second implementation
+is what surfaced #116: the canonical form is defined by CPython's `repr(float)`,
+and `JSON.stringify(-14.0)` is `-14` while `json.dumps(-14.0)` is `-14.0`.
+
+A genuine trace carrying one integral float does not survive `JSON.parse` +
+`JSON.stringify` in Node: `derived_root` returns None and the validator reports
+`T11 — payload_hash does not match the record`, which reads as tampering when
+the truth is that a browser read the document.
+
+So this file keeps to integers, which is #116's own option 1 applied to
+ourselves. **The demo is not dodging the defect** — it is filed, it is
+freeze-blocking, and the audit page says in one line that these traces are
+integer-only and why.
+
 ## And the one thing all three share
 
 Each domain carries a field the assessor **must not** use — a large customer, a
@@ -148,14 +165,14 @@ def cold_chain_nodes():
             "GET coldchain-logger/lots/FRZ-2291/excursions"))
         return (state
                 .with_fact(Fact("excursion_minutes", 40, "logger-4471", at(1)))
-                .with_fact(Fact("excursion_low_c", -14.0, "logger-4471", at(1)))
+                .with_fact(Fact("excursion_low_c", -14, "logger-4471", at(1)))
                 .with_fact(Fact("sensor_source", "logger-4471 fw 2.8.1",
                                 "logger-4471", at(1))))
 
     def assess(state: State) -> State:
         minutes = state.fact("excursion_minutes")
         low = state.fact("excursion_low_c")
-        band = "minor" if minutes < 45 and low > -18.0 else "major"
+        band = "minor" if minutes < 45 and low > -18 else "major"
         return state.with_fact(Fact("band", band, "assessor", at(2)))
 
     def apply_policy(state: State) -> State:
@@ -214,8 +231,8 @@ def pump_nodes():
             EffectClass.RECORDED_EFFECT,
             "GET historian/assets/P-114/channels?window=90d"))
         return (state
-                .with_fact(Fact("temperature_c", 71.2, "historian", at(1)))
-                .with_fact(Fact("flow_rate_m3h", 118.0, "historian", at(1)))
+                .with_fact(Fact("temperature_c", 71, "historian", at(1)))
+                .with_fact(Fact("flow_rate_m3h", 118, "historian", at(1)))
                 .with_fact(Fact("channels_read", 2, "historian", at(1)))
                 # The whole point of this scenario. A Rejection is a
                 # first-class write beside facts and decisions, so what was
