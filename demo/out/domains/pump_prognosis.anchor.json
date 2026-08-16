@@ -16,6 +16,8 @@
       "https://finney.calendar.eternitywall.com"
     ],
     "calendars_refused": {},
-    "submitted_at": "2026-08-16T18:21:55Z"
+    "submitted_at": "2026-08-16T18:21:55Z",
+    "upgraded_at": "2026-08-16T22:04:37Z",
+    "bitcoin_block_heights": []
   }
 }

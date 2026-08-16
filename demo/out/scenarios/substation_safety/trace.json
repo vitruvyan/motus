@@ -1,0 +1,782 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-substation-safety-17a",
+    "graph": {
+      "name": "substation_safety",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:b0fd0859c0ccf111d703d6df674b0d7eb535a1ee8b4cb56155e4f360c1dd0c28",
+      "code_fingerprint": "code:sha256:6fcf99614bf4e47ef2fe11480ab5b5d89823c842f0f411dfcfe38677b638026d",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T21:52:22.806394Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T21:52:22.806584Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:6e85e997805cebb49690513ee87e9276a0c6dbf391a22969a0f4b4502f4b55ac",
+        "prev_hash": "sha256:b8a58660e423112ffdf3b2f280673171be7d17265660f4be075bf1bfd954fc44"
+      },
+      "intent": "Can Acme Energy keep Substation 17 in automatic operation after the transformer anomaly?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T21:52:22.806729Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:bc8967ae68bf64db0d7ceae8b1d3c7711cd7932181acd5d36c87d0dafc3fc376",
+        "prev_hash": "sha256:6e85e997805cebb49690513ee87e9276a0c6dbf391a22969a0f4b4502f4b55ac"
+      },
+      "node": "anomaly_detected",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T21:52:22.806940Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:dbed76f570a35439b54b41e611893b9cef0abf781960322dd321be8ee7efa934",
+        "prev_hash": "sha256:bc8967ae68bf64db0d7ceae8b1d3c7711cd7932181acd5d36c87d0dafc3fc376"
+      },
+      "node": "anomaly_detected",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "record_is_synthetic",
+            "value": "invented scenario — no real operator, no real substation",
+            "source": "anomaly_detected",
+            "ts": "2026-06-09T03:47:00Z"
+          },
+          {
+            "key": "operator",
+            "value": "Acme Energy Grid Operations",
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:47:00Z"
+          },
+          {
+            "key": "facility",
+            "value": "Substation 17",
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:47:00Z"
+          },
+          {
+            "key": "asset",
+            "value": "Transformer T-17A",
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:47:00Z"
+          },
+          {
+            "key": "event",
+            "value": "abnormal temperature excursion",
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:47:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T21:52:22.807105Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:cde9b0e334b465f87defaf6c120ec47ece6d91b35fadc5701b3f607c3cd6b2eb",
+        "prev_hash": "sha256:dbed76f570a35439b54b41e611893b9cef0abf781960322dd321be8ee7efa934"
+      },
+      "after": "anomaly_detected",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "sensor_validation",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "sensor_validation",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T21:52:22.807188Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:65aa515ccfca41e0fc1bd29ae57069a800f77184da7611eea53e6377c7937f18",
+        "prev_hash": "sha256:cde9b0e334b465f87defaf6c120ec47ece6d91b35fadc5701b3f607c3cd6b2eb"
+      },
+      "node": "sensor_validation",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T21:52:22.807425Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:665c403a59acff0322b4acaa4d4cf691d37efe21493884514ce8b4fd116fc692",
+        "prev_hash": "sha256:65aa515ccfca41e0fc1bd29ae57069a800f77184da7611eea53e6377c7937f18"
+      },
+      "node": "sensor_validation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "peak_temperature_c",
+            "value": 96,
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:48:00Z"
+          },
+          {
+            "key": "excursion_minutes",
+            "value": 7,
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:48:00Z"
+          },
+          {
+            "key": "sensor_channel",
+            "value": "T-17A winding probe 2, calibrated 2026-04-30",
+            "source": "Acme Energy — Sensor Event Report",
+            "ts": "2026-06-09T03:48:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": [
+          {
+            "what": "oil_analysis",
+            "reason": "not sampled at assessment time; the last sample predates this excursion",
+            "ts": "2026-06-09T03:48:00Z",
+            "evidence": {
+              "requested": true,
+              "sampled_at": null
+            }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET scada/substation-17/assets/T-17A/events?window=24h"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T21:52:22.807609Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:f1821536c2f0470e21d5defe852221ea90b55129ceef567168042de20d859095",
+        "prev_hash": "sha256:665c403a59acff0322b4acaa4d4cf691d37efe21493884514ce8b4fd116fc692"
+      },
+      "after": "sensor_validation",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "operating_context",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "operating_context",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T21:52:22.807712Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:b07afa3f2a532e47214f17739fa3ef98f9f52221bcf0a57954ba83e43f5950a2",
+        "prev_hash": "sha256:f1821536c2f0470e21d5defe852221ea90b55129ceef567168042de20d859095"
+      },
+      "node": "operating_context",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T21:52:22.807832Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:10d91556350417da4fa84fb1e2ef4ea41b648fe50d3699c63c9e33c4f8d08c49",
+        "prev_hash": "sha256:b07afa3f2a532e47214f17739fa3ef98f9f52221bcf0a57954ba83e43f5950a2"
+      },
+      "node": "operating_context",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "threshold_c",
+            "value": 92,
+            "source": "Transformer T-17A Operating Manual §6.2",
+            "ts": "2026-06-09T03:49:00Z"
+          },
+          {
+            "key": "manual_clause",
+            "value": "Sustained operation above 92°C requires inspection before unrestricted automatic operation resumes.",
+            "source": "Transformer T-17A Operating Manual §6.2",
+            "ts": "2026-06-09T03:49:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET document-store/assets/T-17A/operating-manual@rev6"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T21:52:22.807965Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:c028ea9a6194e69dd93c7797faeae5016e1437efb270f514b4c3513413d6e68b",
+        "prev_hash": "sha256:10d91556350417da4fa84fb1e2ef4ea41b648fe50d3699c63c9e33c4f8d08c49"
+      },
+      "after": "operating_context",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "maintenance_history",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "maintenance_history",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T21:52:22.808044Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:1978c637cee40cd72b3858207ed6faab0801f4d029e7da9594423214a61c1641",
+        "prev_hash": "sha256:c028ea9a6194e69dd93c7797faeae5016e1437efb270f514b4c3513413d6e68b"
+      },
+      "node": "maintenance_history",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T21:52:22.808154Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:6f67a6c50e64d5574411a9371cf25bb3fe57908da4ed2aeb943c5f57c15aeab4",
+        "prev_hash": "sha256:1978c637cee40cd72b3858207ed6faab0801f4d029e7da9594423214a61c1641"
+      },
+      "node": "maintenance_history",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "days_since_inspection",
+            "value": 42,
+            "source": "Maintenance Record — T-17A",
+            "ts": "2026-06-09T03:50:00Z"
+          },
+          {
+            "key": "cooling_advisory",
+            "value": "present",
+            "source": "Maintenance Record — T-17A",
+            "ts": "2026-06-09T03:50:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET cmms/assets/T-17A/maintenance?limit=5"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T21:52:22.808321Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:defbe9ee3dd161e3c0f9420ae5b938b915d5e8e2c641f602ed032cbb311450e7",
+        "prev_hash": "sha256:6f67a6c50e64d5574411a9371cf25bb3fe57908da4ed2aeb943c5f57c15aeab4"
+      },
+      "after": "maintenance_history",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "safety_assessment",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "safety_assessment",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T21:52:22.808405Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:22e3e749864729811f05525a4e79ee6d9ada3a314fb982c7f2c720c6ed30e5da",
+        "prev_hash": "sha256:defbe9ee3dd161e3c0f9420ae5b938b915d5e8e2c641f602ed032cbb311450e7"
+      },
+      "node": "safety_assessment",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T21:52:22.808618Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:6b19a882b87feb3d147ca14039dc791209c7b28b1318f911fe2736f8bafb4712",
+        "prev_hash": "sha256:22e3e749864729811f05525a4e79ee6d9ada3a314fb982c7f2c720c6ed30e5da"
+      },
+      "node": "safety_assessment",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "peak_temperature_c",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "threshold_c",
+          "origin": {
+            "kind": "transition",
+            "seq": 9,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "excursion_minutes",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 1
+          }
+        },
+        {
+          "key": "cooling_advisory",
+          "origin": {
+            "kind": "transition",
+            "seq": 12,
+            "collection": "facts",
+            "index": 1
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "margin_c",
+            "value": 4,
+            "source": "safety_assessment",
+            "ts": "2026-06-09T03:51:00Z"
+          },
+          {
+            "key": "excursion_exceeds_threshold",
+            "value": "yes",
+            "source": "safety_assessment",
+            "ts": "2026-06-09T03:51:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T21:52:22.809036Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:099d5d4e48032340bed80fa66109cc61f70abfde5616a7447556b898aff3de89",
+        "prev_hash": "sha256:6b19a882b87feb3d147ca14039dc791209c7b28b1318f911fe2736f8bafb4712"
+      },
+      "after": "safety_assessment",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "operational_policy",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "operational_policy",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T21:52:22.809122Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:d5b96909b00baa4c2e016d3a643d1a7388877c44d442bc34d24d4c6d20f0f50b",
+        "prev_hash": "sha256:099d5d4e48032340bed80fa66109cc61f70abfde5616a7447556b898aff3de89"
+      },
+      "node": "operational_policy",
+      "attempt": 1
+    },
+    {
+      "seq": 18,
+      "ts": "2026-08-16T21:52:22.809304Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:2fb5de4a76a431985fdb0d6bbc9b2a2ee352de02af40ac62e2f124bca9b083eb",
+        "prev_hash": "sha256:d5b96909b00baa4c2e016d3a643d1a7388877c44d442bc34d24d4c6d20f0f50b"
+      },
+      "node": "operational_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "excursion_exceeds_threshold",
+          "origin": {
+            "kind": "transition",
+            "seq": 15,
+            "collection": "facts",
+            "index": 1
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "Acme Energy — Grid Safety Policy v4.1",
+            "source": "Acme Energy — Grid Safety Policy v4.1",
+            "ts": "2026-06-09T03:52:00Z"
+          },
+          {
+            "key": "policy_clause_threshold",
+            "value": "Transformer excursions exceeding the declared automatic-operation threshold require operator review.",
+            "source": "Acme Energy — Grid Safety Policy v4.1 §3.4",
+            "ts": "2026-06-09T03:52:00Z"
+          },
+          {
+            "key": "policy_clause_oversight",
+            "value": "The automated system may recommend isolation, restricted operation or continued service. The final operational action after a threshold breach requires an authorised operator.",
+            "source": "Acme Energy — Human Oversight Procedure §2.2",
+            "ts": "2026-06-09T03:52:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "operation_mode",
+            "value": "review_required",
+            "ts": "2026-06-09T03:52:00Z",
+            "reason": "the excursion peaked at 96°C against a 92°C threshold, with a cooling advisory already on the asset. Policy §3.4 requires operator review before unrestricted automatic operation resumes"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 19,
+      "ts": "2026-08-16T21:52:22.809488Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:44d6e43dd8452589e9ed5933ccfaf8ad0d33fc0cbcc03228aa1f8a2aba0efe6f",
+        "prev_hash": "sha256:2fb5de4a76a431985fdb0d6bbc9b2a2ee352de02af40ac62e2f124bca9b083eb"
+      },
+      "after": "operational_policy",
+      "on": "operation_mode",
+      "value": "review_required",
+      "origin": {
+        "kind": "transition",
+        "seq": 18,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "human_operator_review",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "continue_service"
+          },
+          "target": "continue_service",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "review_required"
+          },
+          "target": "human_operator_review",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "isolate_asset"
+          },
+          "target": "isolate_asset",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "human_operator_review",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 20,
+      "ts": "2026-08-16T21:52:22.809663Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:c42032bfc2aff11105ba7b4ba4b8740ea69fd3e21488c726cf5018464d7d03ec",
+        "prev_hash": "sha256:44d6e43dd8452589e9ed5933ccfaf8ad0d33fc0cbcc03228aa1f8a2aba0efe6f"
+      },
+      "node": "human_operator_review",
+      "attempt": 1
+    },
+    {
+      "seq": 21,
+      "ts": "2026-08-16T21:52:22.809811Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:ca767fe3fea26e31e0fd520d2684c56411f6dbbe38eb9b4a3fc12d990d7099ef",
+        "prev_hash": "sha256:c42032bfc2aff11105ba7b4ba4b8740ea69fd3e21488c726cf5018464d7d03ec"
+      },
+      "node": "human_operator_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "handoff",
+            "value": "authorised operator, Substation 17 control desk",
+            "source": "human_operator_review",
+            "ts": "2026-06-09T03:53:00Z"
+          },
+          {
+            "key": "handed_over",
+            "value": "the excursion peak and duration, the manual clause, the cooling advisory and the missing oil analysis",
+            "source": "human_operator_review",
+            "ts": "2026-06-09T03:53:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 22,
+      "ts": "2026-08-16T21:52:22.809937Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:8b5a8d3f8b4574c9bf4a8b8a8504566dcd33a73d3d3735d39439e6e7792dcf71",
+        "prev_hash": "sha256:ca767fe3fea26e31e0fd520d2684c56411f6dbbe38eb9b4a3fc12d990d7099ef"
+      },
+      "after": "human_operator_review",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "recommendation",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "recommendation",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 23,
+      "ts": "2026-08-16T21:52:22.810018Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:13e3e9e51a689e17ce754c2649ef9263107f2352955d1abbb00bae073f543c7f",
+        "prev_hash": "sha256:8b5a8d3f8b4574c9bf4a8b8a8504566dcd33a73d3d3735d39439e6e7792dcf71"
+      },
+      "node": "recommendation",
+      "attempt": 1
+    },
+    {
+      "seq": 24,
+      "ts": "2026-08-16T21:52:22.810134Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:e4388e68dc57b81ef44a2728c30dc53b425eadeae57712dfcfac3b995ee5d046",
+        "prev_hash": "sha256:13e3e9e51a689e17ce754c2649ef9263107f2352955d1abbb00bae073f543c7f"
+      },
+      "node": "recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "recommendation",
+            "value": "restrict to operator-supervised operation and inspect before unrestricted automatic operation resumes",
+            "source": "recommendation",
+            "ts": "2026-06-09T03:54:00Z"
+          },
+          {
+            "key": "automated_action_issued",
+            "value": "no",
+            "source": "recommendation",
+            "ts": "2026-06-09T03:54:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 25,
+      "ts": "2026-08-16T21:52:22.810249Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:11dc8ac9ef235b06d7513a1fee7f5e776344b9cd697781de768d7cfc1b70c54f",
+        "prev_hash": "sha256:e4388e68dc57b81ef44a2728c30dc53b425eadeae57712dfcfac3b995ee5d046"
+      },
+      "after": "recommendation",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 26,
+      "ts": "2026-08-16T21:52:22.810332Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:38c2b2e998eecd6aeb00d831bb3d6b70e17b2339729da44181ab0bb26106848f",
+        "prev_hash": "sha256:11dc8ac9ef235b06d7513a1fee7f5e776344b9cd697781de768d7cfc1b70c54f"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "node:anomaly_detected:opaque_config",
+          "node:continue_service:opaque_config",
+          "node:human_operator_review:opaque_config",
+          "node:isolate_asset:opaque_config",
+          "node:maintenance_history:opaque_config",
+          "node:operating_context:opaque_config",
+          "node:operational_policy:opaque_config",
+          "node:recommendation:opaque_config",
+          "node:safety_assessment:opaque_config",
+          "node:sensor_validation:opaque_config",
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,233 @@
+{
+  "bundle_fingerprint": "bundle:sha256:7376b08008cbef4f2054f12b67bbcee17069761781f153c27dbca703a8e207fe",
+  "run_id": "demo-credit-review-77104",
+  "graph": {
+    "name": "credit_review",
+    "version": "1.0.0",
+    "graph_fingerprint": "graph:sha256:c1c816d667d285ff17924021c0ba9dc174e8e59bef084c4de64bcdaccbfd3110",
+    "code_fingerprint": "code:sha256:a33ca28eddd1c7f473c8ba0e34c348a2663ef07397d8cc0d7fecee8fdfbd6d50",
+    "spec_schema_version": "1.0.0"
+  },
+  "terminal": "run_completed",
+  "steps": [
+    {
+      "seq": 3,
+      "kind": "transition",
+      "node": "loan_application",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "record_is_synthetic",
+        "application_ref",
+        "institution",
+        "product",
+        "requested_amount_eur",
+        "declared_monthly_income_eur",
+        "applicant_name",
+        "date_of_birth",
+        "nationality",
+        "postcode"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 4,
+      "kind": "routing",
+      "after": "loan_application",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "application_check",
+      "origin": null
+    },
+    {
+      "seq": 6,
+      "kind": "transition",
+      "node": "application_check",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "application_complete"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 7,
+      "kind": "routing",
+      "after": "application_check",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "income_verification",
+      "origin": null
+    },
+    {
+      "seq": 9,
+      "kind": "transition",
+      "node": "income_verification",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "employer",
+        "verified_monthly_income_eur",
+        "declared_monthly_income_eur"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 10,
+      "kind": "routing",
+      "after": "income_verification",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "existing_obligations",
+      "origin": null
+    },
+    {
+      "seq": 12,
+      "kind": "transition",
+      "node": "existing_obligations",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "mortgage_payment_eur",
+        "vehicle_finance_eur"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 13,
+      "kind": "routing",
+      "after": "existing_obligations",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "creditworthiness_assessment",
+      "origin": null
+    },
+    {
+      "seq": 15,
+      "kind": "transition",
+      "node": "creditworthiness_assessment",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "verified_monthly_income_eur",
+        "mortgage_payment_eur",
+        "vehicle_finance_eur",
+        "requested_amount_eur"
+      ],
+      "write_keys": [
+        "total_obligations_eur",
+        "debt_to_income_bp"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 16,
+      "kind": "routing",
+      "after": "creditworthiness_assessment",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "policy_evaluation",
+      "origin": null
+    },
+    {
+      "seq": 18,
+      "kind": "transition",
+      "node": "policy_evaluation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "debt_to_income_bp"
+      ],
+      "write_keys": [
+        "policy_version",
+        "dti_threshold_bp",
+        "policy_clause_dti",
+        "policy_clause_oversight",
+        "threshold_exceeded",
+        "credit_route"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 19,
+      "kind": "routing",
+      "after": "policy_evaluation",
+      "on": "credit_route",
+      "value": "human_review",
+      "outcome": "matched",
+      "selected": "human_review",
+      "origin": {
+        "kind": "transition",
+        "seq": 18,
+        "index": 0
+      }
+    },
+    {
+      "seq": 21,
+      "kind": "transition",
+      "node": "human_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "handoff",
+        "handed_over"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 22,
+      "kind": "routing",
+      "after": "human_review",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "recommendation",
+      "origin": null
+    },
+    {
+      "seq": 24,
+      "kind": "transition",
+      "node": "recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "recommendation",
+        "automated_decision_issued"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 25,
+      "kind": "routing",
+      "after": "recommendation",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "END",
+      "origin": null
+    },
+    {
+      "seq": 26,
+      "kind": "run_completed"
+    }
+  ]
+}

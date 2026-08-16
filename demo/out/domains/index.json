@@ -26,7 +26,10 @@
       "calendars_refused": {},
       "submitted_at": "2026-08-16T18:21:52Z",
       "proof_file": "demo/out/domains/cold_chain_release.ots",
-      "verify_with": "ots verify demo/out/domains/cold_chain_release.ots"
+      "verify_with": "ots verify demo/out/domains/cold_chain_release.ots",
+      "reference": null,
+      "published_at": null,
+      "bitcoin_block_heights": []
     }
   },
   {
@@ -57,7 +60,10 @@
       "calendars_refused": {},
       "submitted_at": "2026-08-16T18:21:55Z",
       "proof_file": "demo/out/domains/pump_prognosis.ots",
-      "verify_with": "ots verify demo/out/domains/pump_prognosis.ots"
+      "verify_with": "ots verify demo/out/domains/pump_prognosis.ots",
+      "reference": null,
+      "published_at": null,
+      "bitcoin_block_heights": []
     }
   },
   {
@@ -89,7 +95,10 @@
       "calendars_refused": {},
       "submitted_at": "2026-08-16T18:21:58Z",
       "proof_file": "demo/out/domains/emergency_triage.ots",
-      "verify_with": "ots verify demo/out/domains/emergency_triage.ots"
+      "verify_with": "ots verify demo/out/domains/emergency_triage.ots",
+      "reference": null,
+      "published_at": null,
+      "bitcoin_block_heights": []
     }
   }
 ]

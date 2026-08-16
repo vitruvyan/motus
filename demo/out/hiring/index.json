@@ -26,7 +26,10 @@
     "calendars_refused": {},
     "submitted_at": "2026-08-16T21:26:34Z",
     "proof_file": "hiring/root.txt.ots",
-    "verify_with": "ots verify root.txt.ots"
+    "verify_with": "ots verify root.txt.ots",
+    "reference": null,
+    "published_at": null,
+    "bitcoin_block_heights": []
   },
   "run_id": "demo-hiring-review-0421",
   "bundle_file": "hiring-review-2026-00421.motus.zip",
