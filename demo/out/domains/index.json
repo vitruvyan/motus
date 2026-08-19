@@ -15,7 +15,7 @@
     "artefact": "demo/out/domains/cold_chain_release.json",
     "anchor": {
       "network": "opentimestamps:bitcoin",
-      "state": "pending",
+      "state": "anchored",
       "checkpoint": "sha256:12f12c5ed719ebdf3bb5aa85d8bc390f932437f71ae91ea57b803fdff0c587f9",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
@@ -27,9 +27,15 @@
       "submitted_at": "2026-08-16T18:21:52Z",
       "proof_file": "demo/out/domains/cold_chain_release.ots",
       "verify_with": "ots verify demo/out/domains/cold_chain_release.ots",
-      "reference": null,
-      "published_at": null,
-      "bitcoin_block_heights": []
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
     }
   },
   {
@@ -49,7 +55,7 @@
     "artefact": "demo/out/domains/pump_prognosis.json",
     "anchor": {
       "network": "opentimestamps:bitcoin",
-      "state": "pending",
+      "state": "anchored",
       "checkpoint": "sha256:0672accb07beac378e7205c92aff34166ff9b141ed2d0521bf1190a6bb59de02",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
@@ -61,9 +67,15 @@
       "submitted_at": "2026-08-16T18:21:55Z",
       "proof_file": "demo/out/domains/pump_prognosis.ots",
       "verify_with": "ots verify demo/out/domains/pump_prognosis.ots",
-      "reference": null,
-      "published_at": null,
-      "bitcoin_block_heights": []
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
     }
   },
   {
@@ -84,7 +96,7 @@
     "artefact": "demo/out/domains/emergency_triage.json",
     "anchor": {
       "network": "opentimestamps:bitcoin",
-      "state": "pending",
+      "state": "anchored",
       "checkpoint": "sha256:e0337cb897a7fbcd9581ae7b1bc4ec4c24c81ea0295a8ad02b81172eca66d2eb",
       "committed_bytes": "the root string, utf-8",
       "calendars_accepted": [
@@ -96,9 +108,15 @@
       "submitted_at": "2026-08-16T18:21:58Z",
       "proof_file": "demo/out/domains/emergency_triage.ots",
       "verify_with": "ots verify demo/out/domains/emergency_triage.ots",
-      "reference": null,
-      "published_at": null,
-      "bitcoin_block_heights": []
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
     }
   }
 ]

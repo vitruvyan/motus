@@ -16,7 +16,7 @@
   "tamper_node": "human_review",
   "anchor": {
     "network": "opentimestamps:bitcoin",
-    "state": "pending",
+    "state": "anchored",
     "checkpoint": "sha256:b9af4cdff49f9e42e7350538c4c16b71a34e5056a35e6fac369ff82b268e91fc",
     "committed_bytes": "the root string, utf-8",
     "calendars_accepted": [
@@ -28,11 +28,17 @@
     "submitted_at": "2026-08-16T21:52:53Z",
     "proof_file": "credit_review/root.txt.ots",
     "verify_with": "ots verify root.txt.ots",
-    "reference": null,
-    "published_at": null,
-    "bitcoin_block_heights": []
+    "reference": "bitcoin-block:962787",
+    "published_at": "2026-08-16T22:01:05Z",
+    "bitcoin_block_heights": [
+      962787,
+      962789,
+      962798
+    ],
+    "calendars_unreachable": [],
+    "block_time_source": "https://blockstream.info/api"
   },
   "bundle_file": "credit_review.motus.zip",
-  "bundle_sha256": "sha256:605b6bf4e3701ac794f866b9d896663880c14f6dc9dc5098bf3a3751fdea30e0",
-  "bundle_bytes": 71405
+  "bundle_sha256": "sha256:c14b351f334ad010c9c0a77a3c5d09d363dae78dda01bee02450abdd3dc14505",
+  "bundle_bytes": 80038
 }

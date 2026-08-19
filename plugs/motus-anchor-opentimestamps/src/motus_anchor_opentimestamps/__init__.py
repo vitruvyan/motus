@@ -41,6 +41,22 @@ DEFAULT_CALENDARS = (
 )
 
 
+def _directly_verified(stamp: Any):
+    """Descend until a sub-timestamp carries attestations, then stop.
+
+    This is the shape the first `upgrade()` got wrong. A proof is a tree and
+    the attestation that names a calendar is not at its root: in the proofs
+    this project produces it sits four `sha256` operations down. Anything that
+    looks only at `timestamp.ops` is asking about a commitment nobody made a
+    promise about.
+    """
+    if stamp.attestations:
+        yield stamp
+        return
+    for sub in stamp.ops.values():
+        yield from _directly_verified(sub)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
         "+00:00", "Z")
@@ -56,7 +72,8 @@ class OpenTimestampsAnchor:
     """
 
     def __init__(self, calendars: Iterable[str] = DEFAULT_CALENDARS,
-                 *, timeout: float = 10.0, anchor_id: str = "opentimestamps") -> None:
+                 *, timeout: float = 10.0, anchor_id: str = "opentimestamps",
+                 block_time: Any = None) -> None:
         self._calendars = tuple(calendars)
         if not self._calendars:
             raise ValueError(
@@ -68,6 +85,12 @@ class OpenTimestampsAnchor:
         self._anchor_id = anchor_id
 
     # -- publishing --------------------------------------------------------
+        #: height -> ISO-8601 UTC, or None. An OpenTimestamps attestation
+        #: proves "committed under the merkle root of block N" and says
+        #: nothing about the hour; turning N into a time is a fact of the
+        #: blockchain, and this anchor has no node. The embedder supplies the
+        #: resolver, and by supplying it decides whom to believe about it.
+        self._block_time = block_time
 
     def publish(self, checkpoint: bytes) -> Any:
         """Submit a checkpoint digest. **Always returns `pending`.**
@@ -139,9 +162,42 @@ class OpenTimestampsAnchor:
         Returns a NEW receipt. The old one stays valid — it was true when it
         was written, and a pending proof does not become false by being
         superseded.
+
+        ## This reported `pending` for 67 hours on evidence Bitcoin already held
+
+        The first version of this method walked ONE level of the timestamp and
+        asked each configured calendar about `sub.msg` at that depth. A real
+        OpenTimestamps proof is a tree, and the `PendingAttestation` that names
+        a calendar sits several operations down — after four `sha256` steps in
+        the proofs this project produces. So the calendars were being asked
+        about a commitment nobody had promised, they answered "not found", and
+        the broad `except Exception: continue` below turned that into silence.
+
+        Two defects, and the second is what made the first invisible:
+
+        1. **A shape assumption about a tree.** The walk has to descend until
+           it finds attestations, which is what `_directly_verified` does.
+        2. **A swallow that could not tell a wrong question from an outage.**
+           The intention was right — an unreachable calendar must never become
+           a verdict — but the same clause hid a bug in our own request for
+           three days, and reported the evidence as unconfirmed to every
+           visitor of the demo while three independent calendars had already
+           anchored it in blocks 962787, 962789 and 962798.
+
+        So failures are now COLLECTED and returned on the receipt. `pending`
+        with an empty `unreachable` list means the calendars were asked and
+        have nothing yet; `pending` with entries in it means we could not ask,
+        which is a different fact and must not wear the same word.
+
+        The calendar asked is the one named in the attestation, not whichever
+        calendars this instance happens to be configured with — a promise is
+        owed by whoever made it. It still has to be one we are willing to talk
+        to, so the configured set acts as the whitelist.
         """
         from opentimestamps.calendar import RemoteCalendar
-        from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+        from opentimestamps.core.notary import (
+            BitcoinBlockHeaderAttestation, PendingAttestation,
+        )
 
         proof = dict(getattr(receipt, "proof", None) or {})
         if proof.get("format") != "ots":
@@ -172,21 +228,51 @@ class OpenTimestampsAnchor:
                 "publish somebody else's attestation under this checkpoint's "
                 "name")
 
-        for url in self._calendars:
-            for commitment, sub in list(timestamp.ops.items()):
-                if any(isinstance(a, BitcoinBlockHeaderAttestation)
-                       for a in sub.attestations):
-                    continue
-                try:
-                    fresh = RemoteCalendar(url).get_timestamp(
-                        sub.msg, timeout=self._timeout)
+        # A LIST, not a dict keyed by calendar. The first version popped the
+        # entry on success, so a calendar that answered one commitment and
+        # failed another came out looking entirely healthy — a partial outage
+        # wearing the face of a working one. The mutation probe found it, which
+        # is what the probe is for. What a receipt reader needs is which
+        # commitment could not be asked about, and of whom.
+        unreachable: list[dict[str, str]] = []
+        # A calendar returns the whole path it knows, so one pass is normally
+        # enough. The loop is for the case where a merge exposes a pending
+        # attestation that was not reachable before; it stops as soon as a pass
+        # changes nothing, and the bound is a guard rather than an algorithm.
+        for _ in range(4):
+            asked_any = False
+            for sub in list(_directly_verified(timestamp)):
+                for attestation in list(sub.attestations):
+                    if not isinstance(attestation, PendingAttestation):
+                        continue
+                    uri = attestation.uri
+                    if isinstance(uri, bytes):
+                        uri = uri.decode("utf-8", "replace")
+                    if uri not in self._calendars:
+                        unreachable.append({
+                            "calendar": uri,
+                            "commitment": sub.msg.hex(),
+                            "reason": "the proof names a calendar this anchor "
+                                      "is not configured to talk to",
+                        })
+                        continue
+                    try:
+                        fresh = RemoteCalendar(uri).get_timestamp(
+                            sub.msg, timeout=self._timeout)
+                    except Exception as error:            # noqa: BLE001
+                        # Still not a verdict — but no longer silent. A
+                        # calendar that cannot answer leaves the receipt as it
+                        # was, and says so on the receipt.
+                        unreachable.append({
+                            "calendar": uri,
+                            "commitment": sub.msg.hex(),
+                            "reason": f"{type(error).__name__}: {error}",
+                        })
+                        continue
                     sub.merge(fresh)
-                except Exception:                          # noqa: BLE001
-                    # A calendar that cannot answer leaves the receipt exactly
-                    # as it was, which is the correct outcome: not upgraded is
-                    # not the same as not anchored, and this method must never
-                    # turn an outage into a verdict.
-                    continue
+                    asked_any = True
+            if not asked_any:
+                break
 
         heights = sorted(
             a.height for a in self._attestations(timestamp)
@@ -194,6 +280,7 @@ class OpenTimestampsAnchor:
         proof["serialized"] = self._serialize(
             bytes.fromhex(proof["digest"]), timestamp).hex()
         proof["upgraded_at"] = _now()
+        proof["calendars_unreachable"] = unreachable
         if not heights:
             proof["bitcoin_block_heights"] = []
             return self._receipt(
@@ -209,9 +296,54 @@ class OpenTimestampsAnchor:
             # root of block N"; calling that a txid would invite a reader to
             # look for one.
             reference=f"bitcoin-block:{heights[0]}",
-            published_at=proof["upgraded_at"],
+            # **NOT `upgraded_at`.** That is the clock of whichever machine
+            # happened to run this method, and the first version published it
+            # as the moment the evidence was timestamped — three days late, and
+            # sourced from us. On a receipt whose entire purpose is that you do
+            # not have to take our word for a time, our own clock is the one
+            # value that must never appear in this field.
+            #
+            # What the attestation proves is "committed under the merkle root
+            # of block N". Turning N into a wall-clock time is a fact of the
+            # blockchain, available to anyone with a node, and this anchor does
+            # not have one — so it publishes the block and stays quiet about
+            # the hour rather than inventing it.
+            published_at=self._resolve_block_time(heights[0]),
             proof=proof,
         )
+
+    def _resolve_block_time(self, height: int) -> str:
+        """The time of the block, from whoever the embedder decided to ask.
+
+        **The first version put `_now()` here** — the clock of whichever
+        machine happened to run the upgrade, three days after the block in the
+        case that exposed it, published on a receipt whose whole purpose is
+        that you do not have to take our word for a time. It was not false
+        (the evidence did exist by then) but it was ours, and the demo rendered
+        it as "Evidence timestamp", which made it wrong on screen.
+
+        The contract is right to require a time on an anchored receipt: one
+        without a time supports the existence of nothing in particular. So this
+        refuses rather than substituting. An anchor that cannot say when has to
+        say that, and let the embedder decide whether an explorer, a node or
+        nothing at all is the answer.
+        """
+        if self._block_time is None:
+            raise ValueError(
+                f"this commitment is under Bitcoin block {height}, and an "
+                f"anchored receipt has to carry the time it was published. An "
+                f"OpenTimestamps attestation names the block and not the hour, "
+                f"and this anchor has no Bitcoin node — so pass "
+                f"`block_time=` a callable taking a height and returning an "
+                f"ISO-8601 UTC string. Substituting this machine's own clock "
+                f"would publish our word as the external proof, which is the "
+                f"one thing this receipt exists to avoid")
+        value = self._block_time(height)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"the block-time resolver returned {value!r} for block "
+                f"{height}; an anchored receipt needs a non-blank timestamp")
+        return value
 
     # -- the parts that are only arithmetic --------------------------------
 

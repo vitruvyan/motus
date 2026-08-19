@@ -15,7 +15,7 @@
   "artefact": "demo/out/hiring/trace.json",
   "anchor": {
     "network": "opentimestamps:bitcoin",
-    "state": "pending",
+    "state": "anchored",
     "checkpoint": "sha256:62c6e8cced2d5d261e20c6c712683c478faafe6266a8ac8988f249e2dc2781d1",
     "committed_bytes": "the root string, utf-8",
     "calendars_accepted": [
@@ -27,12 +27,18 @@
     "submitted_at": "2026-08-16T21:26:34Z",
     "proof_file": "hiring/root.txt.ots",
     "verify_with": "ots verify root.txt.ots",
-    "reference": null,
-    "published_at": null,
-    "bitcoin_block_heights": []
+    "reference": "bitcoin-block:962783",
+    "published_at": "2026-08-16T21:32:23Z",
+    "bitcoin_block_heights": [
+      962783,
+      962786,
+      962798
+    ],
+    "calendars_unreachable": [],
+    "block_time_source": "https://blockstream.info/api"
   },
   "run_id": "demo-hiring-review-0421",
   "bundle_file": "hiring-review-2026-00421.motus.zip",
-  "bundle_sha256": "sha256:038a7d57bee8ef3c526f890d40d77885c13e58fd3780fb194d89157b16fd9657",
-  "bundle_bytes": 61734
+  "bundle_sha256": "sha256:c7975f557bb98a73d42eb3c57e6ad18c322a7c2ff00a576ff4cccde6cc3922c1",
+  "bundle_bytes": 70853
 }
