@@ -11,12 +11,18 @@ Sequence is load-bearing. Sizes are estimates and say so.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-08-13. This section is a
+*Last reconciled against the repository on 2026-08-19. This section is a
 statement about the code, not about intentions; when it disagrees with the
-code, it is this section that is wrong.*
+code, it is this section that is wrong — and on 2026-08-19 it was, in three
+places at once, which is why the reconciliation date is part of the section.*
 
-- **0.11.0** is the released version (2026-08-14), carrying the verifier, the
-  OpenTimestamps anchor, rule `J2` and the integration MCP. Like 0.10.0 it ships
+- **0.12.0** is the released version (2026-08-16): ADR-026, a Motus string is a
+  valid sequence of Unicode scalar values, rule `J1` scoped by the document's
+  own declared schema version, and `J2` reaching JSONL record lines where the
+  tamper ADR-024 exists to stop was passing clean. Its per-release arm
+  **passes** — +0.5 %, +0.4 %, +2.0 % over v0.11.0 across three dispatches;
+- **0.11.0** (2026-08-14) carried the verifier, the OpenTimestamps anchor, rule
+  `J2` and the integration MCP. Like 0.10.0 it shipped
   with the cumulative gate **failing** — +91.4 %, +133.8 %, +27.5 % against the
   v0.6.1 anchor — under ADR-018 §3 with all four conditions met and none
   inherited. Its per-release arm passes at −0.1 %, −0.0 %, +0.4 %, by amounts
@@ -40,11 +46,21 @@ code, it is this section that is wrong.*
   automated review **after** those four rounds had run — every one
   reproduced, and two of them were code that passed its own test while
   breaking the promise the test was named after;
-- **one root is anchored**, on TRON Nile, txid `6010ded8…`, block 70013920,
-  memo carrying the full root. Demonstration only — there is still no
-  verifier, so #51's hard constraint (verifying a trace against an anchor,
-  always open) still has no code. Phase 2 is what closes that, and until it
-  does the anchor proves something we cannot yet let anybody check;
+- **the verifier exists and #51's hard constraint has code.** `verify(receipt,
+  trace)` in `contract/validate.py` reports all seven ADR-020 levels including
+  the ones it could not reach, and `motus-validate receipt <r> --trace <t>`
+  runs it offline, with no account and against no server of ours. This bullet
+  said the opposite until 2026-08-19, while Phase 2 item 1 in this same file
+  was already ticked — the section contradicted itself for five days;
+- **six roots are anchored on Bitcoin** through OpenTimestamps, three
+  independent calendars each, blocks 962770 – 962798. They were reported
+  `pending` for 67 hours by our own reader, which walked one level of a proof
+  whose attestation sits four operations down and turned the calendars'
+  "never heard of it" into silence. Fixed, with the walk and the swallow both
+  named in `plugs/motus-anchor-opentimestamps`;
+- **one root is anchored on TRON Nile**, txid `6010ded8…`, block 70013920, memo
+  carrying the full root. Demonstration only, and superseded by the
+  OpenTimestamps path above;
 - the runtime still does not import the commitment modules unless configured,
   and a subprocess test asserts it by inspecting `sys.modules`.
 
@@ -354,9 +370,10 @@ test — including us.
 
 *Weeks for the plugs; the witness is the first thing that might be a service.*
 
-1. **`motus-anchor-opentimestamps`** — the production default. Free, Bitcoin,
-   no wallet, no key custody, no gas, no treasury that runs dry on a Saturday
-   night. Separate distribution;
+1. ✅ **`motus-anchor-opentimestamps`** — the production default, and it
+   ships. Free, Bitcoin, no wallet, no key custody, no gas, no treasury that
+   runs dry on a Saturday night. Separate distribution, in `plugs/`, with its
+   own suite. Six demo roots are anchored through it;
 2. **`motus-anchor-tron`** — kept for demonstration, because a memo is legible
    in a meeting and an `.ots` file is not;
 3. **the witness wire protocol**, and a reference implementation, open source.

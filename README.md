@@ -834,6 +834,11 @@ The normative surfaces live in [`contract/`](contract/):
 
 - `graphspec.v1.schema.json` and rules R1-R12;
 - `trace.v1.schema.json` and the T/E/SB/H/J/JSONL rules;
+- `commitment.v1.schema.json` (rule `C1`) and `checkpoint.v1.schema.json`
+  (rules `K1`, `K2`) — the commitment log's BEGIN/END and the sealed windows
+  over them;
+- `receipt.v1.schema.json` — what a receipt must carry to prove a RUN and not
+  merely a checkpoint (ADR-021 §7);
 - `node-protocol.md`;
 - `guarantees.md`.
 
@@ -845,6 +850,20 @@ python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
 python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.12.0-epyc-py310.json
 python benchmarks/check_relative_baseline.py benchmarks/relative-0.12.0/*.json
 ```
+
+**Verification is open and stays open.** A receipt is checked against the trace
+it claims to be about, offline, with no account and against no server of ours:
+
+```console
+motus-validate receipt path/to/receipt.json --trace path/to/trace.json
+```
+
+It reports all seven of ADR-020's attestation levels — `INTEGRITY`,
+`EXISTENCE`, `RETENTION`, `EXECUTION_CONTINUITY`, `PROVENANCE`, `IDENTITY`,
+`LEGAL_TIME` — **including the ones it could not reach**, and refuses outright
+on a digest algorithm or a network it cannot recompute. A refusal outranks a
+violation: reporting "this document is wrong" about a document that may be
+perfectly correct on a chain we cannot read would be the wrong answer twice.
 
 ## Native package surface
 
