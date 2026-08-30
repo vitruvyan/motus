@@ -116,10 +116,43 @@ def _assert_bundle_semantics(spec: GraphSpec, trace: Trace) -> None:
                     "candidates",
                 )
             }
-            if _canonical_bytes(observed) != _canonical_bytes(expected):
+            if _canonical_bytes(_ordered(observed)) != _canonical_bytes(
+                _ordered(expected)
+            ):
                 raise ValueError(
                     "routing semantics disagree with the GraphSpec and recorded state"
                 )
+
+
+def _ordered(semantics: dict[str, Any]) -> dict[str, Any]:
+    """The same routing evidence with its candidates in a canonical order.
+
+    **Comparing candidates as a sequence was order-sensitive, and order carries
+    no meaning here.** A route is a key lookup — the schema admits `map`,
+    `default` and `static` conditions and none of them is a predicate — so two
+    candidate lists holding the same entries in a different order describe the
+    same routing. `contract/validate.py` already knew this and compares them as
+    a `Counter`; this function is what makes replay agree.
+
+    It is also what keeps #124's fix backward-compatible. The runtime now emits
+    candidates sorted, but every trace written before that change carries them
+    in the order its GraphSpec happened to be written in. Sorting only the
+    expectation would have refused those traces — turning a fix for evidence
+    that could not be compared into a reason that older evidence could not be
+    verified, which is a worse defect than the one being fixed.
+
+    Nothing is weakened by this. A reordered candidates list is different bytes,
+    so it is a different record digest and a broken integrity chain: tampering
+    is caught by the chain, which is its job. Replay checks SEMANTICS, and the
+    semantics are order-free.
+    """
+    candidates = semantics.get("candidates")
+    if not isinstance(candidates, list):
+        return semantics
+    return {
+        **semantics,
+        "candidates": sorted(candidates, key=lambda c: _canonical_bytes(c)),
+    }
 
 
 def _expected_routing_semantics(step: Any, state: State) -> dict[str, Any]:
@@ -160,13 +193,26 @@ def _expected_routing_semantics(step: Any, state: State) -> dict[str, Any]:
         value, origin = None, {"kind": "absent"}
     else:
         value, origin = latest
+    # Sorted, exactly as the runtime emits them — see runtime.py's note and
+    # #124. Two copies of one ordering rule is one copy too many, and the
+    # duplication is why the defect could exist at all; it stays only because
+    # this module recomputes rather than imports, deliberately.
+    #
+    # **A mutation probe reverting this sort SURVIVES, and it is an equivalent
+    # mutant rather than a coverage gap.** `_expected_routing_semantics` has
+    # exactly one caller, and that caller passes both sides through `_ordered`
+    # before comparing — so the order this list is built in is provably
+    # unobservable. The sort stays anyway: an expectation that agreed with the
+    # runtime only by accident of a normaliser downstream is an expectation
+    # waiting for somebody to remove the normaliser. Do not invent a contrived
+    # test to kill this mutant; there is nothing to observe.
     candidates = [
         {
             "condition": {"kind": "map", "key": key},
-            "target": target,
+            "target": step.map[key],
             "taken": False,
         }
-        for key, target in step.map.items()
+        for key in sorted(step.map)
     ]
     if step.default is not None:
         candidates.append(

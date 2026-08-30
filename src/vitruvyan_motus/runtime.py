@@ -1247,9 +1247,22 @@ class Runtime:
             value, origin = None, {"kind": "absent"}
         else:
             value, origin = latest
+        # **Sorted by map key, not by insertion order.** `graph_fingerprint` is
+        # computed over key-sorted canonical JSON, so two specs whose route
+        # maps differ only in the order they were written are, by the
+        # contract's own identity, THE SAME GRAPH. Emitting candidates in
+        # insertion order made them produce different traces with different
+        # roots — the fingerprint and the trace answering the same question
+        # differently (#124, found by the Orbis integration).
+        #
+        # Order carries no semantics here and cannot: the schema admits three
+        # condition kinds — `map`, `default`, `static` — and none is a
+        # predicate, so a route is a key lookup and never a first-match scan.
+        # `contract/validate.py` already agreed, comparing candidates as a
+        # `Counter`; this line is what makes the runtime agree too.
         candidates = [
-            {"condition": {"kind": "map", "key": key}, "target": target, "taken": False}
-            for key, target in step.map.items()
+            {"condition": {"kind": "map", "key": key}, "target": step.map[key], "taken": False}
+            for key in sorted(step.map)
         ]
         if step.default is not None:
             candidates.append({"condition": {"kind": "default"}, "target": step.default, "taken": False})
