@@ -706,6 +706,20 @@ It is written against the sink protocol and nothing else: it imports no schema
 version and inspects no record kind, which is enforced by a test. If the
 protocol were insufficient, that file could not exist.
 
+**Give it a directory the process can write to.** Reported by an integrator
+who lost an hour to it: Docker creates a bind-mount target as `root` when the
+host path does not exist, and a container running as a non-root uid then gets
+`Permission denied` on the first record. The sink is doing exactly what it
+should — a durable sink that silently discarded evidence would be worse — but
+the failure arrives at the first write rather than at configuration time, which
+is late. Create the directory with the runtime's uid, or `chown` it in the
+image, before the first run.
+
+The same integrator found that their own trace-directory setting had carried
+this defect for months without anybody noticing, because the feature was never
+switched on. A path that is only exercised when somebody enables evidence is a
+path that has never been tested.
+
 The run header declares one durability profile:
 
 - `in-memory`: no persistence guarantee after process loss;
