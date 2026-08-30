@@ -865,6 +865,32 @@ on a digest algorithm or a network it cannot recompute. A refusal outranks a
 violation: reporting "this document is wrong" about a document that may be
 perfectly correct on a chain we cannot read would be the wrong answer twice.
 
+### Anchors and witnesses ship separately, and one of them ships today
+
+ADR-021 defines two interfaces and states that **no implementation of either
+Protocol ships in `vitruvyan-motus`**. That sentence is about this
+distribution, and it stays true: the kernel imports no network client, mints no
+identity and reaches nothing unless configured. The implementations are
+separate distributions under [`plugs/`](plugs/), with their own dependencies
+and their own suites.
+
+| interface | question it answers | status |
+|---|---|---|
+| `Anchor` | was this block of evidence not rewritten afterwards? | **`motus-anchor-opentimestamps` ships** — free, Bitcoin, no wallet, no key custody |
+| `Witness` | did this commitment exist before the outcome was known? | protocol only. `EXECUTION_CONTINUITY` is defined, verifiable and not yet reachable |
+
+An outside integrator read the ADR sentence, found nothing about `plugs/` in
+this file, and concluded that anchoring was unimplemented — while six demo
+roots sat in Bitcoin blocks 962770 to 962798, three independent OpenTimestamps
+calendars each. The sentence was right and this README was silent, which is the
+same outcome as being wrong. Hence this section.
+
+**The two are not interchangeable.** An anchor protects the chain; a witness
+protects the two-phase commitment, and only a witness answers *"was this run
+registered before anybody knew how it would turn out?"* — see `sealing.py` for
+the arithmetic, including the consequence that an anchor cannot give execution
+continuity to a run shorter than its own cadence.
+
 ## Native package surface
 
 The public API is explicitly listed in `vitruvyan_motus.__all__`:
