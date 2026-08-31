@@ -522,6 +522,31 @@ class CommitmentLog:
                     sequence=commitment.sequence, run_id=run_id,
                     witness=witness, **fields)
 
+        # **Digest BEFORE writing, and this ordering is the fix for #112.**
+        #
+        # Two encoders used to meet in this function with a durable write
+        # between them: the line went to disk through `json.dumps` with its
+        # default `ensure_ascii=True`, and the digest was taken two frames later
+        # through `_canonical_bytes`, which is `ensure_ascii=False` and encodes
+        # to UTF-8. Whatever the first could write and the second could not
+        # became a line the store can never digest — written, flushed, fsynced,
+        # and NOT poisoned, because the write itself had succeeded. Every future
+        # open then failed on a chain that could not be rebuilt, and no reopen
+        # recovered it.
+        #
+        # Forcing the leaf here does not merely make the two encoders agree: it
+        # proves the digest exists before any byte is committed. A commitment
+        # that cannot be digested now raises with the store untouched — no
+        # write, no poison, no unrecoverable directory — and the caller learns
+        # at the boundary rather than at the next restart.
+        #
+        # The reachable instance was a lone surrogate, and `_require_text`
+        # closed that one in `commitments.py`. This closes the CLASS: any future
+        # value the durable writer can serialise and the digest cannot is caught
+        # here, by construction, without anybody remembering that the two paths
+        # exist.
+        commitment.leaf
+
         line = json.dumps(
             {"c": commitment.to_dict(),
              "witness": witness.to_dict() if witness else None},
