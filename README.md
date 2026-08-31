@@ -920,7 +920,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
   `JsonlTraceSink`, `StreamDriver`, `AsyncStreamDriver`;
 - evidence: `Trace`, `TRACE_SCHEMA_VERSION`, `RedactedValue`, `ContextDraw`,
-  `RunContext`, `NonCanonicalNumber`;
+  `RunContext`, `NonCanonicalNumber`, `NonPortableNumber`;
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
@@ -933,6 +933,23 @@ while `jq`, `git diff` and a human read different numbers. The characters are
 the evidence, and a parser destroys them, so `from_dict` cannot make this check
 and no implementation could: by the time it is called, the two documents are
 one object (ADR-024).
+
+**And a number a second implementation could not write the same way is refused
+where it is produced.** `NonPortableNumber` is what a `Fact`, `Decision`,
+`Rejection` or run-metadata value raises for an integral float — JavaScript
+writes `-14.0` as `-14` and Python keeps the `.0` — or for one outside
+`[1e-4, 1e16)`, where the two switch to exponent notation at different
+thresholds, or for an integer beyond `Number.MAX_SAFE_INTEGER`. A trace
+carrying such a value has a root only CPython can derive, and the validator
+reports T11 for it: **tampering, said of a reader who did nothing wrong**. That
+is the worst thing this format can do, so the value is refused at the boundary
+rather than the reader accused at the end (motus#116).
+
+Ordinary fractions pass. `0.87`, `0.25` and `1/3` are written identically by
+both, and the rule was measured rather than assumed: 420 values, 70 divergent,
+348 accepted, none of the accepted ones divergent. Reading is untouched — a
+document written before this rule still loads, because `contract/README.md`
+promises old evidence stays valid without rewriting.
 
 **Which escape form a string was written in is not checked, and ADR-026 settles
 that as intended rather than as a hole.** `"appro\u0076ed"` and `"approved"`

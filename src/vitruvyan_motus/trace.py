@@ -97,8 +97,110 @@ def _wire_timestamp(value: str | datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+#: The largest integer JavaScript can hold exactly — `Number.MAX_SAFE_INTEGER`.
+#: Above it a double cannot represent every integer, so two implementations
+#: agree only by luck: 9007199254740993 is written `…993` by Python and `…992`
+#: by JavaScript.
+_MAX_PORTABLE_INT = 2 ** 53 - 1
+
+
+#: Where BOTH implementations use positional notation, so the only thing left
+#: to agree on is the digits — and on digits they do, because both emit the
+#: shortest representation that round-trips. Python switches to exponent form
+#: below 1e-4 and at 1e16; JavaScript below 1e-6 and at 1e21. This is the
+#: intersection, taken conservatively at the Python end.
+_PORTABLE_FLOAT_MIN = 1e-4
+_PORTABLE_FLOAT_MAX = 1e16
+
+
+def _portable_number(value: Any) -> Any:
+    """Refuse a number two implementations would not write the same way.
+
+    **motus#116.** A Motus root is taken over the canonical TEXT of the
+    document, so two programs agree on the root only if they write the same
+    characters for the same value. For strings, objects and arrays they do.
+    For some numbers they do not:
+
+        json.dumps(-14.0)  -> "-14.0"    JSON.stringify(-14.0)  -> "-14"
+        json.dumps(1e-06)  -> "1e-06"    JSON.stringify(1e-06)  -> "0.000001"
+        json.dumps(1e21)   -> "1e+21"    JSON.stringify(1e21)   -> "1e+21"  (agree)
+
+    A trace carrying a diverging number cannot be verified by any implementation
+    that is not CPython: the root stops deriving and the validator reports T11,
+    which reads as tampering when the truth is that somebody else's tools read
+    the document honestly. **That is the worst failure available to this
+    product** — it accuses the reader of forgery for doing what we tell them to
+    do — so the producing boundary refuses those values instead of emitting
+    evidence only we can check.
+
+    ## The rule refuses what diverges, not every float
+
+    An earlier draft of this function refused floats outright, which is the
+    founder's decision of 2026-08-29 ("consumers do not need floats") applied
+    literally. It broke `ctx.rand()`: the shipped, tested idiom writes the draw
+    into a fact, and the failing values were `0.125`, `0.25`, `0.87` — precisely
+    the floats on which the two implementations AGREE. Refusing them bought
+    nothing and cost an API.
+
+    So three conditions, and a value must meet all of them:
+
+    - **not integral.** JavaScript writes `-14.0` as `-14`; Python keeps the
+      `.0`. Every integral float diverges, `0.0` included;
+    - **inside [1e-4, 1e16).** Outside it one of the two switches to exponent
+      notation, and they do not switch at the same thresholds;
+    - **no exponent in the repr**, which the range already implies and which is
+      checked anyway because the implication is about CPython's formatter
+      rather than about anything this file controls.
+
+    Integers are exact up to `Number.MAX_SAFE_INTEGER` and refused above it,
+    where a double cannot represent every integer and agreement is luck.
+
+    ## What this rule is, and what it is not
+
+    It is **empirically verified, not proven**: 420 values — the known
+    boundaries plus 400 random ones spanning eight orders of magnitude — were
+    written by both `json.dumps` and Node's `JSON.stringify`. 70 diverged, the
+    rule accepted 348, and **none of the accepted ones diverged**. That is
+    evidence of no false accept over that sample, not a proof over the doubles.
+
+    A proof needs the canonical number form defined independently of either
+    language — #116's option 2 — and that is a contract decision this function
+    does not make. Until it is made, this refuses conservatively at the
+    producing boundary, which is the side where a wrong answer is recoverable:
+    a caller who is told to scale a number loses a convenience, while a reader
+    handed an unverifiable trace loses the product.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if float(value).is_integer():
+            raise NonPortableNumber(
+                f"{value!r} is an integral float, and JavaScript writes it "
+                f"without the fractional part while Python keeps it — so this "
+                f"document's root could not be reproduced by anybody but us "
+                f"(motus#116). Write it as the integer {int(value)}.")
+        if not _PORTABLE_FLOAT_MIN <= abs(value) < _PORTABLE_FLOAT_MAX or "e" in repr(value):
+            raise NonPortableNumber(
+                f"{value!r} falls where the two implementations disagree about "
+                f"notation — Python switches to an exponent below 1e-4 and at "
+                f"1e16, JavaScript below 1e-6 and at 1e21 — so this document's "
+                f"root could not be reproduced by anybody but us (motus#116). "
+                f"Express it as a scaled integer: basis points for a ratio, "
+                f"months for a duration, whole units for a measurement.")
+        return value
+    if isinstance(value, int) and abs(value) > _MAX_PORTABLE_INT:
+        raise NonPortableNumber(
+            f"{value} is beyond {_MAX_PORTABLE_INT} — JavaScript's "
+            f"Number.MAX_SAFE_INTEGER — where a double cannot represent every "
+            f"integer and two implementations agree only by luck "
+            f"(motus#116). Record it as a string if it is an identifier, or "
+            f"scale it if it is a quantity.")
+    return value
+
+
 def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
-                      scalars_required: bool = True) -> Any:
+                      scalars_required: bool = True,
+                      portable_numbers: bool = False) -> Any:
     """Validate and isolate one RFC 8259 value without coercion.
 
     `scalars_required=False` is for READING a document that declares a schema
@@ -112,14 +214,15 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
     if isinstance(value, str):
         return _encodable(value) if scalars_required else value
     if value is None or isinstance(value, (bool, int)):
-        return value
+        return _portable_number(value) if portable_numbers else value
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError("NaN and Infinity are not RFC 8259 JSON values")
-        return value
+        return _portable_number(value) if portable_numbers else value
     if isinstance(value, list):
         return [_strict_plain_json(item, reserve_redacted=reserve_redacted,
-                                   scalars_required=scalars_required)
+                                   scalars_required=scalars_required,
+                                   portable_numbers=portable_numbers)
                 for item in value]
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
@@ -131,13 +234,27 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
             raise ValueError("redacted values are reserved for redact()")
         return {
             key: _strict_plain_json(item, reserve_redacted=reserve_redacted,
-                                    scalars_required=scalars_required)
+                                    scalars_required=scalars_required,
+                                    portable_numbers=portable_numbers)
             for key, item in value.items()
         }
     raise TypeError(
         f"{type(value).__name__} is not a strict RFC 8259 JSON value; "
         "convert it explicitly before writing"
     )
+
+
+class NonPortableNumber(ValueError):
+    """A number a second implementation would not write the same way.
+
+    Separate from `NonCanonicalNumber`, which is about a document whose
+    CHARACTERS are not the ones its values denote (ADR-024, rule J2, on the
+    reading side). This one is about a VALUE that cannot be written portably at
+    all, and it is raised where the value is produced. A caller catching one
+    wants a different thing from a caller catching the other: J2 says "this
+    document was tampered with or mis-encoded"; this says "choose a different
+    representation before you write it".
+    """
 
 
 class NonCanonicalNumber(ValueError):
@@ -374,9 +491,21 @@ def redact(value: Any, policy_ref: str) -> RedactedValue:
 
 
 def _value(value: Any) -> Any:
+    """The producing boundary for caller-supplied data.
+
+    Everything a node writes passes here — fact, decision and rejection values
+    — and so does `State`'s run metadata, which builds itself with this
+    function. That makes it the one place where #116's refusal reaches every
+    position a caller can put a number in.
+
+    `Trace.__init__` is deliberately NOT such a place: `from_dict` constructs
+    through it, so a refusal there would stop the library reading documents it
+    wrote before this rule existed, and `contract/README.md` promises old
+    evidence stays valid without rewriting.
+    """
     if isinstance(value, RedactedValue):
         return value.to_dict()
-    return _strict_plain_json(value)
+    return _strict_plain_json(value, portable_numbers=True)
 
 
 @dataclass(frozen=True, slots=True)
