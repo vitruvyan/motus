@@ -44,63 +44,18 @@ SPEC = GraphSpec.from_dict({
 })
 
 
-#: The values that make J2 reachable, and which #116 now refuses at the
-#: producing boundary: `5e18` and `0.0` are integral floats, which JavaScript
-#: writes without a fractional part while Python keeps it, so a document
-#: carrying them has a root only CPython can derive.
-#:
-#: **They are injected rather than written, and that is the point.** J2 is a
-#: rule about READING a document whose number lexemes were rewritten, and such
-#: documents still exist — produced by a release before 2026-08-31, or by an
-#: attacker, who is under no obligation to use our API. So the fixture builds
-#: one the way those two would, which is a stronger premise for J2 than a run
-#: that can no longer happen.
-_DIVERGING = {"importo": 5e18, "zero": 0.0}
-
-
 @pytest.fixture()
 def run():
-    """A trace carrying the values that make this defect reachable."""
+    """A real run carrying the values that make this defect reachable."""
     def node(state):
         return (state
-                .with_fact(Fact("importo", 1, "test", NOW))
+                .with_fact(Fact("importo", 5e18, "test", NOW))
                 .with_fact(Fact("score", 0.87, "test", NOW))
-                .with_fact(Fact("zero", 1, "test", NOW))
+                .with_fact(Fact("zero", 0.0, "test", NOW))
                 .with_fact(Fact("count", 42, "test", NOW)))
     result = Runtime(SPEC, {"a": node}, sink=InMemoryTraceSink()).run(
         State.empty("x"), run_id="r1")
-
-    document = result.trace.to_dict()
-    for record in document["records"]:
-        for fact in (record.get("writes") or {}).get("facts", []):
-            if fact["key"] in _DIVERGING:
-                fact["value"] = _DIVERGING[fact["key"]]
-    return Trace.from_dict(_resealed(document))
-
-
-def _resealed(document):
-    """Re-seal the chain after injecting values the producing API refuses.
-
-    Editing a record changes its bytes, so every link after it stops matching —
-    the chain doing its job. J2 is being asked about a document that VERIFIES
-    and whose numbers were nonetheless written in characters the contract would
-    not produce, so the chain has to hold for the question to be asked at all.
-    """
-    import copy
-    import hashlib
-
-    from vitruvyan_motus.trace import _canonical_bytes
-
-    out = copy.deepcopy(document)
-    prev = "sha256:" + hashlib.sha256(_canonical_bytes({
-        "schema_version": out["schema_version"], "run": out["run"]})).hexdigest()
-    for record in out["records"]:
-        payload = dict(record)
-        payload["integrity"] = {"payload_hash": None, "prev_hash": prev}
-        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
-        record["integrity"] = {"payload_hash": digest, "prev_hash": prev}
-        prev = digest
-    return out
+    return result.trace
 
 
 # -- the property that makes J2 affordable ----------------------------------

@@ -45,20 +45,6 @@ class ContextDraw:
         if self.source == "rand":
             if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
                 raise TypeError("a rand draw must be a JSON number")
-            # **This float is #116's residual, and it stays open here.**
-            # `_value` refuses a non-integer at every position a CALLER can
-            # write to — fact, decision and rejection values, and run metadata
-            # — because a trace carrying one cannot be verified by anything
-            # that is not CPython. A `rand` draw is different: the float is
-            # what the draw IS, and refusing it would mean removing
-            # `ctx.rand()` rather than asking a caller to scale a number.
-            #
-            # So a run that draws randomness still writes a document a second
-            # implementation may not reproduce — rarely, since Python and
-            # JavaScript agree on most doubles and differ at the exponent
-            # thresholds (`1e-07` against `1e-7`). Recorded here rather than
-            # left to be discovered, and closing it is a decision about the
-            # canonical number form, not about this line.
             numeric = float(self.value)
             if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
                 raise ValueError("a rand draw must be finite and in [0, 1)")
