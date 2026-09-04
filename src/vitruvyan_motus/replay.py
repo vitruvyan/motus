@@ -141,10 +141,23 @@ def _ordered(semantics: dict[str, Any]) -> dict[str, Any]:
     that could not be compared into a reason that older evidence could not be
     verified, which is a worse defect than the one being fixed.
 
-    Nothing is weakened by this. A reordered candidates list is different bytes,
-    so it is a different record digest and a broken integrity chain: tampering
-    is caught by the chain, which is its job. Replay checks SEMANTICS, and the
-    semantics are order-free.
+    Nothing is weakened by this, and the reason is NOT the one an earlier draft
+    of this docstring gave. It said "tampering is caught by the chain, which is
+    its job" — but rule T11 is explicit that an editor who alters a record "can
+    recompute a well-formed hash, and under 3.0.0 can reseal the entire chain".
+    The catcher is the **anchored root**, not the chain, and the re-sealing
+    helper in this fix's own test is exactly what such an editor would run.
+
+    What actually makes this safe is narrower and checkable: `_ordered` sorts
+    the whole candidate dict, `taken` included, so the comparison is multiset
+    equality over `(condition, target, taken)` triples — strictly STRONGER than
+    `contract/validate.py`'s T8, which compares a `Counter` and drops `taken`.
+    Multiplicity, length, the taken-assignment and the target pairing all
+    survive. An adversarial round tried candidate deletion, duplication,
+    invention, target redirection at all four positions and a moved `taken`
+    flag, each also permuted, and every one is still refused. Reordering alone
+    changes nothing a reader reads, so it is the one edit an attacker gains
+    nothing from.
     """
     candidates = semantics.get("candidates")
     if not isinstance(candidates, list):

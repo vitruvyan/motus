@@ -541,10 +541,29 @@ class CommitmentLog:
         # at the boundary rather than at the next restart.
         #
         # The reachable instance was a lone surrogate, and `_require_text`
-        # closed that one in `commitments.py`. This closes the CLASS: any future
-        # value the durable writer can serialise and the digest cannot is caught
-        # here, by construction, without anybody remembering that the two paths
-        # exist.
+        # closed that one in `commitments.py`.
+        #
+        # **THIS DOES NOT CLOSE THE CLASS, and an earlier version of this
+        # comment said it did.** Three independent adversarial lenses refuted
+        # that claim on 2026-08-31, at two sites it does not reach:
+        #
+        # - the line written below carries a SECOND object, `witness`, which
+        #   nothing digests. `WitnessAck.algorithm` is the one field
+        #   `__post_init__` does not check, it arrives from a third-party
+        #   `Witness.acknowledge`, and a value the durable writer can escape and
+        #   `_canonical_bytes` cannot encode reaches the disk through it. The
+        #   store survives — nothing digests it — and the receipt that leaves
+        #   the building is refused by the contract validator under J1;
+        # - `seal()` still has the ordering this line exists to fix, inverted:
+        #   it marks the window sealed in memory before the checkpoint is
+        #   durable, and a failed write there plus two ordinary run starts put
+        #   a duplicate sequence on disk that no process can ever open (#129).
+        #
+        # What this line does close is real and worth having: the commitment
+        # BODY cannot reach the disk undigestible, and the failure arrives with
+        # the store untouched rather than at the next restart. The class is the
+        # ORDERING — a successful durable write followed by an unguarded
+        # failure — and closing it needs the sweep #129 asks for, not one call.
         commitment.leaf
 
         line = json.dumps(
