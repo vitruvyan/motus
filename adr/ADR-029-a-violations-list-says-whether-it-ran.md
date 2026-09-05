@@ -1,8 +1,8 @@
 # ADR-029 — a violations list says whether it ran
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-05
-- **Accepted:** —
+- **Accepted:** 2026-09-05 by the founder
 - **Authority:** CTO proposes; the founder accepts. Closes #125 (P0, pre-freeze, contract), reported by the Orbis integration as the one item on their list that expires with the freeze.
 - **Depends on:** ADR-001 (record-and-compare), `node-protocol.md` §3 (declarations are optional and checked against captured reality).
 - **Amends:** `contract/trace.v1.schema.json` — `Transition.violations` admits `null` from trace schema **3.1.0**; rule `SB4` gains one clause; `TRACE_SCHEMA_VERSION` becomes `3.1.0`. Nothing else in the contract changes.

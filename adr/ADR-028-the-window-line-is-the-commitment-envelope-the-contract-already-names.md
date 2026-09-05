@@ -1,8 +1,8 @@
 # ADR-028 — the window line is the commitment envelope the contract already names
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-05
-- **Accepted:** —
+- **Accepted:** 2026-09-05 by the founder
 - **Authority:** CTO proposes; the founder accepts. Closes #132 (P1, pre-freeze, contract).
 - **Depends on:** ADR-021 (the commitment log, §5: a verifier compares the log against a witness's tally).
 - **Amends:** nothing in `contract/`. The schema is right; the implementation is wrong, and this ADR records the migration rather than the rule. `contract/README.md` gains one sentence naming the key on disk.
