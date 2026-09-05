@@ -27,7 +27,7 @@ T = TypeVar("T")
 # version not in it — a typo, a future 4.0.0, a string an editor put in the
 # header — was treated as chained and got a root. A guard about what may be
 # anchored has to fail closed.
-_CHAIN_BINDS_PREV = frozenset({"3.0.0"})
+_CHAIN_BINDS_PREV = frozenset({"3.0.0", "3.1.0"})
 
 
 class _Missing:
@@ -260,8 +260,8 @@ def _loads_canonical(text: str) -> Any:
 #: evidence stays valid without rewriting.
 #:
 #: The producing side is scoped by neither: it writes 3.0.0 and refuses always.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0"})
-_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0"})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0"})
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0"})
 
 
 def _governed(document: Any, versions: frozenset[str]) -> bool:
@@ -577,7 +577,7 @@ class Trace:
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:
             raise ValueError("trace document requires schema_version, run and records")
-        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0"):
+        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0", "3.1.0"):
             raise ValueError("unsupported trace schema version")
         if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
             raise TypeError("trace run must be an object and records an array")

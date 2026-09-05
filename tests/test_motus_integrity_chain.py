@@ -93,9 +93,9 @@ def _root_of(document: dict) -> str:
     return document["records"][-1]["integrity"]["payload_hash"]
 
 
-def test_the_emitted_schema_is_3_0_0():
-    assert TRACE_SCHEMA_VERSION == "3.0.0"
-    assert _run().trace.to_dict()["schema_version"] == "3.0.0"
+def test_the_emitted_schema_is_3_1_0():
+    assert TRACE_SCHEMA_VERSION == "3.1.0"
+    assert _run().trace.to_dict()["schema_version"] == "3.1.0"
 
 
 def test_the_recipe_reproduces_what_the_runtime_sealed():

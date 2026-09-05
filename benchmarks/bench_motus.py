@@ -173,7 +173,7 @@ for label, result in (
         "events_len": len(result.trace.records),
         "facts_len": len(result.state.facts),
         "violations_len": sum(
-            len(record.get("violations", ())) for record in result.trace.records
+            len(record.get("violations") or ()) for record in result.trace.records
         ),
         "to_dict_min_ms": minimum_dict * 1e3,
         "to_dict_median_ms": median_dict * 1e3,

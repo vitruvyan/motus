@@ -1,0 +1,155 @@
+{
+  "artifact": "trace",
+  "expect": "valid",
+  "layer": "semantic",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "violations-null",
+    "version": "1.0.0",
+    "entry": "half",
+    "nodes": [
+      {
+        "name": "half",
+        "reads_declared": [
+          "allowed"
+        ]
+      }
+    ],
+    "transitions": {
+      "half": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "3.1.0",
+    "run": {
+      "run_id": "half",
+      "graph": {
+        "name": "violations-null",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:ff7960763dfac96a42a06efc9651f21a6628af345b90582f793a9350575ab622",
+        "code_fingerprint": "code:sha256:5ead292215170262a65fbe2b0f59fcc414e389c007d17d39c65dfd635f55246f",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "exploration",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {},
+      "created_ts": "2026-09-05T23:01:45.406777Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-09-05T23:01:45.406881Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": "sha256:cc0d17d83762d59544efc15ad1f6ae09e126ff4672b547d30bee07659b87f3b9",
+          "prev_hash": "sha256:3896ef3be7536973bf86ab7d6df3b1d34aebb139ca1c923e413ae872871baf7f"
+        },
+        "intent": "",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-09-05T23:01:45.406950Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": "sha256:2fc0e974c7621d77c0dae757e1f848402e90ce3b24696bf14afe84ebb1f65860",
+          "prev_hash": "sha256:cc0d17d83762d59544efc15ad1f6ae09e126ff4672b547d30bee07659b87f3b9"
+        },
+        "node": "half",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-09-05T23:01:45.407069Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": "sha256:7f5071446e4f9149a7c128cc053a9acf652fc7f98552cb65b75ad8583c2e20a5",
+          "prev_hash": "sha256:2fc0e974c7621d77c0dae757e1f848402e90ce3b24696bf14afe84ebb1f65860"
+        },
+        "node": "half",
+        "attempt": 1,
+        "outcome": "raised",
+        "disposition": "continue",
+        "effect_class": "external_effect",
+        "reads": [
+          {
+            "key": "missing",
+            "origin": {
+              "kind": "absent",
+              "surface": "facts"
+            }
+          }
+        ],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": [
+          {
+            "kind": "undeclared_read",
+            "key": "missing"
+          }
+        ],
+        "error": {
+          "type": "AssertionError",
+          "message": "node raised AssertionError"
+        }
+      },
+      {
+        "seq": 4,
+        "ts": "2026-09-05T23:01:45.407125Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": "sha256:7a50c5889c36974891a2bfa9c0754af8354a315b52661a569a582bfb79fc6a61",
+          "prev_hash": "sha256:7f5071446e4f9149a7c128cc053a9acf652fc7f98552cb65b75ad8583c2e20a5"
+        },
+        "after": "half",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-09-05T23:01:45.407178Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": "sha256:b1139a5f32c0f9612737172b3f8691c39eecfc688c40cc6634d8de335a7b59bd",
+          "prev_hash": "sha256:7a50c5889c36974891a2bfa9c0754af8354a315b52661a569a582bfb79fc6a61"
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "node:half:source_unavailable",
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  }
+}

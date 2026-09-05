@@ -77,8 +77,16 @@ under a load average between 5 and 20 from a dozen coding agents: **6.2, 2.5,
 response — 6.2 ms of 35.9 s — which is **0.017 %**. That figure is an upper
 bound: it contains the consumer's own node code, not only Motus, and the
 host's load inflates both sides of the ratio. The trace of the run captured in
-full validated clean against the contract, schema 3.0.0, integrity chain
+full validated clean against the contract, schema 3.1.0, integrity chain
 present, with a derived root; the harness is `e2e/pipeline_query.py`.
+
+### Trace schema 3.1 migration
+
+From trace schema 3.1.0, transitions for nodes whose spec declares neither
+`reads_declared` nor `writes_declared` record `violations: null`; `[]` means a
+declaration was checked and matched. Readers must therefore treat the field as
+nullable (for example, use `len(record.get("violations") or ())`). Nodes with
+one declared half still record a list for that half.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
@@ -270,7 +278,7 @@ Motus alone is not a compliance system. A regulated deployment still needs
 the appropriate persistent `TraceSink`, retention policy, access controls,
 security controls, clock governance, privacy measures, review procedures, and
 any legally required signatures or validated storage. Since 0.8.0 the trace
-carries a cryptographic hash chain, and under trace schema 3.0.0 a per-trace
+carries a cryptographic hash chain, and under trace schema 3.1.0 a per-trace
 **root** that commits to the whole run (ADR-019). What it does NOT carry is an **anchor** — a
 root published where the operator cannot rewrite it — and without one the chain
 proves internal consistency, not immutability (issue #51).
@@ -306,7 +314,7 @@ value for all three, and it is the value an anchor would agree with.
 `None` is an answer, not an error: the trace is unfinished, or below 3.0.0, or
 its chain does not verify. Anchor nothing and find out which.
 
-Under 3.0.0 that one value commits to the whole run — records, run id, policy,
+From 3.0.0 onward, that one value commits to the whole run — records, run id, policy,
 metadata and `graph.code_fingerprint` alike — with one stated exception:
 **numbers commit as parsed, at binary64 precision**, so a float in a trace
 commits to its IEEE-754 double rather than to the literal in the file. Anchoring

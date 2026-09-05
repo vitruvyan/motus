@@ -21,7 +21,7 @@ __version__ = "0.13.0"
 #: ``contract/trace.v1.schema.json``'s ``properties.schema_version.const``
 #: by ``tests/test_schema_version.py`` (contract/README.md, "One source per
 #: fact"; ADR-003 §Decision 2).
-TRACE_SCHEMA_VERSION = "3.0.0"
+TRACE_SCHEMA_VERSION = "3.1.0"
 
 from vitruvyan_motus.context import ContextDraw, ReplayStatus, RunContext
 from vitruvyan_motus.effects import EffectClass, EffectDescriptor, EffectReceipt

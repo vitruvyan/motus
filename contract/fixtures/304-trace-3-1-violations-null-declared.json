@@ -1,0 +1,140 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "spec": {
+    "schema_version": "1.0.0",
+    "name": "violations-null",
+    "version": "1.0.0",
+    "entry": "declared",
+    "nodes": [
+      {
+        "name": "declared",
+        "reads_declared": [],
+        "writes_declared": []
+      }
+    ],
+    "transitions": {
+      "declared": {
+        "kind": "terminal"
+      }
+    }
+  },
+  "instance": {
+    "schema_version": "3.1.0",
+    "run": {
+      "run_id": "declared",
+      "graph": {
+        "name": "violations-null",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:fcd014eddd638a64f22fcc5cac0667b91266b32af6e7c6dc46ef15f1848d40a1",
+        "code_fingerprint": "code:sha256:a3ee650c81529a849ca164871804c06ef77d8414c3ba1b20f4ef47fea6d79afd",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {},
+      "created_ts": "2026-09-05T23:01:45.403605Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-09-05T23:01:45.403709Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": "sha256:c159fbc954a204db498d635fd24869556d0639932661203f7eb61b4167d79f71",
+          "prev_hash": "sha256:55bce259a6c89495303645a14beee07082da697e14fe98aef6ebb818ec80109e"
+        },
+        "intent": "",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-09-05T23:01:45.404953Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": "sha256:841930f1f4619f9ba5fa9399752f5d58335b5effe39c2a9fcff10a6f5faa80d2",
+          "prev_hash": "sha256:c159fbc954a204db498d635fd24869556d0639932661203f7eb61b4167d79f71"
+        },
+        "node": "declared",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-09-05T23:01:45.405106Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": "sha256:7ff99faa785c38605bef3e74bd38568f8b0afee007b87f5ab365c9368f2ece93",
+          "prev_hash": "sha256:841930f1f4619f9ba5fa9399752f5d58335b5effe39c2a9fcff10a6f5faa80d2"
+        },
+        "node": "declared",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": null,
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-09-05T23:01:45.405159Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": "sha256:cbee7f3de5fd30ebe76dce1f9a99da10dd633cca01e7c841387ffbdd0e78dc28",
+          "prev_hash": "sha256:7ff99faa785c38605bef3e74bd38568f8b0afee007b87f5ab365c9368f2ece93"
+        },
+        "after": "declared",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-09-05T23:01:45.405203Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": "sha256:369350f3adbda7fe115827fb1a9e28696002e0fff513f18ddcc5d7d514540895",
+          "prev_hash": "sha256:cbee7f3de5fd30ebe76dce1f9a99da10dd633cca01e7c841387ffbdd0e78dc28"
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "node:declared:source_unavailable",
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  },
+  "rule": "SB4",
+  "reason_contains": "records violations: null"
+}
