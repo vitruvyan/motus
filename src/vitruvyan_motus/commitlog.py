@@ -216,7 +216,7 @@ class CommitmentLog:
 
     __slots__ = ("_root", "_dir", "tenant", "writer_id", "_fsync",
                  "_window", "_handle", "_lock", "_closed", "_lockfile",
-                 "_poisoned", "_nonces", "_witness_deadline")
+                 "_poisoned", "_nonces", "_witness_deadline", "_diagnostics")
 
     def __init__(self, directory: str | os.PathLike[str], *, tenant: str,
                  writer_id: str, fsync: bool = True,
@@ -233,6 +233,7 @@ class CommitmentLog:
         self._lockfile: Any = None
         self._poisoned: str | None = None
         self._nonces: set[str] = set()
+        self._diagnostics: list[str] = []
         # No default. ADR-021 decision 3 says the deadline "is part of the
         # configuration", and any number invented here would be a budget chosen
         # to accommodate whatever was in front of it. A caller who configures a
@@ -424,7 +425,8 @@ class CommitmentLog:
             if not line.strip():
                 continue
             try:
-                commitment, ack = _commitment_from(json.loads(line))
+                commitment, ack = _commitment_from(
+                    json.loads(line), diagnostics=self._diagnostics)
             except (ValueError, TypeError, KeyError) as exc:
                 raise CommitmentLogFork(
                     f"{path.name} line {number} is not a commitment this store "
@@ -587,7 +589,7 @@ class CommitmentLog:
         commitment.leaf
 
         line = json.dumps(
-            {"c": commitment.to_dict(),
+            {"commitment": commitment.to_dict(),
              "witness": witness.to_dict() if witness else None},
             sort_keys=True, separators=(",", ":")) + "\n"
         handle = self._open_handle()
@@ -828,7 +830,8 @@ class CommitmentLog:
         commitments = []
         for line in raw.split(b"\n"):
             if line.strip():
-                commitments.append(_commitment_from(json.loads(line))[0])
+                commitments.append(_commitment_from(
+                    json.loads(line), diagnostics=self._diagnostics)[0])
         if len(commitments) != checkpoint.count:
             raise CommitmentLogFork(
                 f"window {index} holds {len(commitments)} commitments and its "
@@ -1150,6 +1153,11 @@ class CommitmentLog:
                 "not a question this process may answer.")
 
     @property
+    def diagnostics(self) -> tuple[str, ...]:
+        """Non-fatal compatibility notices raised while reading this log."""
+        return tuple(self._diagnostics)
+
+    @property
     def witness_deadline(self) -> float | None:
         """How long a witness gets, or None if no witness may be used here."""
         return self._witness_deadline
@@ -1268,7 +1276,13 @@ def _atomic_write(path: Path, text: str, *, fsync: bool) -> None:
         _sync_directory(path.parent)
 
 
-def _commitment_from(body: dict[str, Any]) -> tuple[Commitment, WitnessAck | None]:
+_LEGACY_KEY_DIAGNOSTIC = "written by a Motus before 0.14.0"
+LEGACY_WINDOW_KEY = "c"
+
+
+def _commitment_from(
+    body: dict[str, Any], *, diagnostics: list[str] | None = None,
+) -> tuple[Commitment, WitnessAck | None]:
     """Rebuild a commitment and its acknowledgement from a stored line.
 
     The ACK lives BESIDE the digested body, never inside it: a leaf cannot
@@ -1277,7 +1291,15 @@ def _commitment_from(body: dict[str, Any]) -> tuple[Commitment, WitnessAck | Non
     answered both with "no", which lost every witnessed run's
     EXECUTION_CONTINUITY.
     """
-    digested = body["c"]
+    if "commitment" in body and "c" in body:
+        raise ValueError(
+            "a window line contains both commitment and legacy c envelope keys")
+    if "commitment" in body:
+        digested = body["commitment"]
+    else:
+        digested = body[LEGACY_WINDOW_KEY]
+        if diagnostics is not None and _LEGACY_KEY_DIAGNOSTIC not in diagnostics:
+            diagnostics.append(_LEGACY_KEY_DIAGNOSTIC)
     ack_body = body.get("witness")
     ack = WitnessAck(**ack_body) if ack_body else None
     commitment = Commitment(

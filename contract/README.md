@@ -233,9 +233,9 @@ is `tests/contract/kernel.py`, exactly as described above.
   (linear, routed, terminal), effect classes, optional declared read/write
   sets.
 - `commitment.v1.schema.json` — one BEGIN or END as stored in a window file
-  or handed to another party, with the witness acknowledgement BESIDE the
-  digested body and never inside it. Includes the `continues` link a resumed
-  segment carries (ADR-023).
+  under the on-disk envelope key `commitment`, or handed to another party,
+  with the witness acknowledgement BESIDE the digested body and never inside
+  it. Includes the `continues` link a resumed segment carries (ADR-023).
 - `checkpoint.v1.schema.json` — one sealed window: the Merkle root over its
   commitments, the range it covers, and the link to the checkpoint before it.
 - `receipt.v1.schema.json` — what a holder presents to a verifier: a RUN, as
