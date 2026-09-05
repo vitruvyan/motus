@@ -348,10 +348,14 @@ def test_a_proof_carries_the_commitment_and_not_only_its_digest(tmp_path):
     log = _log(tmp_path)
     _run(log, "r1")
     checkpoint = log.seal(AT)
-    body = log.proof_for("r1", CommitmentKind.END, checkpoint.index).to_dict()
+    proof = log.proof_for("r1", CommitmentKind.END, checkpoint.index)
+    body = proof.to_dict()
     assert body["commitment"]["run_id"] == "r1"
     assert body["commitment"]["root"] == ROOT
-    assert body["checkpoint_digest"] == checkpoint.digest
+    assert set(body) == {"commitment", "proof", "checkpoint"}
+    assert proof.format == STORE_FORMAT
+    assert proof.mode == proof.commitment.mode.value
+    assert proof.checkpoint_digest == checkpoint.digest
     log.close()
 
 
@@ -466,7 +470,7 @@ def test_the_witness_acknowledgement_survives_the_disk(tmp_path):
     assert proof.commitment.witness is not None
     assert proof.commitment.witness.witness_id == "notary.example"
     assert proof.commitment.mode is AssuranceMode.WITNESSED
-    assert proof.to_dict()["mode"] == "witnessed"
+    assert proof.mode == "witnessed"
     assert proof.to_dict()["witness"]["witness_id"] == "notary.example"
     # and the ACK still does not move the leaf
     assert proof.commitment.leaf == unwitnessed.leaf

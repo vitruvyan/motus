@@ -570,7 +570,8 @@ def test_a_sealed_run_proves_its_own_root(tmp_path):
     proof = log.proof_for("r1", CommitmentKind.END, checkpoint.index)
     assert proof.commitment.root == result.trace.root
     assert verify_inclusion(proof.commitment, proof.path, checkpoint.window_root)
-    assert json.loads(json.dumps(proof.to_dict()))["mode"] == "local"
+    assert proof.mode == "local"
+    assert json.loads(json.dumps(proof.to_dict()))["proof"]
     log.close()
 
 

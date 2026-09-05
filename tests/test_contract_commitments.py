@@ -78,7 +78,7 @@ def test_the_validator_walks_a_real_path_to_a_real_root(store):
     for index in range(5):
         proof = store.proof_for(f"job-{index}", CommitmentKind.BEGIN,
                                 checkpoint.index)
-        path = [{"side": side, "digest": digest} for side, digest in proof.path]
+        path = proof.to_dict()["proof"]
         reached = validate._fold_path(
             validate.commitment_leaf(proof.commitment.to_dict()), path)
         assert reached == checkpoint.window_root
@@ -110,9 +110,8 @@ def test_the_two_implementations_of_the_window_root_agree(store):
 
     walked = validate._fold_path(
         leaves[0],
-        [{"side": side, "digest": digest}
-         for side, digest in store.proof_for("job-0", CommitmentKind.BEGIN,
-                                             checkpoint.index).path],
+        store.proof_for("job-0", CommitmentKind.BEGIN,
+                        checkpoint.index).to_dict()["proof"],
     )
     assert walked == merkle_root(tuple(leaves)) == checkpoint.window_root
 
@@ -129,13 +128,7 @@ def test_a_receipt_built_from_a_real_store_validates_clean(store):
     receipt = {
         "schema_version": "1.0.0",
         "mode": "local",
-        "segments": [{
-            "begin": {
-                "commitment": begin.to_dict(),
-                "proof": [{"side": s, "digest": d} for s, d in proof.path],
-                "checkpoint": checkpoint.to_dict(),
-            },
-        }],
+        "segments": [{"begin": proof.to_dict()}],
     }
     assert validate.validate_receipt(receipt) == []
     assert validate.validate_checkpoint(checkpoint.to_dict()) == []
@@ -178,13 +171,11 @@ def test_a_receipt_cannot_legitimize_a_checkpoint_the_validator_rejects(store):
 
     tampered = checkpoint.to_dict()
     tampered["count"] = 99
+    entry = proof.to_dict()
+    entry["checkpoint"] = tampered
     receipt = {
         "schema_version": "1.0.0", "mode": "local",
-        "segments": [{"begin": {
-            "commitment": proof.commitment.to_dict(),
-            "proof": [{"side": s, "digest": d} for s, d in proof.path],
-            "checkpoint": tampered,
-        }}],
+        "segments": [{"begin": entry}],
     }
     rules = {v.rule for v in validate.validate_receipt(receipt)}
     assert "K1" in rules, (

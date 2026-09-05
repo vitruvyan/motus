@@ -171,17 +171,37 @@ class InclusionProof:
     path: tuple[tuple[str, str], ...]
     checkpoint: Checkpoint
 
+    @property
+    def format(self) -> str:
+        """The commit-log format associated with this proof."""
+        return STORE_FORMAT
+
+    @property
+    def mode(self) -> str:
+        """The achieved assurance mode, read from the commitment."""
+        return self.commitment.mode.value
+
+    @property
+    def checkpoint_digest(self) -> str:
+        """The digest of the checkpoint carried by this proof."""
+        return self.checkpoint.digest
+
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "format": STORE_FORMAT,
+        """Return this proof as a receipt.v1 ``Entry``.
+
+        The shape is defined by ``contract/receipt.v1.schema.json`` under
+        ``$defs.Entry``; format and achieved mode remain available as
+        properties on this object rather than travelling in the entry.
+        """
+        body: dict[str, Any] = {
             "commitment": self.commitment.to_dict(),
-            "witness": (self.commitment.witness.to_dict()
-                        if self.commitment.witness else None),
-            "mode": self.commitment.mode.value,
-            "path": [list(step) for step in self.path],
+            "proof": [{"side": side, "digest": digest}
+                      for side, digest in self.path],
             "checkpoint": self.checkpoint.to_dict(),
-            "checkpoint_digest": self.checkpoint.digest,
         }
+        if self.commitment.witness is not None:
+            body["witness"] = self.commitment.witness.to_dict()
+        return body
 
 
 class CommitmentLog:
