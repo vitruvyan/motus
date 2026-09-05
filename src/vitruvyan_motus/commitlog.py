@@ -585,8 +585,20 @@ class CommitmentLog:
                          f"file ({type(exc).__name__}: {exc})")
             raise
 
-        self._window.append(commitment)
-        self._remember(commitment)
+        try:
+            # The durable line is now the source of truth.  If advancing the
+            # in-memory chain refuses it, continuing would issue this sequence
+            # again even though the file may already contain it.
+            self._window.append(commitment)
+            self._remember(commitment)
+        except BaseException as exc:
+            self._poison(
+                f"the line reached the file and post-write in-memory "
+                f"bookkeeping then failed ({type(exc).__name__}: {exc}); "
+                "what is on disk "
+                "may already hold this sequence and issuing it again would "
+                "duplicate it")
+            raise
         return commitment
 
     def begin(self, run_id: str, *, at: str, nonce: str,
@@ -758,13 +770,21 @@ class CommitmentLog:
                     f"{path.name} already exists: another account of this "
                     "chain position was sealed before ours")
             checkpoint = self._window.seal(at)
-            _atomic_write(path, json.dumps(checkpoint.to_dict(), indent=2) + "\n",
-                          fsync=self._fsync)
-            if self._handle is not None:
-                self._handle.close()
-                self._handle = None
-            self._window = CommitmentWindow.following(checkpoint)
-            self._nonces.clear()
+            try:
+                _atomic_write(path, json.dumps(checkpoint.to_dict(), indent=2) + "\n",
+                              fsync=self._fsync)
+                if self._handle is not None:
+                    self._handle.close()
+                    self._handle = None
+                self._window = CommitmentWindow.following(checkpoint)
+                self._nonces.clear()
+            except BaseException as exc:
+                self._poison(
+                    f"the window was marked sealed and the checkpoint then "
+                    f"failed to become durable ({type(exc).__name__}: {exc}); "
+                    "whether it reached disk is unknown, so this instance "
+                    "must not be trusted to seal or append again")
+                raise
             return checkpoint
 
     # -- reading ----------------------------------------------------------
