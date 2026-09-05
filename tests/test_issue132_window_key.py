@@ -81,6 +81,23 @@ def test_new_lines_validate_strictly_line_by_line(tmp_path):
         assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_legacy_c_in_open_window_reports_diagnostic_during_recovery(tmp_path):
+    root = tmp_path / "open-legacy"
+    log = CommitmentLog(root, tenant="t", writer_id="w")
+    log.begin("r0", at=AT, nonce="b0")
+    log.end("r0", root=ROOT, outcome="completed", at=AT, nonce="e0")
+    log.close()
+
+    # There are no checkpoints, so this fresh open can only discover `c` via
+    # _recover -> _replay, never by scanning a sealed window.
+    _rewrite_key(root, "c")
+    reopened = CommitmentLog(root, tenant="t", writer_id="w")
+    try:
+        assert reopened.diagnostics == ("written by a Motus before 0.14.0",)
+    finally:
+        reopened.close()
+
+
 def test_old_log_chain_receipt_and_diagnostic_are_compatible(tmp_path):
     root = tmp_path / "old"
     _make_log(root)

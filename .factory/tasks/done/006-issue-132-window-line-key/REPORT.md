@@ -232,3 +232,80 @@ release, or `mutation_probe` was performed.
 
 - Implementer: `openai-codex/gpt-5.6-luna` (`implementer-006d`).
 - Verifier: `openai-codex/gpt-5.6-luna` (`verifier-006d`), `/tmp/verifier-006d.md`.
+
+## 006e
+
+## RESULT
+
+PASS. Added a load-bearing regression test for a legacy `c` envelope in an
+open, unsealed window with no sealed windows. Fresh construction therefore
+recovers through `_recover` → `_replay`; the sealed-window scan has no windows
+to inspect. The diagnostic is exactly `("written by a Motus before 0.14.0",)`.
+
+## TESTS (raw output)
+
+Focused test before mutation:
+
+```
+.venv/bin/pytest -q tests/test_issue132_window_key.py
+........                                                                 [100%]
+8 passed in 6.58s
+```
+
+Mutation proof (source saved byte-for-byte to
+`/tmp/commitlog.py.006e.saved`, then the diagnostic append in
+`_commitment_from` was hand-neutered):
+
+```
+.venv/bin/pytest -q tests/test_issue132_window_key.py::test_legacy_c_in_open_window_reports_diagnostic_during_recovery
+F                                                                        [100%]
+E           AssertionError: assert () == ('written by ...fore 0.14.0',)
+E             Right contains one more item: 'written by a Motus before 0.14.0'
+1 failed in 0.29s
+```
+
+Restored from the saved bytes (not git checkout); SHA-256 before mutation and
+after restoration matched:
+
+```
+96b244d07e05034cd7775ecccb52ed36ceabef1310c64d45cc1c589b4d0d0c9a  src/vitruvyan_motus/commitlog.py
+96b244d07e05034cd7775ecccb52ed36ceabef1310c64d45cc1c589b4d0d0c9a  /tmp/commitlog.py.006e.saved
+```
+
+Focused suite after restoration:
+
+```
+.venv/bin/pytest -q tests/test_issue132_window_key.py tests/test_commitlog.py tests/test_the_digest_precedes_the_write.py
+.............................................................            [100%]
+61 passed in 6.96s
+```
+
+Full suite:
+
+```
+1190 passed, 5 skipped, 1 warning in 77.06s (0:01:17)
+```
+
+Frozen paths:
+
+```
+Frozen contract paths: PASS
+```
+
+The warning is the pre-existing duplicate ZIP member warning in
+`tests/test_evidence_package.py`.
+
+## MUTATION TARGETS
+
+1. Removing or neutering the diagnostic append in `_commitment_from` fails
+   `test_legacy_c_in_open_window_reports_diagnostic_during_recovery`.
+2. Routing the test through sealed-window scanning instead of `_recover` →
+   `_replay` would violate the no-sealed-windows setup and its stated purpose.
+3. Removing the `c` fallback prevents fresh recovery of the hand-rewritten
+   open window.
+
+## AGENTS
+
+- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-006e`).
+- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-006e`), `/tmp/verifier-006e.md`.
+- No `tools/mutation_probe.py` run.
