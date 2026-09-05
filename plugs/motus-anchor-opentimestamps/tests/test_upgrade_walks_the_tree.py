@@ -181,6 +181,49 @@ def test_upgrade_stops_a_fast_growing_calendar_at_the_hard_ceiling(monkeypatch):
         "upgrade stopped after 32 passes: the proof kept growing")
 
 
+def test_upgrade_removes_outage_after_same_request_recovers(monkeypatch):
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+    from opentimestamps.core.timestamp import Timestamp
+
+    anchor = OpenTimestampsAnchor(
+        calendars=CALENDARS,
+        block_time=lambda h: "2023-08-11T12:00:00Z")
+    receipt = _receipt()
+    recovering = {"value": True}
+
+    class RecoveringCalendar:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            if recovering["value"]:
+                raise ConnectionError("calendar temporarily down")
+            fresh = Timestamp(commitment)
+            fresh.attestations.add(BitcoinBlockHeaderAttestation(812347))
+            return fresh
+
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = RecoveringCalendar
+    try:
+        first = anchor.upgrade(receipt)
+        outages = first.proof["calendars_unreachable"]
+        assert {item["calendar"] for item in outages} == set(CALENDARS)
+        assert all(item["commitment"] for item in outages)
+        assert all(item["reason"] == "ConnectionError: calendar temporarily down"
+                   for item in outages)
+        recovering["value"] = False
+        second = anchor.upgrade(first)
+    finally:
+        cal.RemoteCalendar = old
+
+    assert second.proof["calendars_unreachable"] == []
+    assert second.proof["bitcoin_block_heights"] == [812347] * len(CALENDARS)
+    upgraded_timestamp = anchor._deserialize(
+        bytes.fromhex(second.proof["serialized"]))
+    assert any(
+        getattr(attestation, "height", None) == 812347
+        for attestation in anchor._attestations(upgraded_timestamp))
+
+
 def test_upgrade_deduplicates_repeated_unreachable_requests(monkeypatch):
     from opentimestamps.core.notary import PendingAttestation
     from opentimestamps.core.op import OpAppend

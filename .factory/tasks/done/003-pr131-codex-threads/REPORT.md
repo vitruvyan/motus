@@ -180,3 +180,25 @@ focused tests; one verifier (`pi`, same model) ran the full suite, plug suite,
 frozen-path guard, and offline attacks; one adversary (`claude`) attacked the
 proof tree, contract-shaped receipts, and the bounded loop. No agent committed,
 pushed, tagged, or released.
+
+## 003c
+
+Added the load-bearing recovery regression at
+`plugs/motus-anchor-opentimestamps/tests/test_upgrade_walks_the_tree.py::test_upgrade_removes_outage_after_same_request_recovers`.
+It performs two offline upgrades: the first records each calendar/commitment
+outage, and the second receives Bitcoin attestations from the same calendars,
+asserting the outage entries are removed and the merged heights/serialized
+attestations are present.
+
+Test output:
+```
+.venv/bin/pytest plugs/motus-anchor-opentimestamps/tests/test_upgrade_walks_the_tree.py::test_upgrade_removes_outage_after_same_request_recovers -q
+1 passed
+```
+
+Mutation check: saved the exact source bytes, hand-neutered only
+`unreachable.pop(key, None)`, and reran the focused test. It failed because the
+three outage entries remained. Restored the saved bytes without git checkout;
+SHA-256 before and after restoration was
+`631c07bb8e5e6104a58f27503f705e3a89fd2164de7dea4b476b50eac9695b65`.
+No `tools/mutation_probe.py` was run.
