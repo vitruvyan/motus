@@ -31,7 +31,7 @@ Read it with `gh issue view <n>`. Then, for every claim that is checkable:
 - does a symbol, class, function or attribute it names still exist and behave
   as described?
 - does a `file:line` it cites still point at what it says?
-- does a described **behaviour** still reproduce? Write a short script and run
+- does a described **behaviour** still reproduce? Write a short script under `.attack/` (never in `src/`, `tests/` or `tools/`), run it, delete it afterwards unless it reproduces a live defect, in which case leave it there and name it in the report, and run
   it with `/home/vitruvyan/motus/.venv/bin/python` when that is the only way to
   know. Reading the code and inferring is how a stale claim survives an audit.
 - does a quoted **measurement** still hold, where re-checking is cheap?

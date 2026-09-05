@@ -19,6 +19,9 @@ runtime's most delicate file is still just running the test suite.
 | `haiku` | **`motus-issue-auditor`** | Checking whether open issues still describe the code truthfully. Not a tracker — `gh issue list` already lists. This catches issues that went stale in silence, which is a thing no command does. |
 | `opus` | **`motus-adversary`** | Breaking new code. Diagnosing an unexplained failure. Anything where the answer is not known in advance and being wrong is expensive. |
 
+The tier names in the table are the reasoning a task needs, not a provider: under Pi the routing is by
+subscription (see *Under Pi* below), and `opus` there means the `claude` Herdr kind or `openai-codex/gpt-5.5`.
+
 Decisions about the contract, the ADRs and the architecture stay with the
 session lead. They are not delegated, because the failure mode is not a bug —
 it is a wrong decision recorded as if it were right.
