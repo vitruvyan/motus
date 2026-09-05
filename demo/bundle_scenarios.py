@@ -27,7 +27,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from bundle_hiring import DERIVE, ZIP_DATE
+from bundle_hiring import DERIVE, _write_deterministic_zip
 
 OUT = Path(__file__).resolve().parent / "out" / "scenarios"
 
@@ -166,11 +166,7 @@ def main() -> None:
                 {"bundle_version": "1.0.0", "graph_spec": graph, "trace": trace},
                 indent=2, ensure_ascii=False).encode("utf-8") + b"\n"),
         ]
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for name, payload in members:
-                info = zipfile.ZipInfo(name, date_time=ZIP_DATE)
-                info.external_attr = 0o644 << 16
-                archive.writestr(info, payload)
+        _write_deterministic_zip(archive_path, members)
 
         entry["bundle_file"] = archive_path.name
         entry["bundle_sha256"] = "sha256:" + hashlib.sha256(
