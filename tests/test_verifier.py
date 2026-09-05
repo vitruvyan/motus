@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State
-from vitruvyan_motus.commitlog import CommitmentLog
-from vitruvyan_motus.commitments import CommitmentKind
+from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
+from vitruvyan_motus.commitments import AnchorReceipt, CommitmentKind, WitnessAck
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT_DIR = ROOT / "contract"
@@ -60,15 +60,7 @@ def run(tmp_path):
                      commitments=log).run(State.empty("x"), run_id="r1")
     checkpoint = log.seal(AT)
 
-    def entry(kind, sequence):
-        proof = log.proof_for("r1", kind, checkpoint.index, sequence=sequence)
-        return proof.to_dict()
-
-    receipt = {
-        "schema_version": "1.0.0", "mode": "local",
-        "segments": [{"begin": entry(CommitmentKind.BEGIN, 0),
-                      "end": entry(CommitmentKind.END, 1)}],
-    }
+    receipt = log.receipt_for("acme/w1/0")
     trace = result.trace.to_dict()
     digest = validate.checkpoint_digest(checkpoint.to_dict())
     log.close()
@@ -459,3 +451,206 @@ def test_an_opentimestamps_anchor_is_claimed_and_names_no_transaction(run):
     reason = next(f.reason for f in verdict.findings if f.level == "EXISTENCE")
     assert "ots verify" in reason
     assert "tronscan" not in reason
+
+
+def test_receipt_for_continuation_ref_walks_back_to_original(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("old", at=AT, nonce="n0")
+    log.seal(AT)
+    log.begin("new", at=AT, nonce="n1", continues="old",
+              continues_fingerprint="bundle:sha256:" + "c" * 64)
+    log.end("new", root="sha256:" + "d" * 64, outcome="completed",
+            at=AT, nonce="n2")
+    log.seal(AT)
+    receipt = log.receipt_for("acme/w1/1")
+    assert receipt["execution"]["ref"] == "acme/w1/0"
+    assert receipt["execution"]["run_id"] == "old"
+    assert [s["begin"]["commitment"]["run_id"] for s in receipt["segments"]] == ["old", "new"]
+    assert validate.validate_receipt(receipt) == []
+    log.close()
+
+
+def test_receipt_for_walks_a_three_segment_chain(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("s0", at=AT, nonce="n0")
+    log.seal(AT)
+    log.begin("s1", at=AT, nonce="n1", continues="s0",
+              continues_fingerprint="bundle:sha256:" + "a" * 64)
+    log.seal(AT)
+    log.begin("s2", at=AT, nonce="n2", continues="s1",
+              continues_fingerprint="bundle:sha256:" + "b" * 64)
+    log.end("s2", root="sha256:" + "d" * 64, outcome="completed",
+            at=AT, nonce="n3")
+    log.seal(AT)
+    receipt = log.receipt_for("acme/w1/2")
+    assert len(receipt["segments"]) == 3
+    assert receipt["execution"]["ref"] == "acme/w1/0"
+    assert receipt["execution"]["run_id"] == "s0"
+    assert validate.validate_receipt(receipt) == []
+    log.close()
+
+
+def test_unfinished_receipt_null_fingerprint_is_not_p8_when_trace_has_root(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("unfinished", at=AT, nonce="n0")
+    log.seal(AT)
+    result = Runtime(SPEC, {"a": _node}, sink=InMemoryTraceSink()).run(
+        State.empty("x"), run_id="unfinished")
+    receipt = log.receipt_for("acme/w1/0")
+    verdict = validate.verify(receipt, result.trace.to_dict())
+    assert not any(v.rule == "P8" for v in verdict.violations)
+    assert verdict.status_of("INTEGRITY") == validate.NOT_ESTABLISHED
+    log.close()
+
+
+def test_continuation_without_local_predecessor_is_reported(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("new", at=AT, nonce="n0", continues="old",
+              continues_fingerprint="bundle:sha256:" + "c" * 64)
+    log.seal(AT)
+    receipt = log.receipt_for("acme/w1/0")
+    verdict = validate.verify(receipt)
+    assert "predecessor" in " ".join(verdict.notes)
+    assert "omitted" in " ".join(verdict.notes)
+    log.close()
+
+
+@pytest.mark.parametrize("ref", ["bad", "acme/w1", "acme/w1/01", "acme//0"])
+def test_receipt_for_rejects_malformed_refs(tmp_path, ref):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    with pytest.raises(ValueError, match="invalid execution reference"):
+        log.receipt_for(ref)
+    log.close()
+
+
+def test_receipt_for_rejects_unknown_and_end_refs(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n0")
+    log.end("r", root="sha256:" + "d" * 64, outcome="completed",
+            at=AT, nonce="n1")
+    log.seal(AT)
+    with pytest.raises(ValueError, match="was not found"):
+        log.receipt_for("acme/w1/99")
+    with pytest.raises(ValueError, match="names an END"):
+        log.receipt_for("acme/w1/1")
+    log.close()
+
+
+def test_receipt_for_distinguishes_an_unsealed_begin(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n0")
+    with pytest.raises(ValueError, match="not yet sealed"):
+        log.receipt_for("acme/w1/0")
+    log.close()
+
+
+def test_receipt_for_includes_supplied_anchors(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n0")
+    checkpoint = log.seal(AT)
+    anchor = AnchorReceipt("a", "tron:nile", validate.checkpoint_digest(checkpoint.to_dict()), "pending")
+    receipt = log.receipt_for("acme/w1/0", anchors=(anchor,))
+    assert receipt["anchors"] == [anchor.to_dict()]
+    assert validate.validate_receipt(receipt) == []
+    log.close()
+
+
+def test_execution_fingerprint_tamper_is_p8(run):
+    receipt, trace, _ = run
+    receipt["execution"]["fingerprint"] = "sha256:" + "0" * 64
+    verdict = validate.verify(receipt, trace)
+    assert any(v.rule == "P8" for v in verdict.violations)
+    assert verdict.status_of("INTEGRITY") == validate.NOT_ESTABLISHED
+
+
+def test_execution_ref_with_unbounded_decimal_is_p7_not_validator_crash(run):
+    receipt, _, _ = run
+    receipt["execution"]["ref"] = "acme/w1/" + "9" * 5000
+    violations = validate.validate_receipt(receipt)
+    assert any(v.rule == "P7" for v in violations)
+
+
+def test_receipt_for_rejects_run_id_that_receipt_schema_cannot_carry(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("x" * 201, at=AT, nonce="n0")
+    log.seal(AT)
+    with pytest.raises(ValueError, match="schema limit"):
+        log.receipt_for("acme/w1/0")
+    log.close()
+
+
+def test_receipt_for_rejects_unencodable_log_identity_and_huge_sequence(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme/prod", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n0")
+    log.seal(AT)
+    with pytest.raises(ValueError, match="cannot produce receipt.v1"):
+        log.receipt_for("acme/w1/0")
+    log.close()
+
+    other = CommitmentLog(tmp_path / "other", tenant="acme", writer_id="w1", fsync=False)
+    with pytest.raises(ValueError, match="invalid execution reference"):
+        other.receipt_for("acme/w1/" + "9" * 5000)
+    other.close()
+
+
+def test_receipt_for_refuses_continuation_forks(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("s0", at=AT, nonce="n0")
+    log.seal(AT)
+    for run_id, nonce in (("a", "n1"), ("b", "n2")):
+        log.begin(run_id, at=AT, nonce=nonce, continues="s0",
+                  continues_fingerprint="bundle:sha256:" + "a" * 64,
+                  continues_sequence=0)
+    log.seal(AT)
+    with pytest.raises(CommitmentLogFork, match="multiple continuation"):
+        log.receipt_for("acme/w1/0")
+    log.close()
+
+
+def test_receipt_for_refuses_ambiguous_double_end(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n0")
+    log.end("r", root="sha256:" + "1" * 64, outcome="one", at=AT, nonce="n1")
+    log.end("r", root="sha256:" + "2" * 64, outcome="two", at=AT, nonce="n2")
+    log.seal(AT)
+    with pytest.raises(CommitmentLogFork, match="multiple END"):
+        log.receipt_for("acme/w1/0")
+    log.close()
+
+
+def test_resumed_receipt_uses_weakest_included_mode(tmp_path):
+    class Notary:
+        def acknowledge(self, payload):
+            import hashlib
+            return WitnessAck("notary", "sha256:" + hashlib.sha256(
+                b"\x00" + payload).hexdigest(), 0, AT, "sig")
+
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False,
+                        witness_deadline=1)
+    log.begin("s0", at=AT, nonce="n0", ask=Notary())
+    log.seal(AT)
+    log.begin("s1", at=AT, nonce="n1", continues="s0",
+              continues_fingerprint="bundle:sha256:" + "a" * 64)
+    log.end("s1", root="sha256:" + "d" * 64, outcome="completed",
+            at=AT, nonce="n2")
+    log.seal(AT)
+    receipt = log.receipt_for("acme/w1/1")
+    assert receipt["mode"] == "local"
+    assert validate.validate_receipt(receipt) == []
+    log.close()
+
+
+@pytest.mark.parametrize("field", ["tenant", "writer_id", "nonce", "outcome"])
+def test_receipt_for_rejects_every_oversized_commitment_identifier(tmp_path, field):
+    tenant = "acme" if field != "tenant" else "t" * 201
+    writer = "w1" if field != "writer_id" else "w" * 201
+    log = CommitmentLog(tmp_path, tenant=tenant, writer_id=writer, fsync=False)
+    log.begin("r", at=AT, nonce="n" * 201 if field == "nonce" else "n")
+    if field == "outcome":
+        log.end("r", root="sha256:" + "d" * 64, outcome="o" * 201,
+                at=AT, nonce="n1")
+    log.seal(AT)
+    ref = f"{tenant}/{writer}/0"
+    with pytest.raises(ValueError, match="schema limit"):
+        log.receipt_for(ref)
+    log.close()

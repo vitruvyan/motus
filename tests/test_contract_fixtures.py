@@ -214,7 +214,7 @@ ADVERTISED_RULES = {
     # Header, JSON strictness, JSONL encoding, schema layer
     "H1", "H2", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
     # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
-    "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6",
+    "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8",
     # A number commits to the characters it was written as (ADR-024)
     "J2",
 }
