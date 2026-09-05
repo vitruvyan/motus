@@ -34,6 +34,8 @@ NETWORK = "opentimestamps:bitcoin"
 #: not an edge case (ADR-021 decision 4): each is an independent operator, and
 #: a commitment held by one of them is a commitment held by somebody who can
 #: lose it.
+MAX_UPGRADE_PASSES = 32  # guard against an endlessly growing proof, not an algorithm
+
 DEFAULT_CALENDARS = (
     "https://alice.btc.calendar.opentimestamps.org",
     "https://bob.btc.calendar.opentimestamps.org",
@@ -52,7 +54,6 @@ def _directly_verified(stamp: Any):
     """
     if stamp.attestations:
         yield stamp
-        return
     for sub in stamp.ops.values():
         yield from _directly_verified(sub)
 
@@ -73,7 +74,8 @@ class OpenTimestampsAnchor:
 
     def __init__(self, calendars: Iterable[str] = DEFAULT_CALENDARS,
                  *, timeout: float = 10.0, anchor_id: str = "opentimestamps",
-                 block_time: Any = None) -> None:
+                 block_time: Any = None,
+                 block_time_source: str | None = None) -> None:
         self._calendars = tuple(calendars)
         if not self._calendars:
             raise ValueError(
@@ -91,6 +93,7 @@ class OpenTimestampsAnchor:
         #: blockchain, and this anchor has no node. The embedder supplies the
         #: resolver, and by supplying it decides whom to believe about it.
         self._block_time = block_time
+        self._block_time_source = block_time_source
 
     def publish(self, checkpoint: bytes) -> Any:
         """Submit a checkpoint digest. **Always returns `pending`.**
@@ -153,8 +156,17 @@ class OpenTimestampsAnchor:
         block header attestation is present, which is a claim about a block and
         not about us.
         """
-        upgraded = self.upgrade(receipt)
-        return upgraded.state
+        proof = dict(getattr(receipt, "proof", None) or {})
+        if proof.get("format") != "ots":
+            raise ValueError("this receipt does not carry an OpenTimestamps proof")
+        timestamp = self._deserialize(bytes.fromhex(proof["serialized"]))
+        stated = bytes.fromhex(proof["digest"])
+        if timestamp.msg != stated or self._digest_bytes(receipt.checkpoint) != stated:
+            raise ValueError("the OpenTimestamps proof does not match this checkpoint")
+        from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+        return "anchored" if any(
+            isinstance(attestation, BitcoinBlockHeaderAttestation)
+            for attestation in self._attestations(timestamp)) else "pending"
 
     def upgrade(self, receipt: Any) -> Any:
         """Ask whether the commitment has reached a block yet.
@@ -234,13 +246,21 @@ class OpenTimestampsAnchor:
         # wearing the face of a working one. The mutation probe found it, which
         # is what the probe is for. What a receipt reader needs is which
         # commitment could not be asked about, and of whom.
-        unreachable: list[dict[str, str]] = []
-        # A calendar returns the whole path it knows, so one pass is normally
-        # enough. The loop is for the case where a merge exposes a pending
-        # attestation that was not reachable before; it stops as soon as a pass
-        # changes nothing, and the bound is a guard rather than an algorithm.
-        for _ in range(4):
-            asked_any = False
+        # Keep one record per logical request. A successful retry removes an
+        # earlier outage for that same request, since the receipt should report
+        # the final answer from this upgrade rather than a stale transient.
+        unreachable: dict[tuple[str, str], dict[str, str]] = {}
+        for item in proof.get("calendars_unreachable", []):
+            key = (item.get("calendar", ""), item.get("commitment", ""))
+            unreachable[key] = dict(item)
+
+        # Do not impose a depth limit on a proof tree. Each pass may reveal a
+        # new pending branch. Stop when the serialized proof is unchanged: this
+        # is both the progress condition and the guard against retry spins.
+        attempted: set[tuple[str, str]] = set()
+        for pass_number in range(1, MAX_UPGRADE_PASSES + 1):
+            before = self._serialize(
+                bytes.fromhex(proof["digest"]), timestamp).hex()
             for sub in list(_directly_verified(timestamp)):
                 for attestation in list(sub.attestations):
                     if not isinstance(attestation, PendingAttestation):
@@ -248,30 +268,51 @@ class OpenTimestampsAnchor:
                     uri = attestation.uri
                     if isinstance(uri, bytes):
                         uri = uri.decode("utf-8", "replace")
+                    key = (uri, sub.msg.hex())
+                    if key in attempted:
+                        continue
+                    attempted.add(key)
                     if uri not in self._calendars:
-                        unreachable.append({
+                        unreachable[key] = {
                             "calendar": uri,
                             "commitment": sub.msg.hex(),
                             "reason": "the proof names a calendar this anchor "
                                       "is not configured to talk to",
-                        })
+                        }
                         continue
                     try:
                         fresh = RemoteCalendar(uri).get_timestamp(
                             sub.msg, timeout=self._timeout)
                     except Exception as error:            # noqa: BLE001
-                        # Still not a verdict — but no longer silent. A
-                        # calendar that cannot answer leaves the receipt as it
-                        # was, and says so on the receipt.
-                        unreachable.append({
+                        unreachable[key] = {
                             "calendar": uri,
                             "commitment": sub.msg.hex(),
                             "reason": f"{type(error).__name__}: {error}",
-                        })
+                        }
                         continue
                     sub.merge(fresh)
-                    asked_any = True
-            if not asked_any:
+                    unreachable.pop(key, None)
+            after = self._serialize(
+                bytes.fromhex(proof["digest"]), timestamp).hex()
+            if after == before:
+                break
+            if pass_number == MAX_UPGRADE_PASSES:
+                ceiling_reason = (
+                    "upgrade stopped after 32 passes: the proof kept growing")
+                for sub in _directly_verified(timestamp):
+                    for attestation in sub.attestations:
+                        if not isinstance(attestation, PendingAttestation):
+                            continue
+                        uri = attestation.uri
+                        if isinstance(uri, bytes):
+                            uri = uri.decode("utf-8", "replace")
+                        key = (uri, sub.msg.hex())
+                        if key not in attempted:
+                            unreachable[key] = {
+                                "calendar": uri,
+                                "commitment": sub.msg.hex(),
+                                "reason": ceiling_reason,
+                            }
                 break
 
         heights = sorted(
@@ -280,14 +321,19 @@ class OpenTimestampsAnchor:
         proof["serialized"] = self._serialize(
             bytes.fromhex(proof["digest"]), timestamp).hex()
         proof["upgraded_at"] = _now()
-        proof["calendars_unreachable"] = unreachable
+        proof["calendars_unreachable"] = list(unreachable.values())
         if not heights:
             proof["bitcoin_block_heights"] = []
+            proof.pop("published_at_source", None)
             return self._receipt(
                 checkpoint=receipt.checkpoint, state="pending",
                 reference=None, published_at=None, proof=proof)
 
         proof["bitcoin_block_heights"] = heights
+        if self._block_time_source is not None:
+            proof["published_at_source"] = self._block_time_source
+        else:
+            proof.pop("published_at_source", None)
         return self._receipt(
             checkpoint=receipt.checkpoint,
             state="anchored",
@@ -322,11 +368,11 @@ class OpenTimestampsAnchor:
         (the evidence did exist by then) but it was ours, and the demo rendered
         it as "Evidence timestamp", which made it wrong on screen.
 
-        The contract is right to require a time on an anchored receipt: one
-        without a time supports the existence of nothing in particular. So this
-        refuses rather than substituting. An anchor that cannot say when has to
-        say that, and let the embedder decide whether an explorer, a node or
-        nothing at all is the answer.
+        The contract requires a time on an anchored receipt: one without a time
+        supports the existence of nothing in particular. So this refuses rather
+        than substituting. An anchor that cannot say when has to say that, and
+        let the embedder decide whether an explorer, a node or nothing at all is
+        the answer.
         """
         if self._block_time is None:
             raise ValueError(

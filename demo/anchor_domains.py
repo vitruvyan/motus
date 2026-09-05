@@ -7,7 +7,7 @@ Each root is submitted to the public OpenTimestamps calendars, and the returned
 `.ots` proof is written beside the trace so a visitor can verify it with
 OpenTimestamps' own tooling — not with ours, which is the entire point:
 
-    ots verify demo/out/domains/<name>.ots
+    ots verify -f demo/out/domains/<name>.root.txt demo/out/domains/<name>.root.txt.ots
 
 ## Why this, and not the TRON anchor the first demo used
 
@@ -32,8 +32,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from motus_anchor_opentimestamps import OpenTimestampsAnchor
+if TYPE_CHECKING:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
 
 OUT = Path(__file__).resolve().parent / "out" / "domains"
 
@@ -57,12 +59,14 @@ def commit(anchor: "OpenTimestampsAnchor", root: str, out: Path,
     proof = payload.get("proof") or {}
     serialized = proof.get("serialized")
     if serialized:
-        # Named `root.txt.ots` where the bundle carries `root.txt`, because
-        # that is the pair OpenTimestamps' own client expects: `ots verify
-        # root.txt.ots` finds its target by stripping the suffix. A proof whose
-        # target has to be supplied by hand is a proof most people never check.
+        # Keep the committed bytes beside the proof. The default client finds
+        # this target by stripping `.ots` from the proof name.
+        (out / stem).write_bytes(root.encode("utf-8"))
         (out / f"{stem}.ots").write_bytes(bytes.fromhex(serialized))
 
+    repo_root = Path(__file__).resolve().parent.parent
+    display_target = (out / stem).relative_to(repo_root).as_posix()
+    display_proof = f"{display_target}.ots"
     return {
         "network": payload.get("network"),
         "state": payload.get("state"),
@@ -71,8 +75,8 @@ def commit(anchor: "OpenTimestampsAnchor", root: str, out: Path,
         "calendars_accepted": proof.get("calendars_accepted", []),
         "calendars_refused": proof.get("calendars_refused", {}),
         "submitted_at": proof.get("submitted_at"),
-        "proof_file": f"{out.name}/{stem}.ots",
-        "verify_with": f"ots verify {stem}.ots",
+        "proof_file": display_proof,
+        "verify_with": f"ots verify -f {display_target} {display_proof}",
     }
 
 
@@ -98,6 +102,8 @@ def anchor_hiring(anchor: "OpenTimestampsAnchor") -> None:
 
 
 def main() -> None:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+
     index = json.loads((OUT / "index.json").read_text(encoding="utf-8"))
     anchor = OpenTimestampsAnchor()
 
@@ -111,10 +117,8 @@ def main() -> None:
                   f"already submitted {entry['anchor'].get('submitted_at')} "
                   f"\u2014 left alone")
             continue
-        entry["anchor"] = commit(anchor, entry["root"], OUT, entry["name"])
-        entry["anchor"]["proof_file"] = f"demo/out/domains/{entry['name']}.ots"
-        entry["anchor"]["verify_with"] = (
-            f"ots verify demo/out/domains/{entry['name']}.ots")
+        entry["anchor"] = commit(
+            anchor, entry["root"], OUT, f"{entry['name']}.root.txt")
         print(f"{entry['name']:22s} {entry['anchor']['state']:9s} "
               f"{len(entry['anchor']['calendars_accepted'])} calendars  "
               f"{entry['root'][:26]}\u2026")
