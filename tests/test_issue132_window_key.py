@@ -87,6 +87,7 @@ def test_old_log_chain_receipt_and_diagnostic_are_compatible(tmp_path):
     _rewrite_key(root, "c")
     log = CommitmentLog(root, tenant="t", writer_id="w")
     try:
+        assert log.diagnostics == ("written by a Motus before 0.14.0",)
         assert log.verify_chain() == 1
         receipt = log.receipt_for("t/w/0")
         assert receipt["execution"]["run_id"] == "r0"
@@ -94,6 +95,16 @@ def test_old_log_chain_receipt_and_diagnostic_are_compatible(tmp_path):
         log._sealed_window(0)
         log.verify_chain()
         assert log.diagnostics == ("written by a Motus before 0.14.0",)
+    finally:
+        log.close()
+
+
+def test_all_commitment_log_is_diagnostic_free_on_fresh_open(tmp_path):
+    root = tmp_path / "new"
+    _make_log(root)
+    log = CommitmentLog(root, tenant="t", writer_id="w")
+    try:
+        assert log.diagnostics == ()
     finally:
         log.close()
 

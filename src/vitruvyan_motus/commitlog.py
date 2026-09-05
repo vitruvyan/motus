@@ -247,6 +247,7 @@ class CommitmentLog:
         try:
             self._write_identity()
             self._window = self._recover()
+            self._scan_sealed_window_keys()
         except BaseException:
             self._release()
             raise
@@ -407,6 +408,29 @@ class CommitmentLog:
         if path.exists():
             self._replay(path, window)
         return window
+
+    def _scan_sealed_window_keys(self) -> None:
+        """Notice legacy envelope keys in sealed windows while opening.
+
+        Every line in a window is written by the same Motus, so the first
+        non-blank line is enough to identify its spelling. A window upgraded
+        mid-write may mix spellings; the normal full read handles that case
+        (and the existing mixed-window test covers it).
+        """
+        for index in self._checkpoint_indices():
+            path = self._dir / _WINDOW.format(index=index)
+            try:
+                with path.open("rb") as handle:
+                    for line in handle:
+                        if line.strip():
+                            body = json.loads(line)
+                            if "c" in body and "commitment" not in body:
+                                if _LEGACY_KEY_DIAGNOSTIC not in self._diagnostics:
+                                    self._diagnostics.append(_LEGACY_KEY_DIAGNOSTIC)
+                            break
+            except FileNotFoundError:
+                # _recover/_check_links reports the missing sealed window.
+                raise
 
     def _replay(self, path: Path, window: CommitmentWindow) -> None:
         """Replay a window file, truncating one torn trailing line.

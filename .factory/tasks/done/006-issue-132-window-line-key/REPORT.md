@@ -160,3 +160,75 @@ No commit, push, tag, release, or `mutation_probe` was performed. All 006b chang
 
 - Implementer: `openai-codex/gpt-5.6-luna` (`implementer-006c`).
 - Verifier: `openai-codex/gpt-5.6-luna` (`verifier-006c`), `/tmp/verifier-006c.md`.
+
+## 006d
+
+## RESULT
+
+PASS. On construction, after recovery, sealed windows are cheaply inspected at
+their first non-blank line; a legacy `c` envelope now records the existing
+ diagnostic before any later operation. Diagnostic de-duplication and mixed
+window read behavior remain intact.
+
+## ARTIFACTS
+
+- `src/vitruvyan_motus/commitlog.py` — construction-time sealed-window key scan,
+  with the same diagnostic channel and once-only behavior.
+- `tests/test_issue132_window_key.py` — fresh legacy-open diagnostic assertion
+  and fresh all-`commitment` diagnostic-free assertion.
+
+## TESTS (raw output)
+
+Focused:
+
+```
+.venv/bin/pytest -q tests/test_issue132_window_key.py tests/test_commitlog.py tests/test_the_digest_precedes_the_write.py
+............................................................             [100%]
+60 passed in 5.57s
+```
+
+Full suite:
+
+```
+1189 passed, 5 skipped, 1 warning in 78.00s (0:01:18)
+```
+
+Frozen paths:
+
+```
+.venv/bin/python tools/check_frozen_paths.py HEAD HEAD
+Frozen contract paths: PASS
+```
+
+The warning is the pre-existing duplicate ZIP member warning in
+`tests/test_evidence_package.py`.
+
+## FINDINGS
+
+- **FIXED** — legacy sealed windows were silent until a later read; construction
+  now scans the first non-blank line of every sealed window and records the
+  existing diagnostic immediately.
+- **FIXED** — fresh all-new-key instances remain diagnostic-free.
+- **OPEN** — none known.
+
+## MUTATION TARGETS
+
+1. Remove `_scan_sealed_window_keys()` from construction: the fresh legacy-open
+   assertion fails before any other operation.
+2. Scan only the open window or omit sealed checkpoint indices: the same test
+   fails.
+3. Remove the diagnostic once-only guard: existing repeated-read assertions
+   fail.
+4. Change the scan to inspect every line: behavior remains correct but violates
+   the intended cheap first-line scan; the implementation comment documents the
+   invariant and mixed-window handoff.
+
+## OUT OF SCOPE
+
+No validator/schema/demo/out/frozen changes, rewrite tool, commit, push, tag,
+release, or `mutation_probe` was performed.
+
+## AGENTS
+
+- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-006d`).
+- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-006d`), `/tmp/verifier-006d.md`.
