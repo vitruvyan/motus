@@ -60,3 +60,52 @@ No release notes/changelog, ADR edits, GraphSpec changes, SLO gate changes, froz
 - Verifier: Pi `openai-codex/gpt-5.6-luna`, `/tmp/verifier-007.md`.
 - Adversaries: Claude old/new reader lens (`/tmp/adversary-007-old-new.md`) and declaration-shape lens (`/tmp/adversary-007-half.md`).
 - No commit, push, tag, release, or mutation probe.
+
+## 007b
+
+### RESULT
+Added a runtime-produced schema 3.1.0 regression covering `violations: null` for a fully undeclared node and `violations: []` for an explicitly declared clean node. The trace is round-tripped through JSON, dict, and JSONL writer/reader paths with equal documents and the same derived root; schema 3.2.0 is rejected with the exact existing error.
+
+### ARTIFACTS
+- `tests/test_motus_runtime.py`: added `test_current_trace_null_and_empty_violations_round_trip_across_all_readers`.
+- Frozen paths and runtime implementation untouched.
+
+### TESTS
+Focused new test:
+```
+.venv/bin/pytest -q tests/test_motus_runtime.py -k 'current_trace_null_and_empty'
+1 passed, 49 deselected in 0.74s
+```
+
+Hand-neutered mutation proof (raw output; source restored from in-memory bytes in `finally`):
+```
+F                                                                        [100%]
+... Trace.from_json(trace.to_json()) ...
+ValueError: unsupported trace schema version
+1 failed, 49 deselected in 0.48s
+raw exit status: 1
+```
+Focused runtime/schema tests:
+```
+.venv/bin/pytest -q tests/test_motus_runtime.py tests/test_schema_version.py
+52 passed in 2.07s
+```
+Full suite:
+```
+.venv/bin/pytest -q
+1199 passed, 5 skipped, 1 warning in 99.19s (0:01:39)
+```
+
+### FINDINGS
+- No findings; no correction round was needed.
+
+### MUTATION TARGETS
+- `src/vitruvyan_motus/trace.py`: removed `"3.1.0"` from the accepted-version tuple in memory-backed source mutation. The new test failed at `Trace.from_json` and the original bytes were restored in `finally`.
+
+### OUT OF SCOPE
+No runtime changes, contract/frozen-path changes, mutation probe, commit, push, tag, or release.
+
+### AGENTS
+- Implementer: current Pi session, `openai-codex/gpt-5.6-luna`.
+- Verifier: current session verification via focused and full `.venv` pytest runs.
+- No other agents were used.

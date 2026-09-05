@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import threading
 import time
@@ -17,7 +18,7 @@ from vitruvyan_motus.runtime import (
     DurabilityProfile, Policy, Runtime, _config_fingerprint, _config_material,
 )
 from vitruvyan_motus.state import State
-from vitruvyan_motus.trace import Decision, Fact, Rejection, redact
+from vitruvyan_motus.trace import Decision, Fact, Rejection, Trace, redact
 
 
 NOW = datetime(2026, 8, 4, tzinfo=timezone.utc)
@@ -209,6 +210,44 @@ def test_fully_undeclared_node_records_null_violations_and_keeps_root():
     assert transition["violations"] is None
     assert result.trace.root is not None
     assert validate.validate_trace(result.trace.to_dict(), spec=spec.to_dict()) == []
+
+
+def test_current_trace_null_and_empty_violations_round_trip_across_all_readers():
+    def untouched(state):
+        return state
+
+    spec = _spec(
+        [
+            {"name": "untouched"},
+            {"name": "clean", "reads_declared": [], "writes_declared": []},
+        ],
+        {"untouched": {"kind": "next", "to": "clean"}, "clean": {"kind": "terminal"}},
+    )
+    result = Runtime(spec, {"untouched": untouched, "clean": untouched}).run(
+        run_id="current-null-and-empty"
+    )
+    trace = result.trace
+    transitions = [record for record in trace.records if record["kind"] == "transition"]
+    assert [record["violations"] for record in transitions] == [None, []]
+
+    document = trace.to_dict()
+    assert document["schema_version"] == "3.1.0"
+    round_trips = [
+        Trace.from_json(trace.to_json()),
+        Trace.from_dict(document),
+    ]
+    violations, jsonl_document = validate.validate_jsonl(trace.to_jsonl(), spec=spec.to_dict())
+    assert violations == []
+    round_trips.append(Trace.from_dict(jsonl_document))
+    for loaded in round_trips:
+        assert loaded.to_dict() == document
+        assert loaded.root == trace.root
+
+    unsupported = dict(document)
+    unsupported["schema_version"] = "3.2.0"
+    with pytest.raises(ValueError) as raised:
+        Trace.from_json(json.dumps(unsupported))
+    assert str(raised.value) == "unsupported trace schema version"
 
 
 def test_declaration_violations_are_recomputed_from_every_captured_surface():
