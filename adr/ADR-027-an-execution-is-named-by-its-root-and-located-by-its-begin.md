@@ -1,8 +1,8 @@
 # ADR-027 — an execution is named by its root and located by its BEGIN
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-05
-- **Accepted:** —
+- **Accepted:** 2026-09-05 by the founder
 - **Authority:** CTO proposes; the founder accepts. Closes the decision #117 asks for and unblocks #118 (receipt producer) and #120 (evidence package).
 - **Depends on:** ADR-019 (the derived root), ADR-021 (commitments: `(tenant, writer_id, sequence)`), ADR-023 (the resumed run, `Continuation.bundle_fingerprint`).
 - **Amends:** `contract/receipt.v1.schema.json` — adds one object, `execution`, at the top level (decision 4). Nothing else in the contract changes; ADR-023 is not amended (decision 1 says why).
