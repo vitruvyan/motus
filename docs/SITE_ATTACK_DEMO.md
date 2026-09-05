@@ -53,7 +53,9 @@ one architectural question" below before designing around this.** Do not paste
 `pip install vitruvyan-motus` onto the page; it fails, and the site's own README
 said it for two releases before an audit caught it.
 
-**3. The current release is v0.12.0**, tagged today at `d0c024e`. It carries
+**3. The current release was v0.12.0 when this brief was written** (2026-08-16,
+tagged that day at `d0c024e`); since 2026-09-05 it is **v0.13.0**, and the
+README's release line is the authority, not this paragraph. v0.12.0 carries
 ADR-026 — *a Motus string must represent a valid sequence of Unicode scalar
 values* — and closed #98 as **intended behaviour**: `"approved"` and
 `"approved"` are the same JSON string and share a root, correctly. If the

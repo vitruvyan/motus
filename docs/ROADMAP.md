@@ -11,12 +11,24 @@ Sequence is load-bearing. Sizes are estimates and say so.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-08-19. This section is a
+*Last reconciled against the repository on 2026-09-05. This section is a
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
-- **0.12.0** is the released version (2026-08-16): ADR-026, a Motus string is a
+- **0.13.0** is the released version (2026-09-05): the OpenTimestamps plug
+  walks the whole proof tree and asks the calendar named in the attestation
+  (six commitments had been reported `pending` for 67 hours while anchored),
+  refuses an `anchored` receipt without a `published_at` resolver, and bounds
+  its upgrade loop; the commitment log poisons itself after a failure past the
+  durable write (#129) and digests before writing (#112); a graph's routing
+  record no longer depends on map order (#124); `InclusionProof` emits a
+  receipt.v1 Entry (#119); the #116 refusal was reverted for shipping without
+  its contract; ADR-027 (execution identity) is PROPOSED. Per-release arm
+  **passes** — −0.2 %, −0.1 %, −1.8 % over v0.12.0 across three dispatches —
+  and the cumulative arm still fails, shipped under ADR-018 with a re-taken
+  real-request share of 0.017 %;
+- **0.12.0** (2026-08-16): ADR-026, a Motus string is a
   valid sequence of Unicode scalar values, rule `J1` scoped by the document's
   own declared schema version, and `J2` reaching JSONL record lines where the
   tamper ADR-024 exists to stop was passing clean. Its per-release arm
