@@ -1,0 +1,19 @@
+{
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": [
+    "openai-codex/*"
+  ],
+  "subagents": {
+    "defaultModel": "openai-codex/gpt-5.6-luna",
+    "globalConcurrencyLimit": 3,
+    "maxSubagentDepth": 1,
+    "agentOverrides": {
+      "motus-verifier": { "model": "openai-codex/gpt-5.6-luna", "thinking": "low" },
+      "motus-issue-auditor": { "model": "openai-codex/gpt-5.6-luna", "thinking": "low" },
+      "motus-implementer": { "model": "openai-codex/gpt-5.6-luna", "thinking": "medium" },
+      "motus-adversary": { "model": "openai-codex/gpt-5.5", "thinking": "high" }
+    }
+  }
+}
