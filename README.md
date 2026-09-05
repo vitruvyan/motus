@@ -63,23 +63,19 @@ log's write path (#129, #112) and the anchor plug; neither is measured by
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.11.0 says nothing about 0.12.0, and an inherited number is
-the same error as an inherited baseline. Measured on 2026-08-15 against the
-live `api_graph` service (`frontier_graph`, `POST /run`) with five real Italian
-user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137, CPython
-3.12.3: **5.4, 3.0, 3.0, 4.0 and 3.6 ms** of Motus against requests of 44.9 s,
-22.2 s, 12.5 s, 19.6 s and 23.2 s. The honest share is the worst cost over the
-fastest response — 5.4 ms of 12.5 s — which is **0.043 %**. That figure is an
-upper bound: it contains the consumer's own node code, not only Motus. All five
-traces validated clean against the contract, schema 3.0.0, integrity chain
-present, with a derived root.
-
-One of the five is worth naming because it is the point of the product rather
-than a blemish on it: the consumer's pipeline answered a question asked in
-Italian with 64 characters of German, and the trace carries
-`pipeline_health = degraded` and the reason it was decided —
-`language chiesta=it rilevata=de`. Motus did not judge that; it recorded what
-happened, and the recording is checkable by somebody who was not there.
+measured against 0.12.0 says nothing about 0.13.0, and an inherited number is
+the same error as an inherited baseline. Measured on 2026-09-05 with Motus
+0.13.0 (`release/0.13.0` at `1c84b9a`) against the live `api_graph` service
+(`orbis_graph`, `POST /run`) with five real Italian user queries, on an AMD
+EPYC Processor (with IBPB), Linux 6.8.0-139, CPython 3.12.3, with the host
+under a load average between 5 and 20 from a dozen coding agents: **6.2, 2.5,
+3.5, 4.7 and 4.0 ms** of Motus against requests of 68.3 s, 38.2 s, 43.4 s,
+37.2 s and 35.9 s. The honest share is the worst cost over the fastest
+response — 6.2 ms of 35.9 s — which is **0.017 %**. That figure is an upper
+bound: it contains the consumer's own node code, not only Motus, and the
+host's load inflates both sides of the ratio. The trace of the run captured in
+full validated clean against the contract, schema 3.0.0, integrity chain
+present, with a derived root; the harness is `e2e/pipeline_query.py`.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
