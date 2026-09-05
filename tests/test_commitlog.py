@@ -41,8 +41,8 @@ def test_a_begin_is_on_disk_when_begin_returns(tmp_path):
     log.begin("r1", at=AT, nonce="n1")
     path = log.directory / "window-000000.jsonl"
     stored = [json.loads(line) for line in path.read_text().splitlines() if line]
-    assert len(stored) == 1 and stored[0]["c"]["kind"] == "begin"
-    assert stored[0]["c"]["run_id"] == "r1"
+    assert len(stored) == 1 and stored[0]["commitment"]["kind"] == "begin"
+    assert stored[0]["commitment"]["run_id"] == "r1"
     assert log.durable is True
     log.close()
 
@@ -255,7 +255,7 @@ def test_a_failed_begin_after_durable_write_poisons_and_reopen_counts_it(
     with pytest.raises(ValueError, match="forced append refusal"):
         log.begin("never-ran", at=AT, nonce="n2")
     path = log.directory / "window-000000.jsonl"
-    stored = [json.loads(line)["c"] for line in path.read_text().splitlines()]
+    stored = [json.loads(line)["commitment"] for line in path.read_text().splitlines()]
     assert [item["sequence"] for item in stored] == [0, 1]
     with pytest.raises(CommitmentLogFork, match="stopped being writable"):
         log.begin("r3", at=AT, nonce="n3")
@@ -321,7 +321,7 @@ def test_every_known_post_write_step_poisons_the_live_store(tmp_path, monkeypatc
     reopened = _log(tmp_path)
     sequences = []
     for path in reopened.directory.glob("window-*.jsonl"):
-        sequences.extend(json.loads(line)["c"]["sequence"]
+        sequences.extend(json.loads(line)["commitment"]["sequence"]
                          for line in path.read_text().splitlines() if line)
     assert sorted(sequences) == list(range(len(sequences)))
     reopened.close()
@@ -697,7 +697,7 @@ def test_concurrent_begins_never_share_a_sequence(tmp_path):
     stored = [json.loads(line) for line
               in (log.directory / "window-000000.jsonl").read_text().splitlines() if line]
     assert len(stored) == 120
-    assert sorted(s["c"]["sequence"] for s in stored) == list(range(120))
+    assert sorted(s["commitment"]["sequence"] for s in stored) == list(range(120))
     log.close()
 
 
@@ -755,7 +755,7 @@ def test_an_uncertain_durable_write_makes_the_log_unusable(tmp_path, monkeypatch
     # Recovery reads the file rather than a hopeful memory: whatever survived
     # of r2 decides where the sequence continues.
     reopened = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
-    on_disk = [json.loads(line)["c"]["sequence"]
+    on_disk = [json.loads(line)["commitment"]["sequence"]
                for line in (reopened.directory / "window-000000.jsonl")
                .read_text().splitlines() if line.strip()]
     issued = reopened.begin("r3", at=AT, nonce="n3")

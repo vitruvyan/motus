@@ -116,6 +116,6 @@ def test_the_window_line_and_the_digest_read_the_same_commitment(tmp_path):
         for raw in path.read_text(encoding="utf-8").splitlines()
         if raw.strip()
     )
-    assert line["c"] == commitment.to_dict(), (
+    assert line["commitment"] == commitment.to_dict(), (
         "the durable line and the digested object are the same commitment, or "
         "the store proves something other than what it wrote")

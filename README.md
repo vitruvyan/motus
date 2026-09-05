@@ -15,6 +15,9 @@ The trace is not reconstructed from logs after execution.
 **The trace is part of the execution itself.**
 
 > **Current release:** [Motus 0.13.0](https://github.com/vitruvyan/motus/releases/tag/v0.13.0)
+>
+> Commitment window files written by releases through 0.13.0 use the legacy
+> envelope key `c`; releases from 0.14.0 write `commitment`.
 > · not on PyPI — build the wheel from a checkout
 >
 > Apache-2.0 · stdlib-only kernel · validator included
