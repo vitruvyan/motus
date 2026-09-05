@@ -8,8 +8,13 @@ suite that reports their weather, and the properties below are about this code.
 from __future__ import annotations
 
 import hashlib
+import sys
+from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from contract import validate
 
 from motus_anchor_opentimestamps import NETWORK, OpenTimestampsAnchor
 
@@ -63,6 +68,30 @@ def test_publishing_is_always_pending(monkeypatch):
     assert len(receipt.proof["calendars_accepted"]) == 3
 
 
+def test_every_plug_receipt_shape_matches_the_anchor_schema(monkeypatch):
+    validator = validate._registry_validator(
+        "ots-anchor-shape-test", {
+            "$ref": "https://vitruvyan.com/motus/contract/receipt.v1.schema.json#/$defs/Anchor"
+        })
+    _patch(monkeypatch, _Calendar)
+    pending = OpenTimestampsAnchor().publish(DIGEST)
+    upgraded_pending = OpenTimestampsAnchor().upgrade(pending)
+    anchored_anchor = OpenTimestampsAnchor(
+        block_time=lambda h: "2023-08-11T12:00:00Z")
+    anchored = anchored_anchor.publish(DIGEST)
+    stamp = anchored_anchor._deserialize(bytes.fromhex(anchored.proof["serialized"]))
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+    next(iter(stamp.ops.values())).attestations.add(
+        BitcoinBlockHeaderAttestation(812345))
+    anchored.proof["serialized"] = anchored_anchor._serialize(
+        bytes.fromhex(anchored.proof["digest"]), stamp).hex()
+    upgraded_anchored = anchored_anchor.upgrade(anchored)
+    _patch(monkeypatch, _Refusing)
+    unreachable = OpenTimestampsAnchor().upgrade(pending)
+    for receipt in (pending, upgraded_pending, upgraded_anchored, unreachable):
+        assert list(validator.iter_errors(receipt.to_dict())) == []
+
+
 def test_a_refusing_calendar_is_recorded_and_not_swallowed(monkeypatch):
     """"Three calendars hold this" and "one does" are different facts about how
     recoverable the commitment is, and a receipt that hides the difference has
@@ -103,7 +132,9 @@ def test_an_upgrade_that_finds_a_block_names_the_block_and_not_a_txid(monkeypatc
     _patch(monkeypatch, _Calendar)
     # The block time comes from whoever the embedder decided to ask. See
     # `_resolve_block_time`: the anchor used to put its own clock here.
-    anchor = OpenTimestampsAnchor(block_time=lambda h: "2023-08-11T12:00:00Z")
+    anchor = OpenTimestampsAnchor(
+        block_time=lambda h: "2023-08-11T12:00:00Z",
+        block_time_source="https://blockstream.info/api/")
     receipt = anchor.publish(DIGEST)
 
     timestamp = anchor._deserialize(bytes.fromhex(receipt.proof["serialized"]))
@@ -117,10 +148,11 @@ def test_an_upgrade_that_finds_a_block_names_the_block_and_not_a_txid(monkeypatc
     assert upgraded.reference == "bitcoin-block:812345"
     assert upgraded.published_at == "2023-08-11T12:00:00Z", (
         "the publication time is the block's, not this machine's")
+    assert upgraded.proof["published_at_source"] == "https://blockstream.info/api/"
     assert upgraded.proof["bitcoin_block_heights"] == [812345]
 
 
-def test_an_anchor_without_a_block_time_refuses_rather_than_using_its_own_clock(
+def test_an_anchor_without_a_block_time_refuses_and_leaves_receipt_unchanged(
         monkeypatch):
     """The defect this rule exists for.
 
@@ -141,10 +173,25 @@ def test_an_anchor_without_a_block_time_refuses_rather_than_using_its_own_clock(
     receipt.proof["serialized"] = anchor._serialize(
         bytes.fromhex(receipt.proof["digest"]), timestamp).hex()
 
-    with pytest.raises(ValueError) as refusal:
+    before = dict(receipt.proof)
+    with pytest.raises(ValueError, match="block_time="):
         anchor.upgrade(receipt)
-    assert "812345" in str(refusal.value)
-    assert "block_time=" in str(refusal.value)
+    assert receipt.proof == before
+
+
+def test_a_supplied_block_time_failure_still_raises(monkeypatch):
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+
+    _patch(monkeypatch, _Calendar)
+    anchor = OpenTimestampsAnchor(block_time=lambda height: 1 / 0)
+    receipt = anchor.publish(DIGEST)
+    timestamp = anchor._deserialize(bytes.fromhex(receipt.proof["serialized"]))
+    next(iter(timestamp.ops.values())).attestations.add(
+        BitcoinBlockHeaderAttestation(812345))
+    receipt.proof["serialized"] = anchor._serialize(
+        bytes.fromhex(receipt.proof["digest"]), timestamp).hex()
+    with pytest.raises(ZeroDivisionError):
+        anchor.upgrade(receipt)
 
 
 def test_an_unreachable_calendar_leaves_the_receipt_pending(monkeypatch):
@@ -167,6 +214,15 @@ def test_state_re_derives_rather_than_reading_the_receipt_back(monkeypatch):
     receipt = anchor.publish(DIGEST)
     object.__setattr__(receipt, "state", "anchored")   # a holder's edit
     assert anchor.state(receipt) == "pending"
+
+    timestamp = anchor._deserialize(bytes.fromhex(receipt.proof["serialized"]))
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+    next(iter(timestamp.ops.values())).attestations.add(
+        BitcoinBlockHeaderAttestation(812345))
+    receipt.proof["serialized"] = anchor._serialize(
+        bytes.fromhex(receipt.proof["digest"]), timestamp).hex()
+    _patch(monkeypatch, _Refusing)
+    assert anchor.state(receipt) == "anchored"
 
 
 def test_a_receipt_without_an_ots_proof_is_refused_not_guessed(monkeypatch):

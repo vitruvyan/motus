@@ -377,8 +377,56 @@ DOMAINS = [
 ]
 
 
+def merge_index_by_name(previous, current):
+    """Merge one or more cached indexes, preferring complete anchors."""
+    def entries(value):
+        if isinstance(value, dict):
+            return [value]
+        if value and all(isinstance(item, dict) for item in value):
+            return value
+        return [item for copy in value for item in entries(copy)]
+
+    prior_entries = entries(previous)
+    old = {}
+    for item in prior_entries:
+        old.setdefault(item.get("name"), []).append(item)
+    current_entries = current if isinstance(current, list) else [current]
+    metadata = ("anchor", "proof_file", "verify_with")
+
+    def anchor_rank(item):
+        state = (item.get("anchor") or {}).get("state")
+        return (2 if state == "anchored" else 1 if state else 0,
+                sum(key in item for key in metadata))
+
+    merged = []
+    for item in current_entries:
+        entry = dict(item)
+        candidates = [item for item in old.get(entry.get("name"), [])
+                      if item.get("root") == entry.get("root")]
+        if any(key in entry for key in metadata):
+            candidates.append(entry)
+        if candidates:
+            # Pick each field from the strongest same-root copy. This handles
+            # a fresh per-scenario cache alongside a stale top-level cache.
+            for key in metadata:
+                available = [item for item in candidates if key in item]
+                if available:
+                    entry[key] = max(available, key=anchor_rank)[key]
+        else:
+            changed = [item for item in old.get(entry.get("name"), [])
+                       if item.get("root") != entry.get("root")]
+            if changed and any(any(key in item for key in metadata)
+                               for item in changed):
+                print(f"{entry.get('name')}: root changed; dropping old anchor")
+        merged.append(entry)
+    return merged if isinstance(current, list) else merged[0]
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    old_index = (
+        json.loads((OUT / "index.json").read_text(encoding="utf-8"))
+        if (OUT / "index.json").exists() else [])
     index = []
     for domain, build in DOMAINS:
         spec = spec_for(domain["name"], domain["reads"], domain["outcomes"])
@@ -402,6 +450,7 @@ def main() -> None:
         print(f"{domain['name']:20s} {result.trace.root}  "
               f"{len(result.trace.records)} records")
 
+    index = merge_index_by_name(old_index, index)
     (OUT / "index.json").write_text(
         json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"\nwritten to {OUT}")

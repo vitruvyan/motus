@@ -70,6 +70,150 @@ def test_the_promise_is_not_at_the_root_of_the_proof():
             "not the document's own digest")
 
 
+def test_upgrade_descends_past_an_attested_branch(monkeypatch):
+    from opentimestamps.core.notary import (
+        BitcoinBlockHeaderAttestation, PendingAttestation,
+    )
+    from opentimestamps.core.op import OpAppend, OpSHA256
+    from opentimestamps.core.timestamp import Timestamp
+
+    digest = bytes.fromhex(hashlib.sha256(COMMITTED).hexdigest())
+    timestamp = Timestamp(digest)
+    branch = timestamp.ops.add(OpAppend(b"branch"))
+    branch.attestations.add(PendingAttestation(CALENDARS[0]))
+    leaf = branch.ops.add(OpSHA256())
+    leaf.attestations.add(BitcoinBlockHeaderAttestation(812346))
+
+    anchor = OpenTimestampsAnchor(
+        calendars=CALENDARS, block_time=lambda h: "2023-08-11T12:00:00Z")
+    receipt = _receipt()
+    receipt.proof["serialized"] = anchor._serialize(digest, timestamp).hex()
+    verified = list(_directly_verified(timestamp))
+    assert branch in verified and leaf in verified
+
+    class Calendar:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            return branch
+
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = Calendar
+    try:
+        upgraded = anchor.upgrade(receipt)
+    finally:
+        cal.RemoteCalendar = old
+    assert upgraded.state == "anchored"
+    assert upgraded.reference == "bitcoin-block:812346"
+
+
+def test_upgrade_reveals_arbitrarily_deep_pending_chain(monkeypatch):
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation, PendingAttestation
+    from opentimestamps.core.op import OpAppend
+    from opentimestamps.core.timestamp import Timestamp
+
+    calendars = tuple(f"https://deep-{i}.example" for i in range(7))
+    digest = bytes.fromhex(hashlib.sha256(COMMITTED).hexdigest())
+    root = Timestamp(digest)
+    first = root.ops.add(OpAppend(b"hop-0"))
+    first.attestations.add(PendingAttestation(calendars[0]))
+    anchor = OpenTimestampsAnchor(
+        calendars=calendars, block_time=lambda h: "2023-08-11T12:00:00Z")
+    receipt = _receipt()
+    receipt.proof["serialized"] = anchor._serialize(digest, root).hex()
+
+    class Calendar:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            index = calendars.index(self.url)
+            fresh = Timestamp(commitment)
+            if index == len(calendars) - 1:
+                fresh.attestations.add(BitcoinBlockHeaderAttestation(999999))
+            else:
+                child = fresh.ops.add(OpAppend(f"hop-{index + 1}".encode()))
+                child.attestations.add(PendingAttestation(calendars[index + 1]))
+            return fresh
+
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = Calendar
+    try:
+        upgraded = anchor.upgrade(receipt)
+    finally:
+        cal.RemoteCalendar = old
+    assert upgraded.reference == "bitcoin-block:999999"
+
+
+def test_upgrade_stops_a_fast_growing_calendar_at_the_hard_ceiling(monkeypatch):
+    from opentimestamps.core.notary import PendingAttestation
+    from opentimestamps.core.op import OpAppend
+    from opentimestamps.core.timestamp import Timestamp
+
+    digest = bytes.fromhex(hashlib.sha256(COMMITTED).hexdigest())
+    root = Timestamp(digest)
+    root.attestations.add(PendingAttestation(CALENDARS[0]))
+    anchor = OpenTimestampsAnchor(calendars=(CALENDARS[0],))
+    receipt = _receipt()
+    receipt.proof["serialized"] = anchor._serialize(digest, root).hex()
+    calls = {"n": 0}
+
+    class GrowingCalendar:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            calls["n"] += 1
+            fresh = Timestamp(commitment)
+            child = fresh.ops.add(OpAppend(f"growth-{calls['n']}".encode()))
+            child.attestations.add(PendingAttestation(CALENDARS[0]))
+            return fresh
+
+    import opentimestamps.calendar as cal
+    old_calendar = cal.RemoteCalendar
+    cal.RemoteCalendar = GrowingCalendar
+    try:
+        upgraded = anchor.upgrade(receipt)
+    finally:
+        cal.RemoteCalendar = old_calendar
+    assert upgraded.state == "pending"
+    assert calls["n"] == 32
+    ceiling = upgraded.proof["calendars_unreachable"][-1]
+    assert ceiling["calendar"] == CALENDARS[0]
+    assert ceiling["reason"] == (
+        "upgrade stopped after 32 passes: the proof kept growing")
+
+
+def test_upgrade_deduplicates_repeated_unreachable_requests(monkeypatch):
+    from opentimestamps.core.notary import PendingAttestation
+    from opentimestamps.core.op import OpAppend
+    from opentimestamps.core.timestamp import Timestamp
+
+    digest = bytes.fromhex(hashlib.sha256(COMMITTED).hexdigest())
+    root = Timestamp(digest)
+    good = root.ops.add(OpAppend(b"good"))
+    good.attestations.add(PendingAttestation(CALENDARS[0]))
+    bad = root.ops.add(OpAppend(b"bad"))
+    bad.attestations.add(PendingAttestation(CALENDARS[1]))
+    anchor = OpenTimestampsAnchor(calendars=CALENDARS)
+    receipt = _receipt()
+    receipt.proof["serialized"] = anchor._serialize(digest, root).hex()
+
+    class Calendar:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            if self.url == CALENDARS[1]:
+                raise ConnectionError("down")
+            return Timestamp(commitment)
+
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = Calendar
+    try:
+        upgraded = anchor.upgrade(receipt)
+    finally:
+        cal.RemoteCalendar = old
+    failures = upgraded.proof["calendars_unreachable"]
+    assert len([item for item in failures if item["calendar"] == CALENDARS[1]]) == 1
+
+
 def test_upgrade_asks_the_calendar_about_the_commitment_it_promised():
     """Fails without the fix — and fails by reporting `pending`, silently."""
     from opentimestamps.core.notary import PendingAttestation

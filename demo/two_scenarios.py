@@ -541,10 +541,17 @@ SCENARIOS = [
 
 
 def main() -> None:
+    from three_domains import merge_index_by_name
+    old_index = (
+        json.loads((OUT / "index.json").read_text(encoding="utf-8"))
+        if (OUT / "index.json").exists() else [])
     index = []
     for scenario in SCENARIOS:
         out = OUT / scenario["name"]
         out.mkdir(parents=True, exist_ok=True)
+        old_entry = (
+            json.loads((out / "index.json").read_text(encoding="utf-8"))
+            if (out / "index.json").exists() else {})
         declaration = scenario["spec"]()
         result = Runtime(declaration, scenario["nodes"](),
                          sink=InMemoryTraceSink()).run(
@@ -575,6 +582,7 @@ def main() -> None:
             "protected_attributes": scenario["protected"],
             "tamper_node": scenario["tamper_node"],
         }
+        entry = merge_index_by_name(old_entry, entry)
         (out / "index.json").write_text(
             json.dumps(entry, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
@@ -583,6 +591,7 @@ def main() -> None:
               f"{len(result.trace.records)} records  "
               f"{bundle.explain()['terminal']}")
 
+    index = merge_index_by_name([old_index, index], index)
     (OUT / "index.json").write_text(
         json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"\nwritten to {OUT}")

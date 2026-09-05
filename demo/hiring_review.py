@@ -284,6 +284,9 @@ ANSWER = ("No. This application cannot be rejected automatically. It goes to a "
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    old_index = (
+        json.loads((OUT / "index.json").read_text(encoding="utf-8"))
+        if (OUT / "index.json").exists() else {})
     declaration = spec()
     result = Runtime(declaration, nodes(), sink=InMemoryTraceSink()).run(
         State.empty(PROMPT), run_id="demo-hiring-review-0421")
@@ -316,6 +319,8 @@ def main() -> None:
         "protected_attributes": PROTECTED,
         "artefact": "demo/out/hiring/trace.json",
     }
+    from three_domains import merge_index_by_name
+    index = merge_index_by_name(old_index, index)
     (OUT / "index.json").write_text(
         json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

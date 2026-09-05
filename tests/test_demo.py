@@ -7,8 +7,10 @@ validator cannot. If that stops being true the demo must fail, not mislead.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +26,72 @@ def test_the_demo_runs_and_writes_its_page(tmp_path):
     assert done.returncode == 0, done.stderr
     assert page.exists() and page.stat().st_size > 4000
     assert "<!doctype html>" in page.read_text(encoding="utf-8")
+
+
+def test_anchor_commit_advertises_repository_relative_targets(tmp_path):
+    sys.path.insert(0, str(REPO_ROOT / "demo"))
+    from anchor_domains import commit
+
+    class Anchor:
+        def publish(self, checkpoint):
+            return SimpleNamespace(to_dict=lambda: {
+                "network": "opentimestamps:bitcoin",
+                "state": "pending",
+                "checkpoint": "sha256:" + "ab" * 32,
+                "proof": {"serialized": None},
+            })
+
+    domains_out = tmp_path / "domains"
+    domains_out.mkdir()
+    domains = commit(Anchor(), "sha256:" + "ab" * 32,
+                     domains_out, "cold_chain.root.txt")
+    assert domains["proof_file"] == (
+        "demo/out/domains/cold_chain.root.txt.ots")
+    assert domains["verify_with"] == (
+        "ots verify -f demo/out/domains/cold_chain.root.txt "
+        "demo/out/domains/cold_chain.root.txt.ots")
+
+    hiring_out = tmp_path / "hiring"
+    hiring_out.mkdir()
+    hiring = commit(Anchor(), "sha256:" + "cd" * 32,
+                    hiring_out, "root.txt")
+    assert hiring["proof_file"] == "demo/out/hiring/root.txt.ots"
+    assert hiring["verify_with"] == (
+        "ots verify -f demo/out/hiring/root.txt "
+        "demo/out/hiring/root.txt.ots")
+
+
+def test_index_merge_preserves_same_root_anchor_and_drops_changed_root(tmp_path, capsys):
+    sys.path.insert(0, str(REPO_ROOT / "demo"))
+    from three_domains import merge_index_by_name
+
+    old = [{"name": "cold", "root": "sha256:a", "anchor": {"state": "pending"},
+            "proof_file": "old.ots", "verify_with": "old command"}]
+    same = [{"name": "cold", "root": "sha256:a"}]
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(old), encoding="utf-8")
+    merged = merge_index_by_name(
+        json.loads(index_path.read_text()), same)
+    index_path.write_text(json.dumps(merged), encoding="utf-8")
+    merged = merge_index_by_name(
+        json.loads(index_path.read_text()), same)
+    assert merged[0]["anchor"]["state"] == "pending"
+    assert merged[0]["proof_file"] == "old.ots"
+    assert merged[0]["verify_with"] == "old command"
+
+    changed = [{"name": "cold", "root": "sha256:b"}]
+    assert "anchor" not in merge_index_by_name(old, changed)[0]
+    assert "root changed" in capsys.readouterr().out
+
+    fresh = [{"name": "cold", "root": "sha256:a",
+              "anchor": {"state": "anchored"},
+              "proof_file": "fresh.ots", "verify_with": "fresh command"}]
+    stale = [{"name": "cold", "root": "sha256:a",
+              "anchor": {"state": "pending"}}]
+    result = merge_index_by_name([stale, fresh], [{"name": "cold", "root": "sha256:a"}])[0]
+    assert result["anchor"]["state"] == "anchored"
+    assert result["proof_file"] == "fresh.ots"
+    assert result["verify_with"] == "fresh command"
 
 
 def test_every_tamper_is_caught_on_the_trace_and_only_the_anchor_catches_the_last():
