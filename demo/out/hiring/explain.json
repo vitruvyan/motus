@@ -1,0 +1,209 @@
+{
+  "bundle_fingerprint": "bundle:sha256:85859076ce8ebcc8341aad301b136653b1bd44c0aa96d8dd6232745933ea2516",
+  "run_id": "demo-hiring-review-0421",
+  "graph": {
+    "name": "hiring_review",
+    "version": "1.0.0",
+    "graph_fingerprint": "graph:sha256:c0a38df6ef6bb4fc640608afa095fcea4e44591e106544d1390e119a4ef92b2d",
+    "code_fingerprint": "code:sha256:d4926589d42808afb52804888d57b5cd7303cfcf3d30f03f49d9c595fbd668a2",
+    "spec_schema_version": "1.0.0"
+  },
+  "terminal": "run_completed",
+  "steps": [
+    {
+      "seq": 3,
+      "kind": "transition",
+      "node": "receive_application",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "record_is_synthetic",
+        "applicant_ref",
+        "role",
+        "applicant_name",
+        "date_of_birth",
+        "nationality",
+        "photo_reference",
+        "required_qualification",
+        "required_experience_months"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 4,
+      "kind": "routing",
+      "after": "receive_application",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "parse_cv",
+      "origin": null
+    },
+    {
+      "seq": 6,
+      "kind": "transition",
+      "node": "parse_cv",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "qualification_level",
+        "relevant_experience_months",
+        "certifications_count",
+        "cv_source",
+        "reference_check"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 7,
+      "kind": "routing",
+      "after": "parse_cv",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "check_qualification",
+      "origin": null
+    },
+    {
+      "seq": 9,
+      "kind": "transition",
+      "node": "check_qualification",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "qualification_level",
+        "required_qualification"
+      ],
+      "write_keys": [
+        "qualification_met"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 10,
+      "kind": "routing",
+      "after": "check_qualification",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "assess_experience",
+      "origin": null
+    },
+    {
+      "seq": 12,
+      "kind": "transition",
+      "node": "assess_experience",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "relevant_experience_months",
+        "required_experience_months"
+      ],
+      "write_keys": [
+        "experience_met",
+        "shortfall_months"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 13,
+      "kind": "routing",
+      "after": "assess_experience",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "apply_policy",
+      "origin": null
+    },
+    {
+      "seq": 15,
+      "kind": "transition",
+      "node": "apply_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "shortfall_months"
+      ],
+      "write_keys": [
+        "policy_version",
+        "policy_clause",
+        "screen_result",
+        "disposition"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 16,
+      "kind": "routing",
+      "after": "apply_policy",
+      "on": "disposition",
+      "value": "human_review",
+      "outcome": "matched",
+      "selected": "human_review",
+      "origin": {
+        "kind": "transition",
+        "seq": 15,
+        "index": 0
+      }
+    },
+    {
+      "seq": 18,
+      "kind": "transition",
+      "node": "human_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "handoff",
+        "handed_over"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 19,
+      "kind": "routing",
+      "after": "human_review",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "final_recommendation",
+      "origin": null
+    },
+    {
+      "seq": 21,
+      "kind": "transition",
+      "node": "final_recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "recommendation",
+        "automated_rejection_issued"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 22,
+      "kind": "routing",
+      "after": "final_recommendation",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "END",
+      "origin": null
+    },
+    {
+      "seq": 23,
+      "kind": "run_completed"
+    }
+  ]
+}

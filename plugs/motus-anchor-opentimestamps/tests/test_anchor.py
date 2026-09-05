@@ -101,7 +101,9 @@ def test_an_upgrade_that_finds_a_block_names_the_block_and_not_a_txid(monkeypatc
     from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
 
     _patch(monkeypatch, _Calendar)
-    anchor = OpenTimestampsAnchor()
+    # The block time comes from whoever the embedder decided to ask. See
+    # `_resolve_block_time`: the anchor used to put its own clock here.
+    anchor = OpenTimestampsAnchor(block_time=lambda h: "2023-08-11T12:00:00Z")
     receipt = anchor.publish(DIGEST)
 
     timestamp = anchor._deserialize(bytes.fromhex(receipt.proof["serialized"]))
@@ -113,8 +115,36 @@ def test_an_upgrade_that_finds_a_block_names_the_block_and_not_a_txid(monkeypatc
     upgraded = anchor.upgrade(receipt)
     assert upgraded.state == "anchored"
     assert upgraded.reference == "bitcoin-block:812345"
-    assert upgraded.published_at
+    assert upgraded.published_at == "2023-08-11T12:00:00Z", (
+        "the publication time is the block's, not this machine's")
     assert upgraded.proof["bitcoin_block_heights"] == [812345]
+
+
+def test_an_anchor_without_a_block_time_refuses_rather_than_using_its_own_clock(
+        monkeypatch):
+    """The defect this rule exists for.
+
+    `published_at` used to be `_now()` — the clock of whichever machine ran the
+    upgrade. True (the evidence did exist by then) and ours, on a receipt whose
+    purpose is that you do not have to take our word for a time. The demo
+    rendered it as "Evidence timestamp" and it read three days late.
+    """
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+
+    _patch(monkeypatch, _Calendar)
+    anchor = OpenTimestampsAnchor()                       # no resolver
+    receipt = anchor.publish(DIGEST)
+
+    timestamp = anchor._deserialize(bytes.fromhex(receipt.proof["serialized"]))
+    for sub in timestamp.ops.values():
+        sub.attestations.add(BitcoinBlockHeaderAttestation(812345))
+    receipt.proof["serialized"] = anchor._serialize(
+        bytes.fromhex(receipt.proof["digest"]), timestamp).hex()
+
+    with pytest.raises(ValueError) as refusal:
+        anchor.upgrade(receipt)
+    assert "812345" in str(refusal.value)
+    assert "block_time=" in str(refusal.value)
 
 
 def test_an_unreachable_calendar_leaves_the_receipt_pending(monkeypatch):

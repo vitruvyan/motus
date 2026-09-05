@@ -1,0 +1,122 @@
+[
+  {
+    "name": "cold_chain_release",
+    "prompt": "Lot FRZ-2291 logged a temperature excursion to -14 °C for 40 minutes. Can we release it?",
+    "root": "sha256:930a4fb44f610a4ad09e8f134ccf164c2e7f9d7a050174c861f9244d5a5a74e8",
+    "records": 17,
+    "declared_reads": [
+      "excursion_minutes",
+      "excursion_low_c"
+    ],
+    "withheld_from_assess": {
+      "key": "customer_priority",
+      "value": "strategic"
+    },
+    "artefact": "demo/out/domains/cold_chain_release.json",
+    "anchor": {
+      "network": "opentimestamps:bitcoin",
+      "state": "anchored",
+      "checkpoint": "sha256:12f12c5ed719ebdf3bb5aa85d8bc390f932437f71ae91ea57b803fdff0c587f9",
+      "committed_bytes": "the root string, utf-8",
+      "calendars_accepted": [
+        "https://alice.btc.calendar.opentimestamps.org",
+        "https://bob.btc.calendar.opentimestamps.org",
+        "https://finney.calendar.eternitywall.com"
+      ],
+      "calendars_refused": {},
+      "submitted_at": "2026-08-16T18:21:52Z",
+      "proof_file": "demo/out/domains/cold_chain_release.ots",
+      "verify_with": "ots verify demo/out/domains/cold_chain_release.ots",
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
+    }
+  },
+  {
+    "name": "pump_prognosis",
+    "prompt": "Can pump P-114 run to the scheduled June shutdown?",
+    "root": "sha256:fd2282aa3a2bed664974a7c1f86bcb44e411a9b18e7ad804442af0125e7262c7",
+    "records": 17,
+    "declared_reads": [
+      "temperature_c",
+      "flow_rate_m3h",
+      "channels_read"
+    ],
+    "withheld_from_assess": {
+      "key": "contract_tier",
+      "value": "gold"
+    },
+    "artefact": "demo/out/domains/pump_prognosis.json",
+    "anchor": {
+      "network": "opentimestamps:bitcoin",
+      "state": "anchored",
+      "checkpoint": "sha256:0672accb07beac378e7205c92aff34166ff9b141ed2d0521bf1190a6bb59de02",
+      "committed_bytes": "the root string, utf-8",
+      "calendars_accepted": [
+        "https://alice.btc.calendar.opentimestamps.org",
+        "https://bob.btc.calendar.opentimestamps.org",
+        "https://finney.calendar.eternitywall.com"
+      ],
+      "calendars_refused": {},
+      "submitted_at": "2026-08-16T18:21:55Z",
+      "proof_file": "demo/out/domains/pump_prognosis.ots",
+      "verify_with": "ots verify demo/out/domains/pump_prognosis.ots",
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
+    }
+  },
+  {
+    "name": "emergency_triage",
+    "prompt": "61-year-old, chest pain, vitals on file. What triage code?",
+    "root": "sha256:64d4717fa15c501e6a64af236f30253db6753f415bc7d4fa0da6fe026c44e34b",
+    "records": 17,
+    "declared_reads": [
+      "systolic_mmhg",
+      "heart_rate_bpm",
+      "spo2_pct",
+      "readings_as_of"
+    ],
+    "withheld_from_assess": {
+      "key": "insurance_status",
+      "value": "uninsured"
+    },
+    "artefact": "demo/out/domains/emergency_triage.json",
+    "anchor": {
+      "network": "opentimestamps:bitcoin",
+      "state": "anchored",
+      "checkpoint": "sha256:e0337cb897a7fbcd9581ae7b1bc4ec4c24c81ea0295a8ad02b81172eca66d2eb",
+      "committed_bytes": "the root string, utf-8",
+      "calendars_accepted": [
+        "https://alice.btc.calendar.opentimestamps.org",
+        "https://bob.btc.calendar.opentimestamps.org",
+        "https://finney.calendar.eternitywall.com"
+      ],
+      "calendars_refused": {},
+      "submitted_at": "2026-08-16T18:21:58Z",
+      "proof_file": "demo/out/domains/emergency_triage.ots",
+      "verify_with": "ots verify demo/out/domains/emergency_triage.ots",
+      "reference": "bitcoin-block:962770",
+      "published_at": "2026-08-16T18:42:00Z",
+      "bitcoin_block_heights": [
+        962770,
+        962775,
+        962798
+      ],
+      "calendars_unreachable": [],
+      "block_time_source": "https://blockstream.info/api"
+    }
+  }
+]

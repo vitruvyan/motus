@@ -1,0 +1,488 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-cold_chain_release",
+    "graph": {
+      "name": "cold_chain_release",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:310c0a8972be0132fb2c94ccb99c42c44f46dd61258326ce2087f0535cbc2997",
+      "code_fingerprint": "code:sha256:7f4b0501abeca100bf3cee10c7b5ff320c455055622f6b3e9a60dc7419a89829",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T18:21:24.538649Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T18:21:24.538957Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:e734e7fa29b9ade29b7d89f6bd80d10d8fd078a0dfd10a1e555515fd20f80a08",
+        "prev_hash": "sha256:d4191b43274d6c8d909849e6439dd282f6d0a733f7f98aa25eb5727e39e3e0c5"
+      },
+      "intent": "Lot FRZ-2291 logged a temperature excursion to -14 °C for 40 minutes. Can we release it?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T18:21:24.539153Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:5734347f42a4b07eee13ea7f9297089426db306badd43b2c714e82f7d347e6e5",
+        "prev_hash": "sha256:e734e7fa29b9ade29b7d89f6bd80d10d8fd078a0dfd10a1e555515fd20f80a08"
+      },
+      "node": "receive_request",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T18:21:24.539491Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:3c47549a1f61f7da5cfbac40a061aba284c6507c490e208649a424a507daa621",
+        "prev_hash": "sha256:5734347f42a4b07eee13ea7f9297089426db306badd43b2c714e82f7d347e6e5"
+      },
+      "node": "receive_request",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "lot_id",
+            "value": "FRZ-2291",
+            "source": "wms",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "product",
+            "value": "frozen ready meals, 3 200 units",
+            "source": "wms",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "customer_priority",
+            "value": "strategic",
+            "source": "crm",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T18:21:24.539698Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:a89a42af7cd02a5eab0d8f2411e1a54046cc7b9597ec2b81a71318b27fd70970",
+        "prev_hash": "sha256:3c47549a1f61f7da5cfbac40a061aba284c6507c490e208649a424a507daa621"
+      },
+      "after": "receive_request",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "fetch_readings",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "fetch_readings",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T18:21:24.539799Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:ba8971d1f5b6d148e71dedb3dfedd2434ce1c3fdc862a880259231d26f7c67d6",
+        "prev_hash": "sha256:a89a42af7cd02a5eab0d8f2411e1a54046cc7b9597ec2b81a71318b27fd70970"
+      },
+      "node": "fetch_readings",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T18:21:24.539954Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:092b1573df37f7577e59e7b33c4c55bd1b59998ca8977bd089c657002489973b",
+        "prev_hash": "sha256:ba8971d1f5b6d148e71dedb3dfedd2434ce1c3fdc862a880259231d26f7c67d6"
+      },
+      "node": "fetch_readings",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "excursion_minutes",
+            "value": 40,
+            "source": "logger-4471",
+            "ts": "2026-03-14T22:15:00Z"
+          },
+          {
+            "key": "excursion_low_c",
+            "value": -14,
+            "source": "logger-4471",
+            "ts": "2026-03-14T22:15:00Z"
+          },
+          {
+            "key": "sensor_source",
+            "value": "logger-4471 fw 2.8.1",
+            "source": "logger-4471",
+            "ts": "2026-03-14T22:15:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET coldchain-logger/lots/FRZ-2291/excursions"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T18:21:24.540082Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:b5093d77e827137d9a5566376bbeac11e906123ad5ddf380b7578ec91eeb22df",
+        "prev_hash": "sha256:092b1573df37f7577e59e7b33c4c55bd1b59998ca8977bd089c657002489973b"
+      },
+      "after": "fetch_readings",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "assess",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "assess",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T18:21:24.540146Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:ec476724002af42214e937c4344fe8bcf49b7cc0c4aec585a2441f741c7f2c9d",
+        "prev_hash": "sha256:b5093d77e827137d9a5566376bbeac11e906123ad5ddf380b7578ec91eeb22df"
+      },
+      "node": "assess",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T18:21:24.540270Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:d117c422d48927b242e495504a7792382acce5c4d6aa41f2c4cd2b454f97e1ce",
+        "prev_hash": "sha256:ec476724002af42214e937c4344fe8bcf49b7cc0c4aec585a2441f741c7f2c9d"
+      },
+      "node": "assess",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "excursion_minutes",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "excursion_low_c",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 1
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "band",
+            "value": "minor",
+            "source": "assessor",
+            "ts": "2026-03-14T22:16:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T18:21:24.540389Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:07793dc3b47d2849c20f5f5fe6f540c4bf1439705572d8175742c5459ffb8b50",
+        "prev_hash": "sha256:d117c422d48927b242e495504a7792382acce5c4d6aa41f2c4cd2b454f97e1ce"
+      },
+      "after": "assess",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "apply_policy",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "apply_policy",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T18:21:24.540449Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:32bd8fab4b80d20837c01dc42b7db4380742ee43677f475ef8b41ae9ce3936ba",
+        "prev_hash": "sha256:07793dc3b47d2849c20f5f5fe6f540c4bf1439705572d8175742c5459ffb8b50"
+      },
+      "node": "apply_policy",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T18:21:24.540594Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:3cb90e10a8c743a7bd0cb5ca44c3d59ef61838b5412d8bd2b6d99742d4e6a458",
+        "prev_hash": "sha256:32bd8fab4b80d20837c01dc42b7db4380742ee43677f475ef8b41ae9ce3936ba"
+      },
+      "node": "apply_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "band",
+          "origin": {
+            "kind": "transition",
+            "seq": 9,
+            "collection": "facts",
+            "index": 0
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "cold-chain v2.1",
+            "source": "policy",
+            "ts": "2026-03-14T22:17:00Z"
+          },
+          {
+            "key": "threshold",
+            "value": "45 minutes above -18 °C",
+            "source": "policy",
+            "ts": "2026-03-14T22:17:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "disposition",
+            "value": "release",
+            "ts": "2026-03-14T22:17:00Z",
+            "reason": "40 minutes is under the 45-minute threshold; 6 minutes longer and this lot goes to quarantine"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T18:21:24.540750Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:2e918229c1bbaf2f5d9d05bf8d058f39ffc2f38368f63007b9075ceba44a911a",
+        "prev_hash": "sha256:3cb90e10a8c743a7bd0cb5ca44c3d59ef61838b5412d8bd2b6d99742d4e6a458"
+      },
+      "after": "apply_policy",
+      "on": "disposition",
+      "value": "release",
+      "origin": {
+        "kind": "transition",
+        "seq": 12,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "release",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "release"
+          },
+          "target": "release",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "quarantine"
+          },
+          "target": "quarantine",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "human_review"
+          },
+          "target": "human_review",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "human_review",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T18:21:24.540894Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:038fee230bc2485fc5b731f3a2f9a269515880776e51c79b71dea026f07ec687",
+        "prev_hash": "sha256:2e918229c1bbaf2f5d9d05bf8d058f39ffc2f38368f63007b9075ceba44a911a"
+      },
+      "node": "release",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T18:21:24.540974Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:661633211c0b6d8a5655bb64d481517c974573df89303b17edde6b4db83ed86f",
+        "prev_hash": "sha256:038fee230bc2485fc5b731f3a2f9a269515880776e51c79b71dea026f07ec687"
+      },
+      "node": "release",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "outcome",
+            "value": "released to distribution",
+            "source": "policy",
+            "ts": "2026-03-14T22:18:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T18:21:24.541196Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:cf97cc92a46784b8c340fd707d29aef73d30e59c928e0a0457da80e3b129c2f8",
+        "prev_hash": "sha256:661633211c0b6d8a5655bb64d481517c974573df89303b17edde6b4db83ed86f"
+      },
+      "after": "release",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T18:21:24.541265Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:930a4fb44f610a4ad09e8f134ccf164c2e7f9d7a050174c861f9244d5a5a74e8",
+        "prev_hash": "sha256:cf97cc92a46784b8c340fd707d29aef73d30e59c928e0a0457da80e3b129c2f8"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}

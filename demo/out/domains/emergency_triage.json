@@ -1,0 +1,537 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-emergency_triage",
+    "graph": {
+      "name": "emergency_triage",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:3e600a44bba465628eca7d0198a2bf53d6e813eb9523b9bb72aa810dadba61a4",
+      "code_fingerprint": "code:sha256:073821a8d3cc9d6770d81577f200a58fed3e05aecc08f85581383767a19d32a1",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T18:21:24.556309Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T18:21:24.556495Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:a6d90c37a88b99556b3e9d0ce193621d89e6a2c306abc0f205aeddabeba55e95",
+        "prev_hash": "sha256:d0e84c4332b5a742d1cef11dda187504de653d3126f70216ca0c796fa13aa98b"
+      },
+      "intent": "61-year-old, chest pain, vitals on file. What triage code?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T18:21:24.556667Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:ecb4d480368db7ac60ec08f050cddba6926ad11f59e08ab5346a01099231136a",
+        "prev_hash": "sha256:a6d90c37a88b99556b3e9d0ce193621d89e6a2c306abc0f205aeddabeba55e95"
+      },
+      "node": "receive_request",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T18:21:24.556940Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:fed94c6245f1b2daf1dbd20fb918e06fb28d4557e32fd1cc7aa09a206f3d1628",
+        "prev_hash": "sha256:ecb4d480368db7ac60ec08f050cddba6926ad11f59e08ab5346a01099231136a"
+      },
+      "node": "receive_request",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "case_id",
+            "value": "ED-2026-0314-118",
+            "source": "eds",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "presenting_complaint",
+            "value": "chest pain, 2 hours",
+            "source": "eds",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "age_years",
+            "value": 61,
+            "source": "eds",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "insurance_status",
+            "value": "uninsured",
+            "source": "eds",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T18:21:24.557104Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:ca86214b0b5a5c7c868321ffaf585d193d8317c06269bd30fbffddbfc19593d4",
+        "prev_hash": "sha256:fed94c6245f1b2daf1dbd20fb918e06fb28d4557e32fd1cc7aa09a206f3d1628"
+      },
+      "after": "receive_request",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "fetch_readings",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "fetch_readings",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T18:21:24.557207Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:a0e61e40ad2a30b90983694a440a20990e28cf6b651ff82e5b090f699a5992d7",
+        "prev_hash": "sha256:ca86214b0b5a5c7c868321ffaf585d193d8317c06269bd30fbffddbfc19593d4"
+      },
+      "node": "fetch_readings",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T18:21:24.557583Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:476e499664de6e0568250b63281f60cce191b9a180657803ff19f8249c93b8e1",
+        "prev_hash": "sha256:a0e61e40ad2a30b90983694a440a20990e28cf6b651ff82e5b090f699a5992d7"
+      },
+      "node": "fetch_readings",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "systolic_mmhg",
+            "value": 138,
+            "source": "monitor",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "heart_rate_bpm",
+            "value": 88,
+            "source": "monitor",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "spo2_pct",
+            "value": 97,
+            "source": "monitor",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "readings_as_of",
+            "value": "2026-03-14T22:14:00Z",
+            "source": "monitor",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": [
+          {
+            "what": "ecg",
+            "reason": "not performed at decision time",
+            "ts": "2026-03-14T22:14:00Z",
+            "evidence": {
+              "ordered": true,
+              "performed_at": null
+            }
+          },
+          {
+            "what": "second_blood_pressure",
+            "reason": "one reading available at decision time; the protocol asks for two",
+            "ts": "2026-03-14T22:14:00Z",
+            "evidence": {
+              "readings_available": 1,
+              "protocol_minimum": 2
+            }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET monitor/cases/ED-2026-0314-118/vitals"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T18:21:24.557804Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:f655d3ccc4310169e93b1ebca1b9adf0ccfb8ac3aaafd47f998c79649ec51ae1",
+        "prev_hash": "sha256:476e499664de6e0568250b63281f60cce191b9a180657803ff19f8249c93b8e1"
+      },
+      "after": "fetch_readings",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "assess",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "assess",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T18:21:24.557878Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:c390e120389de6af1190b0885383b58af119d44b226859665bceec70623622c6",
+        "prev_hash": "sha256:f655d3ccc4310169e93b1ebca1b9adf0ccfb8ac3aaafd47f998c79649ec51ae1"
+      },
+      "node": "assess",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T18:21:24.558080Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:3dc2515e0fa5bdc5e4f9283be287b6fa3ef68678d8d3229d2404ef128797869e",
+        "prev_hash": "sha256:c390e120389de6af1190b0885383b58af119d44b226859665bceec70623622c6"
+      },
+      "node": "assess",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "systolic_mmhg",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "heart_rate_bpm",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 1
+          }
+        },
+        {
+          "key": "spo2_pct",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 2
+          }
+        },
+        {
+          "key": "readings_as_of",
+          "origin": {
+            "kind": "transition",
+            "seq": 6,
+            "collection": "facts",
+            "index": 3
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "band",
+            "value": "stable",
+            "source": "assessor",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T18:21:24.558285Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:ffa0d90e41eb0505f22cab358e60dfa1b01a1f18cb58180e6d234816d92b954a",
+        "prev_hash": "sha256:3dc2515e0fa5bdc5e4f9283be287b6fa3ef68678d8d3229d2404ef128797869e"
+      },
+      "after": "assess",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "apply_policy",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "apply_policy",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T18:21:24.558381Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:49d20bad57ebaf76041b67b9bc07617a5babedb8c8b639ae0f239868a4522997",
+        "prev_hash": "sha256:ffa0d90e41eb0505f22cab358e60dfa1b01a1f18cb58180e6d234816d92b954a"
+      },
+      "node": "apply_policy",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T18:21:24.558575Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:47ea7549cd2c02567e13cc3ed47dffb89922dad052debe320fa48244714f7eef",
+        "prev_hash": "sha256:49d20bad57ebaf76041b67b9bc07617a5babedb8c8b639ae0f239868a4522997"
+      },
+      "node": "apply_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "band",
+          "origin": {
+            "kind": "transition",
+            "seq": 9,
+            "collection": "facts",
+            "index": 0
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "triage v3.4",
+            "source": "policy",
+            "ts": "2026-03-14T22:14:00Z"
+          },
+          {
+            "key": "threshold",
+            "value": "systolic 90-160, rate 50-110, SpO2 >= 94",
+            "source": "policy",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "disposition",
+            "value": "code_green",
+            "ts": "2026-03-14T22:14:00Z",
+            "reason": "every vital available at 22:14 was inside its band. No ECG and one blood-pressure reading were available to this decision"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T18:21:24.558726Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:e6e19192671cf8cdda319b8b8345aaee758bac05b3071a9d2fef6dd990fed568",
+        "prev_hash": "sha256:47ea7549cd2c02567e13cc3ed47dffb89922dad052debe320fa48244714f7eef"
+      },
+      "after": "apply_policy",
+      "on": "disposition",
+      "value": "code_green",
+      "origin": {
+        "kind": "transition",
+        "seq": 12,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "code_green",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "code_green"
+          },
+          "target": "code_green",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "code_yellow"
+          },
+          "target": "code_yellow",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "code_red"
+          },
+          "target": "code_red",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "code_red",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T18:21:24.558852Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:42d052ac382728287aabff320c20d3187362f5048921bc5f6021df348d334392",
+        "prev_hash": "sha256:e6e19192671cf8cdda319b8b8345aaee758bac05b3071a9d2fef6dd990fed568"
+      },
+      "node": "code_green",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T18:21:24.558950Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:743fbea9e4f50b92ddeb5f35676a393f1b773c34d06c6a551a322369ef00d7c4",
+        "prev_hash": "sha256:42d052ac382728287aabff320c20d3187362f5048921bc5f6021df348d334392"
+      },
+      "node": "code_green",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "outcome",
+            "value": "green — may wait",
+            "source": "policy",
+            "ts": "2026-03-14T22:14:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T18:21:24.559078Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:eceff1c0d287c2c70124a333219f622bc6453b5689f12a2ee26470c6221af21a",
+        "prev_hash": "sha256:743fbea9e4f50b92ddeb5f35676a393f1b773c34d06c6a551a322369ef00d7c4"
+      },
+      "after": "code_green",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T18:21:24.559177Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:64d4717fa15c501e6a64af236f30253db6753f415bc7d4fa0da6fe026c44e34b",
+        "prev_hash": "sha256:eceff1c0d287c2c70124a333219f622bc6453b5689f12a2ee26470c6221af21a"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}

@@ -69,20 +69,36 @@ possiede il file può rifare tutto da capo.** Riscrive la decisione, ricalcola
 l'intera catena, ricalcola la root. Tutto coerente. Nessuno se ne accorge.
 
 L'unico rimedio è pubblicare la root **dove nemmeno tu puoi tornare a
-cambiarla**. L'abbiamo messa dentro una transazione su una blockchain pubblica —
-una di quelle in cui riscrivere la storia costerebbe una fortuna.
+cambiarla**. La mandiamo a OpenTimestamps, che la aggrega e la scrive dentro un
+blocco Bitcoin. Niente wallet, niente chiavi da custodire, niente gas.
 
-Il 12 agosto 2026 l'abbiamo fatto davvero:
+Il 16 agosto 2026 l'abbiamo fatto davvero, per sei esecuzioni:
 
 ```
-txid   6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0
-rete   TRON Nile (rete pubblica di test)
-memo   VITRUVYAN_AUDIT:sha256:cb6829d3…b2468a92
+run                blocco Bitcoin   ora del blocco
+credit_review      962787           2026-08-16T22:01:05Z
+substation_safety  962787           2026-08-16T22:01:05Z
+hiring             962783           2026-08-16T21:32:23Z
+tre run di demo    962770           2026-08-16T18:42:00Z
 ```
 
-Chiunque può aprirla e leggere la nostra root lì dentro. Se domani
-modificassimo il file, il ricalcolo darebbe un numero diverso da quello sulla
-catena pubblica, e la bugia si vedrebbe.
+Tre calendari indipendenti hanno accettato ciascun impegno. Chiunque può aprire
+`mempool.space/block/962787` adesso, senza chiedere niente a noi. Se domani
+modificassimo il file, il ricalcolo darebbe un numero diverso da quello che il
+blocco copre, e la bugia si vedrebbe.
+
+**Un dettaglio che il codice non arrotonda:** `publish()` restituisce sempre
+`pending`, perché un impegno OpenTimestamps arriva in Bitcoin quando ci arriva
+un blocco — ore, non secondi. È `upgrade()` che lo porta ad `anchored` dopo. Un
+verificatore che dicesse «esisteva» di una prova ancora `pending` direbbe il
+falso, e per questo lo stato viaggia dentro il receipt invece di essere
+sottinteso.
+
+*(La dimostrazione precedente stava su TRON Nile — una rete di test, txid
+`6010ded8…`, 12 agosto. Resta valida come dimostrazione e non è più il
+percorso: OpenTimestamps è il default di produzione secondo ADR-021, e la
+differenza fra una testnet e Bitcoin è esattamente il punto di questo
+paragrafo.)*
 
 **Una distinzione che quasi tutti sbagliano:** questo non rende il file
 immodificabile. Un file è sempre modificabile. Toglie la possibilità di **far

@@ -62,9 +62,7 @@ def run(tmp_path):
 
     def entry(kind, sequence):
         proof = log.proof_for("r1", kind, checkpoint.index, sequence=sequence)
-        return {"commitment": proof.commitment.to_dict(),
-                "proof": [{"side": s, "digest": d} for s, d in proof.path],
-                "checkpoint": checkpoint.to_dict()}
+        return proof.to_dict()
 
     receipt = {
         "schema_version": "1.0.0", "mode": "local",
@@ -75,6 +73,23 @@ def run(tmp_path):
     digest = validate.checkpoint_digest(checkpoint.to_dict())
     log.close()
     return receipt, trace, digest
+
+
+@pytest.mark.parametrize("leaf_count", [1, 5])
+def test_inclusion_proof_output_is_a_receipt_entry_schema(leaf_count, tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="schema", fsync=False)
+    for index in range(leaf_count):
+        log.begin(f"r{index}", at=AT, nonce=f"n{index}")
+    checkpoint = log.seal(AT)
+    proof = log.proof_for("r0", CommitmentKind.BEGIN, checkpoint.index)
+
+    entry = proof.to_dict()
+    receipt = {"schema_version": "1.0.0", "mode": "local",
+               "segments": [{"begin": entry}]}
+    assert validate.validate_receipt(receipt) == []
+    assert set(entry) == {"commitment", "proof", "checkpoint"}
+    assert bool(entry["proof"]) is (leaf_count > 1)
+    log.close()
 
 
 def test_integrity_is_established_only_by_recomputing_the_trace(run):
@@ -228,11 +243,7 @@ def test_a_begin_with_no_end_is_an_execution_that_left_no_completion(tmp_path):
     proof = log.proof_for("crashed", CommitmentKind.BEGIN, checkpoint.index)
     receipt = {
         "schema_version": "1.0.0", "mode": "local",
-        "segments": [{"begin": {
-            "commitment": proof.commitment.to_dict(),
-            "proof": [{"side": s, "digest": d} for s, d in proof.path],
-            "checkpoint": checkpoint.to_dict(),
-        }}],
+        "segments": [{"begin": proof.to_dict()}],
     }
     log.close()
 
@@ -257,9 +268,7 @@ def test_a_multi_segment_run_says_its_chain_claim_is_uncheckable_here(tmp_path):
     def entry(commitment):
         proof = log.proof_for(commitment.run_id, CommitmentKind.BEGIN,
                               checkpoint.index, sequence=commitment.sequence)
-        return {"commitment": commitment.to_dict(),
-                "proof": [{"side": s, "digest": d} for s, d in proof.path],
-                "checkpoint": checkpoint.to_dict()}
+        return proof.to_dict()
 
     receipt = {"schema_version": "1.0.0", "mode": "local",
                "segments": [{"begin": entry(first)}, {"begin": entry(second)}]}
@@ -379,9 +388,7 @@ def test_a_receipt_about_another_run_is_caught(tmp_path):
 
     def entry(run_id, kind):
         proof = log.proof_for(run_id, kind, checkpoint.index)
-        return {"commitment": proof.commitment.to_dict(),
-                "proof": [{"side": s, "digest": d} for s, d in proof.path],
-                "checkpoint": checkpoint.to_dict()}
+        return proof.to_dict()
 
     about_a = {"schema_version": "1.0.0", "mode": "local", "segments": [{
         "begin": entry("run-a", CommitmentKind.BEGIN),

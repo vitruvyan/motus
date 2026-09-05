@@ -1,0 +1,39 @@
+{
+  "name": "substation_safety",
+  "run_id": "demo-substation-safety-17a",
+  "prompt": "Can Acme Energy keep Substation 17 in automatic operation after the transformer anomaly?",
+  "answer": "No. Substation 17 should not stay in unrestricted automatic operation. The recorded excursion on transformer T-17A is above the automatic-operation threshold and needs an authorised operator to review it.",
+  "root": "sha256:38c2b2e998eecd6aeb00d831bb3d6b70e17b2339729da44181ab0bb26106848f",
+  "bundle_fingerprint": "bundle:sha256:263510088b0a108519d6fd6095d7ce7990f44a9524bd23bad18489635f93088f",
+  "graph_fingerprint": "graph:sha256:b0fd0859c0ccf111d703d6df674b0d7eb535a1ee8b4cb56155e4f360c1dd0c28",
+  "records": 26,
+  "protected_attributes": [],
+  "tamper_node": "human_operator_review",
+  "anchor": {
+    "network": "opentimestamps:bitcoin",
+    "state": "anchored",
+    "checkpoint": "sha256:da6a1bb6e5dc547ceeb9eba589be4a4d0d4e67f96c9a034c7718dd2c445072d8",
+    "committed_bytes": "the root string, utf-8",
+    "calendars_accepted": [
+      "https://alice.btc.calendar.opentimestamps.org",
+      "https://bob.btc.calendar.opentimestamps.org",
+      "https://finney.calendar.eternitywall.com"
+    ],
+    "calendars_refused": {},
+    "submitted_at": "2026-08-16T21:52:56Z",
+    "proof_file": "substation_safety/root.txt.ots",
+    "verify_with": "ots verify root.txt.ots",
+    "reference": "bitcoin-block:962787",
+    "published_at": "2026-08-16T22:01:05Z",
+    "bitcoin_block_heights": [
+      962787,
+      962789,
+      962798
+    ],
+    "calendars_unreachable": [],
+    "block_time_source": "https://blockstream.info/api"
+  },
+  "bundle_file": "substation_safety.motus.zip",
+  "bundle_sha256": "sha256:b52e4e18acef13a59809103c3f15bccb6e5a917681d559ace58320ec1caf6c2b",
+  "bundle_bytes": 78042
+}

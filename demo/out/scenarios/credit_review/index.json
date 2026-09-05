@@ -1,0 +1,44 @@
+{
+  "name": "credit_review",
+  "run_id": "demo-credit-review-77104",
+  "prompt": "Can John Smith's €35,000 loan application be approved automatically?",
+  "answer": "No. This application cannot be approved automatically. It must go to a person, because the verified debt-to-income ratio is above Acme Bank Europe's automatic-approval threshold.",
+  "root": "sha256:55dfeb071c2e203b424976ed7ee45d152bbcee98bfdfaefb418beb8f7faaaf41",
+  "bundle_fingerprint": "bundle:sha256:7376b08008cbef4f2054f12b67bbcee17069761781f153c27dbca703a8e207fe",
+  "graph_fingerprint": "graph:sha256:c1c816d667d285ff17924021c0ba9dc174e8e59bef084c4de64bcdaccbfd3110",
+  "records": 26,
+  "protected_attributes": [
+    "applicant_name",
+    "date_of_birth",
+    "nationality",
+    "postcode"
+  ],
+  "tamper_node": "human_review",
+  "anchor": {
+    "network": "opentimestamps:bitcoin",
+    "state": "anchored",
+    "checkpoint": "sha256:b9af4cdff49f9e42e7350538c4c16b71a34e5056a35e6fac369ff82b268e91fc",
+    "committed_bytes": "the root string, utf-8",
+    "calendars_accepted": [
+      "https://alice.btc.calendar.opentimestamps.org",
+      "https://bob.btc.calendar.opentimestamps.org",
+      "https://finney.calendar.eternitywall.com"
+    ],
+    "calendars_refused": {},
+    "submitted_at": "2026-08-16T21:52:53Z",
+    "proof_file": "credit_review/root.txt.ots",
+    "verify_with": "ots verify root.txt.ots",
+    "reference": "bitcoin-block:962787",
+    "published_at": "2026-08-16T22:01:05Z",
+    "bitcoin_block_heights": [
+      962787,
+      962789,
+      962798
+    ],
+    "calendars_unreachable": [],
+    "block_time_source": "https://blockstream.info/api"
+  },
+  "bundle_file": "credit_review.motus.zip",
+  "bundle_sha256": "sha256:c14b351f334ad010c9c0a77a3c5d09d363dae78dda01bee02450abdd3dc14505",
+  "bundle_bytes": 80038
+}

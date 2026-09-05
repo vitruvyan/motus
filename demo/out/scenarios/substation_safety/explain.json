@@ -1,0 +1,228 @@
+{
+  "bundle_fingerprint": "bundle:sha256:263510088b0a108519d6fd6095d7ce7990f44a9524bd23bad18489635f93088f",
+  "run_id": "demo-substation-safety-17a",
+  "graph": {
+    "name": "substation_safety",
+    "version": "1.0.0",
+    "graph_fingerprint": "graph:sha256:b0fd0859c0ccf111d703d6df674b0d7eb535a1ee8b4cb56155e4f360c1dd0c28",
+    "code_fingerprint": "code:sha256:6fcf99614bf4e47ef2fe11480ab5b5d89823c842f0f411dfcfe38677b638026d",
+    "spec_schema_version": "1.0.0"
+  },
+  "terminal": "run_completed",
+  "steps": [
+    {
+      "seq": 3,
+      "kind": "transition",
+      "node": "anomaly_detected",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "record_is_synthetic",
+        "operator",
+        "facility",
+        "asset",
+        "event"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 4,
+      "kind": "routing",
+      "after": "anomaly_detected",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "sensor_validation",
+      "origin": null
+    },
+    {
+      "seq": 6,
+      "kind": "transition",
+      "node": "sensor_validation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "peak_temperature_c",
+        "excursion_minutes",
+        "sensor_channel",
+        "oil_analysis"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 7,
+      "kind": "routing",
+      "after": "sensor_validation",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "operating_context",
+      "origin": null
+    },
+    {
+      "seq": 9,
+      "kind": "transition",
+      "node": "operating_context",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "threshold_c",
+        "manual_clause"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 10,
+      "kind": "routing",
+      "after": "operating_context",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "maintenance_history",
+      "origin": null
+    },
+    {
+      "seq": 12,
+      "kind": "transition",
+      "node": "maintenance_history",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "days_since_inspection",
+        "cooling_advisory"
+      ],
+      "effects": 1
+    },
+    {
+      "seq": 13,
+      "kind": "routing",
+      "after": "maintenance_history",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "safety_assessment",
+      "origin": null
+    },
+    {
+      "seq": 15,
+      "kind": "transition",
+      "node": "safety_assessment",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "peak_temperature_c",
+        "threshold_c",
+        "excursion_minutes",
+        "cooling_advisory"
+      ],
+      "write_keys": [
+        "margin_c",
+        "excursion_exceeds_threshold"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 16,
+      "kind": "routing",
+      "after": "safety_assessment",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "operational_policy",
+      "origin": null
+    },
+    {
+      "seq": 18,
+      "kind": "transition",
+      "node": "operational_policy",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [
+        "excursion_exceeds_threshold"
+      ],
+      "write_keys": [
+        "policy_version",
+        "policy_clause_threshold",
+        "policy_clause_oversight",
+        "operation_mode"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 19,
+      "kind": "routing",
+      "after": "operational_policy",
+      "on": "operation_mode",
+      "value": "review_required",
+      "outcome": "matched",
+      "selected": "human_operator_review",
+      "origin": {
+        "kind": "transition",
+        "seq": 18,
+        "index": 0
+      }
+    },
+    {
+      "seq": 21,
+      "kind": "transition",
+      "node": "human_operator_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "handoff",
+        "handed_over"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 22,
+      "kind": "routing",
+      "after": "human_operator_review",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "recommendation",
+      "origin": null
+    },
+    {
+      "seq": 24,
+      "kind": "transition",
+      "node": "recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "read_keys": [],
+      "write_keys": [
+        "recommendation",
+        "automated_action_issued"
+      ],
+      "effects": 0
+    },
+    {
+      "seq": 25,
+      "kind": "routing",
+      "after": "recommendation",
+      "on": null,
+      "value": null,
+      "outcome": "static",
+      "selected": "END",
+      "origin": null
+    },
+    {
+      "seq": 26,
+      "kind": "run_completed"
+    }
+  ]
+}

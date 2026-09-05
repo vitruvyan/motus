@@ -706,6 +706,20 @@ It is written against the sink protocol and nothing else: it imports no schema
 version and inspects no record kind, which is enforced by a test. If the
 protocol were insufficient, that file could not exist.
 
+**Give it a directory the process can write to.** Reported by an integrator
+who lost an hour to it: Docker creates a bind-mount target as `root` when the
+host path does not exist, and a container running as a non-root uid then gets
+`Permission denied` on the first record. The sink is doing exactly what it
+should — a durable sink that silently discarded evidence would be worse — but
+the failure arrives at the first write rather than at configuration time, which
+is late. Create the directory with the runtime's uid, or `chown` it in the
+image, before the first run.
+
+The same integrator found that their own trace-directory setting had carried
+this defect for months without anybody noticing, because the feature was never
+switched on. A path that is only exercised when somebody enables evidence is a
+path that has never been tested.
+
 The run header declares one durability profile:
 
 - `in-memory`: no persistence guarantee after process loss;
@@ -834,6 +848,11 @@ The normative surfaces live in [`contract/`](contract/):
 
 - `graphspec.v1.schema.json` and rules R1-R12;
 - `trace.v1.schema.json` and the T/E/SB/H/J/JSONL rules;
+- `commitment.v1.schema.json` (rule `C1`) and `checkpoint.v1.schema.json`
+  (rules `K1`, `K2`) — the commitment log's BEGIN/END and the sealed windows
+  over them;
+- `receipt.v1.schema.json` — what a receipt must carry to prove a RUN and not
+  merely a checkpoint (ADR-021 §7);
 - `node-protocol.md`;
 - `guarantees.md`.
 
@@ -845,6 +864,46 @@ python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
 python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.12.0-epyc-py310.json
 python benchmarks/check_relative_baseline.py benchmarks/relative-0.12.0/*.json
 ```
+
+**Verification is open and stays open.** A receipt is checked against the trace
+it claims to be about, offline, with no account and against no server of ours:
+
+```console
+motus-validate receipt path/to/receipt.json --trace path/to/trace.json
+```
+
+It reports all seven of ADR-020's attestation levels — `INTEGRITY`,
+`EXISTENCE`, `RETENTION`, `EXECUTION_CONTINUITY`, `PROVENANCE`, `IDENTITY`,
+`LEGAL_TIME` — **including the ones it could not reach**, and refuses outright
+on a digest algorithm or a network it cannot recompute. A refusal outranks a
+violation: reporting "this document is wrong" about a document that may be
+perfectly correct on a chain we cannot read would be the wrong answer twice.
+
+### Anchors and witnesses ship separately, and one of them ships today
+
+ADR-021 defines two interfaces and states that **no implementation of either
+Protocol ships in `vitruvyan-motus`**. That sentence is about this
+distribution, and it stays true: the kernel imports no network client, mints no
+identity and reaches nothing unless configured. The implementations are
+separate distributions under [`plugs/`](plugs/), with their own dependencies
+and their own suites.
+
+| interface | question it answers | status |
+|---|---|---|
+| `Anchor` | was this block of evidence not rewritten afterwards? | **`motus-anchor-opentimestamps` ships** — free, Bitcoin, no wallet, no key custody |
+| `Witness` | did this commitment exist before the outcome was known? | protocol only. `EXECUTION_CONTINUITY` is defined, verifiable and not yet reachable |
+
+An outside integrator read the ADR sentence, found nothing about `plugs/` in
+this file, and concluded that anchoring was unimplemented — while six demo
+roots sat in Bitcoin blocks 962770 to 962798, three independent OpenTimestamps
+calendars each. The sentence was right and this README was silent, which is the
+same outcome as being wrong. Hence this section.
+
+**The two are not interchangeable.** An anchor protects the chain; a witness
+protects the two-phase commitment, and only a witness answers *"was this run
+registered before anybody knew how it would turn out?"* — see `sealing.py` for
+the arithmetic, including the consequence that an anchor cannot give execution
+continuity to a run shorter than its own cadence.
 
 ## Native package surface
 

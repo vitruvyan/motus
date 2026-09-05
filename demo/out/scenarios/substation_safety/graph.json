@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0.0",
+  "name": "substation_safety",
+  "version": "1.0.0",
+  "entry": "anomaly_detected",
+  "nodes": [
+    {
+      "name": "anomaly_detected",
+      "effect_class": "pure"
+    },
+    {
+      "name": "sensor_validation",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "operating_context",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "maintenance_history",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "safety_assessment",
+      "effect_class": "pure",
+      "reads_declared": [
+        "peak_temperature_c",
+        "threshold_c",
+        "excursion_minutes",
+        "cooling_advisory"
+      ],
+      "writes_declared": [
+        "excursion_exceeds_threshold",
+        "margin_c"
+      ]
+    },
+    {
+      "name": "operational_policy",
+      "effect_class": "pure",
+      "writes_declared": [
+        "operation_mode",
+        "policy_version",
+        "policy_clause_threshold",
+        "policy_clause_oversight"
+      ]
+    },
+    {
+      "name": "human_operator_review",
+      "effect_class": "pure"
+    },
+    {
+      "name": "isolate_asset",
+      "effect_class": "pure"
+    },
+    {
+      "name": "continue_service",
+      "effect_class": "pure"
+    },
+    {
+      "name": "recommendation",
+      "effect_class": "pure"
+    }
+  ],
+  "transitions": {
+    "anomaly_detected": {
+      "kind": "next",
+      "to": "sensor_validation"
+    },
+    "sensor_validation": {
+      "kind": "next",
+      "to": "operating_context"
+    },
+    "operating_context": {
+      "kind": "next",
+      "to": "maintenance_history"
+    },
+    "maintenance_history": {
+      "kind": "next",
+      "to": "safety_assessment"
+    },
+    "safety_assessment": {
+      "kind": "next",
+      "to": "operational_policy"
+    },
+    "operational_policy": {
+      "kind": "route",
+      "on": "operation_mode",
+      "map": {
+        "continue_service": "continue_service",
+        "review_required": "human_operator_review",
+        "isolate_asset": "isolate_asset"
+      },
+      "default": "human_operator_review"
+    },
+    "human_operator_review": {
+      "kind": "next",
+      "to": "recommendation"
+    },
+    "isolate_asset": {
+      "kind": "terminal"
+    },
+    "continue_service": {
+      "kind": "terminal"
+    },
+    "recommendation": {
+      "kind": "terminal"
+    }
+  }
+}

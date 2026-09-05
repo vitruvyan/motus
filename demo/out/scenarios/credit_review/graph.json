@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "name": "credit_review",
+  "version": "1.0.0",
+  "entry": "loan_application",
+  "nodes": [
+    {
+      "name": "loan_application",
+      "effect_class": "pure"
+    },
+    {
+      "name": "application_check",
+      "effect_class": "pure"
+    },
+    {
+      "name": "income_verification",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "existing_obligations",
+      "effect_class": "recorded_effect"
+    },
+    {
+      "name": "creditworthiness_assessment",
+      "effect_class": "pure",
+      "reads_declared": [
+        "verified_monthly_income_eur",
+        "mortgage_payment_eur",
+        "vehicle_finance_eur",
+        "requested_amount_eur"
+      ],
+      "writes_declared": [
+        "debt_to_income_bp",
+        "total_obligations_eur"
+      ]
+    },
+    {
+      "name": "policy_evaluation",
+      "effect_class": "recorded_effect",
+      "writes_declared": [
+        "credit_route",
+        "policy_version",
+        "dti_threshold_bp",
+        "policy_clause_dti",
+        "policy_clause_oversight",
+        "threshold_exceeded"
+      ]
+    },
+    {
+      "name": "human_review",
+      "effect_class": "pure"
+    },
+    {
+      "name": "auto_approve",
+      "effect_class": "pure"
+    },
+    {
+      "name": "auto_decline",
+      "effect_class": "pure"
+    },
+    {
+      "name": "recommendation",
+      "effect_class": "pure"
+    }
+  ],
+  "transitions": {
+    "loan_application": {
+      "kind": "next",
+      "to": "application_check"
+    },
+    "application_check": {
+      "kind": "next",
+      "to": "income_verification"
+    },
+    "income_verification": {
+      "kind": "next",
+      "to": "existing_obligations"
+    },
+    "existing_obligations": {
+      "kind": "next",
+      "to": "creditworthiness_assessment"
+    },
+    "creditworthiness_assessment": {
+      "kind": "next",
+      "to": "policy_evaluation"
+    },
+    "policy_evaluation": {
+      "kind": "route",
+      "on": "credit_route",
+      "map": {
+        "auto_approve": "auto_approve",
+        "human_review": "human_review",
+        "auto_decline": "auto_decline"
+      },
+      "default": "human_review"
+    },
+    "human_review": {
+      "kind": "next",
+      "to": "recommendation"
+    },
+    "auto_approve": {
+      "kind": "terminal"
+    },
+    "auto_decline": {
+      "kind": "terminal"
+    },
+    "recommendation": {
+      "kind": "terminal"
+    }
+  }
+}

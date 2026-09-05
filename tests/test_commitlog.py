@@ -15,7 +15,7 @@ from vitruvyan_motus.commitlog import (
     InclusionProof,
 )
 from vitruvyan_motus.commitments import (
-    Checkpoint, CommitmentKind, merkle_root, verify_inclusion,
+    Checkpoint, CommitmentKind, CommitmentWindow, merkle_root, verify_inclusion,
 )
 
 AT = "2026-08-12T09:14:00Z"
@@ -187,6 +187,146 @@ def test_an_empty_window_cannot_be_sealed(tmp_path):
     log.close()
 
 
+def test_a_failed_seal_poisons_rather_than_leaving_a_stale_window(tmp_path, monkeypatch):
+    log = _log(tmp_path)
+    _run(log, "r1")
+
+    def boom(*args, **kwargs):
+        raise OSError("checkpoint unavailable")
+
+    monkeypatch.setattr("vitruvyan_motus.commitlog._atomic_write", boom)
+    with pytest.raises(OSError):
+        log.seal(AT)
+    for operation in (
+        lambda: log.begin("r2", at=AT, nonce="n2"),
+        lambda: log.end("r1", root=ROOT, outcome="failed", at=AT, nonce="e2"),
+        lambda: log.seal(AT),
+    ):
+        with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+            operation()
+    log.close()
+
+    reopened = _log(tmp_path)
+    assert not (reopened.directory / "checkpoint-000000.json").exists()
+    assert [c.sequence for c in reopened.open_window._commitments] == [0, 1]
+    reopened.begin("r2", at=AT, nonce="n2")
+    assert reopened.open_window.next_sequence == 3
+    reopened.close()
+
+
+def test_a_failed_handle_close_during_seal_also_poisons(tmp_path):
+    log = _log(tmp_path)
+    _run(log, "r1")
+    handle = log._open_handle()
+
+    def boom() -> None:
+        raise OSError("close failed")
+
+    original = handle.close
+    handle.close = boom  # type: ignore[method-assign]
+    try:
+        with pytest.raises(OSError):
+            log.seal(AT)
+    finally:
+        handle.close = original  # type: ignore[method-assign]
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("r2", at=AT, nonce="n2")
+    log.close()
+
+    reopened = _log(tmp_path)
+    assert reopened.open_window.index == 1
+    assert reopened.verify_chain() == 1
+    assert reopened.open_window.next_sequence == 2
+    reopened.close()
+
+
+def test_a_failed_begin_after_durable_write_poisons_and_reopen_counts_it(
+        tmp_path, monkeypatch):
+    log = _log(tmp_path)
+    log.begin("r1", at=AT, nonce="n1")
+    original = CommitmentWindow.append
+
+    def boom(self, commitment):
+        if commitment.run_id == "never-ran":
+            raise ValueError("forced append refusal")
+        return original(self, commitment)
+
+    monkeypatch.setattr(CommitmentWindow, "append", boom)
+    with pytest.raises(ValueError, match="forced append refusal"):
+        log.begin("never-ran", at=AT, nonce="n2")
+    path = log.directory / "window-000000.jsonl"
+    stored = [json.loads(line)["c"] for line in path.read_text().splitlines()]
+    assert [item["sequence"] for item in stored] == [0, 1]
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("r3", at=AT, nonce="n3")
+    log.close()
+
+    monkeypatch.undo()
+    reopened = _log(tmp_path)
+    assert reopened.open_window.next_sequence == 2
+    issued = reopened.begin("r3", at=AT, nonce="n3")
+    assert issued.sequence == 2
+    reopened.close()
+
+
+@pytest.mark.parametrize("fault", ["checkpoint-write", "handle-close",
+                                    "window-advance", "append", "remember"],
+                         ids=str)
+def test_every_known_post_write_step_poisons_the_live_store(tmp_path, monkeypatch,
+                                                              fault):
+    """The property covers the currently known post-write steps; a future
+    step must be added here when it is introduced between durable state and
+    the successful return (this is an explicit sweep, not magic coverage)."""
+    log = _log(tmp_path)
+    _run(log, "r1")
+    if fault == "append":
+        original = CommitmentWindow.append
+
+        def fail_append(self, commitment):
+            if commitment.run_id == "fault":
+                raise ValueError("forced")
+            return original(self, commitment)
+
+        monkeypatch.setattr(CommitmentWindow, "append", fail_append)
+        with pytest.raises(ValueError, match="forced"):
+            log.begin("fault", at=AT, nonce="fault")
+    elif fault == "remember":
+        original = CommitmentLog._remember
+
+        def fail_remember(self, commitment):
+            if commitment.run_id == "fault":
+                raise MemoryError("forced")
+            return original(self, commitment)
+
+        monkeypatch.setattr(CommitmentLog, "_remember", fail_remember)
+        with pytest.raises(MemoryError, match="forced"):
+            log.begin("fault", at=AT, nonce="fault")
+        with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+            log.begin("retry", at=AT, nonce="fault")
+    else:
+        if fault == "checkpoint-write":
+            monkeypatch.setattr("vitruvyan_motus.commitlog._atomic_write",
+                                lambda *a, **k: (_ for _ in ()).throw(OSError("write")))
+        elif fault == "handle-close":
+            handle = log._open_handle()
+            handle.close = lambda: (_ for _ in ()).throw(OSError("close"))  # type: ignore[method-assign]
+        else:
+            monkeypatch.setattr(CommitmentWindow, "following",
+                                classmethod(lambda cls, checkpoint: (_ for _ in ()).throw(OSError("advance"))))
+        with pytest.raises(OSError):
+            log.seal(AT)
+    assert log._poisoned is not None
+    log.close()
+    monkeypatch.undo()
+    reopened = _log(tmp_path)
+    sequences = []
+    for path in reopened.directory.glob("window-*.jsonl"):
+        sequences.extend(json.loads(line)["c"]["sequence"]
+                         for line in path.read_text().splitlines() if line)
+    assert sorted(sequences) == list(range(len(sequences)))
+    reopened.close()
+
+
 # -- the proof --------------------------------------------------------------
 
 def test_a_proof_verifies_against_the_sealed_window_root(tmp_path):
@@ -208,10 +348,14 @@ def test_a_proof_carries_the_commitment_and_not_only_its_digest(tmp_path):
     log = _log(tmp_path)
     _run(log, "r1")
     checkpoint = log.seal(AT)
-    body = log.proof_for("r1", CommitmentKind.END, checkpoint.index).to_dict()
+    proof = log.proof_for("r1", CommitmentKind.END, checkpoint.index)
+    body = proof.to_dict()
     assert body["commitment"]["run_id"] == "r1"
     assert body["commitment"]["root"] == ROOT
-    assert body["checkpoint_digest"] == checkpoint.digest
+    assert set(body) == {"commitment", "proof", "checkpoint"}
+    assert proof.format == STORE_FORMAT
+    assert proof.mode == proof.commitment.mode.value
+    assert proof.checkpoint_digest == checkpoint.digest
     log.close()
 
 
@@ -326,7 +470,7 @@ def test_the_witness_acknowledgement_survives_the_disk(tmp_path):
     assert proof.commitment.witness is not None
     assert proof.commitment.witness.witness_id == "notary.example"
     assert proof.commitment.mode is AssuranceMode.WITNESSED
-    assert proof.to_dict()["mode"] == "witnessed"
+    assert proof.mode == "witnessed"
     assert proof.to_dict()["witness"]["witness_id"] == "notary.example"
     # and the ACK still does not move the leaf
     assert proof.commitment.leaf == unwitnessed.leaf

@@ -171,17 +171,37 @@ class InclusionProof:
     path: tuple[tuple[str, str], ...]
     checkpoint: Checkpoint
 
+    @property
+    def format(self) -> str:
+        """The commit-log format associated with this proof."""
+        return STORE_FORMAT
+
+    @property
+    def mode(self) -> str:
+        """The achieved assurance mode, read from the commitment."""
+        return self.commitment.mode.value
+
+    @property
+    def checkpoint_digest(self) -> str:
+        """The digest of the checkpoint carried by this proof."""
+        return self.checkpoint.digest
+
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "format": STORE_FORMAT,
+        """Return this proof as a receipt.v1 ``Entry``.
+
+        The shape is defined by ``contract/receipt.v1.schema.json`` under
+        ``$defs.Entry``; format and achieved mode remain available as
+        properties on this object rather than travelling in the entry.
+        """
+        body: dict[str, Any] = {
             "commitment": self.commitment.to_dict(),
-            "witness": (self.commitment.witness.to_dict()
-                        if self.commitment.witness else None),
-            "mode": self.commitment.mode.value,
-            "path": [list(step) for step in self.path],
+            "proof": [{"side": side, "digest": digest}
+                      for side, digest in self.path],
             "checkpoint": self.checkpoint.to_dict(),
-            "checkpoint_digest": self.checkpoint.digest,
         }
+        if self.commitment.witness is not None:
+            body["witness"] = self.commitment.witness.to_dict()
+        return body
 
 
 class CommitmentLog:
@@ -522,6 +542,50 @@ class CommitmentLog:
                     sequence=commitment.sequence, run_id=run_id,
                     witness=witness, **fields)
 
+        # **Digest BEFORE writing, and this ordering is the fix for #112.**
+        #
+        # Two encoders used to meet in this function with a durable write
+        # between them: the line went to disk through `json.dumps` with its
+        # default `ensure_ascii=True`, and the digest was taken two frames later
+        # through `_canonical_bytes`, which is `ensure_ascii=False` and encodes
+        # to UTF-8. Whatever the first could write and the second could not
+        # became a line the store can never digest — written, flushed, fsynced,
+        # and NOT poisoned, because the write itself had succeeded. Every future
+        # open then failed on a chain that could not be rebuilt, and no reopen
+        # recovered it.
+        #
+        # Forcing the leaf here does not merely make the two encoders agree: it
+        # proves the digest exists before any byte is committed. A commitment
+        # that cannot be digested now raises with the store untouched — no
+        # write, no poison, no unrecoverable directory — and the caller learns
+        # at the boundary rather than at the next restart.
+        #
+        # The reachable instance was a lone surrogate, and `_require_text`
+        # closed that one in `commitments.py`.
+        #
+        # **THIS DOES NOT CLOSE THE CLASS, and an earlier version of this
+        # comment said it did.** Three independent adversarial lenses refuted
+        # that claim on 2026-08-31, at two sites it does not reach:
+        #
+        # - the line written below carries a SECOND object, `witness`, which
+        #   nothing digests. `WitnessAck.algorithm` is the one field
+        #   `__post_init__` does not check, it arrives from a third-party
+        #   `Witness.acknowledge`, and a value the durable writer can escape and
+        #   `_canonical_bytes` cannot encode reaches the disk through it. The
+        #   store survives — nothing digests it — and the receipt that leaves
+        #   the building is refused by the contract validator under J1;
+        # - `seal()` still has the ordering this line exists to fix, inverted:
+        #   it marks the window sealed in memory before the checkpoint is
+        #   durable, and a failed write there plus two ordinary run starts put
+        #   a duplicate sequence on disk that no process can ever open (#129).
+        #
+        # What this line does close is real and worth having: the commitment
+        # BODY cannot reach the disk undigestible, and the failure arrives with
+        # the store untouched rather than at the next restart. The class is the
+        # ORDERING — a successful durable write followed by an unguarded
+        # failure — and closing it needs the sweep #129 asks for, not one call.
+        commitment.leaf
+
         line = json.dumps(
             {"c": commitment.to_dict(),
              "witness": witness.to_dict() if witness else None},
@@ -541,8 +605,20 @@ class CommitmentLog:
                          f"file ({type(exc).__name__}: {exc})")
             raise
 
-        self._window.append(commitment)
-        self._remember(commitment)
+        try:
+            # The durable line is now the source of truth.  If advancing the
+            # in-memory chain refuses it, continuing would issue this sequence
+            # again even though the file may already contain it.
+            self._window.append(commitment)
+            self._remember(commitment)
+        except BaseException as exc:
+            self._poison(
+                f"the line reached the file and post-write in-memory "
+                f"bookkeeping then failed ({type(exc).__name__}: {exc}); "
+                "what is on disk "
+                "may already hold this sequence and issuing it again would "
+                "duplicate it")
+            raise
         return commitment
 
     def begin(self, run_id: str, *, at: str, nonce: str,
@@ -714,13 +790,21 @@ class CommitmentLog:
                     f"{path.name} already exists: another account of this "
                     "chain position was sealed before ours")
             checkpoint = self._window.seal(at)
-            _atomic_write(path, json.dumps(checkpoint.to_dict(), indent=2) + "\n",
-                          fsync=self._fsync)
-            if self._handle is not None:
-                self._handle.close()
-                self._handle = None
-            self._window = CommitmentWindow.following(checkpoint)
-            self._nonces.clear()
+            try:
+                _atomic_write(path, json.dumps(checkpoint.to_dict(), indent=2) + "\n",
+                              fsync=self._fsync)
+                if self._handle is not None:
+                    self._handle.close()
+                    self._handle = None
+                self._window = CommitmentWindow.following(checkpoint)
+                self._nonces.clear()
+            except BaseException as exc:
+                self._poison(
+                    f"the window was marked sealed and the checkpoint then "
+                    f"failed to become durable ({type(exc).__name__}: {exc}); "
+                    "whether it reached disk is unknown, so this instance "
+                    "must not be trusted to seal or append again")
+                raise
             return checkpoint
 
     # -- reading ----------------------------------------------------------

@@ -1,0 +1,813 @@
+{
+  "schema_version": "3.0.0",
+  "run": {
+    "run_id": "demo-credit-review-77104",
+    "graph": {
+      "name": "credit_review",
+      "version": "1.0.0",
+      "graph_fingerprint": "graph:sha256:c1c816d667d285ff17924021c0ba9dc174e8e59bef084c4de64bcdaccbfd3110",
+      "code_fingerprint": "code:sha256:a33ca28eddd1c7f473c8ba0e34c348a2663ef07397d8cc0d7fecee8fdfbd6d50",
+      "spec_schema_version": "1.0.0"
+    },
+    "policy": "strict",
+    "durability_profile": "in-memory",
+    "replay": {
+      "capability": "none",
+      "constraints": [
+        "undeclared"
+      ]
+    },
+    "metadata": {},
+    "created_ts": "2026-08-16T21:52:22.780312Z",
+    "sink": {
+      "flush_interval_ms": 0,
+      "chunk_records": 1
+    }
+  },
+  "records": [
+    {
+      "seq": 1,
+      "ts": "2026-08-16T21:52:22.780530Z",
+      "kind": "run_started",
+      "integrity": {
+        "payload_hash": "sha256:ebd0ae03ba72e1505960c63de44364947f05848e6bed80f472d39d29abf0e426",
+        "prev_hash": "sha256:6598a60aea194967c23d668cd3bd5abc3ef262de89433eb5bc75ef5af4a96417"
+      },
+      "intent": "Can John Smith's €35,000 loan application be approved automatically?",
+      "initial_state": {
+        "facts": [],
+        "decisions": [],
+        "rejections": []
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-08-16T21:52:22.780699Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:d616b8de6c5d817eb3cf3fbf1ef074594ea2aba459f9ffaaa106201b5ca9a55f",
+        "prev_hash": "sha256:ebd0ae03ba72e1505960c63de44364947f05848e6bed80f472d39d29abf0e426"
+      },
+      "node": "loan_application",
+      "attempt": 1
+    },
+    {
+      "seq": 3,
+      "ts": "2026-08-16T21:52:22.781095Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:06a0c9cd924c8a6e58eff19edb4d1dc86a978f8d0177c7bd603284939506869d",
+        "prev_hash": "sha256:d616b8de6c5d817eb3cf3fbf1ef074594ea2aba459f9ffaaa106201b5ca9a55f"
+      },
+      "node": "loan_application",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "record_is_synthetic",
+            "value": "invented scenario — no real applicant, no real bank",
+            "source": "loan_application",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "application_ref",
+            "value": "LN-2026-77104",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "institution",
+            "value": "Acme Bank Europe",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "product",
+            "value": "Home Improvement Loan",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "requested_amount_eur",
+            "value": 35000,
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "declared_monthly_income_eur",
+            "value": 4800,
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "applicant_name",
+            "value": "John Smith",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "date_of_birth",
+            "value": "1984-11-03",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "nationality",
+            "value": "IE",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          },
+          {
+            "key": "postcode",
+            "value": "D08 R2X4",
+            "source": "Loan Application — John Smith",
+            "ts": "2026-06-09T11:20:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 4,
+      "ts": "2026-08-16T21:52:22.781347Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:5163bbff074d29d405665fde7dc4d5a4469648f2de872d5ba63b39622b23d8aa",
+        "prev_hash": "sha256:06a0c9cd924c8a6e58eff19edb4d1dc86a978f8d0177c7bd603284939506869d"
+      },
+      "after": "loan_application",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "application_check",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "application_check",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "2026-08-16T21:52:22.781457Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:83e08a8cbac0ab41176606411cffc398622e1e3a858394e65255145c577519b0",
+        "prev_hash": "sha256:5163bbff074d29d405665fde7dc4d5a4469648f2de872d5ba63b39622b23d8aa"
+      },
+      "node": "application_check",
+      "attempt": 1
+    },
+    {
+      "seq": 6,
+      "ts": "2026-08-16T21:52:22.781570Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:39a95357337ea474d7bc2dff6bac2d5ec8011400ab6738a3f9489033ebb39c57",
+        "prev_hash": "sha256:83e08a8cbac0ab41176606411cffc398622e1e3a858394e65255145c577519b0"
+      },
+      "node": "application_check",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "application_complete",
+            "value": "yes",
+            "source": "application_check",
+            "ts": "2026-06-09T11:21:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 7,
+      "ts": "2026-08-16T21:52:22.781708Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:1f73a415e5b876e791266cd9449e296cd650ee3cd112e16a3ac498e60a7f4980",
+        "prev_hash": "sha256:39a95357337ea474d7bc2dff6bac2d5ec8011400ab6738a3f9489033ebb39c57"
+      },
+      "after": "application_check",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "income_verification",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "income_verification",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "2026-08-16T21:52:22.781796Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:bafd18951e28aafab45bdd6cc1638eebe530b03f8be7e47abaa01e4fd08d2032",
+        "prev_hash": "sha256:1f73a415e5b876e791266cd9449e296cd650ee3cd112e16a3ac498e60a7f4980"
+      },
+      "node": "income_verification",
+      "attempt": 1
+    },
+    {
+      "seq": 9,
+      "ts": "2026-08-16T21:52:22.782031Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:81d7053ba52860fbad9200cdfbd6fdd4dd3aaa48151b469137b2c428940d00b1",
+        "prev_hash": "sha256:bafd18951e28aafab45bdd6cc1638eebe530b03f8be7e47abaa01e4fd08d2032"
+      },
+      "node": "income_verification",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "employer",
+            "value": "Acme Manufacturing Ltd",
+            "source": "Employment & Income Statement — John Smith",
+            "ts": "2026-06-09T11:22:00Z"
+          },
+          {
+            "key": "verified_monthly_income_eur",
+            "value": 4720,
+            "source": "Employment & Income Statement — John Smith",
+            "ts": "2026-06-09T11:22:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": [
+          {
+            "what": "declared_monthly_income_eur",
+            "reason": "the applicant declared €4,800 and the verified statement reports €4,720. The verified figure is used in the assessment",
+            "ts": "2026-06-09T11:22:00Z",
+            "evidence": {
+              "declared_eur": 4800,
+              "verified_eur": 4720,
+              "used": "verified_monthly_income_eur"
+            }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET income-verification/statements/LN-2026-77104"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 10,
+      "ts": "2026-08-16T21:52:22.782210Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:036fa348ab68e2265ac129314ebea6449570c7bd5e8c07063458c2377aac0c66",
+        "prev_hash": "sha256:81d7053ba52860fbad9200cdfbd6fdd4dd3aaa48151b469137b2c428940d00b1"
+      },
+      "after": "income_verification",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "existing_obligations",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "existing_obligations",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "2026-08-16T21:52:22.782294Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:515437224d17ed9fddba63eb713d09619ad85f438e74e21ebfbc80ae5bcafe59",
+        "prev_hash": "sha256:036fa348ab68e2265ac129314ebea6449570c7bd5e8c07063458c2377aac0c66"
+      },
+      "node": "existing_obligations",
+      "attempt": 1
+    },
+    {
+      "seq": 12,
+      "ts": "2026-08-16T21:52:22.782419Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:c3727aa555760eed972480958553b9f1bd9af39be77a08fc33990ce50a43a334",
+        "prev_hash": "sha256:515437224d17ed9fddba63eb713d09619ad85f438e74e21ebfbc80ae5bcafe59"
+      },
+      "node": "existing_obligations",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "mortgage_payment_eur",
+            "value": 1250,
+            "source": "Existing Credit Obligations — John Smith",
+            "ts": "2026-06-09T11:23:00Z"
+          },
+          {
+            "key": "vehicle_finance_eur",
+            "value": 420,
+            "source": "Existing Credit Obligations — John Smith",
+            "ts": "2026-06-09T11:23:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET credit-bureau/obligations/LN-2026-77104"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 13,
+      "ts": "2026-08-16T21:52:22.782581Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:df95f576c0ec282ce94956ebdfaba9da39e953d0a638ce4740af3965aaec8d00",
+        "prev_hash": "sha256:c3727aa555760eed972480958553b9f1bd9af39be77a08fc33990ce50a43a334"
+      },
+      "after": "existing_obligations",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "creditworthiness_assessment",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "creditworthiness_assessment",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "2026-08-16T21:52:22.782700Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:97c69c9968a760eadf7f325a82ec70723aef42f823a26cd922f6f927bddbd5f4",
+        "prev_hash": "sha256:df95f576c0ec282ce94956ebdfaba9da39e953d0a638ce4740af3965aaec8d00"
+      },
+      "node": "creditworthiness_assessment",
+      "attempt": 1
+    },
+    {
+      "seq": 15,
+      "ts": "2026-08-16T21:52:22.782925Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:d319c8488e38531c0af0db685f14b5713793e4ccf21b156504725c0739095dee",
+        "prev_hash": "sha256:97c69c9968a760eadf7f325a82ec70723aef42f823a26cd922f6f927bddbd5f4"
+      },
+      "node": "creditworthiness_assessment",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [
+        {
+          "key": "verified_monthly_income_eur",
+          "origin": {
+            "kind": "transition",
+            "seq": 9,
+            "collection": "facts",
+            "index": 1
+          }
+        },
+        {
+          "key": "mortgage_payment_eur",
+          "origin": {
+            "kind": "transition",
+            "seq": 12,
+            "collection": "facts",
+            "index": 0
+          }
+        },
+        {
+          "key": "vehicle_finance_eur",
+          "origin": {
+            "kind": "transition",
+            "seq": 12,
+            "collection": "facts",
+            "index": 1
+          }
+        },
+        {
+          "key": "requested_amount_eur",
+          "origin": {
+            "kind": "transition",
+            "seq": 3,
+            "collection": "facts",
+            "index": 4
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "total_obligations_eur",
+            "value": 1670,
+            "source": "creditworthiness_assessment",
+            "ts": "2026-06-09T11:24:00Z"
+          },
+          {
+            "key": "debt_to_income_bp",
+            "value": 3538,
+            "source": "creditworthiness_assessment",
+            "ts": "2026-06-09T11:24:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 16,
+      "ts": "2026-08-16T21:52:22.783146Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:8634842214db732419a300348749d8460ba805853fc0959dd25afa21c07cfdf9",
+        "prev_hash": "sha256:d319c8488e38531c0af0db685f14b5713793e4ccf21b156504725c0739095dee"
+      },
+      "after": "creditworthiness_assessment",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "policy_evaluation",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "policy_evaluation",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "2026-08-16T21:52:22.783227Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:3e47b8f3733c7889e2d1254ff0d49a718c9cab1ad49dc5202acf9e3193ca9eca",
+        "prev_hash": "sha256:8634842214db732419a300348749d8460ba805853fc0959dd25afa21c07cfdf9"
+      },
+      "node": "policy_evaluation",
+      "attempt": 1
+    },
+    {
+      "seq": 18,
+      "ts": "2026-08-16T21:52:22.783494Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:aa78f836d95f4a9815fa225c5de821500e7cbdefc6f038be807d53218b1b6f43",
+        "prev_hash": "sha256:3e47b8f3733c7889e2d1254ff0d49a718c9cab1ad49dc5202acf9e3193ca9eca"
+      },
+      "node": "policy_evaluation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "recorded_effect",
+      "reads": [
+        {
+          "key": "debt_to_income_bp",
+          "origin": {
+            "kind": "transition",
+            "seq": 15,
+            "collection": "facts",
+            "index": 1
+          }
+        }
+      ],
+      "writes": {
+        "facts": [
+          {
+            "key": "policy_version",
+            "value": "Acme Bank Europe — Retail Credit Policy v3.2",
+            "source": "Acme Bank Europe — Retail Credit Policy v3.2",
+            "ts": "2026-06-09T11:25:00Z"
+          },
+          {
+            "key": "dti_threshold_bp",
+            "value": 3500,
+            "source": "Acme Bank Europe — Retail Credit Policy v3.2 §4.1",
+            "ts": "2026-06-09T11:25:00Z"
+          },
+          {
+            "key": "policy_clause_dti",
+            "value": "Applications with debt-to-income above 35% cannot receive automatic approval and must proceed to human review.",
+            "source": "Acme Bank Europe — Retail Credit Policy v3.2 §4.1",
+            "ts": "2026-06-09T11:25:00Z"
+          },
+          {
+            "key": "policy_clause_oversight",
+            "value": "Referral cases require review by an authorised credit officer before a final lending decision is made.",
+            "source": "Acme Bank Europe — Human Oversight Policy §1.3",
+            "ts": "2026-06-09T11:25:00Z"
+          },
+          {
+            "key": "threshold_exceeded",
+            "value": "yes",
+            "source": "policy_evaluation",
+            "ts": "2026-06-09T11:25:00Z"
+          }
+        ],
+        "decisions": [
+          {
+            "key": "credit_route",
+            "value": "human_review",
+            "ts": "2026-06-09T11:25:00Z",
+            "reason": "verified debt-to-income is 35.38% against an automatic-approval threshold of 35%. Policy §4.1 does not permit automatic approval above it"
+          }
+        ],
+        "rejections": []
+      },
+      "effects": [
+        {
+          "class": "recorded_effect",
+          "description": "GET policy-store/acme-bank-europe/retail-credit-policy@v3.2"
+        }
+      ],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 19,
+      "ts": "2026-08-16T21:52:22.783753Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:363f9b1a131d6c0fd76a3b8019e447d47342abb63006723da73b9640764a6cad",
+        "prev_hash": "sha256:aa78f836d95f4a9815fa225c5de821500e7cbdefc6f038be807d53218b1b6f43"
+      },
+      "after": "policy_evaluation",
+      "on": "credit_route",
+      "value": "human_review",
+      "origin": {
+        "kind": "transition",
+        "seq": 18,
+        "index": 0
+      },
+      "outcome": "matched",
+      "selected": "human_review",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "map",
+            "key": "auto_approve"
+          },
+          "target": "auto_approve",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "human_review"
+          },
+          "target": "human_review",
+          "taken": true
+        },
+        {
+          "condition": {
+            "kind": "map",
+            "key": "auto_decline"
+          },
+          "target": "auto_decline",
+          "taken": false
+        },
+        {
+          "condition": {
+            "kind": "default"
+          },
+          "target": "human_review",
+          "taken": false
+        }
+      ]
+    },
+    {
+      "seq": 20,
+      "ts": "2026-08-16T21:52:22.784129Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:797d57d5a66dce52cf0e72d07ba5effa0d811d49444306001f0520e2735ea134",
+        "prev_hash": "sha256:363f9b1a131d6c0fd76a3b8019e447d47342abb63006723da73b9640764a6cad"
+      },
+      "node": "human_review",
+      "attempt": 1
+    },
+    {
+      "seq": 21,
+      "ts": "2026-08-16T21:52:22.784269Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:adf28d94e57cfa57f93a688d5cee2050ebe133ac98f75cf690fe1c7c9c5dffe9",
+        "prev_hash": "sha256:797d57d5a66dce52cf0e72d07ba5effa0d811d49444306001f0520e2735ea134"
+      },
+      "node": "human_review",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "handoff",
+            "value": "authorised credit officer, queue CR-2",
+            "source": "human_review",
+            "ts": "2026-06-09T11:26:00Z"
+          },
+          {
+            "key": "handed_over",
+            "value": "the verified income, the declared-versus-verified mismatch, the obligations and the debt-to-income figure",
+            "source": "human_review",
+            "ts": "2026-06-09T11:26:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 22,
+      "ts": "2026-08-16T21:52:22.784405Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:819a7420fc7d3341a0e0e606592a4b8c2c396a61465ed9d5e6bc836450ae6ffa",
+        "prev_hash": "sha256:adf28d94e57cfa57f93a688d5cee2050ebe133ac98f75cf690fe1c7c9c5dffe9"
+      },
+      "after": "human_review",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "recommendation",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "recommendation",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 23,
+      "ts": "2026-08-16T21:52:22.784517Z",
+      "kind": "attempt_started",
+      "integrity": {
+        "payload_hash": "sha256:6945a7669e1eb5679097ed1233d912dfa039b0647ad3e16814c025154c556277",
+        "prev_hash": "sha256:819a7420fc7d3341a0e0e606592a4b8c2c396a61465ed9d5e6bc836450ae6ffa"
+      },
+      "node": "recommendation",
+      "attempt": 1
+    },
+    {
+      "seq": 24,
+      "ts": "2026-08-16T21:52:22.784634Z",
+      "kind": "transition",
+      "integrity": {
+        "payload_hash": "sha256:ed23f33702042dd5d52e1439d171ba81ebe273ef50898cb3503b78588c72596d",
+        "prev_hash": "sha256:6945a7669e1eb5679097ed1233d912dfa039b0647ad3e16814c025154c556277"
+      },
+      "node": "recommendation",
+      "attempt": 1,
+      "outcome": "returned",
+      "disposition": "commit",
+      "effect_class": "pure",
+      "reads": [],
+      "writes": {
+        "facts": [
+          {
+            "key": "recommendation",
+            "value": "refer to an authorised credit officer; no automatic approval and no automatic decline",
+            "source": "recommendation",
+            "ts": "2026-06-09T11:27:00Z"
+          },
+          {
+            "key": "automated_decision_issued",
+            "value": "no",
+            "source": "recommendation",
+            "ts": "2026-06-09T11:27:00Z"
+          }
+        ],
+        "decisions": [],
+        "rejections": []
+      },
+      "effects": [],
+      "context_draws": [],
+      "violations": [],
+      "error": null
+    },
+    {
+      "seq": 25,
+      "ts": "2026-08-16T21:52:22.784786Z",
+      "kind": "routing",
+      "integrity": {
+        "payload_hash": "sha256:00df3ca4df200108fe372be4f5085663b15eb1d12aac719c05a06065d3506f9f",
+        "prev_hash": "sha256:ed23f33702042dd5d52e1439d171ba81ebe273ef50898cb3503b78588c72596d"
+      },
+      "after": "recommendation",
+      "on": null,
+      "value": null,
+      "origin": null,
+      "outcome": "static",
+      "selected": "END",
+      "candidates": [
+        {
+          "condition": {
+            "kind": "static"
+          },
+          "target": "END",
+          "taken": true
+        }
+      ]
+    },
+    {
+      "seq": 26,
+      "ts": "2026-08-16T21:52:22.784876Z",
+      "kind": "run_completed",
+      "integrity": {
+        "payload_hash": "sha256:55dfeb071c2e203b424976ed7ee45d152bbcee98bfdfaefb418beb8f7faaaf41",
+        "prev_hash": "sha256:00df3ca4df200108fe372be4f5085663b15eb1d12aac719c05a06065d3506f9f"
+      },
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "node:application_check:opaque_config",
+          "node:auto_approve:opaque_config",
+          "node:auto_decline:opaque_config",
+          "node:creditworthiness_assessment:opaque_config",
+          "node:existing_obligations:opaque_config",
+          "node:human_review:opaque_config",
+          "node:income_verification:opaque_config",
+          "node:loan_application:opaque_config",
+          "node:policy_evaluation:opaque_config",
+          "node:recommendation:opaque_config",
+          "undeclared"
+        ]
+      }
+    }
+  ]
+}

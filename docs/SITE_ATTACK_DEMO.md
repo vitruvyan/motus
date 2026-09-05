@@ -1,11 +1,102 @@
 # Build "Attack this run" — the Motus proof page for vitruvyan.com
 
 Paste this whole file as the opening prompt of a session in the `frontier`
-repository. You are building one page and one link to it.
+repository.
+
+**This brief was rewritten on 2026-08-15, not revised.** The version before it
+was drafted in phase 0, when the strongest available demonstration was a hash in
+a memo and nothing shipped could check it. The strongest available demonstration
+is now a different thing, and a brief edited line by line would have carried the
+shape of the old one. The scenario survives intact; where the evidence comes
+from does not.
 
 ---
 
-## Who this is for, and what they must leave with
+## Before you write a line: four facts, and you must re-verify each
+
+The Motus repository is at `/home/vitruvyan/motus` on this machine and it is the
+authority. This brief is a synthesis. **Where they disagree, the repository is
+right** — and it has been ahead of its own documentation more than once this
+month, which is why every fact below carries the command that checks it.
+
+**1. The root in the payload is anchored, and the live page says it is not.**
+
+```bash
+python -c "import json;print(json.load(open('/home/vitruvyan/frontier/ui/public/motus/attack_this_run.json'))['anchor'])"
+python -c "import json;print(json.load(open('/home/vitruvyan/motus/demo/out/attack_this_run.json'))['anchor'])"
+```
+
+The file the site serves carries `anchor` with every field `null`. The file in
+the Motus repository carries a real TRON Nile transaction — txid
+`6010ded8…`, memo `VITRUVYAN_AUDIT:sha256:cb6829d3…`, block 70013920, published
+2026-08-12T17:15:48Z. So `/motus/attack` renders *"Publication pending"* for a
+root that has been on a public chain for three days.
+
+That is not the failure the absolute rule below guards against. It is the
+opposite one: real evidence withheld, a page weaker than the truth. **Fixing it
+is the first thing you do**, and it is a data fix, not a code fix — the existing
+component already reads the txid from the payload and already renders a pending
+state when it is null, which is correct and must stay.
+
+**2. The Motus repository is PRIVATE and Motus is not on PyPI.**
+
+```bash
+gh repo view vitruvyan/motus --json isPrivate
+curl -s -o /dev/null -w "%{http_code}\n" https://pypi.org/pypi/vitruvyan-motus/json   # 404
+```
+
+This breaks the sentence the page exists to earn. The phase-6 entry in
+`docs/ROADMAP.md` says the demonstration must be *"verified by a tool the
+visitor runs themselves against a chain we do not operate"* — and today a
+visitor can neither clone the repository nor install the package. **Read "The
+one architectural question" below before designing around this.** Do not paste
+`pip install vitruvyan-motus` onto the page; it fails, and the site's own README
+said it for two releases before an audit caught it.
+
+**3. The current release is v0.12.0**, tagged today at `d0c024e`. It carries
+ADR-026 — *a Motus string must represent a valid sequence of Unicode scalar
+values* — and closed #98 as **intended behaviour**: `"approved"` and
+`"approved"` are the same JSON string and share a root, correctly. If the
+page says anything about what a trace commits to, that is the sentence:
+
+> Same JSON value and structure → same commitment.
+> Different value or structure → different commitment.
+
+**4. Terraveler's forgery is real and it is better than any fixture we could
+build.** From their field report of 2026-08-13: a value in a real anchored trace
+was tampered with, and the whole downstream hash chain **correctly reprocessed**
+by hand-replicating Motus's own sealing recipe. `motus-validate jsonl` returns
+**exit 0** on the forged document. It fails `verify()` for one reason only: the
+on-chain memo was written before the edit and names a different root.
+
+Real production evidence, a real Nile transaction, performed by somebody who is
+not us. **Build beat 3 on their run, not on a fixture.**
+
+---
+
+## The absolute rule
+
+> **Never write a transaction hash that is not in the payload.**
+
+Not a placeholder. Not a plausible-looking hex string. Not a truncated example
+in a mockup that somebody later forgets is a mockup. If `anchor.txid` is null,
+the page renders a pending state and says so plainly.
+
+A demonstration of auditability that fabricates one piece of evidence has
+demonstrated the opposite, and **the fabrication does not need to be
+load-bearing to do that**. The reader's whole conclusion is *these people do not
+make things up.* One invented hex string, found later, costs more than the page
+ever earned.
+
+The same rule governs every number on the page. If you write a test count, a
+latency, a percentage, it comes from a command you ran and can run again in
+front of somebody. This project has published a figure taken from one
+hand-picked document and had an adversarial round refute it in public; the
+refutation is in ADR-026 under its own heading. Do not add to that list.
+
+---
+
+## Who this is for
 
 Not a peer reviewer. **A CTO evaluating us, or an investor doing diligence.**
 Ninety seconds, often on a phone or projected in a room. They do not know what
@@ -17,219 +108,126 @@ They must leave able to repeat one sentence to a colleague:
 > can rewrite — and the proof is published on a public blockchain that I can go
 > and read myself.*
 
-Every section serves that sentence. If a section does not, cut it. This page is
-a **demonstration**, not a paper: the reader's belief comes from watching
-something happen and then verifying it on a site we do not control, not from
-being told.
+Every section serves that sentence. If a section does not, cut it.
+
+---
 
 ## The three beats, in this order
 
-**1. A real decision, in a screen they recognise.**
-A security review desk approves the release of an advisory. Header, question and
-answer, the seals, the cited sources with their TLP markings. It has to look
-like an ordinary, credible internal system — an admin screen they have seen a
-hundred times. Nobody cares that a fake thing was tampered with.
+**1. A real decision, in a screen they recognise.** A security review desk
+approves the release of an advisory. Header, question and answer, the seals, the
+cited sources with their TLP markings. It has to look like an ordinary,
+credible internal system — an admin screen they have seen a hundred times. The
+reader must not yet know they are looking at a proof.
 
-**2. They attack it. The page does not attack it for them.**
-Eight tamperings, each a control the reader triggers. Two verdict columns side
-by side: **an ordinary event log** (the kind almost every company already has)
-and **the Motus trace**. As they fire each attack, the two columns disagree, and
-a running score climbs: the log ends at 3 of 8, the trace at 8 of 8.
+**2. The attack, performed in front of them.** Change the decision. Watch the
+chain break. This is the beat that is *easy* and it is not the sales argument —
+any hash chain does this, and a reader who has seen one will not be moved.
 
-The act is the argument. A finished table presented on arrival is worth a
-fraction of a table the reader fills in by clicking.
+**3. The resealed forgery, and this is the whole page.** An editor who does not
+merely edit the file but **recomputes every hash correctly**, replicating
+Motus's own sealing recipe by hand. Their trace is internally perfect. It passes
+`motus-validate` with exit 0. Every local check agrees with it.
 
-**3. The proof is on a public chain, and they go and read it.**
-The trace's root — one 71-character string — was published in a TRON
-transaction. The page shows the root, shows the transaction's memo field, and
-links out to the block explorer. The reader compares the two strings with their
-own eyes on a site we do not run.
+It disagrees with exactly one thing: **the root written on a public chain before
+the edit existed.**
 
-**Beat 3 is the close and it is the reason the page converts. Do not bury it
-below the fold of a long technical section, and do not render it as a badge.**
-It gets its own full section, with room.
+That is the argument. Not "we detect tampering" — everybody claims that. The
+claim is: *an attacker who does the work correctly still cannot move a
+commitment that was published before they started.* Beat 3 is where a diligent
+reader stops being polite and starts being interested, and it must be the
+longest, slowest, most concrete section on the page.
 
-## The data is given to you. Do not invent any of it — and above all not the txid.
+---
 
-Every verdict on this page was produced by `contract/validate.py` running in a
-separate process against a real Motus run. **You cannot regenerate it**: Motus
-is a Python runtime, the site is Next.js, a browser cannot execute it. The
-payload is a build-time artifact:
+## The one architectural question, which you must answer before building
 
-```
-motus/demo/out/attack_this_run.json   ->  ui/public/motus/attack_this_run.json
-```
+The page's promise is that the visitor checks it themselves. Today they can
+check **half** of it with no help from us:
 
-Import it as a JSON module or read it at build time — your call, but it must be
-a build-time asset. **No `fetch` to a runtime API: there is no API.**
+- **the anchor half is already independent.** The Nile transaction is public.
+  The visitor opens the explorer — a site we do not operate — and reads the memo
+  with their own eyes. Link it prominently; this half needs nothing from us and
+  is the strongest thing on the page.
+- **the recompute half is not.** Deriving the root from the trace needs our
+  validator, which lives in a private repository and is not on any index.
 
-```jsonc
-{
-  "generated_by": "demo/attack_this_run.py (vitruvyan/motus)",
-  "schema_version": "3.0.0",
-  "run":   { "run_id": "sub-4471", "policy": "strict", ... },
-  "root":  "sha256:0a2810b9…",            // 71 chars: 7 for "sha256:" + 64 hex
-  "record_count": 14,
-  "citations": [ { "doc": "...", "page": 4, "tlp": "TLP:AMBER" }, ... ],
-  "baseline": { "log": "accepted: …", "trace": "accepted" },
+You have three ways to close it. Pick one, and bring the reasoning back before
+you build:
 
-  "anchor": {                              // BEAT 3. See the rule below.
-    "network": "nile",                     // "nile" (public TRON test network)
-    "txid": "4891b6f4…",                   // null until we have published it
-    "memo": "VITRUVYAN_AUDIT:sha256:0a2810b9…",
-    "explorer_url": "https://nile.tronscan.org/#/transaction/4891b6f4…",
-    "published_at": "2026-08-12T…Z",
-    "block": 12345678
-  },
+**(a) Recompute in the visitor's browser.** Reimplement the canonical form and
+the SHA-256 root in TypeScript, client-side, over the trace the visitor
+downloaded. The visitor's own machine derives the root and compares it to the
+memo on the chain. Nothing of ours is trusted in that path.
 
-  "tampers": [
-    { "title": "Flip the verdict",
-      "detail": "APPROVED becomes REJECTED",
-      "log":   { "caught": true, "message": "evt-0009: payload_hash does not match the payload" },
-      "trace": { "caught": true,
-                 "caught_by": "validator",   // "validator" | "anchor" | "nobody"
-                 "message": "T11 $.records[2]…",  // the validator's actual first line
-                 "raw_field_unmoved": true,
-                 "derived_root": null } }
-  ],
-  "totals": { "log": 3, "trace": 8, "of": 8 }
-}
-```
+This is the strongest option and it is **also the riskiest, in the way this
+project likes**: it is a genuine second implementation of the digest recipe, and
+ADR-026's own "costs accepted" section names the absence of one as the reason
+decision 1 is a claim rather than a checked property. So it does more than serve
+the page.
 
-**The txid rule, and it is absolute.** If `anchor.txid` is `null`, render the
-anchor section in an explicit *"publication pending"* state, or leave the
-section out and tell me. **Never write a transaction hash that is not in the
-payload** — not a placeholder, not a plausible-looking hex string, not one
-copied from another page of this site. The entire value of beat 3 is that the
-reader can open the link and find it. A hash that 404s on Tronscan is worse
-than no blockchain section at all: it is the one thing that ends an evaluation.
+**It must be proven to agree with the Python before anything ships.** Run it
+over every trace in `/home/vitruvyan/motus/contract/fixtures/` and over the demo
+artefact, and compare against `contract/validate.py`'s `derived_root`. **If it
+disagrees, that is a finding and not a bug in your page** — stop, write it down
+with the document that produced the disagreement, and bring it to Davide. A
+disagreement found here is worth more than the page.
 
-If a number on screen disagrees with `totals`, the page is wrong. **Do not
-hardcode 3/8 anywhere** — compute from the payload, because the payload is
-regenerated.
+The recipe is in `contract/README.md` under "Fingerprints (canonical form)" and
+in `node-protocol.md` §6.3. Canonical JSON is UTF-8, keys sorted at every depth,
+no insignificant whitespace. Read those, not the Python — a reimplementation
+derived from our implementation checks nothing.
 
-**Render `trace.message` verbatim, in a monospace face.** It is the validator's
-own output. Rewriting it into friendlier prose destroys the only thing that
-makes the page an argument instead of a claim: the reader is meant to see that
-the verdict was not written by us.
+**(b) Publish the validator alone.** `contract/validate.py` is one file. It
+needs `jsonschema`. Offer it as a download with a one-line command. Weaker than
+(a) — the visitor runs our code — but honest, and it works today.
 
-## The section on the chain — how to build beat 3
+**(c) Wait for #49.** Publishing to PyPI closes this properly and PR #72 already
+carries the machinery, held open deliberately. Not your decision and not a
+blocker you can resolve; name it if you think the page should wait.
 
-Give it these four things, and nothing else competing for attention:
+---
 
-1. **The root, quoted in full**, big enough to read across a room, monospace,
-   character-selectable. One line beside it: *this is the only value we publish
-   — the decision itself never leaves your infrastructure.* That line answers
-   the first objection a CTO has ("you are putting my data on a blockchain?")
-   before they raise it, which is worth more than any feature bullet.
-2. **The transaction's memo field**, quoted the same way, directly beneath, so
-   the two strings sit one above the other and the eye does the comparison.
-3. **The link out.** `anchor.explorer_url`, opening in a new tab, labelled as
-   what it is: *read the transaction on Tronscan*. Not a badge. Not an icon. A
-   real, obviously clickable thing that a sceptic will click.
-4. **One sentence of honesty, stated plainly rather than hidden:** published on
-   the TRON **Nile public network**; mainnet is a change of endpoint, not of
-   design. State it once, in normal type. A reader who discovers it themselves
-   distrusts everything else on the page; a reader who is told finds it
-   unremarkable.
+## What the page may not claim, and why the refusals are the product
 
-Say why the anchor is what makes the difference, in one sentence a
-non-cryptographer follows: *we can rewrite the file on our own servers; we
-cannot rewrite a transaction that is already in a public blockchain's history.*
+The shipped verifier answers on all seven levels **including the ones it did not
+reach**, and it refuses rather than downgrading. Your page inherits that
+discipline exactly:
 
-## The word "immutable" — you may now use it, once, and only about the anchor
+- **an anchor is a claim until somebody looks.** The validator contacts no
+  network, so existence is *declared, not checked* — with the explorer URL
+  beside it. An earlier version read the state out of the receipt and believed
+  it, which let a holder mint the property by typing it. Do not write
+  "verified on-chain" anywhere. Write what is true: *this root was published in
+  this transaction; here is where to look.*
+- **a witness acknowledgement does not establish execution continuity**, because
+  we do not hold the key to check its signature. Present, bound, not checked.
+- **a refusal outranks a violation.** Saying "this document is wrong" about a
+  document that may be perfectly correct on a chain we cannot read is the wrong
+  answer, and `contract/README.md` says so in those words.
 
-The previous version of this brief forbade it outright, because we had nothing
-published. With a real transaction that changes, but the scope does not: the
-**anchored root** is immutable. The trace file on our disk is not — it is
-*verifiable*, which is a different property and the one the eight attacks
-demonstrate.
+If the page ever has to choose between sounding strong and being checkable,
+it is checkable. That choice **is** the product.
 
-So: "the root is anchored on a public chain and cannot be altered after the
-fact" — yes. "Motus produces immutable logs" — no, and any technical reader
-will take that sentence apart in the meeting.
+---
 
-## What must not appear on this page
+## Practical
 
-Three claims. Each one is the kind that a hostile technical reader tests first,
-and each is false:
+- The route exists: `ui/app/motus/attack/page.tsx` (385 lines) and
+  `ui/app/motus/page.tsx` (904 lines). The artefact is served from
+  `ui/public/motus/attack_this_run.json`. Rewrite the attack page against this
+  brief; the txid-from-payload handling in it is already correct and stays.
+- Nile is a **testnet**. Never touch mainnet, and never handle a key: the
+  anchoring already happened and its receipt is committed. You need no
+  credentials for any of this work, and if a step seems to need one, stop.
+- Do not contact `167.86.119.200` for any reason, including reads.
+- Mobile first. Beat 3 must be legible on a phone held by somebody standing up.
+- Every command you put on the page, run first. Every number, measure first.
 
-- **that the event log is a strawman.** It is not, and saying so is the strongest
-  move available to us. It carries a `payload_hash` on every row — the strongest
-  thing such a table usually has — and the page credits it with three catches out
-  of eight. *"We compared ourselves to the best version of what you already
-  have"* is a far better line than a rigged fight;
-- **that the trace catches everything by itself.** One of the eight is caught by
-  the anchor, not by the validator. That row is not an embarrassment, it is the
-  sales argument for beat 3 — the attacker who knows our format, reseals every
-  hash perfectly, and is still caught by the one value they could not reach.
-  Give that row its moment;
-- **that the run's numeric values are committed exactly.** The root commits to
-  numbers as parsed, at binary64 precision. Don't put a numeric quantity on
-  screen and claim that exact figure is sealed.
+## What to bring back before you build
 
-## For the technical reader, below the fold
-
-Two of the eight rows are subtler than the others, and a CTO's engineer will
-ask. Put them in an expandable block **after** the main table — reachable,
-never in the way of the ninety seconds:
-
-- **the resealed verdict.** An editor who has read our published format
-  recomputes every hash after editing. The trace is then internally perfect and
-  passes both checks. Only the root published where they cannot reach it
-  disagrees;
-- **the stale first link.** The validator catches it, but the *raw* terminal
-  field still carries the published root — so anyone comparing that field to the
-  anchor sees agreement. Only the accessor, which recomputes from the document,
-  answers "no". This is why the API has an accessor at all.
-
-## Where it goes
-
-- **`app/motus/attack/page.tsx`** — the page, full width.
-- A block in **`app/motus/page.tsx`** as its own `SectionReveal`, after the
-  section that introduces the trace, not in the hero: two sentences and a link.
-  Lead with the chain, not with the tampering — *"the proof of a decision,
-  published where we cannot reach it"* is what makes someone click.
-- Consider a link from **`app/orbis/page.tsx`** too, where auditability is
-  claimed: this page is that claim's evidence. One line, your judgement.
-
-## The design system is not optional
-
-Read `ui/app/motus/page.tsx` before writing anything. It is the reference for
-register and structure.
-
-- **The site is in English.** All copy on this page is English, matching the
-  register of the existing Motus page. The payload's labels are already English;
-  the validator's messages are its own output and stay verbatim.
-- **Colour from tokens, never hex**: `var(--paper)`, `var(--raised)`,
-  `var(--surface)`, `var(--ink)`, `var(--ink-secondary)`, `var(--ink-faint)`,
-  `var(--rule)`.
-- **Motus is identified by verderame** — `var(--verderame)` — and the page root
-  carries `dark`, exactly as the Motus page does, so the subtree resolves to the
-  night register while the rest of the site keeps the reader's choice.
-- **The three pigments name products, not states.** Do not press
-  `var(--sanguigna)` into service as a generic error red across the table.
-  "Caught" is verderame; "invisible" is distinguished by weight and by the ink
-  scale, not by a second pigment.
-- **Reuse, do not rebuild:** `SectionReveal` (`num`, `dark`), `Card`/`CardGrid`
-  from `components/specimen/card`, `Typewriter`, `AccentWord`, and
-  `MotusTraceCanvas`, which is already on the Motus page — look at it before
-  drawing anything of your own. There is a `BlockchainLedgerBadge` in
-  `components/blockchain/`; read it for the explorer-URL convention, but do not
-  reduce beat 3 to that badge.
-
-## Done means
-
-- `pnpm build` passes with no new lint errors;
-- **every number on screen derives from the payload** — nothing hardcoded;
-- **the txid on screen is the txid in the payload**, and the explorer link opens
-  a transaction that exists;
-- the full table and the score are reachable **without any interaction** — a
-  phone reader, a crawler, or a screen reader still gets the whole argument;
-- it reads correctly in both registers and at 375px wide;
-- no `fetch` to a runtime API;
-- `motus/demo/attack_this_run.py --json` regenerates the payload and the page
-  keeps working when it does.
-
-If you finish and the page still needs a paragraph of explanation before a
-stranger understands what they are looking at, it is not finished.
+1. which of (a), (b), (c) you chose, and why;
+2. if (a): the fixture-by-fixture comparison against `derived_root`, and any
+   disagreement, before you write UI;
+3. anything in this brief the repository contradicts — that has happened, it
+   will happen again, and reporting it is worth more than working around it.

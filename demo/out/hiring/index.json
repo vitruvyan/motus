@@ -1,0 +1,44 @@
+{
+  "name": "hiring_review",
+  "prompt": "Should this candidate be automatically rejected for the job?",
+  "answer": "No. This application cannot be rejected automatically. It goes to a person, with the shortfall named.",
+  "root": "sha256:e7c7b87bc1c7d1b8909ecf694aacb5c18704015fcf71f0dbf70d56e9bf3d3dc6",
+  "bundle_fingerprint": "bundle:sha256:85859076ce8ebcc8341aad301b136653b1bd44c0aa96d8dd6232745933ea2516",
+  "graph_fingerprint": "graph:sha256:c0a38df6ef6bb4fc640608afa095fcea4e44591e106544d1390e119a4ef92b2d",
+  "records": 23,
+  "protected_attributes": [
+    "applicant_name",
+    "date_of_birth",
+    "nationality",
+    "photo_reference"
+  ],
+  "artefact": "demo/out/hiring/trace.json",
+  "anchor": {
+    "network": "opentimestamps:bitcoin",
+    "state": "anchored",
+    "checkpoint": "sha256:62c6e8cced2d5d261e20c6c712683c478faafe6266a8ac8988f249e2dc2781d1",
+    "committed_bytes": "the root string, utf-8",
+    "calendars_accepted": [
+      "https://alice.btc.calendar.opentimestamps.org",
+      "https://bob.btc.calendar.opentimestamps.org",
+      "https://finney.calendar.eternitywall.com"
+    ],
+    "calendars_refused": {},
+    "submitted_at": "2026-08-16T21:26:34Z",
+    "proof_file": "hiring/root.txt.ots",
+    "verify_with": "ots verify root.txt.ots",
+    "reference": "bitcoin-block:962783",
+    "published_at": "2026-08-16T21:32:23Z",
+    "bitcoin_block_heights": [
+      962783,
+      962786,
+      962798
+    ],
+    "calendars_unreachable": [],
+    "block_time_source": "https://blockstream.info/api"
+  },
+  "run_id": "demo-hiring-review-0421",
+  "bundle_file": "hiring-review-2026-00421.motus.zip",
+  "bundle_sha256": "sha256:c7975f557bb98a73d42eb3c57e6ad18c322a7c2ff00a576ff4cccde6cc3922c1",
+  "bundle_bytes": 70853
+}
