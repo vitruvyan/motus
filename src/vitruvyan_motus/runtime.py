@@ -1205,7 +1205,9 @@ class Runtime:
 
     def _declaration_violations(
         self, declaration: NodeDecl, reads: list[dict[str, Any]], writes: dict[str, list[dict[str, Any]]]
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, str]] | None:
+        if declaration.reads_declared is None and declaration.writes_declared is None:
+            return None
         out: list[dict[str, str]] = []
         if declaration.reads_declared is not None:
             allowed = set(declaration.reads_declared)

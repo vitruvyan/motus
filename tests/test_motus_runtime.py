@@ -199,6 +199,18 @@ def test_foreign_returned_state_is_a_recorded_protocol_failure():
     ) == []
 
 
+def test_fully_undeclared_node_records_null_violations_and_keeps_root():
+    def untouched(state):
+        return state
+
+    spec = _spec([{"name": "untouched"}], {"untouched": {"kind": "terminal"}})
+    result = Runtime(spec, {"untouched": untouched}).run(run_id="undeclared")
+    transition = next(r for r in result.trace.records if r["kind"] == "transition")
+    assert transition["violations"] is None
+    assert result.trace.root is not None
+    assert validate.validate_trace(result.trace.to_dict(), spec=spec.to_dict()) == []
+
+
 def test_declaration_violations_are_recomputed_from_every_captured_surface():
     def probes(state):
         state.fact("missing")

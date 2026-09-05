@@ -1,0 +1,123 @@
+{
+  "artifact": "trace",
+  "expect": "invalid",
+  "layer": "semantic",
+  "spec": null,
+  "instance": {
+    "schema_version": "1.0.0",
+    "run": {
+      "run_id": "undeclared",
+      "graph": {
+        "name": "violations-null",
+        "version": "1.0.0",
+        "graph_fingerprint": "graph:sha256:1ad736e6c747c036e685ee8db09499b7016e07c1f36e4d4b7d3ec96bef392552",
+        "code_fingerprint": "code:sha256:03c33adeade57a0881e9409a9dfcf2c38bebac0332a5db088e9dfb7255eba424",
+        "spec_schema_version": "1.0.0"
+      },
+      "policy": "strict",
+      "durability_profile": "in-memory",
+      "replay": {
+        "capability": "none",
+        "constraints": [
+          "undeclared"
+        ]
+      },
+      "metadata": {},
+      "created_ts": "2026-09-05T23:01:45.399191Z"
+    },
+    "records": [
+      {
+        "seq": 1,
+        "ts": "2026-09-05T23:01:45.399375Z",
+        "kind": "run_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "intent": "",
+        "initial_state": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        }
+      },
+      {
+        "seq": 2,
+        "ts": "2026-09-05T23:01:45.399480Z",
+        "kind": "attempt_started",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "worker",
+        "attempt": 1
+      },
+      {
+        "seq": 3,
+        "ts": "2026-09-05T23:01:45.399619Z",
+        "kind": "transition",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "node": "worker",
+        "attempt": 1,
+        "outcome": "returned",
+        "disposition": "commit",
+        "effect_class": "external_effect",
+        "reads": [],
+        "writes": {
+          "facts": [],
+          "decisions": [],
+          "rejections": []
+        },
+        "effects": [],
+        "context_draws": [],
+        "violations": null,
+        "error": null
+      },
+      {
+        "seq": 4,
+        "ts": "2026-09-05T23:01:45.399670Z",
+        "kind": "routing",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "after": "worker",
+        "on": null,
+        "value": null,
+        "origin": null,
+        "outcome": "static",
+        "selected": "END",
+        "candidates": [
+          {
+            "condition": {
+              "kind": "static"
+            },
+            "target": "END",
+            "taken": true
+          }
+        ]
+      },
+      {
+        "seq": 5,
+        "ts": "2026-09-05T23:01:45.399713Z",
+        "kind": "run_completed",
+        "integrity": {
+          "payload_hash": null,
+          "prev_hash": null
+        },
+        "replay": {
+          "capability": "none",
+          "constraints": [
+            "node:worker:source_unavailable",
+            "undeclared"
+          ]
+        }
+      }
+    ]
+  },
+  "rule": "T13",
+  "reason_contains": "does not admit violations: null"
+}

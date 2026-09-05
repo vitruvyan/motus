@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State
+from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State, TRACE_SCHEMA_VERSION
 from vitruvyan_motus.trace import NonCanonicalNumber, Trace
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -441,8 +441,8 @@ def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
 
     key = json.dumps("schema_version")
     before, after = genuine.split(key, 1)
-    relabelled = before + key + after.replace("3.0.0", "2.0.0", 1)
-    assert relabelled != genuine, "the fixture no longer declares 3.0.0 as written"
+    relabelled = before + key + after.replace(TRACE_SCHEMA_VERSION, "2.0.0", 1)
+    assert relabelled != genuine, "the fixture no longer declares the current schema version as written"
 
     document = json.loads(relabelled)
     assert validate._lexically_governed(document) is False, (

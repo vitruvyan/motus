@@ -166,7 +166,7 @@ def _root_span(document: dict, by: str, reproduce: str) -> Computed:
     else:
         version = document.get("schema_version")
         text = ("derives no root"
-                if version == "3.0.0"
+                if version in ("3.0.0", "3.1.0")
                 else f"derives no root: schema_version {version!r} is below "
                      "3.0.0, where a terminal digest covers one record rather "
                      "than the run — there is none to have")

@@ -399,7 +399,10 @@ def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
 _UNDECLARED = "__undeclared__"
 
 
-_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", _UNDECLARED})
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0", _UNDECLARED})
+
+#: Trace schema versions at which Transition.violations may be null (ADR-029).
+_VIOLATIONS_NULL_ADMITTED = frozenset({"3.1.0"})
 
 
 def _looks_like_a_trace(document: Any) -> bool:
@@ -459,7 +462,7 @@ def _scalar_governed(document: Any) -> bool:
 #: collision to attack, so J2 has nothing to protect and refusing an older
 #: document would break `contract/README.md`'s promise that old evidence stays
 #: valid without rewriting.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0", _UNDECLARED})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0", _UNDECLARED})
 
 
 def _lexically_governed(document: Any) -> bool:
@@ -1797,7 +1800,7 @@ def _trace_semantics(
     # is recompute the rest of the chain without also holding whatever anchored
     # its root.
     version = doc.get("schema_version")
-    if version in ("2.0.0", "3.0.0"):
+    if version in ("2.0.0", "3.0.0", "3.1.0"):
         # The chain starts at the HEADER, so the first record's prev_hash is the
         # header's digest and never null. Without this the header sat outside
         # the root: run_id, policy, metadata and graph.code_fingerprint could all
@@ -1895,7 +1898,7 @@ def _trace_semantics(
             digest = receipt.get("interaction_fingerprint")
             salt = receipt.get("fingerprint_salt")
             path = f"$.records[{i}].effects[{j}].receipt"
-            if version not in ("2.0.0", "3.0.0") and (
+            if version not in ("2.0.0", "3.0.0", "3.1.0") and (
                 digest is not None or salt is not None
             ):
                 v.append(
@@ -1925,6 +1928,16 @@ def _trace_semantics(
                         "fingerprint_salt is present with no fingerprint to salt",
                     )
                 )
+
+    # T13 — null violations are admitted only from trace schema 3.1.0.
+    if version not in _VIOLATIONS_NULL_ADMITTED:
+        for i, record in enumerate(records):
+            if record.get("kind") == "transition" and record.get("violations") is None:
+                v.append(Violation(
+                    "T13", f"$.records[{i}].violations",
+                    f"schema {version} does not admit violations: null "
+                    "(ADR-029 admits it from 3.1.0)",
+                ))
 
     if not records:
         # Only reachable through the JSONL path (the JSON document form pins
@@ -2279,9 +2292,31 @@ def _trace_semantics(
                             expected_violations[
                                 ("undeclared_write", entry.get("key"))
                             ] += 1
+            recorded_raw = record.get("violations")
+            declares_something = (
+                reads_declared is not None or writes_declared is not None
+            )
+            if version in _VIOLATIONS_NULL_ADMITTED:
+                if declares_something and recorded_raw is None:
+                    v.append(Violation(
+                        "SB4", f"$.records[{i}].violations",
+                        f"transition of '{record.get('node')}' records "
+                        "violations: null but the spec declares reads_declared "
+                        "and/or writes_declared; null means nothing was declared",
+                    ))
+                    continue
+                if not declares_something and recorded_raw is not None:
+                    v.append(Violation(
+                        "SB4", f"$.records[{i}].violations",
+                        f"transition of '{record.get('node')}' records a "
+                        "violations array but the spec declares neither "
+                        "reads_declared nor writes_declared; an undeclared node "
+                        "must record null",
+                    ))
+                    continue
             recorded_violations = Counter(
                 (item.get("kind"), item.get("key"))
-                for item in record.get("violations") or []
+                for item in recorded_raw or []
                 if isinstance(item, dict)
             )
             # In schema 1.1 strict declaration enforcement happens before a
@@ -3532,7 +3567,7 @@ def derived_root(doc: dict) -> str | None:
     implementation would agree with any drift.
     """
     version = doc.get("schema_version")
-    if version != "3.0.0":
+    if version not in ("3.0.0", "3.1.0"):
         # Below 3.0.0 the digests do not cover prev_hash, so the terminal's
         # hash covers one record rather than the run. There is no root to have.
         return None

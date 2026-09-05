@@ -105,7 +105,11 @@ guarantees.md §4 how legacy access maps onto this surface.
 
 3.2. `reads_declared` / `writes_declared` in the GraphSpec are OPTIONAL. When
 present, the runtime compares captured reality against the declaration and
-records any mismatch in the transition record's `violations` field.
+records any mismatch in the transition record's `violations` field. From trace
+schema 3.1.0, a node whose spec entry declares neither `reads_declared` nor
+`writes_declared` records `violations: null` — distinguishing checked and
+clean (`[]`) from never checked (`null`); a declaration of one half still
+produces the list for that half (ADR-029).
 **"Captured reality" means every read, of every origin kind** — there is no
 exempt corner of the readable surface: a key that was looked up and missed
 (`absent`) is declared by that key, a scanned collection is declared by the
