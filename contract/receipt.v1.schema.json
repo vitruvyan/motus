@@ -22,9 +22,26 @@
       "type": "array",
       "description": "Zero or more. Each names the checkpoint it published, so a verifier can tell which segment it covers rather than assuming it covers the run.",
       "items": { "$ref": "#/$defs/Anchor" }
-    }
+    },
+    "execution": { "$ref": "#/$defs/Execution" }
   },
   "$defs": {
+    "Execution": {
+      "type": "object",
+      "description": "ADR-027 decision 4: the execution locator and canonical fingerprint. `ref` locates the original BEGIN; `fingerprint` is the Trace.root (null while the execution has no terminal record), never a receipt or partial-trace digest. `run_id` is carried for the embedder's correlation and is NOT a key. Optional until schema_version 1.0.0; required from 1.0.0.",
+      "required": ["ref", "fingerprint", "run_id"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "fingerprint": {
+          "oneOf": [
+            { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+            { "type": "null" }
+          ]
+        },
+        "run_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" }
+      }
+    },
     "Entry": {
       "type": "object",
       "description": "One commitment, the path proving it is in a sealed window, and the checkpoint that sealed it. The three travel together because a proof without its checkpoint proves nothing and a checkpoint without a path proves somebody else's window.",

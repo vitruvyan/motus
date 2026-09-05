@@ -858,7 +858,10 @@ The normative surfaces live in [`contract/`](contract/):
   (rules `K1`, `K2`) — the commitment log's BEGIN/END and the sealed windows
   over them;
 - `receipt.v1.schema.json` — what a receipt must carry to prove a RUN and not
-  merely a checkpoint (ADR-021 §7);
+  merely a checkpoint (ADR-021 §7). ADR-027 optionally adds `execution`, whose
+  `ref` locates the original BEGIN, whose `fingerprint` is the Trace.root (or
+  null for an unfinished execution), and whose `run_id` is embedder correlation,
+  not a key;
 - `node-protocol.md`;
 - `guarantees.md`.
 

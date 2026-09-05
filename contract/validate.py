@@ -3317,6 +3317,37 @@ def validate_receipt(document: dict) -> list[Violation]:
         return violations
 
     segments = document["segments"]
+    execution = document.get("execution")
+    if execution is not None:
+        ref = execution["ref"]
+        parts = ref.split("/") if isinstance(ref, str) else []
+        malformed = (len(parts) != 3 or any(not part for part in parts)
+                     or not parts[2].isdigit())
+        sequence = None
+        if not malformed:
+            try:
+                sequence = int(parts[2])
+            except ValueError:
+                # Python bounds the number of decimal digits accepted by int;
+                # an execution ref is untrusted contract input and must become
+                # P7, never an exception escaping the validator.
+                malformed = True
+            else:
+                malformed = str(sequence) != parts[2]
+        first_commitment = segments[0]["begin"]["commitment"]
+        if malformed or (parts[0], parts[1], sequence) != (
+                first_commitment["tenant"], first_commitment["writer_id"],
+                first_commitment["sequence"]):
+            violations.append(Violation(
+                "P7", "$.execution.ref",
+                "execution.ref must be a canonical tenant/writer/sequence "
+                "coordinate naming the receipt's original BEGIN"))
+        if "end" not in segments[-1] and execution["fingerprint"] is not None:
+            violations.append(Violation(
+                "P8", "$.execution.fingerprint",
+                "an unfinished receipt has no END and must carry a null "
+                "execution.fingerprint"))
+
     for index, segment in enumerate(segments):
         where = f"$.segments[{index}]"
         violations += _entry_violations(segment["begin"], f"{where}.begin", "begin")
@@ -3364,14 +3395,14 @@ def validate_receipt(document: dict) -> list[Violation]:
                 f"{before['writer_id']}/{before['sequence']}"))
 
     mode = document["mode"]
-    first = segments[0]["begin"]
-    if mode in ("witnessed", "qualified") and "witness" not in first:
-        violations.append(Violation(
-            "P3", "$.mode",
-            f"this receipt claims {mode} and its first BEGIN carries no "
-            "acknowledgement. WITNESSED is the claim that the commitment left "
-            "the operator's control before the outcome was known, and nothing "
-            "here says it did"))
+    if mode in ("witnessed", "qualified"):
+        for index, segment in enumerate(segments):
+            if "witness" not in segment["begin"]:
+                violations.append(Violation(
+                    "P3", f"$.segments[{index}].begin",
+                    f"this receipt claims {mode} but segment {index}'s BEGIN "
+                    "carries no acknowledgement. Every included segment must "
+                    "support the claimed assurance mode"))
     if mode == "qualified":
         violations.append(Violation(
             "P3", "$.mode",
@@ -3653,6 +3684,7 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
     anchors = receipt.get("anchors", [])
 
     # -- INTEGRITY ---------------------------------------------------------
+    derived = derived_root(trace) if trace is not None else None
     if trace is None:
         add("INTEGRITY", NOT_ESTABLISHED,
             "no trace was supplied. The receipt's own arithmetic checks out, "
@@ -3663,7 +3695,7 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
             "the run's last segment has no END, so there is no root in the "
             "receipt to compare this trace against")
     else:
-        computed = derived_root(trace)
+        computed = derived
         claimed = last["end"]["commitment"]["root"]
         trace_run = (trace.get("run") or {}).get("run_id")
         receipt_run = last["end"]["commitment"]["run_id"]
@@ -3690,6 +3722,21 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
                 "the trace's chain recomputes to the root the END committed "
                 "to, and the END is inside a sealed window whose root the "
                 "proof reaches")
+
+    # P8 is separate from the END comparison: execution is a public locator
+    # and must agree with the paired trace even when the receipt's END field is
+    # also edited.  A missing trace supplies no root to compare.
+    if (trace is not None and isinstance(receipt.get("execution"), dict)
+            and "end" in last):
+        claimed_execution = receipt["execution"].get("fingerprint")
+        if claimed_execution != derived:
+            violations.append(Violation(
+                "P8", "$.execution.fingerprint",
+                f"execution.fingerprint is {claimed_execution!r}, but the "
+                f"paired trace derives {derived!r}"))
+            findings = [Finding(f.level,
+                                NOT_ESTABLISHED if f.level == "INTEGRITY" else f.status,
+                                f.reason) for f in findings]
 
     # -- EXISTENCE and RETENTION ------------------------------------------
     covered = {checkpoint_digest(entry["checkpoint"])
@@ -3783,7 +3830,14 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
             "can die, a stream driver can be abandoned mid-iteration, and "
             "ADR-020 declares that class rather than discovering it. It is a "
             "question, not a verdict.")
-    if len(segments) > 1:
+    first_continuation = segments[0]["begin"]["commitment"].get("continues")
+    if len(segments) > 1 or first_continuation is not None:
+        if first_continuation is not None and len(segments) == 1:
+            notes.append(
+                "the first included segment continues a predecessor whose "
+                "BEGIN is not present in this receipt or available from this "
+                "log; that predecessor is omitted and the continuation claim "
+                "is UNVERIFIABLE rather than false")
         notes.append(
             f"this run has {len(segments)} segments. Each one's claim to "
             "continue its predecessor is checkable only against that "

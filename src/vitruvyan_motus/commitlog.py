@@ -52,7 +52,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 try:
     import fcntl
@@ -62,7 +62,7 @@ except ImportError:                                    # pragma: no cover
 from vitruvyan_motus.commitments import (
     Continuation,
     Checkpoint, Commitment, CommitmentKind, CommitmentWindow, Witness,
-    WitnessAck, merkle_path, merkle_root,
+    WitnessAck, AnchorReceipt, merkle_path, merkle_root,
 )
 from vitruvyan_motus.errors import MotusError
 from vitruvyan_motus.trace import _canonical_bytes
@@ -871,6 +871,205 @@ class CommitmentLog:
         return InclusionProof(commitment=commitments[matches[0]],
                               path=merkle_path(leaves, matches[0]),
                               checkpoint=checkpoint)
+
+    def receipt_for(self, execution_ref: str, *,
+                   anchors: Iterable[AnchorReceipt] = ()) -> dict[str, Any]:
+        """Return the receipt for the BEGIN named by ``execution_ref``.
+
+        The reference is a coordinate of any included BEGIN.  For a resumed
+        execution, the result walks backwards through resolved continuation
+        coordinates and then forwards, so its canonical execution reference
+        and run_id identify the first segment included.  Only sealed windows
+        can be proved; an unsealed BEGIN is therefore reported as not found.
+        """
+        # Validate before touching the store: this is an API boundary, not a
+        # filesystem query.  Slashes are separators and sequence is canonical.
+        parts = execution_ref.split("/") if isinstance(execution_ref, str) else []
+        malformed = (len(parts) != 3 or any(not part for part in parts)
+                     or not parts[2].isdigit())
+        if malformed:
+            raise ValueError(f"invalid execution reference {execution_ref!r}")
+        tenant, writer_id, raw_sequence = parts
+        try:
+            sequence = int(raw_sequence)
+        except ValueError:
+            raise ValueError(
+                f"invalid execution reference {execution_ref!r}") from None
+        if str(sequence) != raw_sequence:
+            raise ValueError(f"invalid execution reference {execution_ref!r}")
+        if "/" in self.tenant or "/" in self.writer_id:
+            raise ValueError(
+                f"cannot produce receipt.v1 for {execution_ref!r}: the log's "
+                "tenant or writer_id contains '/', which execution_ref cannot "
+                "encode")
+        if (tenant, writer_id) != (self.tenant, self.writer_id):
+            raise ValueError(f"execution reference {execution_ref!r} was not found")
+
+        # Read every sealed window once, preserving chain order and the window
+        # needed to construct each proof.  The open window is intentionally not
+        # consulted: it has no checkpoint and cannot form a receipt Entry.
+        records: list[tuple[int, Commitment]] = []
+        for index in self._checkpoint_indices():
+            _, commitments = self._sealed_window(index)
+            records.extend((index, commitment) for commitment in commitments)
+        records.sort(key=lambda pair: pair[1].sequence)
+        begins = [(index, c) for index, c in records
+                  if c.kind is CommitmentKind.BEGIN]
+        selected = [(index, c) for index, c in begins if c.sequence == sequence]
+        if not selected:
+            if any(c.sequence == sequence and c.kind is CommitmentKind.END
+                   for _, c in records):
+                raise ValueError(f"execution reference {execution_ref!r} names an END")
+            if any(c.sequence == sequence and c.kind is CommitmentKind.BEGIN
+                   for c in self._window._commitments):
+                raise ValueError(
+                    f"execution reference {execution_ref!r} is not yet sealed")
+            raise ValueError(f"execution reference {execution_ref!r} was not found")
+        begin_index, first = selected[0]
+        first_record_position = next(i for i, pair in enumerate(records)
+                                     if pair == (begin_index, first))
+
+        # A continuation ref is allowed, but the receipt must disclose every
+        # predecessor this log can resolve.  Links without a coordinate are
+        # deliberately left unresolved: that is the cross-log case the
+        # verifier reports rather than guessing about.  Keep positions, not
+        # coordinates, in the guard: malformed/corrupt continuation metadata
+        # must fail rather than make receipt production loop forever.
+        visited_positions = {first_record_position}
+        while first.continues is not None and first.continues.writer_id is not None:
+            coordinate = (first.continues.writer_id, first.continues.sequence)
+            predecessor = next(
+                ((position, index, commitment)
+                 for position, (index, commitment) in enumerate(records)
+                 if commitment.kind is CommitmentKind.BEGIN
+                 and (commitment.writer_id, commitment.sequence) == coordinate),
+                None)
+            if predecessor is None:
+                break
+            position, _predecessor_index, _predecessor_commitment = predecessor
+            if position in visited_positions:
+                raise ValueError(
+                    f"execution reference {execution_ref!r} has a cyclic "
+                    "continuation chain")
+            visited_positions.add(position)
+            first_record_position, begin_index, first = predecessor
+
+        # Backward traversal visited every predecessor; forward traversal starts
+        # a new path from the canonical first segment.
+        visited_positions = {first_record_position}
+
+        def entry(index: int, commitment: Commitment) -> dict[str, Any]:
+            # The log accepts opaque identifiers more broadly than receipt.v1.
+            # Check every included commitment, checkpoint and acknowledgement,
+            # not merely the canonical first BEGIN.
+            proof = self.proof_for(commitment.run_id, commitment.kind, index,
+                                   sequence=commitment.sequence)
+            body = proof.to_dict()
+            commitment_fields = ["tenant", "writer_id", "run_id", "nonce"]
+            if body["commitment"].get("kind") == "end":
+                commitment_fields.append("outcome")
+            identifier_fields = (
+                (body["commitment"], tuple(commitment_fields)),
+                (body["checkpoint"], ("tenant", "writer_id")),
+            )
+            if "continues" in body["commitment"]:
+                identifier_fields += ((body["commitment"]["continues"],
+                                       ("run_id", "writer_id")),)
+            if "witness" in body:
+                identifier_fields += ((body["witness"],
+                                       ("witness_id", "algorithm", "signature")),)
+            for object_body, fields in identifier_fields:
+                for field in fields:
+                    value = object_body.get(field)
+                    if isinstance(value, str) and len(value) > 200:
+                        raise ValueError(
+                            f"cannot produce receipt.v1: {field} exceeds the schema limit "
+                            "of 200 characters (Identifier)")
+            return body
+
+        def paired_end(begin_position: int, begin: Commitment) -> tuple[int, Commitment] | None:
+            """Pair by position, refusing multiple ENDs for one segment."""
+            matches: list[tuple[int, Commitment]] = []
+            for index, candidate in records[begin_position + 1:]:
+                if candidate.run_id != begin.run_id:
+                    continue
+                if candidate.kind is CommitmentKind.BEGIN:
+                    break
+                if candidate.kind is CommitmentKind.END:
+                    matches.append((index, candidate))
+            if len(matches) > 1:
+                raise CommitmentLogFork(
+                    f"multiple END commitments follow BEGIN sequence "
+                    f"{begin.sequence} for run {begin.run_id!r}; refusing "
+                    "to choose one")
+            return matches[0] if matches else None
+
+        segments: list[dict[str, Any]] = []
+        current = first
+        current_record_position = first_record_position
+        while True:
+            segment: dict[str, Any] = {
+                "begin": entry(begin_index, current)}
+            end_pair = paired_end(current_record_position, current)
+            if end_pair is not None:
+                end_index, end = end_pair
+                segment["end"] = entry(end_index, end)
+            segments.append(segment)
+            if end_pair is not None:
+                break
+            coordinate = (current.writer_id, current.sequence)
+            successors = [
+                (position, candidate_index, candidate)
+                for position, (candidate_index, candidate) in enumerate(records)
+                if candidate.kind is CommitmentKind.BEGIN
+                and candidate.continues is not None
+                and candidate.continues.writer_id is not None
+                and (candidate.continues.writer_id, candidate.continues.sequence)
+                    == coordinate
+            ]
+            if len(successors) > 1:
+                raise CommitmentLogFork(
+                    f"multiple continuation BEGINs claim predecessor "
+                    f"{current.writer_id}/{current.sequence}; refusing to "
+                    "choose a branch")
+            if not successors:
+                break
+            successor = successors[0]
+            if successor[0] in visited_positions:
+                raise ValueError(
+                    f"execution reference {execution_ref!r} has a cyclic "
+                    "continuation chain")
+            visited_positions.add(successor[0])
+            current_record_position, begin_index, current = successor
+
+        last_end = segments[-1].get("end")
+        fingerprint = (last_end["commitment"].get("root")
+                       if last_end is not None else None)
+        mode_rank = {"local": 0, "witnessed": 1, "qualified": 2}
+        achieved_modes = [
+            "witnessed" if "witness" in segment["begin"] else "local"
+            for segment in segments]
+        mode = min(achieved_modes, key=lambda value: mode_rank[value])
+        receipt: dict[str, Any] = {
+            "schema_version": "1.0.0",
+            "mode": mode,
+            "segments": segments,
+            "execution": {
+                "ref": f"{first.tenant}/{first.writer_id}/{first.sequence}",
+                "fingerprint": fingerprint, "run_id": first.run_id},
+        }
+        anchor_list = list(anchors)
+        if anchor_list:
+            anchor_dicts = [anchor.to_dict() for anchor in anchor_list]
+            for anchor in anchor_dicts:
+                for field in ("anchor_id", "network", "reference"):
+                    value = anchor.get(field)
+                    if isinstance(value, str) and len(value) > 200:
+                        raise ValueError(
+                            f"cannot produce receipt.v1: anchor {field} exceeds "
+                            "the schema Identifier limit of 200 characters")
+            receipt["anchors"] = anchor_dicts
+        return receipt
 
     def verify_chain(self) -> int:
         """Walk every sealed checkpoint. Returns how many were checked.

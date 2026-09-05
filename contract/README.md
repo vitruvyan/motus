@@ -70,6 +70,8 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P4` | An anchor naming a checkpoint digest other than this receipt's |
 | `P5` | An anchor on a network this validator cannot evaluate. ADR-020: *a `VERIFIED` on a chain the verifier cannot evaluate is the worst lie this system can tell* |
 | `P6` | A chain of segments the receipt asserts by position and by nothing else: a later segment that continues nothing, one that names a predecessor other than the segment before it, or a segment with an `END` that has a successor — a trace that reached a terminal record cannot be resumed |
+| `P7` | An `execution.ref` that is malformed, or names a `(tenant, writer_id, sequence)` other than the receipt's original BEGIN |
+| `P8` | A completed receipt whose `execution.fingerprint` disagrees with the root derived from the paired trace. An unfinished receipt has no END and legitimately carries `null`. |
 
 ### What the verifier will not tell you
 
@@ -242,7 +244,9 @@ is `tests/contract/kernel.py`, exactly as described above.
   a run. Every segment has a BEGIN; only the LAST may have an END, because a
   trace that reached a terminal record cannot be resumed. It travels alone, so
   it declares its own version, and the mode it CLAIMS must be supported by what
-  it carries.
+  it carries. ADR-027 decision 4 optionally adds `execution`: the BEGIN locator,
+  the Trace.root fingerprint (or null for an unfinished execution), and a
+  `run_id` carried for embedder correlation, explicitly not as a key.
 - `node-protocol.md` — normative obligations of node code (RFC-2119
   language).
 - `guarantees.md` — the five invariants, durability profiles, replay
