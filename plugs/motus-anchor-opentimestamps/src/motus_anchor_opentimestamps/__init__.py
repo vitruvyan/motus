@@ -258,7 +258,6 @@ class OpenTimestampsAnchor:
         # new pending branch. Stop when the serialized proof is unchanged: this
         # is both the progress condition and the guard against retry spins.
         attempted: set[tuple[str, str]] = set()
-        last_request: tuple[str, str] | None = None
         for pass_number in range(1, MAX_UPGRADE_PASSES + 1):
             before = self._serialize(
                 bytes.fromhex(proof["digest"]), timestamp).hex()
@@ -273,24 +272,23 @@ class OpenTimestampsAnchor:
                     if key in attempted:
                         continue
                     attempted.add(key)
-                    last_request = key
                     if uri not in self._calendars:
-                        unreachable.setdefault(key, {
+                        unreachable[key] = {
                             "calendar": uri,
                             "commitment": sub.msg.hex(),
                             "reason": "the proof names a calendar this anchor "
                                       "is not configured to talk to",
-                        })
+                        }
                         continue
                     try:
                         fresh = RemoteCalendar(uri).get_timestamp(
                             sub.msg, timeout=self._timeout)
                     except Exception as error:            # noqa: BLE001
-                        unreachable.setdefault(key, {
+                        unreachable[key] = {
                             "calendar": uri,
                             "commitment": sub.msg.hex(),
                             "reason": f"{type(error).__name__}: {error}",
-                        })
+                        }
                         continue
                     sub.merge(fresh)
                     unreachable.pop(key, None)
@@ -299,15 +297,22 @@ class OpenTimestampsAnchor:
             if after == before:
                 break
             if pass_number == MAX_UPGRADE_PASSES:
-                if last_request is not None:
-                    calendar, commitment = last_request
-                    unreachable[last_request] = {
-                        "calendar": calendar,
-                        "commitment": commitment,
-                        "reason": (
-                            "upgrade stopped after 32 passes: the proof kept "
-                            "growing"),
-                    }
+                ceiling_reason = (
+                    "upgrade stopped after 32 passes: the proof kept growing")
+                for sub in _directly_verified(timestamp):
+                    for attestation in sub.attestations:
+                        if not isinstance(attestation, PendingAttestation):
+                            continue
+                        uri = attestation.uri
+                        if isinstance(uri, bytes):
+                            uri = uri.decode("utf-8", "replace")
+                        key = (uri, sub.msg.hex())
+                        if key not in attempted:
+                            unreachable[key] = {
+                                "calendar": uri,
+                                "commitment": sub.msg.hex(),
+                                "reason": ceiling_reason,
+                            }
                 break
 
         heights = sorted(
@@ -319,6 +324,7 @@ class OpenTimestampsAnchor:
         proof["calendars_unreachable"] = list(unreachable.values())
         if not heights:
             proof["bitcoin_block_heights"] = []
+            proof.pop("published_at_source", None)
             return self._receipt(
                 checkpoint=receipt.checkpoint, state="pending",
                 reference=None, published_at=None, proof=proof)

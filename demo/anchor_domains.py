@@ -64,7 +64,8 @@ def commit(anchor: "OpenTimestampsAnchor", root: str, out: Path,
         (out / stem).write_bytes(root.encode("utf-8"))
         (out / f"{stem}.ots").write_bytes(bytes.fromhex(serialized))
 
-    display_target = f"demo/out/{out.name}/{stem}"
+    repo_root = Path(__file__).resolve().parent.parent
+    display_target = (out / stem).relative_to(repo_root).as_posix()
     display_proof = f"{display_target}.ots"
     return {
         "network": payload.get("network"),

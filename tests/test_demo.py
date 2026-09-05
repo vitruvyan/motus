@@ -8,6 +8,7 @@ validator cannot. If that stops being true the demo must fail, not mislead.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -38,27 +39,34 @@ def test_anchor_commit_advertises_repository_relative_targets(tmp_path):
                 "network": "opentimestamps:bitcoin",
                 "state": "pending",
                 "checkpoint": "sha256:" + "ab" * 32,
-                "proof": {"serialized": None},
+                "proof": {"serialized": "00"},
             })
 
-    domains_out = tmp_path / "domains"
-    domains_out.mkdir()
-    domains = commit(Anchor(), "sha256:" + "ab" * 32,
-                     domains_out, "cold_chain.root.txt")
-    assert domains["proof_file"] == (
-        "demo/out/domains/cold_chain.root.txt.ots")
-    assert domains["verify_with"] == (
-        "ots verify -f demo/out/domains/cold_chain.root.txt "
-        "demo/out/domains/cold_chain.root.txt.ots")
+    test_root = REPO_ROOT / ".tmp-anchor-path-test"
+    shutil.rmtree(test_root, ignore_errors=True)
+    try:
+        domains_out = test_root / "demo" / "out" / "nested" / "domains"
+        domains_out.mkdir(parents=True)
+        domains = commit(Anchor(), "sha256:" + "ab" * 32,
+                         domains_out, "cold_chain.root.txt")
+        expected_target = ".tmp-anchor-path-test/demo/out/nested/domains/cold_chain.root.txt"
+        assert domains["proof_file"] == expected_target + ".ots"
+        assert domains["verify_with"] == (
+            "ots verify -f " + expected_target + " " + expected_target + ".ots")
+        assert (REPO_ROOT / expected_target).exists()
+        assert (REPO_ROOT / domains["proof_file"]).exists()
 
-    hiring_out = tmp_path / "hiring"
-    hiring_out.mkdir()
-    hiring = commit(Anchor(), "sha256:" + "cd" * 32,
-                    hiring_out, "root.txt")
-    assert hiring["proof_file"] == "demo/out/hiring/root.txt.ots"
-    assert hiring["verify_with"] == (
-        "ots verify -f demo/out/hiring/root.txt "
-        "demo/out/hiring/root.txt.ots")
+        hiring_out = test_root / "demo" / "out" / "hiring"
+        hiring_out.mkdir(parents=True)
+        hiring = commit(Anchor(), "sha256:" + "cd" * 32,
+                        hiring_out, "root.txt")
+        expected_hiring = ".tmp-anchor-path-test/demo/out/hiring/root.txt"
+        assert hiring["proof_file"] == expected_hiring + ".ots"
+        assert hiring["verify_with"] == (
+            "ots verify -f " + expected_hiring + " " + expected_hiring + ".ots")
+        assert (REPO_ROOT / expected_hiring).exists()
+    finally:
+        shutil.rmtree(test_root, ignore_errors=True)
 
 
 def test_index_merge_preserves_same_root_anchor_and_drops_changed_root(tmp_path, capsys):

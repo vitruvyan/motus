@@ -222,6 +222,36 @@ PASS
 No tests/workflows or other files were edited. No commit, push, tag, release, or
 network operation was performed.
 
+## 003e
+
+Implemented the three confirmed P2 corrections:
+
+- `demo/anchor_domains.py`: display paths now use the output path relative to
+  the repository root, supporting arbitrary nested output directories. Added a
+  fake-anchor test asserting exact advertised paths and that both advertised
+  files exist.
+- Plug ceiling handling now walks the current real tree at the 32-pass ceiling
+  and records every unattempted pending `(calendar, commitment)` with the exact
+  growth reason. The growing-tree test asserts ceiling entries are exactly
+  unattempted children.
+- Unknown-calendar and exception failure records now use assignment, allowing a
+  later failure reason for the same request to replace an earlier one. Added a
+  two-upgrade differing-exception regression.
+
+Focused tests:
+```
+.venv/bin/pytest plugs/motus-anchor-opentimestamps -q
+24 passed
+.venv/bin/pytest tests/test_demo.py -q
+4 passed
+```
+Mutation probes:
+- Path calculation reverted to `out.name`: path test failed.
+- Ceiling collection changed to record attempted keys: growing-tree test failed.
+- Failure assignments reverted to `setdefault`: changed-reason test failed.
+All mutated files were restored from saved bytes; no git checkout or mutation
+probe tool was used.
+
 Verifier:
 ```
 python -m venv /tmp/claude-1000/nopl
@@ -249,3 +279,39 @@ demo/upgrade_anchors.py:79:    from motus_anchor_opentimestamps import OpenTimes
 ```
 All hits are inside `TYPE_CHECKING` or function bodies; no demo module-level
 plug import remains.
+
+### Adjacent previous-receipt finding
+
+Fixed the adjacent previous-receipt diagnostic: pending upgrades now remove a
+preloaded `published_at_source` before returning a pending receipt. Added
+`test_pending_upgrade_drops_preloaded_publication_source` in
+`plugs/motus-anchor-opentimestamps/tests/test_upgrade_walks_the_tree.py`.
+
+Focused test:
+```
+.venv/bin/pytest plugs/motus-anchor-opentimestamps/tests/test_upgrade_walks_the_tree.py::test_pending_upgrade_drops_preloaded_publication_source -q
+1 passed
+```
+
+Mutation check: removed only the new pending-branch `proof.pop(...)` line; the
+focused test failed on the stale source, then the exact saved source bytes were
+restored (SHA-256 `4704a0abd1035fcd62cb4cd6a18316d9f8fc4e778ebb80bc86645d566e9d77d0`).
+The a11/a12 exponential-width issue remains pre-existing and out of scope.
+
+Final verifier and adversarial pass:
+```
+.venv/bin/pytest -q
+1122 passed, 5 skipped in 52.81s
+
+.venv/bin/pytest plugs/motus-anchor-opentimestamps -q
+25 passed in 0.54s
+
+.venv/bin/python tools/check_frozen_paths.py demo/three-domains-anchored HEAD
+Frozen contract paths: PASS
+```
+Attack status: `a01`–`a10`, `a12`, `a13`, `a14`, and `a15` exited 0;
+`a15` confirmed no other preloaded proof field overrides the current answer.
+`a13` confirmed every ceiling record names an unattempted pending key;
+`a14` confirmed repository-relative paths at domain, scenario, and deeper
+nesting. Only known out-of-scope `a11` remains failing because per-pair
+tracking does not bound exponential width within one pass.

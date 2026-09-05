@@ -155,12 +155,13 @@ def test_upgrade_stops_a_fast_growing_calendar_at_the_hard_ceiling(monkeypatch):
     anchor = OpenTimestampsAnchor(calendars=(CALENDARS[0],))
     receipt = _receipt()
     receipt.proof["serialized"] = anchor._serialize(digest, root).hex()
-    calls = {"n": 0}
+    calls = {"n": 0, "commitments": []}
 
     class GrowingCalendar:
         def __init__(self, url): self.url = url
         def get_timestamp(self, commitment, timeout=None):
             calls["n"] += 1
+            calls["commitments"].append(commitment.hex())
             fresh = Timestamp(commitment)
             child = fresh.ops.add(OpAppend(f"growth-{calls['n']}".encode()))
             child.attestations.add(PendingAttestation(CALENDARS[0]))
@@ -175,9 +176,11 @@ def test_upgrade_stops_a_fast_growing_calendar_at_the_hard_ceiling(monkeypatch):
         cal.RemoteCalendar = old_calendar
     assert upgraded.state == "pending"
     assert calls["n"] == 32
-    ceiling = upgraded.proof["calendars_unreachable"][-1]
-    assert ceiling["calendar"] == CALENDARS[0]
-    assert ceiling["reason"] == (
+    ceiling = upgraded.proof["calendars_unreachable"]
+    assert len(ceiling) == 1
+    assert ceiling[0]["calendar"] == CALENDARS[0]
+    assert ceiling[0]["commitment"] not in calls["commitments"]
+    assert ceiling[0]["reason"] == (
         "upgrade stopped after 32 passes: the proof kept growing")
 
 
@@ -222,6 +225,61 @@ def test_upgrade_removes_outage_after_same_request_recovers(monkeypatch):
     assert any(
         getattr(attestation, "height", None) == 812347
         for attestation in anchor._attestations(upgraded_timestamp))
+
+
+def test_pending_upgrade_drops_preloaded_publication_source(monkeypatch):
+    anchor = OpenTimestampsAnchor(calendars=CALENDARS)
+    receipt = _receipt()
+    receipt.proof["published_at_source"] = "https://stale.example/"
+
+    from opentimestamps.core.timestamp import Timestamp
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = lambda url: type(
+        "Calendar", (), {"get_timestamp": lambda self, commitment, timeout=None:
+                          Timestamp(commitment)})()
+    try:
+        upgraded = anchor.upgrade(receipt)
+    finally:
+        cal.RemoteCalendar = old
+    assert upgraded.state == "pending"
+    assert upgraded.published_at is None
+    assert "published_at_source" not in upgraded.proof
+
+
+def test_upgrade_replaces_changed_failure_reason_for_same_request(monkeypatch):
+    from opentimestamps.core.notary import PendingAttestation
+    from opentimestamps.core.op import OpAppend
+    from opentimestamps.core.timestamp import Timestamp
+
+    digest = bytes.fromhex(hashlib.sha256(COMMITTED).hexdigest())
+    root = Timestamp(digest)
+    node = root.ops.add(OpAppend(b"single-request"))
+    node.attestations.add(PendingAttestation(CALENDARS[0]))
+    anchor = OpenTimestampsAnchor(
+        calendars=(CALENDARS[0],), block_time=lambda h: "2023-08-11T12:00:00Z")
+    receipt = _receipt()
+    receipt.proof["serialized"] = anchor._serialize(digest, root).hex()
+    mode = {"reason": "first outage"}
+
+    class ChangingFailure:
+        def __init__(self, url): self.url = url
+        def get_timestamp(self, commitment, timeout=None):
+            raise ConnectionError(mode["reason"])
+
+    import opentimestamps.calendar as cal
+    old = cal.RemoteCalendar
+    cal.RemoteCalendar = ChangingFailure
+    try:
+        first = anchor.upgrade(receipt)
+        mode["reason"] = "second outage"
+        second = anchor.upgrade(first)
+    finally:
+        cal.RemoteCalendar = old
+    assert first.proof["calendars_unreachable"][0]["reason"] == (
+        "ConnectionError: first outage")
+    assert second.proof["calendars_unreachable"][0]["reason"] == (
+        "ConnectionError: second outage")
 
 
 def test_upgrade_deduplicates_repeated_unreachable_requests(monkeypatch):
