@@ -872,6 +872,37 @@ class CommitmentLog:
                               path=merkle_path(leaves, matches[0]),
                               checkpoint=checkpoint)
 
+    def find_execution_ref(self, run_id: str, *, sequence: int | None = None) -> str:
+        """Return the coordinate of the unique sealed BEGIN for ``run_id``.
+
+        Repeated run ids are ambiguous unless ``sequence`` names the retry;
+        unsealed executions are not searchable because they cannot form a
+        receipt.
+        """
+        candidates: list[Commitment] = []
+        for index in self._checkpoint_indices():
+            _, commitments = self._sealed_window(index)
+            candidates.extend(
+                c for c in commitments
+                if c.kind is CommitmentKind.BEGIN and c.run_id == run_id
+                and (sequence is None or c.sequence == sequence)
+            )
+        if not candidates:
+            suffix = "" if sequence is None else f" at sequence {sequence}"
+            raise ValueError(
+                f"no sealed BEGIN for run {run_id!r} in "
+                f"{self.tenant}/{self.writer_id}{suffix}"
+            )
+        if len(candidates) > 1:
+            available = ", ".join(str(c.sequence) for c in candidates)
+            raise CommitmentLogFork(
+                f"{len(candidates)} sealed BEGINs share run {run_id!r} in this "
+                f"chain (sequences {available}); naming one would be a guess. "
+                "Pass sequence=<n>"
+            )
+        chosen = candidates[0]
+        return f"{chosen.tenant}/{chosen.writer_id}/{chosen.sequence}"
+
     def receipt_for(self, execution_ref: str, *,
                    anchors: Iterable[AnchorReceipt] = ()) -> dict[str, Any]:
         """Return the receipt for the BEGIN named by ``execution_ref``.

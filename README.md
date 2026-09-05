@@ -881,6 +881,12 @@ it claims to be about, offline, with no account and against no server of ours:
 motus-validate receipt path/to/receipt.json --trace path/to/trace.json
 ```
 
+A packaged bundle is checked from the zip alone:
+
+```console
+motus-validate package path/to/evidence.zip
+```
+
 It reports all seven of ADR-020's attestation levels — `INTEGRITY`,
 `EXISTENCE`, `RETENTION`, `EXECUTION_CONTINUITY`, `PROVENANCE`, `IDENTITY`,
 `LEGAL_TIME` — **including the ones it could not reach**, and refuses outright
@@ -924,6 +930,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `RunResult`;
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
+- evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,

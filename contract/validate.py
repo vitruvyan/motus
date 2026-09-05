@@ -3900,7 +3900,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
-                 "receipt"],
+                 "receipt", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -3929,6 +3929,41 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--spec and --allow-incomplete apply to trace/jsonl only")
     if args.trace and args.artifact != "receipt":
         parser.error("--trace applies to receipt only")
+
+    if args.artifact == "package":
+        import importlib
+        verify_package = importlib.import_module(
+            "vitruvyan_motus.evidence").verify_package
+        try:
+            data = Path(args.file).read_bytes()
+        except OSError as exc:
+            print(f"error: cannot read {args.file}: {exc}", file=sys.stderr)
+            return 2
+        package = verify_package(data)
+        lines = [f"transport_ok: {package.transport_ok}"]
+        if package.damaged:
+            lines.append("damaged: " + ", ".join(package.damaged))
+        if package.trace_violations:
+            lines.append("INTEGRITY VIOLATION")
+            lines.extend(package.trace_violations)
+        else:
+            lines.append("INTEGRITY CLEAN")
+        if package.verdict is None:
+            lines.extend([
+                "EXISTENCE NOT ESTABLISHED",
+                "no receipt, checkpoint, or anchor is present; this package "
+                "cannot establish existence. An edited trace can be resealed "
+                "with a new root, and without an external anchor that edit "
+                "cannot be detected.",
+            ])
+        else:
+            lines.append(format_verdict(package.verdict))
+        print("\n".join(lines))
+        bad = bool(package.damaged) or bool(package.trace_violations) or (
+            package.verdict is not None and
+            (package.verdict.violations or package.verdict.refused)
+        )
+        return 1 if bad else 0
 
     try:
         # Bytes, then an explicit decode — NEVER read_text().  Python's

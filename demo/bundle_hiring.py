@@ -45,6 +45,17 @@ ARCHIVE = OUT / "hiring-review-2026-00421.motus.zip"
 ZIP_DATE = (2026, 1, 1, 0, 0, 0)
 
 
+def _write_deterministic_zip(path: Path, members: list[tuple[str, bytes]]) -> None:
+    """Write the legacy demo envelope without host-specific ZIP metadata."""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, payload in sorted(members):
+            info = zipfile.ZipInfo(name, date_time=ZIP_DATE)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            info.create_system = 0
+            archive.writestr(info, payload)
+
+
 DERIVE = '''#!/usr/bin/env python3
 """Derive a Motus trace root. Standard library only, no Motus required.
 
@@ -237,11 +248,7 @@ def main() -> None:
         }, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"),
     ]
 
-    with zipfile.ZipFile(ARCHIVE, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, payload in members:
-            info = zipfile.ZipInfo(name, date_time=ZIP_DATE)
-            info.external_attr = 0o644 << 16
-            archive.writestr(info, payload)
+    _write_deterministic_zip(ARCHIVE, members)
 
     digest = hashlib.sha256(ARCHIVE.read_bytes()).hexdigest()
     index["bundle_file"] = ARCHIVE.name
