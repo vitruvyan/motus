@@ -216,6 +216,10 @@ def verify_package(data: bytes) -> PackageVerdict:
         if not trace_present:
             trace_violations.append("TRACE core/trace.json: missing")
         elif not isinstance(trace, dict):
+            # Keep a valid-but-non-object JSON value distinct: it violates the
+            # package boundary's required trace shape before contract
+            # validation can run, rather than becoming a generic validator
+            # exception that hides the precise refusal reason.
             trace_violations.append("TRACE core/trace.json: not valid JSON object")
         else:
             spec_present, spec = read_json("core/graphspec.json")

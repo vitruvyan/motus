@@ -101,3 +101,33 @@ Closed the no-receipt manifest-identity gap. `verify_package` now always validat
 - Implementer: `openai-codex/gpt-5.6-luna` (`implementer-120b`).
 - Verifier: `openai-codex/gpt-5.6-luna` (`verifier-120b`), `/tmp/verifier-120b.md`.
 - Adversary: `claude` (`adversary-manifest-120-round3`), `/tmp/adversary-manifest-120-round3.md`.
+
+## 005c
+
+### RESULT
+Kept the non-dict trace guard. It is semantically distinct from the generic validator path: it produces the precise `TRACE core/trace.json: not valid JSON object` refusal instead of a generic schema/exception-derived message. The guard now documents that distinction, and tests assert the exact tuple for both list-shaped and string-shaped traces.
+
+### TESTS
+- Focused evidence tests: `19 passed`.
+- Hand-neutered guard by direct byte edit: both exact-shape tests failed as expected; the neutered source was restored byte-for-byte without `git checkout`.
+- Restored targeted tests: `2 passed`.
+- Full suite: `1165 passed, 5 skipped`.
+- Frozen-path guard: `PASS`.
+- Bare-import/third-party isolation: passed; direct module-delta probe was `[]`.
+- `git diff --check`: clean.
+
+### FINDINGS
+- **Fixed:** the mutation survivor was not equivalent; exact user-facing trace diagnostics distinguish the guarded path from the generic fall-through.
+- **Open:** none.
+
+### MUTATION TARGETS
+- Replace `elif not isinstance(trace, dict):` with `elif False:`: the parametrized list/string exact-refusal tests must fail.
+- Remove or alter the precise refusal string: exact `trace_violations` assertions must fail.
+- Remove the guard comment: review must identify the undocumented coverage distinction.
+
+### OUT OF SCOPE, NOTICED
+- No `mutation_probe.py`, commit, push, or checkout was used.
+
+### AGENTS
+- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-120c`).
+- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-120c`), `/tmp/verifier-120c.md`.

@@ -7,6 +7,8 @@ import subprocess
 import zipfile
 from datetime import datetime, timezone
 
+import pytest
+
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State, TraceBundle
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
 from vitruvyan_motus.evidence import pack, verify_package
@@ -145,11 +147,15 @@ def test_manifest_accounting_detects_omitted_and_extra_physical_members(tmp_path
     log.close()
 
 
-def test_non_dict_trace_is_a_refusal_result_not_an_exception(tmp_path):
+@pytest.mark.parametrize("trace_json", [b"[]", b'"trace"'])
+def test_non_dict_trace_reports_exact_refusal_for_each_json_shape(tmp_path, trace_json):
     source, log = logged_bundle(tmp_path)
     values = members(pack(source, log=log))
-    values["core/trace.json"] = b"[]"
+    values["core/trace.json"] = trace_json
     result = verify_package(rebuilt(values))
+    assert result.trace_violations == (
+        "TRACE core/trace.json: not valid JSON object",
+    )
     assert result.verdict is not None
     assert result.transport_ok is False
     log.close()
