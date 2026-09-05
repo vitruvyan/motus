@@ -23,12 +23,13 @@ import json
 from pathlib import Path
 
 from anchor_domains import commit
-from motus_anchor_opentimestamps import OpenTimestampsAnchor
 
 OUT = Path(__file__).resolve().parent / "out" / "scenarios"
 
 
 def main() -> None:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+
     anchor = OpenTimestampsAnchor()
     index = []
     for directory in sorted(p for p in OUT.iterdir() if p.is_dir()):

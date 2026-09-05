@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from motus_anchor_opentimestamps import OpenTimestampsAnchor
 
 DEMO = Path(__file__).resolve().parent
 
@@ -77,6 +76,8 @@ def targets() -> list[tuple[Path, Path]]:
 
 
 def main(force: bool = False) -> None:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+
     anchor = OpenTimestampsAnchor(block_time=block_time)
     for payload_path, index_path in targets():
         payload = json.loads(payload_path.read_text(encoding="utf-8"))

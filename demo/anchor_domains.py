@@ -32,8 +32,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from motus_anchor_opentimestamps import OpenTimestampsAnchor
+if TYPE_CHECKING:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
 
 OUT = Path(__file__).resolve().parent / "out" / "domains"
 
@@ -99,6 +101,8 @@ def anchor_hiring(anchor: "OpenTimestampsAnchor") -> None:
 
 
 def main() -> None:
+    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+
     index = json.loads((OUT / "index.json").read_text(encoding="utf-8"))
     anchor = OpenTimestampsAnchor()
 

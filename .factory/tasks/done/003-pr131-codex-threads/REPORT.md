@@ -202,3 +202,50 @@ three outage entries remained. Restored the saved bytes without git checkout;
 SHA-256 before and after restoration was
 `631c07bb8e5e6104a58f27503f705e3a89fd2164de7dea4b476b50eac9695b65`.
 No `tools/mutation_probe.py` was run.
+
+## 003d
+
+Fixed demo plug import isolation in:
+- `demo/anchor_domains.py` — runtime import moved into `main()`, with only a
+  `TYPE_CHECKING` annotation import at module scope.
+- `demo/anchor_scenarios.py` — runtime import moved into `main()`.
+- `demo/upgrade_anchors.py` — runtime import moved into `main()`.
+
+Validation:
+```
+.venv/bin/python -m py_compile demo/anchor_domains.py demo/anchor_scenarios.py demo/upgrade_anchors.py
+PASS
+PYTHONPATH=demo .venv/bin/python -c 'import anchor_domains, anchor_scenarios, upgrade_anchors'
+PASS
+```
+
+No tests/workflows or other files were edited. No commit, push, tag, release, or
+network operation was performed.
+
+Verifier:
+```
+python -m venv /tmp/claude-1000/nopl
+/bin/bash: python: command not found
+```
+The requested executable was unavailable in the verifier environment, so the
+same throwaway-venv reproduction was completed with `python3`:
+```
+/tmp/claude-1000/nopl/bin/pip install -e .[test] -c constraints/test.txt
+Successfully installed vitruvyan-motus-0.12.0 and test dependencies
+/tmp/claude-1000/nopl/bin/python -m pytest tests/test_demo.py -q
+4 passed in 8.64s
+
+.venv/bin/pytest -q
+1122 passed, 5 skipped in 66.44s
+```
+
+Import sweep:
+```
+grep -rn 'motus_anchor_opentimestamps' demo/*.py
+demo/anchor_domains.py:38:    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+demo/anchor_domains.py:104:    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+demo/anchor_scenarios.py:31:    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+demo/upgrade_anchors.py:79:    from motus_anchor_opentimestamps import OpenTimestampsAnchor
+```
+All hits are inside `TYPE_CHECKING` or function bodies; no demo module-level
+plug import remains.
