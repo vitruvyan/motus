@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
@@ -32,6 +32,12 @@ _INTEGRITY_NOTE = (
     "derived from trace.json, never from this file"
 )
 _NO_LOG_NOTE = "no commitment log: no receipt"
+# Fixed JSON is contract input. 28 MiB accommodates the measured 27.4 MiB
+# medium trace while staying below the tested astral-string failure threshold.
+_FIXED_MEMBER_MAX_BYTES = 28 * 1024 * 1024
+_FIXED_JSON_MEMBERS = frozenset({
+    "manifest.json", "core/trace.json", "core/graphspec.json", "core/receipt.json",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +62,68 @@ def _is_safe_member_name(name: str) -> bool:
 def _require_safe_key(name: str) -> None:
     if not _is_safe_member_name(name):
         raise ValueError(f"unsafe evidence member name: {name!r}")
+
+
+class _MemberReadError(Exception):
+    """A ZIP member could not be read safely; the member name is retained."""
+
+    def __init__(self, name: str, cause: BaseException) -> None:
+        super().__init__(name)
+        self.name = name
+        self.cause = cause
+
+
+def _read_member(
+    archive: zipfile.ZipFile, name: str, *, limit: int | None = None,
+) -> bytes:
+    """Read a member with an optional decompressed-size bound."""
+    try:
+        if limit is None:
+            return archive.read(name)
+        with archive.open(name) as member:
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = member.read(min(1024 * 1024, limit - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise _MemberReadError(
+                        name, ValueError(f"decompressed member exceeds {limit} bytes"))
+                chunks.append(chunk)
+            return b"".join(chunks)
+    except _MemberReadError:
+        raise
+    except (NotImplementedError, RuntimeError, zipfile.LargeZipFile,
+            zipfile.BadZipFile, EOFError, OSError, MemoryError, zlib.error) as exc:
+        raise _MemberReadError(name, exc) from None
+
+
+def _digest_member(archive: zipfile.ZipFile, name: str) -> str:
+    """Hash arbitrary attachments incrementally, preserving their size freedom."""
+    digest = hashlib.sha256()
+    try:
+        with archive.open(name) as member:
+            while chunk := member.read(1024 * 1024):
+                digest.update(chunk)
+    except (NotImplementedError, RuntimeError, zipfile.LargeZipFile,
+            zipfile.BadZipFile, EOFError, OSError, MemoryError, zlib.error) as exc:
+        raise _MemberReadError(name, exc) from None
+    return "sha256:" + digest.hexdigest()
+
+
+def _strict_parse_error(
+    exc: BaseException,
+    strict_error: type[BaseException],
+    noncanonical_number_error: type[BaseException],
+) -> str | None:
+    """Map strict-loader exceptions by class; ordinary parse errors stay generic."""
+    if isinstance(exc, UnicodeDecodeError):
+        return "not valid UTF-8"
+    if not isinstance(exc, strict_error):
+        return "not valid JSON"
+    return "J2" if isinstance(exc, noncanonical_number_error) else "J1"
 
 
 def pack(
@@ -160,6 +228,20 @@ def verify_package(data: bytes) -> PackageVerdict:
                               ("<trace unavailable: not a zip file>",))
     try:
         names = archive.namelist()
+        seen_names: set[str] = set()
+        duplicate_reported: set[str] = set()
+        duplicate_names: list[str] = []
+        for name in names:
+            if name in seen_names and name not in duplicate_reported:
+                duplicate_names.append(name)
+                duplicate_reported.add(name)
+            seen_names.add(name)
+        if duplicate_names:
+            return PackageVerdict(
+                None, False,
+                tuple(f"<duplicate member>: {name}" for name in duplicate_names),
+                ("<trace unavailable: duplicate physical member name>",),
+            )
         unsafe = [name for name in names if not _is_safe_member_name(name)]
         if unsafe:
             return PackageVerdict(
@@ -170,11 +252,38 @@ def verify_package(data: bytes) -> PackageVerdict:
         if "manifest.json" not in names:
             return PackageVerdict(None, False, ("<manifest.json is missing>",),
                                   ("<trace unavailable: manifest is missing>",))
+        # These imports are deliberately local: bare import of the kernel must
+        # not pull jsonschema into the process.  The same strict loader is used
+        # for every fixed-path JSON artifact, so parsing cannot launder a
+        # duplicate member or a J2 number into an ordinary Python value.
+        from vitruvyan_motus.contract.validate import (
+            NonCanonicalNumberError, StrictJSONError, _loads_strict,
+            validate_graphspec, validate_trace,
+            verify,
+        )
+
         try:
-            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-        except (ValueError, UnicodeDecodeError, KeyError, zipfile.BadZipFile):
-            return PackageVerdict(None, False, ("manifest.json: not valid JSON",),
-                                  ("<trace unavailable: manifest is not valid JSON>",))
+            manifest = _loads_strict(
+                _read_member(
+                    archive, "manifest.json", limit=_FIXED_MEMBER_MAX_BYTES
+                ).decode("utf-8"))
+        except _MemberReadError as exc:
+            return PackageVerdict(
+                None, False,
+                (f"{exc.name}: damaged/refused ({type(exc.cause).__name__})",),
+                ("<trace unavailable: manifest could not be read>",))
+        except RecursionError:
+            return PackageVerdict(
+                None, False,
+                ("manifest.json: nesting beyond what this verifier can parse",),
+                ("<trace unavailable: manifest nesting refused>",))
+        except (ValueError, UnicodeDecodeError) as exc:
+            rule = _strict_parse_error(
+                exc, StrictJSONError, NonCanonicalNumberError)
+            detail = f"{rule}: {exc}" if rule else "not valid JSON"
+            return PackageVerdict(
+                None, False, (f"manifest.json: {detail}",),
+                ("<trace unavailable: manifest is not valid JSON>",))
 
         damaged: list[str] = []
         files = manifest.get("files") if isinstance(manifest, dict) else None
@@ -188,32 +297,61 @@ def verify_package(data: bytes) -> PackageVerdict:
                 if not isinstance(name, str) or not isinstance(expected, str):
                     damaged.append(f"<malformed manifest entry>: {entry!r}")
                     continue
+                if name in declared_names:
+                    damaged.append(f"<duplicate manifest entry>: {name}")
+                    continue
                 declared_names.add(name)
                 if name not in names:
                     damaged.append(name)
                     continue
-                actual = "sha256:" + hashlib.sha256(archive.read(name)).hexdigest()
+                try:
+                    if name in _FIXED_JSON_MEMBERS:
+                        payload = _read_member(
+                            archive, name, limit=_FIXED_MEMBER_MAX_BYTES)
+                        actual = "sha256:" + hashlib.sha256(payload).hexdigest()
+                    else:
+                        # Attachments and proofs intentionally retain arbitrary
+                        # size; hash them incrementally rather than buffering.
+                        actual = _digest_member(archive, name)
+                except _MemberReadError as exc:
+                    damaged.append(
+                        f"{exc.name}: damaged/refused ({type(exc.cause).__name__})")
+                    continue
                 if actual != expected:
                     damaged.append(name)
             for name in names:
                 if name != "manifest.json" and name not in declared_names:
                     damaged.append(name)
 
-        def read_json(name: str) -> tuple[bool, Any]:
+        def read_json(name: str) -> tuple[bool, Any, str | None]:
             if name not in names:
-                return False, None
+                return False, None, None
             try:
-                return True, json.loads(archive.read(name).decode("utf-8"))
-            except (ValueError, UnicodeDecodeError, KeyError, zipfile.BadZipFile):
-                return True, None
+                value = _loads_strict(
+                    _read_member(
+                        archive, name, limit=_FIXED_MEMBER_MAX_BYTES
+                    ).decode("utf-8"))
+                return True, value, None
+            except _MemberReadError as exc:
+                return True, None, (
+                    f"{exc.name}: damaged/refused ({type(exc.cause).__name__})")
+            except RecursionError:
+                return True, None, (
+                    f"{name}: nesting beyond what this verifier can parse")
+            except (ValueError, UnicodeDecodeError) as exc:
+                rule = _strict_parse_error(
+                    exc, StrictJSONError, NonCanonicalNumberError)
+                if rule in ("J1", "J2"):
+                    detail = f"{rule} {name}: {exc}"
+                else:
+                    detail = f"{name}: {rule}: {exc}"
+                return True, None, detail
 
-        # These imports are deliberately local: bare import of the kernel must
-        # not pull jsonschema into the process.
-        from vitruvyan_motus.contract.validate import validate_graphspec, validate_trace, verify
-
-        trace_present, trace = read_json("core/trace.json")
+        trace_present, trace, trace_error = read_json("core/trace.json")
         trace_violations: list[str] = []
-        if not trace_present:
+        if trace_error:
+            trace_violations.append(trace_error)
+        elif not trace_present:
             trace_violations.append("TRACE core/trace.json: missing")
         elif not isinstance(trace, dict):
             # Keep a valid-but-non-object JSON value distinct: it violates the
@@ -222,7 +360,9 @@ def verify_package(data: bytes) -> PackageVerdict:
             # exception that hides the precise refusal reason.
             trace_violations.append("TRACE core/trace.json: not valid JSON object")
         else:
-            spec_present, spec = read_json("core/graphspec.json")
+            spec_present, spec, spec_error = read_json("core/graphspec.json")
+            if spec_error:
+                trace_violations.append(f"SB0 {spec_error}")
             valid_spec = False
             if not spec_present:
                 trace_violations.append(
@@ -266,7 +406,9 @@ def verify_package(data: bytes) -> PackageVerdict:
 
         verdict = None
         if "core/receipt.json" in names:
-            receipt_present, receipt = read_json("core/receipt.json")
+            receipt_present, receipt, receipt_error = read_json("core/receipt.json")
+            if receipt_error:
+                trace_violations.append(f"RECEIPT {receipt_error}")
             try:
                 verdict = verify(
                     receipt if receipt_present and isinstance(receipt, dict) else {},

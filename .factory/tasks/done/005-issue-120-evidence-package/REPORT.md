@@ -128,6 +128,82 @@ Kept the non-dict trace guard. It is semantically distinct from the generic vali
 ### OUT OF SCOPE, NOTICED
 - No `mutation_probe.py`, commit, push, or checkout was used.
 
+## 005d
+
+### RESULT
+Closed hostile JSON/ZIP and CI portability hardening. Working tree remains uncommitted.
+
+### ARTIFACTS
+- `src/vitruvyan_motus/evidence.py`: strict fixed-member parsing, bounded chunked reads, hostile ZIP refusals, duplicate-name/manifest-entry handling.
+- `contract/validate.py`: shared recursion/nesting refusal and iterative surrogate validation without whole-document re-serialization.
+- `tests/test_evidence_package.py`: strict J1/J2, corrupted DEFLATE, size-bound, deep nesting, duplicate-entry, CLI portability and no-traceback regressions.
+
+### TESTS (raw output)
+- `.venv/bin/pytest -q` → `1180 passed, 5 skipped, 1 warning` (two earlier runs had the pre-existing timing-sensitive state benchmark fail; isolated reruns passed).
+- `.venv/bin/pytest -q tests/test_evidence_package.py tests/test_surrogate_boundary.py tests/test_number_lexeme.py` → `208 passed, 4 skipped, 1 warning`.
+- `.venv/bin/python tools/check_frozen_paths.py "$(git merge-base HEAD origin/main)" HEAD` → `Frozen contract paths: PASS`.
+- `git diff --check` → clean.
+- Bare import probe → `jsonschema_loaded=False`; CLI subprocesses use `sys.executable -m vitruvyan_motus.contract.validate`.
+- Real 6,500-transition package → `transport_ok=True damaged=() trace_violations=()`.
+- Adversarial review: rounds 1–4 plus final targeted pass; prior critical findings were corrected and rechecked.
+
+### FINDINGS
+- **Fixed:** fixed-path package JSON now uses the strict contract loader; duplicate keys/noncanonical numbers are J1/J2 refusals, while ordinary malformed JSON and invalid UTF-8 retain generic diagnostics.
+- **Fixed:** unsupported/encrypted/corrupt/truncated member reads become named damaged results; real `zlib.error` corruption is covered.
+- **Fixed:** duplicate physical ZIP names are refused before lookup; duplicate manifest entries are reported once without repeated hashing.
+- **Fixed:** decompression is chunked and bounded for fixed JSON members; arbitrary attachments/proofs are hashed incrementally; `MemoryError`/zlib/ZIP refusal classes are contained.
+- **Fixed:** strict-loader recursion/nesting and surrogate handling no longer crash or duplicate large parsed documents. A measured 28 MiB fixed-member ceiling is documented as a hostile-input safety boundary; a 6,500-transition generated trace remains clean.
+- **Fixed:** CI tests no longer invoke a hard-coded `.venv/bin/motus-validate` path.
+- **Open, non-blocking:** `ZIP_BZIP2`/`ZIP_LZMA` are accepted by the stdlib and can be CPU-expensive across many distinct members; `pack()` emits `ZIP_DEFLATED`, and changing the accepted compression policy is outside this correction's contract decision.
+
+### MUTATION TARGETS
+- Remove `_loads_strict` use for package fixed members: strict duplicate/J2 tests fail.
+- Remove `zlib.error` handling or bounded fixed-member reads: real corrupted-DEFLATE/size-bound tests fail.
+- Remove duplicate physical-name or manifest-entry guards: duplicate ZIP/manifest regressions fail.
+- Remove iterative surrogate/nesting guard: hostile deep/large JSON regressions fail.
+- Restore `.venv/bin/motus-validate` subprocess paths: CI portability tests fail on hosted Python without `.venv`.
+
+### OUT OF SCOPE, NOTICED
+- No schema, frozen compatibility path, `demo/out`, dependency, commit, push, release, or mutation probe was changed or run.
+- The known `a11_branching_calendar_falsifies_dedup_bound.py` issue remains outside 003e scope.
+
 ### AGENTS
-- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-120c`).
-- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-120c`), `/tmp/verifier-120c.md`.
+- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-120d`), correction rounds for zlib/recursion/resource hardening.
+- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-120d`), `/tmp/verifier-120d.md`.
+- Adversaries: `claude`, `/tmp/adversary-hostile-json-120d.md`, `/tmp/adversary-120d-round2.md`, `/tmp/adversary-120d-round3.md`, `/tmp/adversary-120d-round4.md`, `/tmp/adversary-120d-final.md`.
+
+## 005e
+
+### RESULT
+Restored contract semantics to `HEAD` and moved hostile-nesting handling entirely to the package boundary. No commit or push was made.
+
+### ARTIFACTS
+- `src/vitruvyan_motus/evidence.py`: package-only `RecursionError` refusal while retaining bounded/chunked fixed-member reads.
+- `tests/test_evidence_package.py`: package-level nesting refusal assertions without J1 contract attribution.
+- `contract/validate.py`, `tests/test_surrogate_boundary.py`, and `tests/test_number_lexeme.py`: byte-identical to `HEAD`.
+
+### TESTS (raw output)
+- `.venv/bin/pytest -q tests/test_evidence_package.py tests/test_surrogate_boundary.py tests/test_number_lexeme.py` → `210 passed, 4 skipped, 1 warning`.
+- `.venv/bin/pytest -q` → `1182 passed, 5 skipped, 1 warning`.
+- `.venv/bin/python tools/check_frozen_paths.py "$(git merge-base HEAD origin/main)" HEAD` → `Frozen contract paths: PASS`.
+- Bare import/lazy probe: `jsonschema` absent after bare package and evidence imports.
+- `git diff --check` → clean.
+
+### FINDINGS
+- **Fixed:** 005d's contract/validate.py semantic changes were removed; no package CLI hunk was present there to retain. The validator's behavior after 005e is identical to before 005d: the C-encoder-first surrogate decision, iterative path naming/fail-closed behavior, and acceptance of clean deeply nested documents are restored.
+- **Fixed:** hostile package nesting now becomes a package-layer refusal such as `core/trace.json: nesting beyond what this verifier can parse`, without a J1 contract violation; strict loader J1/J2 findings remain unchanged.
+- **Fixed:** package tests cover manifest, trace, GraphSpec, receipt, CLI/no-traceback nesting refusals; frozen and lazy-import boundaries remain clean.
+
+### MUTATION TARGETS
+- Reintroduce the 005d contract nesting scan or loader `RecursionError`→J1 wrapper: restored contract files must differ from `HEAD`, and package nesting tests must continue to assert non-J1 package refusal.
+- Remove evidence package `RecursionError` catches: deep package tests must fail with an uncaught exception.
+- Change package refusal text or restore J1 attribution: exact package diagnostics must fail.
+
+### OUT OF SCOPE, NOTICED
+- No ADR was added because 005e restores the committed contract rather than changing it.
+- No mutation probe, commit, push, tag, release, or deploy was run.
+
+### AGENTS
+- Implementer: `openai-codex/gpt-5.6-luna` (`implementer-005e`).
+- Verifier: `openai-codex/gpt-5.6-luna` (`verifier-005e`), `/tmp/verifier-005e.md`.
+

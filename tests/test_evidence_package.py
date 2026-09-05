@@ -4,13 +4,16 @@ import hashlib
 import io
 import json
 import subprocess
+import sys
 import zipfile
+import zlib
 from datetime import datetime, timezone
 
 import pytest
 
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State, TraceBundle
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
+import vitruvyan_motus.evidence as evidence_module
 from vitruvyan_motus.evidence import pack, verify_package
 
 
@@ -231,7 +234,7 @@ def test_no_receipt_unresealed_trace_is_t11_even_with_forged_manifest(tmp_path):
     path = tmp_path / "unsealed.zip"
     path.write_bytes(rebuilt(values))
     cli = subprocess.run(
-        [".venv/bin/motus-validate", "package", str(path)],
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate", "package", str(path)],
         capture_output=True, text=True,
     )
     assert cli.returncode == 1
@@ -262,7 +265,7 @@ def test_resealed_no_receipt_trace_is_clean_but_existence_is_not_established(tmp
     path = tmp_path / "resealed.zip"
     path.write_bytes(rebuilt(values))
     cli = subprocess.run(
-        [".venv/bin/motus-validate", "package", str(path)],
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate", "package", str(path)],
         capture_output=True, text=True,
     )
     assert cli.returncode == 0
@@ -422,11 +425,272 @@ def test_resumed_package_reports_continuation_and_incomplete_notes(tmp_path):
     log.close()
 
 
+def _corrupt_compressed_member(data, name):
+    raw = bytearray(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        info = next(item for item in archive.infolist() if item.filename == name)
+        start = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+        # This byte/bit mutation is deliberately known to make zlib reject
+        # the raw DEFLATE stream, rather than merely failing its ZIP CRC.
+        raw[start] ^= 0x02
+    return bytes(raw)
+
+
+def test_64mib_astral_manifest_has_no_copy_amplification_or_traceback(tmp_path):
+    # 8M astral scalars are well over 28 MiB of UTF-8 once JSON framing is
+    # included. The child limit makes whole-document amplification observable.
+    payload = b'{"files":[],"padding":"' + ("😀" * 8_000_000).encode() + b'"}'
+    path = tmp_path / "astral.zip"
+    path.write_bytes(rebuilt({"manifest.json": payload}))
+
+    def limit_memory():
+        import resource
+        resource.setrlimit(resource.RLIMIT_AS, (700 * 1024 * 1024,
+                                                700 * 1024 * 1024))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate",
+         "package", str(path)], capture_output=True, text=True,
+        preexec_fn=limit_memory,
+    )
+    assert result.returncode == 1
+    assert "Traceback" not in result.stdout + result.stderr
+    assert "MemoryError" not in result.stdout + result.stderr
+
+
+def test_fixed_member_size_bound_is_named_and_mutation_worthy(monkeypatch):
+    monkeypatch.setattr(evidence_module, "_FIXED_MEMBER_MAX_BYTES", 32)
+
+    oversized_manifest = rebuilt({
+        "manifest.json": b'{"files":[],"padding":"' + b"x" * 100 + b'"}',
+    })
+    verdict = verify_package(oversized_manifest)
+    assert any("manifest.json: damaged/refused" in item
+               for item in verdict.damaged)
+    assert "Traceback" not in "\\n".join(verdict.damaged)
+
+    oversized_trace = rebuilt({
+        "manifest.json": b'{"files":[]}',
+        "core/trace.json": b'{"padding":"' + b"x" * 100 + b'"}',
+    })
+    verdict = verify_package(oversized_trace)
+    assert any("core/trace.json: damaged/refused" in item
+               for item in verdict.trace_violations)
+    assert "Traceback" not in "\\n".join(verdict.damaged + verdict.trace_violations)
+
+
+def test_manifest_hashes_fixed_members_with_the_same_bound(monkeypatch):
+    payload = b'{"padding":"' + b"x" * 1000 + b'"}'
+    manifest = json.dumps({"files": [{
+        "name": "core/trace.json",
+        "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+    }]} , separators=(",", ":")).encode()
+    monkeypatch.setattr(evidence_module, "_FIXED_MEMBER_MAX_BYTES", 128)
+    original_digest = evidence_module._digest_member
+
+    def digest_only_arbitrary(archive, name):
+        assert name not in evidence_module._FIXED_JSON_MEMBERS
+        return original_digest(archive, name)
+
+    monkeypatch.setattr(evidence_module, "_digest_member", digest_only_arbitrary)
+    verdict = verify_package(rebuilt({
+        "manifest.json": manifest,
+        "core/trace.json": payload,
+    }))
+    assert any("core/trace.json: damaged/refused" in item
+               for item in verdict.damaged)
+
+
+def test_real_corrupted_deflate_is_named_for_manifest_and_graphspec():
+    data = pack(bundle())
+    for name in ("manifest.json", "core/graphspec.json"):
+        corrupted = _corrupt_compressed_member(data, name)
+        with pytest.raises(zlib.error):
+            with zipfile.ZipFile(io.BytesIO(corrupted)) as archive:
+                archive.read(name)
+        verdict = verify_package(corrupted)
+        assert verdict.transport_ok is False
+        assert any(name in item for item in verdict.damaged)
+        assert "Traceback" not in "\\n".join(verdict.damaged)
+
+
+@pytest.mark.parametrize("failure", [
+    NotImplementedError(), RuntimeError("encrypted"), zipfile.LargeZipFile(),
+    zipfile.BadZipFile("truncated"), EOFError("truncated"), zlib.error("bad"),
+])
+def test_archive_read_refusals_are_named_and_traceback_free(monkeypatch, failure):
+    original = zipfile.ZipFile.open
+
+    def refuse(self, name, *args, **kwargs):
+        if name == "manifest.json":
+            raise failure
+        return original(self, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", refuse)
+    verdict = verify_package(pack(bundle()))
+    assert verdict.transport_ok is False
+    assert "manifest.json" in verdict.damaged[0]
+    assert "traceback" not in " ".join(verdict.damaged).lower()
+
+
+def test_duplicate_physical_member_names_are_refused_before_lookup():
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("manifest.json", b"{}")
+        archive.writestr("manifest.json", b"{}")
+    verdict = verify_package(out.getvalue())
+    assert verdict.transport_ok is False
+    assert verdict.damaged == ("<duplicate member>: manifest.json",)
+
+
+def test_fixed_json_members_use_strict_loader_for_duplicate_keys_and_j2(tmp_path):
+    source, log = logged_bundle(tmp_path)
+    values = members(pack(source, log=log))
+    # A duplicate in the manifest is a package refusal, not a last-value parse.
+    values["manifest.json"] = b'{"files": [], "files": []}'
+    result = verify_package(rebuilt(values))
+    assert any("manifest.json: J1" in item for item in result.damaged)
+
+    # The other fixed-path artifacts must not regress to the permissive loader.
+    for name, marker in (("core/trace.json", "J1 core/trace.json"),
+                         ("core/graphspec.json", "J1 core/graphspec.json"),
+                         ("core/receipt.json", "RECEIPT J1 core/receipt.json")):
+        values = members(pack(source, log=log))
+        values[name] = b'{"x": 1, "x": 2}'
+        manifest = json.loads(values["manifest.json"])
+        next(item for item in manifest["files"] if item["name"] == name)["sha256"] = (
+            "sha256:" + hashlib.sha256(values[name]).hexdigest())
+        values["manifest.json"] = json.dumps(
+            manifest, separators=(",", ":")).encode()
+        result = verify_package(rebuilt(values))
+        assert any(marker in item for item in result.trace_violations)
+
+    values = members(pack(source, log=log))
+    values["core/trace.json"] = values["core/trace.json"].replace(
+        b'"value":42', b'"value":1e+00', 1)
+    manifest = json.loads(values["manifest.json"])
+    next(item for item in manifest["files"]
+         if item["name"] == "core/trace.json")["sha256"] = (
+        "sha256:" + hashlib.sha256(values["core/trace.json"]).hexdigest())
+    values["manifest.json"] = json.dumps(manifest, separators=(",", ":")).encode()
+    result = verify_package(rebuilt(values))
+    assert any(item.startswith("J2 core/trace.json:")
+               for item in result.trace_violations)
+    log.close()
+
+
+def test_package_nesting_refusal_and_ordinary_manifest_errors_are_not_j1():
+    deep = b"[" * 10000 + b"]" * 10000
+    verdict = verify_package(rebuilt({"manifest.json": deep}))
+    assert verdict.damaged == (
+        "manifest.json: nesting beyond what this verifier can parse",)
+    assert all("J1" not in item for item in verdict.damaged + verdict.trace_violations)
+
+    malformed = verify_package(rebuilt({"manifest.json": b"{"}))
+    assert malformed.damaged[0].startswith("manifest.json: not valid JSON: ")
+    assert "J1" not in malformed.damaged[0]
+    invalid_utf8 = verify_package(rebuilt({"manifest.json": b"\xff"}))
+    assert invalid_utf8.damaged[0].startswith("manifest.json: not valid UTF-8:")
+    assert "J1" not in invalid_utf8.damaged[0]
+    trace_utf8 = verify_package(rebuilt({
+        "manifest.json": b'{}', "core/trace.json": b"\xff",
+    }))
+    assert trace_utf8.trace_violations[0].startswith(
+        "core/trace.json: not valid UTF-8: ")
+    assert "J1" not in trace_utf8.trace_violations[0]
+
+
+def test_duplicate_manifest_entries_are_reported_without_rehashing(monkeypatch):
+    payload = b"attachment"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    manifest = json.dumps({"files": [
+        {"name": "supplementary/attachments/a", "sha256": digest},
+        {"name": "supplementary/attachments/a", "sha256": digest},
+    ]}, separators=(",", ":")).encode()
+    calls = []
+    original_digest = evidence_module._digest_member
+
+    def count_digest(archive, name):
+        calls.append(name)
+        return original_digest(archive, name)
+
+    monkeypatch.setattr(evidence_module, "_digest_member", count_digest)
+    verdict = verify_package(rebuilt({
+        "manifest.json": manifest,
+        "supplementary/attachments/a": payload,
+    }))
+    assert verdict.transport_ok is False
+    assert verdict.damaged.count("<duplicate manifest entry>: supplementary/attachments/a") == 1
+    assert calls == ["supplementary/attachments/a"]
+
+
+def test_deep_nested_fixed_members_are_package_refusals_and_cli_has_no_traceback(tmp_path):
+    deep = b"[" * 10000 + b"]" * 10000
+
+    # Manifest is the first fixed member and must fail closed at the package boundary.
+    manifest_zip = rebuilt({"manifest.json": deep})
+    verdict = verify_package(manifest_zip)
+    assert verdict.damaged == (
+        "manifest.json: nesting beyond what this verifier can parse",)
+    assert all("J1" not in item for item in verdict.damaged + verdict.trace_violations)
+
+    # Exercise a different fixed member after a valid manifest has been read.
+    values = members(pack(bundle()))
+    values["core/trace.json"] = deep
+    manifest = json.loads(values["manifest.json"])
+    next(item for item in manifest["files"]
+         if item["name"] == "core/trace.json")["sha256"] = (
+        "sha256:" + hashlib.sha256(deep).hexdigest())
+    values["manifest.json"] = json.dumps(
+        manifest, separators=(",", ":")).encode()
+    trace_zip = tmp_path / "deep-trace.zip"
+    trace_zip.write_bytes(rebuilt(values))
+    verdict = verify_package(trace_zip.read_bytes())
+    assert (
+        "core/trace.json: nesting beyond what this verifier can parse"
+        in verdict.trace_violations
+    )
+    assert all("J1" not in item for item in verdict.trace_violations)
+
+    cli = subprocess.run(
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate",
+         "package", str(trace_zip)], capture_output=True, text=True)
+    assert cli.returncode == 1
+    assert "core/trace.json: nesting beyond what this verifier can parse" in cli.stdout
+    assert "Traceback" not in cli.stdout + cli.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "marker"),
+    [("core/graphspec.json", "SB0 core/graphspec.json:"),
+     ("core/receipt.json", "RECEIPT core/receipt.json:")],
+)
+def test_deep_nested_other_fixed_members_are_named_package_refusals(
+    tmp_path, name, marker,
+):
+    source, log = logged_bundle(tmp_path)
+    values = members(pack(source, log=log))
+    deep = b"[" * 10000 + b"]" * 10000
+    values[name] = deep
+    manifest = json.loads(values["manifest.json"])
+    entry = next(item for item in manifest["files"] if item["name"] == name)
+    entry["sha256"] = "sha256:" + hashlib.sha256(deep).hexdigest()
+    values["manifest.json"] = json.dumps(manifest, separators=(",", ":")).encode()
+
+    verdict = verify_package(rebuilt(values))
+    assert any(
+        f"{marker} nesting beyond what this verifier can parse" in item
+        for item in verdict.trace_violations
+    )
+    assert all("J1" not in item for item in verdict.trace_violations)
+    log.close()
+
+
 def test_package_cli_accepts_good_damaged_and_no_receipt_packages(tmp_path):
     path = tmp_path / "evidence.zip"
     path.write_bytes(pack(bundle()))
     result = subprocess.run(
-        [".venv/bin/motus-validate", "package", str(path)],
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate", "package", str(path)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0
@@ -441,7 +705,7 @@ def test_package_cli_accepts_good_damaged_and_no_receipt_packages(tmp_path):
     damaged = tmp_path / "damaged.zip"
     damaged.write_bytes(b"not a zip")
     result = subprocess.run(
-        [".venv/bin/motus-validate", "package", str(damaged)],
+        [sys.executable, "-m", "vitruvyan_motus.contract.validate", "package", str(damaged)],
         capture_output=True, text=True,
     )
     assert result.returncode == 1
