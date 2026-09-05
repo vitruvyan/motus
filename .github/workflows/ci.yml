@@ -60,4 +60,4 @@ jobs:
       - name: Reproduce guarantees section 3 from raw evidence
         run: >-
           python benchmarks/check_slo_baseline.py
-          --candidate benchmarks/candidate-v0.12.0-epyc-py310.json
+          --candidate benchmarks/candidate-v0.13.0-epyc-py310.json
