@@ -14,63 +14,68 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.12.0](https://github.com/vitruvyan/motus/releases/tag/v0.12.0)
+> **Current release:** [Motus 0.13.0](https://github.com/vitruvyan/motus/releases/tag/v0.13.0)
 > · not on PyPI — build the wheel from a checkout
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.12.0 **still does not pass its own cumulative performance gate**, and ships
+0.13.0 **still does not pass its own cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+80.9 %** | +20 % |
-| 100-node no-op | **+107.5 %** | +20 % |
-| Trace materialization | **+27.9 %** | +20 % |
+| Per-node overhead | **+95.6 %** | +20 % |
+| 100-node no-op | **+136.4 %** | +20 % |
+| Trace materialization | **+22.9 %** | +20 % |
 
 The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0.
 
 **This release added none of it, and the measurement cannot prove it added
-anything at all.** Against v0.11.0, in the same jobs on the same runners, the
-three figures are **+0.5 %, +0.4 % and +2.0 %** — inside the per-release budget
+anything at all.** Against v0.12.0, in the same jobs on the same runners, the
+three figures are **−0.2 %, −0.1 % and −1.8 %** — inside the per-release budget
 with no exception declared, and every one of them *smaller than the paired
-spread of the measurement* (8.1 %, 87.8 %, 16.9 %). The honest report is that
+spread of the measurement* (8.3 %, 93.2 %, 11.7 %). The honest report is that
 this release's effect is below what this instrument can resolve, which is not
-the same sentence as "there is no difference" and is not written as one. The
-100-node no-op's spread is worth reading twice: at 87.8 % it is **wider than
-the cumulative effect it is being used to measure**, and the checker says so in
-its own output rather than leaving it to be noticed.
+the same sentence as "there is no difference" and is not written as one.
+
+**Read the two tables together and they disagree, and the disagreement is the
+instrument.** The cumulative per-node figure went from +80.9 % at 0.12.0 to
++95.6 % here, while the same jobs say this release costs −0.2 % against
+0.12.0. Both cannot be about the code. The anchor arm re-measures v0.6.1 on
+whatever runners the three dispatches land on — this time an EPYC 7763, a
+Xeon Platinum 8573C and a Xeon 6973P, none of which ran the 0.12.0 jobs —
+and the 100-node no-op's paired spread is **93.2 %**, wider than the
+cumulative effect it is being used to measure. The checker says so in its own
+output. The per-release ratio is the number to trust, because it is the one
+where both arms ran interleaved on the same host; the cumulative one says the
+engine is roughly twice its v0.6.1 cost on nodes that do nothing, and no
+tighter than that.
 
 **And there is a change this instrument cannot see at all.** 0.12.0 moved the
 READ path — `_loads_strict` 11–15 % faster, `Trace.from_json` 17–41 % slower —
 and none of the figures above shifted, because nothing in `benchmarks/`
-measures reading. Two commits changed that path by 25–120 % with no gate
-noticing, and an ADR quoted a figure taken from a single hand-picked document
-until an adversarial round re-measured it. That is **#113**, filed rather than
-left implicit: a gate that cannot see a change is not evidence the change was
-free.
+measures reading. That is **#113**, still open: a gate that cannot see a
+change is not evidence the change was free. 0.13.0 changed the commitment
+log's write path (#129, #112) and the anchor plug; neither is measured by
+`benchmarks/` either.
 
 **And against a real request it is not visible.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.11.0 says nothing about 0.12.0, and an inherited number is
-the same error as an inherited baseline. Measured on 2026-08-15 against the
-live `api_graph` service (`frontier_graph`, `POST /run`) with five real Italian
-user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-137, CPython
-3.12.3: **5.4, 3.0, 3.0, 4.0 and 3.6 ms** of Motus against requests of 44.9 s,
-22.2 s, 12.5 s, 19.6 s and 23.2 s. The honest share is the worst cost over the
-fastest response — 5.4 ms of 12.5 s — which is **0.043 %**. That figure is an
-upper bound: it contains the consumer's own node code, not only Motus. All five
-traces validated clean against the contract, schema 3.0.0, integrity chain
-present, with a derived root.
-
-One of the five is worth naming because it is the point of the product rather
-than a blemish on it: the consumer's pipeline answered a question asked in
-Italian with 64 characters of German, and the trace carries
-`pipeline_health = degraded` and the reason it was decided —
-`language chiesta=it rilevata=de`. Motus did not judge that; it recorded what
-happened, and the recording is checkable by somebody who was not there.
+measured against 0.12.0 says nothing about 0.13.0, and an inherited number is
+the same error as an inherited baseline. Measured on 2026-09-05 with Motus
+0.13.0 (`release/0.13.0` at `1c84b9a`) against the live `api_graph` service
+(`orbis_graph`, `POST /run`) with five real Italian user queries, on an AMD
+EPYC Processor (with IBPB), Linux 6.8.0-139, CPython 3.12.3, with the host
+under a load average between 5 and 20 from a dozen coding agents: **6.2, 2.5,
+3.5, 4.7 and 4.0 ms** of Motus against requests of 68.3 s, 38.2 s, 43.4 s,
+37.2 s and 35.9 s. The honest share is the worst cost over the fastest
+response — 6.2 ms of 35.9 s — which is **0.017 %**. That figure is an upper
+bound: it contains the consumer's own node code, not only Motus, and the
+host's load inflates both sides of the ratio. The trace of the run captured in
+full validated clean against the contract, schema 3.0.0, integrity chain
+present, with a derived root; the harness is `e2e/pipeline_query.py`.
 
 Both things are true and neither cancels the other. The engine is genuinely
 twice the cost it was at v0.6.1 on nodes that do nothing, and a consumer whose
@@ -760,18 +765,19 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.12.0 against v0.11.0 — three independent dispatches, canonical value is the
+0.13.0 against v0.12.0 — three independent dispatches, canonical value is the
 median of the job ratios:
 
 | metric | canonical | across jobs | budget |
 |---|---:|---:|---:|
-| per-node overhead | **+0.5 %** | +0.4 … +1.4 % | +10 % |
-| 100-node no-op overhead | **+0.4 %** | −2.6 … +0.7 % | +10 % |
-| trace materialization | **+2.0 %** | −1.1 … +2.2 % | +10 % |
+| per-node overhead | **−0.2 %** | −1.3 … +0.7 % | +10 % |
+| 100-node no-op overhead | **−0.1 %** | −1.4 … +1.4 % | +10 % |
+| trace materialization | **−1.8 %** | −2.4 … +2.1 % | +10 % |
 
-The 100-node row's paired spread is **87.8 %** — wider than the effect it
+The 100-node row's paired spread is **93.2 %** — wider than the effect it
 measures — and the checker prints that rather than letting the number stand
-alone. *Within noise* is not *no difference*; it is the measurement saying it
+alone. 0.12.0 against v0.11.0 read +0.5 %, +0.4 % and +2.0 % with the same
+caveat. *Within noise* is not *no difference*; it is the measurement saying it
 cannot answer.
 
 **And what this table does not contain is worth as much as what it does.**
@@ -840,7 +846,7 @@ recorded here rather than left implicit. The relative gate had no such problem:
 it measures both versions on the same host in the same job, which is the point.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.12.0/` for the committed observations.
+`benchmarks/relative-0.13.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -861,8 +867,8 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.12.0-epyc-py310.json
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.12.0/*.json
+python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.13.0-epyc-py310.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.13.0/*.json
 ```
 
 **Verification is open and stays open.** A receipt is checked against the trace
