@@ -570,12 +570,10 @@ def test_execution_ref_with_unbounded_decimal_is_p7_not_validator_crash(run):
     assert any(v.rule == "P7" for v in violations)
 
 
-def test_receipt_for_rejects_run_id_that_receipt_schema_cannot_carry(tmp_path):
+def test_commitment_construction_rejects_run_id_that_receipt_schema_cannot_carry(tmp_path):
     log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
-    log.begin("x" * 201, at=AT, nonce="n0")
-    log.seal(AT)
-    with pytest.raises(ValueError, match="schema limit"):
-        log.receipt_for("acme/w1/0")
+    with pytest.raises(ValueError, match="run_id.*Identifier"):
+        log.begin("x" * 201, at=AT, nonce="n0")
     log.close()
 
 
@@ -640,17 +638,20 @@ def test_resumed_receipt_uses_weakest_included_mode(tmp_path):
     log.close()
 
 
-@pytest.mark.parametrize("field", ["tenant", "writer_id", "nonce", "outcome"])
-def test_receipt_for_rejects_every_oversized_commitment_identifier(tmp_path, field):
+@pytest.mark.parametrize("field", ["tenant", "writer_id", "nonce"])
+def test_commitment_construction_rejects_oversized_identifiers(tmp_path, field):
     tenant = "acme" if field != "tenant" else "t" * 201
     writer = "w1" if field != "writer_id" else "w" * 201
     log = CommitmentLog(tmp_path, tenant=tenant, writer_id=writer, fsync=False)
-    log.begin("r", at=AT, nonce="n" * 201 if field == "nonce" else "n")
-    if field == "outcome":
+    with pytest.raises(ValueError, match=rf"{field}.*Identifier"):
+        log.begin("r", at=AT, nonce="n" * 201 if field == "nonce" else "n")
+    log.close()
+
+
+def test_end_outcome_identifier_is_rejected_at_construction(tmp_path):
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r", at=AT, nonce="n")
+    with pytest.raises(ValueError, match="outcome.*Identifier"):
         log.end("r", root="sha256:" + "d" * 64, outcome="o" * 201,
                 at=AT, nonce="n1")
-    log.seal(AT)
-    ref = f"{tenant}/{writer}/0"
-    with pytest.raises(ValueError, match="schema limit"):
-        log.receipt_for(ref)
     log.close()
