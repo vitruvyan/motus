@@ -122,6 +122,8 @@ def test_a_forwarding_proxy_is_a_legitimate_sink(tmp_path):
 # listed, including values so a new keyword cannot quietly acquire an undecided
 # boundary meaning. Protocol rows carry the stand-in verdict and its reason.
 BOUNDARY_INVENTORY = (
+    ("Runtime.__init__", "spec", "value", "VALUE", "graph specification"),
+    ("Runtime.__init__", "nodes", "protocol", "AUTHORITATIVE", "caller-supplied mapping of callables is the executed node registry; a stand-in node is a real node recorded by the trace, not a boundary breach"),
     ("Runtime.__init__", "policy", "value", "VALUE", "configuration"),
     ("Runtime.__init__", "durability_profile", "value", "VALUE", "configuration"),
     ("Runtime.__init__", "sink", "protocol", "AUTHORITATIVE", "sink acceptance controls evidence"),
@@ -134,6 +136,7 @@ BOUNDARY_INVENTORY = (
     ("Runtime.__init__", "random_source", "protocol", "INPUT-SOURCE", "called only to supply draws"),
     ("Runtime.__init__", "commitments", "protocol", "AUTHORITATIVE", "commitment return is checked before success"),
     ("Runtime.__init__", "witness", "protocol", "WITNESS-GATED", "only a real acknowledgement changes assurance"),
+    ("CommitmentLog.begin", "run_id", "value", "VALUE", "commitment data"),
     ("CommitmentLog.begin", "at", "value", "VALUE", "commitment data"),
     ("CommitmentLog.begin", "nonce", "value", "VALUE", "commitment data"),
     ("CommitmentLog.begin", "witness", "value", "VALUE", "WitnessAck acknowledgement value"),
@@ -141,6 +144,7 @@ BOUNDARY_INVENTORY = (
     ("CommitmentLog.begin", "continues", "value", "VALUE", "continuation data"),
     ("CommitmentLog.begin", "continues_fingerprint", "value", "VALUE", "continuation data"),
     ("CommitmentLog.begin", "continues_sequence", "value", "VALUE", "continuation data"),
+    ("CommitmentLog.receipt_for", "execution_ref", "value", "VALUE", "execution reference data"),
     ("CommitmentLog.receipt_for", "anchors", "value", "VALUE", "AnchorReceipt evidence data"),
 )
 
@@ -156,13 +160,17 @@ def test_the_boundary_inventory_covers_inspected_keyword_parameters():
         (surface, name)
         for surface, signature in signatures.items()
         for name, parameter in signature.parameters.items()
-        if name != "self" and parameter.kind is parameter.KEYWORD_ONLY
+        if name != "self" and parameter.kind in {
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        }
     }
     rows = {(surface, name): (kind, verdict, reason)
             for surface, name, kind, verdict, reason in BOUNDARY_INVENTORY}
     assert set(rows) == inspected
     assert len(rows) == len(BOUNDARY_INVENTORY)
     expected_protocols = {
+        ("Runtime.__init__", "nodes"): ("AUTHORITATIVE", "caller-supplied mapping of callables is the executed node registry; a stand-in node is a real node recorded by the trace, not a boundary breach"),
         ("Runtime.__init__", "sink"): ("AUTHORITATIVE", "sink acceptance controls evidence"),
         ("Runtime.__init__", "listeners"): ("NON-AUTHORITATIVE", "guarantees.md §6; a stand-in listener cannot alter the authoritative evidence verdict (it may affect scheduling)"),
         ("Runtime.__init__", "clock"): ("INPUT-SOURCE", "called only to supply timestamps"),
@@ -172,6 +180,12 @@ def test_the_boundary_inventory_covers_inspected_keyword_parameters():
         ("Runtime.__init__", "witness"): ("WITNESS-GATED", "only a real acknowledgement changes assurance"),
         ("CommitmentLog.begin", "ask"): ("LOCAL", "_ask_witness requires WitnessAck; a stand-in degrades honestly to AssuranceMode.LOCAL"),
     }
+    protocol_rows = {
+        (surface, name): (verdict, reason)
+        for (surface, name), (kind, verdict, reason) in rows.items()
+        if kind == "protocol"
+    }
+    assert set(protocol_rows) == set(expected_protocols)
     for (surface, name), (kind, verdict, reason) in rows.items():
         assert kind in {"protocol", "value"}, (surface, name)
         assert verdict and reason, (surface, name)
