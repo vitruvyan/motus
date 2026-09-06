@@ -98,6 +98,11 @@ def _wire_timestamp(value: str | datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+#: The largest integer JavaScript can hold exactly — `Number.MAX_SAFE_INTEGER`.
+#: ADR-030's rule J4 admits every integer with |n| <= this, and nothing else.
+_MAX_SAFE_INTEGER = 2 ** 53 - 1
+
+
 def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
                       scalars_required: bool = True, path: str | None = None) -> Any:
     """Validate and isolate one RFC 8259 value without coercion.
@@ -178,6 +183,23 @@ class NonCanonicalNumber(ValueError):
     """
 
 
+def _canonical_number(lexeme: str, cast: Any) -> Any:
+    """ADR-024 rule J2, hooked into the parser rather than matched by pattern.
+
+    `parse_float` and `parse_int` are called only for real JSON numbers and
+    receive the exact characters. A regular expression over the raw text would
+    flag `{"note": "cost 5.10 eur"}`, where 5.10 is somebody's prose.
+    """
+    value = cast(lexeme)
+    if json.dumps(value) != lexeme:
+        raise NonCanonicalNumber(
+            f"the number {lexeme} is not written the way this contract writes "
+            f"the value it denotes, which is {json.dumps(value)}. The digest is "
+            "taken over parsed values, so accepting this lexeme would let it "
+            "share a root with the genuine document (ADR-024, rule J2)")
+    return value
+
+
 #: The largest integer JavaScript can hold exactly — `Number.MAX_SAFE_INTEGER`.
 #: ADR-030's rule J4 admits every integer with |n| <= this, and nothing else.
 _MAX_SAFE_INTEGER = 2 ** 53 - 1
@@ -191,12 +213,45 @@ class NonIntegerNumber(ValueError):
     JavaScript writes as `-14` while Python keeps the `.0` — and an integer
     beyond the safe range cannot be serialised identically by the JSON
     implementations in use, so a document carrying one has a root only CPython
-    can derive. The producer side raises this where the value is supplied
-    (`State.with_fact`/`with_decision`/`with_rejection`, metadata seeding); the
-    reader side raises it from `Trace.from_json`/`from_dict` when the document
-    DECLARES itself 3.2.0 or above, because such a document is not what it
-    claims to be. The message names rule J4 and the JSON path to the number.
+    can derive. `State` does not know what trace version, if any, a write will
+    land in, so it never raises this (2026-09-06 review correction). The
+    writer that stamps `schema_version` raises it instead, wherever a value
+    reaches it: `Trace.__init__` (the header and any records supplied to the
+    constructor directly), `Trace.append` (a record built by hand), the
+    runtime's in-node writes check (a node's own facts, decisions and
+    rejections, wrapped into that node's `NodeFailed` rather than raised
+    bare), the runtime's own check of a run's `initial_state` before
+    `run_started` is built (round 6, #116 — see `Runtime._execute`), and the
+    CLI's document parser (`contract/validate.py`) for a document read from
+    disk. `Trace._append_runtime` does NOT raise this any more (round 6): see
+    its own docstring for why a kernel-built record needs no walk of its own.
+    The reader side — `Trace.from_json`/`from_dict` — raises it when the
+    document DECLARES itself 3.2.0 or above, because such a document is not
+    what it claims to be. The message names rule J4 and the JSON path to the
+    number.
     """
+
+
+def _render_j4_path(root: str, crumb: tuple | None) -> str:
+    """Rebuild a JSON path from a breadcrumb chain, only when refusing.
+
+    `_integer_only` walks a document that, on every genuine trace, has no
+    violation at all — that is the whole point of shipping one — so building
+    an f-string path for every child visited and discarding almost all of
+    them was 38% of the walk's own cost, measured against a version of
+    `_integer_only` that formatted eagerly
+    (`.attack/116/round3/r06_walk_microbench.py`). The breadcrumb pushed
+    alongside each value is a cons cell, `(parent, is_list, key_or_index)`:
+    one small tuple per level, never a formatted string, so the happy path
+    pays nothing for a path nobody reads. This function does the formatting,
+    once, for the single node that IS refused.
+    """
+    segments: list[str] = []
+    while crumb is not None:
+        crumb, is_list, token = crumb
+        segments.append(f"[{token}]" if is_list else f".{token}")
+    segments.reverse()
+    return root + "".join(segments)
 
 
 def _integer_only(value: Any, path: str = "$") -> None:
@@ -223,54 +278,45 @@ def _integer_only(value: Any, path: str = "$") -> None:
     does not deserve is the worst answer a verifier gives. `bool` passes: JSON
     has booleans, not numbers, and `isinstance(True, int)` must not accuse a
     boolean.
+
+    The path is lazy (round 4, #116): a breadcrumb cons cell travels with each
+    stacked value and is rendered into text (`_render_j4_path`) only for the
+    single value that is actually refused, because every genuine trace visits
+    this walk and finds nothing — paying to format a path nobody reads was
+    38% of the walk's own cost, measured.
     """
-    stack: list[tuple[Any, str]] = [(value, path)]
+    stack: list[tuple[Any, tuple | None]] = [(value, None)]
     while stack:
-        item, item_path = stack.pop()
+        item, crumb = stack.pop()
         if isinstance(item, bool):
             continue
         if isinstance(item, int):
             plain = operator.index(item)
             if abs(plain) > _MAX_SAFE_INTEGER:
                 raise NonIntegerNumber(
-                    f"rule J4 (ADR-030): the integer {plain} at {item_path} is "
-                    f"beyond 2^53 - 1 ({_MAX_SAFE_INTEGER}), the largest "
-                    "integer every JSON implementation in use writes identically. "
-                    "Record it as a string if it is an identifier, or carry it "
-                    "as an integer at a declared scale.")
+                    f"rule J4 (ADR-030): the integer {plain} at "
+                    f"{_render_j4_path(path, crumb)} is beyond 2^53 - 1 "
+                    f"({_MAX_SAFE_INTEGER}), the largest integer every JSON "
+                    "implementation in use writes identically. Record it as "
+                    "a string if it is an identifier, or carry it as an "
+                    "integer at a declared scale.")
             continue
         if isinstance(item, float):
             raise NonIntegerNumber(
-                f"rule J4 (ADR-030): the number {item!r} at {item_path} is not "
-                f"a JSON integer with |n| <= 2^53 - 1 ({_MAX_SAFE_INTEGER}). "
-                "From trace schema 3.2.0 every number in a trace is an "
-                "integer; a quantity that is not an integer is carried at a "
-                "declared scale (basis points, milliseconds, whole units) or "
-                "as a string the producer owns. A float cannot be verified by "
-                "a second implementation, which is what this rule is for.")
+                f"rule J4 (ADR-030): the number {item!r} at "
+                f"{_render_j4_path(path, crumb)} is not a JSON integer with "
+                f"|n| <= 2^53 - 1 ({_MAX_SAFE_INTEGER}). From trace schema "
+                "3.2.0 every number in a trace is an integer; a quantity "
+                "that is not an integer is carried at a declared scale "
+                "(basis points, milliseconds, whole units) or as a string "
+                "the producer owns. A float cannot be verified by a second "
+                "implementation, which is what this rule is for.")
         elif isinstance(item, dict):
             for key, child in item.items():
-                stack.append((child, f"{item_path}.{key}"))
+                stack.append((child, (crumb, False, key)))
         elif isinstance(item, list):
             for index, child in enumerate(item):
-                stack.append((child, f"{item_path}[{index}]"))
-
-
-def _canonical_number(lexeme: str, cast: Any) -> Any:
-    """ADR-024 rule J2, hooked into the parser rather than matched by pattern.
-
-    `parse_float` and `parse_int` are called only for real JSON numbers and
-    receive the exact characters. A regular expression over the raw text would
-    flag `{"note": "cost 5.10 eur"}`, where 5.10 is somebody's prose.
-    """
-    value = cast(lexeme)
-    if json.dumps(value) != lexeme:
-        raise NonCanonicalNumber(
-            f"the number {lexeme} is not written the way this contract writes "
-            f"the value it denotes, which is {json.dumps(value)}. The digest is "
-            "taken over parsed values, so accepting this lexeme would let it "
-            "share a root with the genuine document (ADR-024, rule J2)")
-    return value
+                stack.append((child, (crumb, True, index)))
 
 
 class _RepeatedMember(NonCanonicalNumber):
@@ -642,6 +688,17 @@ class Trace:
         # place a bad header can be refused before a run does anything at all.
         self._refuse_j4(self._run, "$.run")
         self._records = _ChunkedLog() if records is None else records
+        # ADR-030 decision 1 (2026-09-06 review correction): a caller may
+        # hand `records` straight to the constructor rather than building the
+        # trace one `append` at a time — `_seal`'s own docstring assumes a
+        # reseal like this happens — and until this walk they reached the
+        # wire completely unchecked: a document-absolute path per record,
+        # exactly what `append` and `_append_runtime` use, so a record
+        # supplied here and one appended afterward are refused identically
+        # (repro `.attack/116/round3/r01_ctor_records.py`,
+        # `r01c_ctor_real_run.py`).
+        for index, record in enumerate(self._records):
+            self._refuse_j4(record, f"$.records[{index}]")
         self._view_cache = None
         self._json_cache = None
         self._root_cache = _MISSING
@@ -649,13 +706,28 @@ class Trace:
     def _refuse_j4(self, value: Any, path: str) -> None:
         """Rule J4 (ADR-030), scoped by THIS trace's own declared version.
 
-        The single producing-boundary check, called from three places: here
-        (the header), `append`/`_append_runtime` (a record), and the runtime's
-        `_execute` (a node's writes, before they are wrapped into a
+        The single producing-boundary check, called from every place a
+        caller-controlled value reaches a writer that knows the trace's own
+        version: here (the header), `append` (a record built by hand),
+        `Runtime._execute` (a node's writes, before they are wrapped into a
         transition record, so a refusal becomes that node's failure exactly
-        like any exception the node raised itself). All three ask the same
-        question of the same allow-list, so the version that governs is never
-        answered twice.
+        like any exception the node raised itself) and (round 6, #116) the
+        same method's check of `initial_state` before `run_started` is built
+        — the seed a caller handed `State.new`, not something a node wrote.
+        All ask the same question of the same allow-list, so the version that
+        governs is never answered twice.
+
+        Round 6 (#116) undoes round 5's fold of this check into
+        `_strict_plain_json`: routing the runtime's two hot-path checks
+        (writes, and — through round 4 — the whole transition record) through
+        an isolating function that also copies and re-validates strings cost
+        MORE than the extra walk it replaced, measured
+        (`realistic_1000_us_per_node_min` went from +31.3% to +54.2%,
+        REPORT.md "Round 5"). `_integer_only` is restored as a standalone,
+        copy-free, lazy-path walk (round 4's form), and `Trace._append_runtime`
+        no longer calls this method at all for a kernel-built record — see its
+        own docstring for why that walk is unnecessary rather than merely
+        skipped.
         """
         if self._schema_version in _INTEGER_ONLY_GOVERNED:
             _integer_only(value, path)
@@ -807,7 +879,7 @@ class Trace:
         isolated = _strict_plain_json(record, reserve_redacted=False)
         # ADR-030 decision 1: the public append is a producing boundary too —
         # a caller building a trace by hand rather than through `Runtime` gets
-        # the same refusal the runtime's own `_append_runtime` gives.
+        # the same refusal the runtime's own writers give.
         self._refuse_j4(isolated, f"$.records[{len(self._records)}]")
         return Trace._from_parts(
             self._run, self._records.append(isolated), self._schema_version
@@ -878,16 +950,44 @@ class Trace:
     def _append_runtime(self, record: dict[str, Any]) -> "Trace":
         """Append a record already built from validated runtime primitives.
 
-        ADR-030 decision 1: the backstop half of the producing boundary. A
-        node's own writes are checked earlier, in `Runtime._execute`, so a
-        refusal there becomes that node's failure — by the time a transition
-        record reaches here its `writes` are already empty on any such
-        failure. What lands here regardless is `run_started.initial_state`
-        (seeded by the caller, not by a node) and any other record the
-        runtime assembles directly, so this is where those are refused before
-        the record is stored or handed to a sink.
+        **Round 6 (#116): no walk here, by an invariant, not an omission.**
+        Rounds 4 and 5 both re-walked the WHOLE record here — first as a
+        standalone pass, then folded into the isolating copy — to catch
+        `run_started.initial_state`, the one caller-controlled value neither
+        the header nor the writes precheck had seen. Both designs cost more
+        than the double walk they were built to avoid, because every
+        transition record pays it, on every node, whether or not anything in
+        it could possibly be a caller's number
+        (`.attack/116/round3/r05_walk_cost.py`; REPORT.md "Round 4"/"Round
+        5"). The fix is to make the invariant this method needs actually
+        hold, not to keep re-checking that it does:
+
+        - `writes` — a node's own facts, decisions and rejections — is
+          checked once, in `Runtime._execute`, in the node's own
+          `try`/`except`, before this record is even built (`runtime.py`
+          `_execute`, the `self._trace._refuse_j4(writes, "$.writes")` call).
+        - `initial_state` — the seed a caller handed `State.new`, not
+          anything a node wrote — is checked once, also in `_execute`, right
+          before `run_started` is built, for exactly the same reason
+          `writes` is checked before its record: it is the ONLY other
+          caller-controlled subtree a record here can carry.
+        - `metadata` and the sink's own numbers are checked once, in
+          `Trace.__init__`, because they live in the header, not in a record
+          this method ever sees.
+        - Everything else a record built by `Runtime._base`/`_store` carries
+          — `seq`, `attempt`, timings, `effects` (string-only, see
+          `EffectDescriptor`), `context_draws[].value` (a kernel-computed
+          integer, see `context.py`'s `_node_rand`), routing `candidates`,
+          `error`/`cause` (`type(...).__name__` and fixed messages) — is
+          stamped by the kernel and cannot carry a caller's number at all;
+          a routing record's own `value` is a COPY of a decision already
+          checked when it was written, never a new one.
+
+        A record built any other way (`Trace.append`, the reseal path
+        through `__init__`'s `records` loop) is NOT a runtime record and does
+        not come through here — those isolate-and-check the value themselves,
+        because nothing upstream of them already did.
         """
-        self._refuse_j4(record, f"$.records[{len(self._records)}]")
         return Trace._from_parts(
             self._run, self._records.append(record), self._schema_version
         )

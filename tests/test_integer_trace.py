@@ -29,11 +29,12 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import (
-    Decision, Fact, GraphSpec, InMemoryTraceSink, NodeFailed, NonIntegerNumber,
-    Rejection, Runtime, State, Trace, TraceBundle, ReplayEngine, ReplayStatus,
+    Decision, DurabilityProfile, Fact, GraphSpec, InMemoryTraceSink, NodeFailed,
+    NonIntegerNumber, Rejection, Runtime, State, Trace, TraceBundle,
+    ReplayEngine, ReplayStatus,
 )
 from vitruvyan_motus.context import _RunController
-from vitruvyan_motus.trace import _canonical_bytes
+from vitruvyan_motus.trace import _canonical_bytes, _ChunkedLog
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 9, 6, tzinfo=timezone.utc)
@@ -215,6 +216,42 @@ def test_the_metadata_refusal_happens_before_the_run_starts():
     message = str(caught.value)
     assert "J4" in message
     assert "$.run.metadata.confidence" in message
+
+
+def test_the_header_walk_covers_the_kernels_own_sink_numbers_not_only_metadata():
+    """Round 3 M11: a mutant that narrowed `Trace.__init__`'s header walk to
+    `$.run.metadata` survived the whole suite, because nothing exercised the
+    OTHER header field T11 hashes -- `sink.flush_interval_ms`/`chunk_records`,
+    the kernel's own numbers, never a node's or a caller's
+    (`.attack/116/round3/r07_surviving_mutants.py`, target M11 / round 2's
+    b03). A run with a header sink value beyond 2^53 must be refused before
+    `_hub.bind` ever opens a session for it, exactly like a bad metadata
+    value is."""
+    with pytest.raises(NonIntegerNumber) as caught:
+        Runtime(_spec(), {"a": lambda s: s},
+                sink=InMemoryTraceSink(),
+                durability_profile=DurabilityProfile.BUFFERED,
+                flush_interval_ms=2 ** 60, chunk_records=2 ** 60,
+                ).run(State.empty("x"), run_id="seed")
+    message = str(caught.value)
+    assert "J4" in message
+    assert "$.run.sink." in message
+
+
+def test_the_writers_version_gate_still_governs_which_documents_j4_sees():
+    """Round 3 M12: a mutant that deleted the version check inside
+    `Trace._refuse_j4` -- so it walked at every version, not only ones J4
+    governs -- also survived, because nothing built a pre-3.2.0 writer by
+    hand and fed it a value only 3.2.0 refuses
+    (`.attack/116/round3/r07_surviving_mutants.py`, target M12). ADR-030
+    decision 3: a document below 3.2.0 was truthful under its own rule, and a
+    writer at that version admits what it always admitted."""
+    header = {"run_id": "r", "metadata": {"temperature": -14.0}}
+    accepted = Trace(header, schema_version="3.1.0").append(
+        {"seq": 1, "kind": "x", "value": 0.5})
+    assert json.loads(accepted.to_json())["records"][0]["value"] == 0.5
+    with pytest.raises(NonIntegerNumber):
+        Trace(header, schema_version="3.2.0")
 
 
 def test_a_runtime_run_never_emits_a_document_j4_refuses():
@@ -777,3 +814,172 @@ def test_the_public_append_is_a_producing_boundary_too():
     # and an integer at the same place is accepted
     grown = trace.append({"kind": "note", "payload": {"nested": [{"ratio": 5000}]}})
     assert len(grown.to_dict()["records"]) == before + 1
+
+
+def test_the_constructor_is_a_producing_boundary_too_for_supplied_records():
+    """ADR-030 decision 1 (2026-09-06 review correction): `Trace.__init__`
+    also takes `records`, and until this walk a record supplied there
+    reached the wire completely unchecked -- the refusal at `append` only
+    ever saw records added one at a time through it
+    (`.attack/116/round3/r01_ctor_records.py`). The r01c shape: doctor an
+    int into the float it started as, inside a genuinely produced 3.2.0 run,
+    and reseal it through the constructor -- the reseal pattern `Trace._seal`
+    documents as one of the two accounts a sink and a trace can hold of one
+    run (`.attack/116/round3/r01c_ctor_real_run.py`)."""
+    def node(state):
+        return state.with_fact(Fact("temperature", 1, "sensor", NOW))
+    document = _run(node).trace.to_dict()
+    transition_index = next(
+        i for i, r in enumerate(document["records"]) if r["kind"] == "transition")
+    document["records"][transition_index]["writes"]["facts"][0]["value"] = -14.0
+    resealed = _resealed(document)
+    log = _ChunkedLog().extend(resealed["records"])
+
+    with pytest.raises(NonIntegerNumber) as caught:
+        Trace(document["run"], log, schema_version="3.2.0")
+    message = str(caught.value)
+    assert "J4" in message
+    assert f"$.records[{transition_index}].writes.facts[0].value" in message
+
+    # The same records, at 3.1.0, are truthful under their own version and
+    # stay accepted (ADR-030 decision 3) -- the version gate governs the
+    # constructor's records walk exactly as it governs `append`'s.
+    accepted = Trace(document["run"], log, schema_version="3.1.0")
+    stored = accepted.to_dict()["records"][transition_index]["writes"]["facts"][0]["value"]
+    assert stored == -14.0
+
+
+def _numeric_offenders(value, path="$"):
+    """Yield ``(path, value)`` for every float, or integer with |n| >= 2**31,
+    anywhere in a JSON-shaped tree.
+
+    Deliberately independent of anything `trace.py` exports: this is a
+    from-scratch walk written the way a suspicious outside reader would write
+    one, not a reuse of `_integer_only`, so it cannot pass merely because it
+    shares a bug with the code it is checking. `2**31` (not J4's own
+    `2**53 - 1`) is chosen because nothing a genuine run below produces comes
+    anywhere near it — every kernel-built number in a trace record is a
+    small count (a seq, an attempt, an index) or a bounded configuration
+    value (`flush_interval_ms`, `chunk_records`) — so a value crossing this
+    bound is itself a signal that something unexpected reached the document,
+    even before asking whether J4 admits it.
+    """
+    if isinstance(value, bool):
+        return
+    if isinstance(value, float):
+        yield path, value
+    elif isinstance(value, int) and abs(value) >= 2 ** 31:
+        yield path, value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _numeric_offenders(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _numeric_offenders(item, f"{path}[{index}]")
+
+
+def test_every_record_kind_the_runtime_can_emit_is_j4_clean():
+    """Round 6 (#116): the backstop that used to walk every runtime record a
+    second time (round 4) or fold that second walk into isolation (round 5)
+    is gone — `_append_runtime` no longer checks anything, on the strength of
+    an INVARIANT (see its docstring) rather than a re-check. This is the
+    other half of making that safe: a document exercising every record kind
+    the runtime can emit at 3.2.0 must still validate clean under J4, and —
+    the structural guard a re-check would have given for free, and a mere
+    "no violations" report would not — must carry no float and no integer
+    anywhere near the range only a caller's number would occupy. A new
+    kernel field that smuggled a caller's number past the invariant this
+    round relies on would be caught here, by its VALUE, not by trusting that
+    whoever added it also updated a walk."""
+    documents = []
+
+    # transition (raised, then retried and returned), attempt_started x2,
+    # routing, run_completed -- and, under this run's sink, the header's own
+    # sink numbers.
+    attempts: list[int] = []
+
+    def flaky(state):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("first attempt fails")
+        return (state.with_fact(Fact("k", 1, "s", NOW))
+                     .with_decision(Decision("d", "go", NOW)))
+
+    retry_spec = GraphSpec.from_dict({
+        "schema_version": "1.0.0", "name": "j4allkinds", "version": "1.0.0",
+        "entry": "flaky",
+        "nodes": [{"name": "flaky", "effect_class": "pure"},
+                  {"name": "done", "effect_class": "pure"}],
+        "transitions": {
+            "flaky": {"kind": "route", "on": "d", "map": {"go": "done"}},
+            "done": {"kind": "terminal"},
+        },
+    })
+    retried = Runtime(
+        retry_spec, {"flaky": flaky, "done": lambda s: s}, max_attempts=2,
+        sink=InMemoryTraceSink(), durability_profile=DurabilityProfile.BUFFERED,
+    ).run(State.empty("x"), run_id="all-kinds-retry")
+    documents.append(retried.trace.to_dict())
+
+    # run_failed: STRICT aborts a node that never succeeds.
+    def always_fails(state):
+        raise RuntimeError("never succeeds")
+    with pytest.raises(NodeFailed) as failed:
+        Runtime(_spec("j4fail"), {"a": always_fails}).run(
+            State.empty("x"), run_id="all-kinds-fail")
+    documents.append(failed.value.trace.to_dict())
+
+    # run_cancelled: lodged before the run starts, so run_started is the
+    # only other record.
+    cancelling = Runtime(_spec("j4cancel"), {"a": lambda s: s})
+    cancelling.cancel("shutdown before start")
+    cancelled = cancelling.run(State.empty("x"), run_id="all-kinds-cancel")
+    documents.append(cancelled.trace.to_dict())
+
+    # resume/continuation: the new segment's `initial_state` carries the
+    # SOURCE segment's committed facts -- assembled by the runtime from a
+    # caller-supplied State, not written by any node in THIS segment, which
+    # is exactly the value this round moved off the removed backstop walk
+    # and onto `Runtime._execute`'s own check.
+    def first(state):
+        return state.with_fact(Fact("first", 7, "test", NOW))
+
+    def second(state):
+        return state.with_fact(Fact("second", 9, "test", NOW))
+
+    resume_spec = GraphSpec.from_dict({
+        "schema_version": "1.0.0", "name": "j4resume", "version": "1.0.0",
+        "entry": "first",
+        "nodes": [{"name": "first", "effect_class": "pure"},
+                  {"name": "second", "effect_class": "pure"}],
+        "transitions": {"first": {"kind": "next", "to": "second"},
+                         "second": {"kind": "terminal"}},
+    })
+    complete = Runtime(resume_spec, {"first": first, "second": second}).run(
+        State.empty("x"), run_id="all-kinds-resume-source")
+    records = list(complete.trace.records)
+    cut = next(i for i, r in enumerate(records) if r["kind"] == "routing")
+    partial = complete.trace.to_dict()
+    partial["records"] = partial["records"][: cut + 1]
+    resumed = ReplayEngine(TraceBundle(resume_spec, Trace.from_dict(partial))).resume(
+        Runtime(resume_spec, {"first": first, "second": second}),
+        run_id="all-kinds-resume-resumed",
+    )
+    documents.append(complete.trace.to_dict())
+    documents.append(resumed.trace.to_dict())
+
+    seen_kinds = {
+        record["kind"] for document in documents for record in document["records"]
+    }
+    expected_kinds = {
+        "run_started", "attempt_started", "transition", "routing",
+        "run_completed", "run_failed", "run_cancelled",
+    }
+    assert expected_kinds <= seen_kinds, expected_kinds - seen_kinds
+    assert resumed.trace.to_dict()["run"].get("resume") is not None
+
+    for document in documents:
+        violations = validate.validate_trace(document)
+        assert violations == [], violations
+        offenders = list(_numeric_offenders(document))
+        assert offenders == [], offenders

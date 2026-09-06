@@ -967,9 +967,16 @@ one object (ADR-024).
 parser raises for a float — integral ones included, because `-14` and `-14.0`
 are the same RFC 8259 number and two different canonical texts — or for an
 integer beyond `Number.MAX_SAFE_INTEGER`, with the rule id and the JSON path
-in the message. The refusal lives at the producing boundary (`with_fact`,
-`with_decision`, `with_rejection`, metadata seeding) *before anything is
-written*; readers are scoped by the document's own declared version, so a
+in the message. **The refusal lives at the writer that stamps
+`schema_version`, not on `State` (2026-09-06 review correction) — `State`
+does not know what trace version, if any, a value will end up in.**
+`Trace.__init__` (the header, and any records handed to the constructor
+directly), `Trace.append` and `Trace._append_runtime` (a record) raise it
+*before anything is written*; the runtime's in-node writes check raises it
+for a node's own facts, decisions and rejections, wrapped into that node's
+`NodeFailed` rather than out of `.run()` bare; and the CLI's document parser
+raises it reading a document from disk. Readers — `Trace.from_json`/
+`from_dict` — are scoped by the document's own declared version, so a
 0.12.0 trace carrying `-14.0` loads, replays and verifies exactly as it
 always did. A quantity that is not an integer is carried at a declared scale
 — basis points, milliseconds, whole units — or as a string the producer

@@ -1145,7 +1145,9 @@ class Runtime:
         })
         return record
 
-    def _store(self, record: dict[str, Any], *, terminal: bool = False, force: bool = False) -> dict[str, Any]:
+    def _store(
+        self, record: dict[str, Any], *, terminal: bool = False, force: bool = False,
+    ) -> dict[str, Any]:
         assert self._trace is not None and self._hub is not None
         # Seal FIRST, so the sink and the trace receive the identical dict. The
         # sink is handed the record before the trace appends it, so sealing at
@@ -1169,6 +1171,10 @@ class Runtime:
             self._replace_trace(self._trace._append_runtime(record))
             self._hub.notify(record)
             return record
+        # `_append_runtime` walks nothing here (round 6, #116): `writes` was
+        # already checked under rule J4 in `_execute`, in the node's own
+        # try/except, before this record was even built, and everything else
+        # a transition record carries is kernel-built. See its own docstring.
         self._replace_trace(self._trace._append_runtime(record))
         try:
             self._hub.persist(record, force=force)
@@ -1293,7 +1299,18 @@ class Runtime:
         def exposed(record: dict[str, Any]) -> dict[str, Any]:
             return copy.deepcopy(record) if copy_yields else record
         started = self._base("run_started")
-        started.update({"intent": self._state._intent, "initial_state": self._state._initial_wire()})
+        initial_state = self._state._initial_wire()
+        # ADR-030 decision 1/2 (round 6, #116): `initial_state` is the seed a
+        # caller handed `State.new` -- facts, decisions, rejections a node
+        # never touched -- so it is the one caller-controlled value a
+        # `run_started` record carries. Checked HERE, once, before the record
+        # exists at all, for the same reason a node's `writes` is checked
+        # before ITS record exists a few lines below: `_append_runtime` walks
+        # neither any more (see its docstring), so this is the only place
+        # left that does.
+        self._trace._refuse_j4(
+            initial_state, f"$.records[{len(self._trace._runtime_log)}].initial_state")
+        started.update({"intent": self._state._intent, "initial_state": initial_state})
         yield exposed(self._store(started))
         current_node = start_node
         routed_activations = 0

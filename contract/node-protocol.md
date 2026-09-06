@@ -279,8 +279,14 @@ for any finite `v` in `[0, 1)`; the trace records `n`, and the node receives
 when it returns something non-finite or outside `[0, 1)`. `random.random()`
 already emits values of the form `k / 2^53`, so it quantises to itself and
 replay reproduces its floats bit-for-bit unchanged; an ordinary probability
-like `0.1` or `0.42` is accepted and recorded at the nearest point on the
-grid, rather than refused for not already being on it.
+like `0.1` or `0.42` is accepted and recorded **rounded down to the grid
+point below (`n = floor(v * 2^53)`)**, rather than refused for not already
+being on it. Not the nearest point: `0.42`'s exact product with `2^53` lands
+precisely on the halfway mark between two grid points, and `floor` takes the
+lower one every time, so a `random_source` returning `0.42` is recorded as
+`n = 3783023686991216` and hands the node `0.41999999999999993`, not
+`0.42000000000000004` — a caller reading "nearest" would expect the latter
+(`.attack/116/round3/r04_rand_quantisation.py`, section B).
 
 6.2. A node using ambient sources (`datetime.now()`, `random`, `uuid4`,
 unrecorded network reads) in a reproducibility-declared run downgrades the

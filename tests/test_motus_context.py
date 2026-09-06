@@ -100,6 +100,30 @@ def test_a_rand_source_that_is_not_k_over_2_53_is_quantised_not_refused():
     assert n / 2 ** 53 == given
 
 
+def test_the_grid_point_recorded_is_the_one_below_the_value_not_the_nearest():
+    # contract/node-protocol.md 6.1's formula is n = floor(v * 2^53); it
+    # matters that the wording says "below" and not "nearest" (2026-09-06
+    # review correction). 0.42's exact product with 2^53 lands precisely on
+    # the halfway mark between two grid points -- Fraction(0.42) * 2**53 ==
+    # 3783023686991216.5 -- so floor and Python's own round-half-EVEN happen
+    # to agree here (`.attack/116/round3/r04_rand_quantisation.py`, section
+    # B); 0.123456789 does not sit on a tie (frac 0.875) and floor and any
+    # nearest-rounding convention disagree unambiguously, which is the
+    # assertion that actually distinguishes the two formulas.
+    control = _RunController(random_source=lambda: 0.42)
+    given = control.node_context.rand()
+    n = control.draws_since(0)[0].value
+    assert n == 3783023686991216            # floor, not 3783023686991217 (ceiling)
+    assert given == 0.41999999999999993     # moved AWAY from 0.42, not toward it
+    assert given != 0.42
+
+    control = _RunController(random_source=lambda: 0.123456789)
+    given = control.node_context.rand()
+    n = control.draws_since(0)[0].value
+    assert n == 1111999897873515            # floor: round() would give ...516
+    assert given == 0.1234567889999999
+
+
 def test_a_rand_source_outside_the_unit_interval_is_still_refused():
     for bad in (1.0, -0.0001, float("nan"), float("inf")):
         control = _RunController(random_source=lambda bad=bad: bad)
