@@ -30,7 +30,7 @@ from enum import Enum
 from collections.abc import Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from vitruvyan_motus.trace import _canonical_bytes
+from vitruvyan_motus.trace import _canonical_bytes, _strict_plain_json
 
 __all__ = [
     "AssuranceMode", "CommitmentKind", "Commitment", "Continuation", "WitnessAck",
@@ -238,9 +238,9 @@ class AnchorReceipt:
     def __post_init__(self) -> None:
         if self.state not in ("pending", "anchored"):
             raise ValueError("an anchor receipt is pending or anchored")
-        if not isinstance(self.proof, dict):
-            raise ValueError("AnchorReceipt.proof must be a dict (schema type object)")
-        _validate_schema_fields(self)
+        isolated = _validate_schema_fields(self)
+        if "proof" in isolated:
+            object.__setattr__(self, "proof", isolated["proof"])
         if self.state == "anchored":
             if self.reference is None:
                 raise ValueError("an anchored receipt's transaction reference is required")
@@ -257,7 +257,11 @@ class AnchorReceipt:
             "anchor_id": self.anchor_id, "network": self.network,
             "checkpoint": self.checkpoint, "state": self.state,
             "reference": self.reference, "published_at": self.published_at,
-            "proof": self.proof,
+            # Revalidate and isolate again so mutation through the public
+            # dict value cannot reach the wire without a path-aware J1 refusal.
+            "proof": _strict_plain_json(
+                self.proof, path="AnchorReceipt.proof"
+            ),
         }
 
 
@@ -616,6 +620,12 @@ _NULLABLE_SCHEMA_FIELDS = frozenset({
     (AnchorReceipt, "reference"), (AnchorReceipt, "published_at"),
 })
 
+# Dict-valued fields in schema-bound dataclasses are explicitly allow-listed:
+# their contents still have to be values the JSON contract can carry.
+_JSON_FIELDS: dict[type, frozenset[str]] = {
+    AnchorReceipt: frozenset({"proof"}),
+}
+
 _SCHEMA_VALIDATORS: dict[type, tuple[tuple[str, Callable[[Any, str], str], str], ...]] = {
     cls: tuple(
         (name, schema_type.validate, schema_type.name)
@@ -625,7 +635,8 @@ _SCHEMA_VALIDATORS: dict[type, tuple[tuple[str, Callable[[Any, str], str], str],
 }
 
 
-def _validate_schema_fields(instance: Any) -> None:
+def _validate_schema_fields(instance: Any) -> dict[str, Any]:
+    isolated: dict[str, Any] = {}
     labels = {
         (WitnessAck, "commitment"): "acknowledged commitment",
         (AnchorReceipt, "reference"): "an anchored receipt's transaction reference",
@@ -637,6 +648,16 @@ def _validate_schema_fields(instance: Any) -> None:
         label = labels.get((type(instance), name),
                            f"{type(instance).__name__}.{name}")
         validator(value, f"{label} (schema type {what})")
+    for name in _JSON_FIELDS.get(type(instance), ()):
+        value = getattr(instance, name)
+        if name == "proof" and not isinstance(value, dict):
+            # Preserve the outer-object requirement separately from J1's
+            # recursive value validation.
+            raise ValueError("AnchorReceipt.proof must be a dict (schema type object)")
+        isolated[name] = _strict_plain_json(
+            value, path=f"{type(instance).__name__}.{name}"
+        )
+    return isolated
 
 
 @dataclass(frozen=True, slots=True)

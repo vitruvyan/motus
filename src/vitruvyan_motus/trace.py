@@ -98,7 +98,7 @@ def _wire_timestamp(value: str | datetime) -> str:
 
 
 def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
-                      scalars_required: bool = True) -> Any:
+                      scalars_required: bool = True, path: str | None = None) -> Any:
     """Validate and isolate one RFC 8259 value without coercion.
 
     `scalars_required=False` is for READING a document that declares a schema
@@ -109,35 +109,53 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
     trace that its own validator still calls valid. Nothing said so and no test
     covered it (ADR-026 decision 4).
     """
+    def refuse(exc_type: type[Exception], message: str) -> None:
+        if path is not None:
+            message = f"{path}: {message} (rule J1)"
+        raise exc_type(message)
+
     if isinstance(value, str):
-        return _encodable(value) if scalars_required else value
+        try:
+            return _encodable(value) if scalars_required else value
+        except (TypeError, ValueError) as exc:
+            refuse(type(exc), str(exc))
     if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise ValueError("NaN and Infinity are not RFC 8259 JSON values")
+            refuse(ValueError, "NaN and Infinity are not RFC 8259 JSON values")
         return value
     if isinstance(value, list):
         return [_strict_plain_json(item, reserve_redacted=reserve_redacted,
-                                   scalars_required=scalars_required)
-                for item in value]
+                                   scalars_required=scalars_required,
+                                   path=(f"{path}[{index}]" if path is not None else None))
+                for index, item in enumerate(value)]
     if isinstance(value, dict):
-        if not all(isinstance(key, str) for key in value):
-            raise TypeError("JSON object keys must be strings")
+        # Take one concrete snapshot. Dict subclasses can override __iter__,
+        # .get(), and .items() independently; checking one view and copying
+        # another would validate a different value from the one we isolate.
+        items = list(value.items())
+        if not all(isinstance(key, str) for key, _ in items):
+            refuse(TypeError, "JSON object keys must be strings")
         if scalars_required:
-            for key in value:
-                _encodable(key)
-        if reserve_redacted and value.get("kind") == "redacted":
-            raise ValueError("redacted values are reserved for redact()")
+            for key, _ in items:
+                try:
+                    _encodable(key)
+                except (TypeError, ValueError) as exc:
+                    refuse(type(exc), str(exc))
+        if reserve_redacted and any(key == "kind" and item == "redacted"
+                                    for key, item in items):
+            refuse(ValueError, "redacted values are reserved for redact()")
         return {
             key: _strict_plain_json(item, reserve_redacted=reserve_redacted,
-                                    scalars_required=scalars_required)
-            for key, item in value.items()
+                                    scalars_required=scalars_required,
+                                    path=(f'{path}[{key!r}]' if path is not None else None))
+            for key, item in items
         }
-    raise TypeError(
-        f"{type(value).__name__} is not a strict RFC 8259 JSON value; "
-        "convert it explicitly before writing"
-    )
+    refuse(TypeError,
+           f"{type(value).__name__} is not a strict RFC 8259 JSON value; "
+           "convert it explicitly before writing")
+    raise AssertionError("unreachable")
 
 
 class NonCanonicalNumber(ValueError):

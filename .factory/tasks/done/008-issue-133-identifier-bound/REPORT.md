@@ -129,3 +129,69 @@ Raw correction-round output:
 - Correction verifier: Pi `openai-codex/gpt-5.6-luna`, `/tmp/verifier-008b-correction.md`.
 - Same adversary lens was rerun once in `/tmp/adversary-008b.md`; its B1–B4 findings were processed in correction round 1.
 - No further adversary round, optimization, mutation probe, commit, push, tag, or release.
+
+## 008c
+
+## RESULT
+Implemented recursive strict JSON validation for `AnchorReceipt.proof` by reusing `_strict_plain_json`. The proof remains required to be an outer `dict`; invalid nested values are refused at construction with their proof path and rule J1. The schema-bound dict-field sweep found only `AnchorReceipt.proof`, which is routed through the explicit `_JSON_FIELDS` allowlist.
+
+## ARTIFACTS
+- `src/vitruvyan_motus/trace.py`: optional path context for `_strict_plain_json`; default behavior remains unchanged.
+- `src/vitruvyan_motus/commitments.py`: schema-bound JSON-field allowlist and recursive proof validation.
+- `tests/test_commitments_schema_fields.py`: bytes, set, non-string key, NaN, three-level nested failures, arbitrary-depth valid proof, and path/J1 assertions.
+
+## TESTS
+Raw output:
+- `.venv/bin/python -m pytest -q` — `1228 passed, 5 skipped, 1 warning in 100.22s (0:01:40)`.
+- `.venv/bin/python tools/check_frozen_paths.py "$(git merge-base HEAD main)" HEAD` — `Frozen contract paths: PASS`.
+- `.venv/bin/python .attack/pr131/a08_huge_height_reference_exceeds_identifier_length.py` — runtime `ValueError` refusal; `NOT REPRODUCED` at the later validator path.
+- `git diff --check` — passed.
+- Verifier focused suites — `77 passed`, `100 passed, 4 skipped`, and `55 passed`; no findings.
+
+## FINDINGS
+- No findings from verification. The implementation preserves the outer proof-object requirement, accepts arbitrary-depth valid JSON, and applies the shared validator without a second recursive implementation.
+
+## MUTATION TARGETS
+- Remove the `_strict_plain_json` call from `_validate_schema_fields`: each nested invalid-proof regression must fail.
+- Remove path propagation from `_strict_plain_json`: nested path/J1 assertions must fail.
+- Remove `AnchorReceipt` from `_JSON_FIELDS`: invalid proof values must become constructible.
+- Remove the outer `dict` guard in the JSON-field route: the non-object proof regression must fail.
+
+## OUT OF SCOPE
+- No contract/schema or frozen-path changes.
+- No changes to proof semantics beyond strict JSON representability.
+- No mutation probe, commit, push, tag, release, or dependency changes.
+
+## AGENTS
+- Lead: current Pi session.
+- Implementer: Pi `openai-codex/gpt-5.6-luna`, `implementer-008c`; applied the correction round.
+- Verifier: Pi `openai-codex/gpt-5.6-luna`, `verifier-008c`; initial report and `/tmp/verifier-008c-correction.md`.
+- Adversary: Claude, same runtime-accepted / validator-refused lens, `/tmp/adversary-008c.md`; identified the dict-subclass and aliasing gaps.
+- No further adversary round, mutation probe, commit, push, tag, or release.
+
+### Correction round 1
+
+## FINDINGS
+- Fixed: `_strict_plain_json` now snapshots one `.items()` result and uses it for key validation, reserved-redacted detection, and recursive isolation, closing dict-subclass view discrepancies.
+- Fixed: `AnchorReceipt.proof` stores the isolated plain JSON result at construction. `to_dict()` revalidates and returns a fresh isolated copy, so caller or accessor mutation cannot bypass path-aware J1 refusal.
+
+## TESTS
+Raw correction-round output:
+- `.venv/bin/python -m pytest -q tests/test_commitments_schema_fields.py tests/test_surrogate_boundary.py tests/test_commitments.py` — `180 passed, 4 skipped in 2.82s`.
+- `.venv/bin/python -m pytest -q` — `1231 passed, 5 skipped, 1 warning in 95.83s (0:01:35)`.
+- `.venv/bin/python tools/check_frozen_paths.py "$(git merge-base HEAD main)" HEAD` — `Frozen contract paths: PASS`.
+- `.venv/bin/python .attack/pr131/a08_huge_height_reference_exceeds_identifier_length.py` — runtime `ValueError` refusal; `NOT REPRODUCED` at the later validator path.
+- `git diff --check` — passed.
+
+## MUTATION TARGETS
+- Revert the single `.items()` snapshot and restore separate iteration: the sneaky dict-subclass regression must fail.
+- Discard the construction-time `_strict_plain_json` result: source-alias isolation regression must fail.
+- Remove serialization-time shared validation/isolation: accessor mutation must serialize no longer, or lose path/J1 refusal.
+- Remove reserved-redacted checking from the snapshot: the sneaky reserved-proof regression must fail.
+
+## AGENTS
+- Lead: current Pi session.
+- Adversary: `/tmp/adversary-008c.md`, same runtime-accepted/validator-refused lens; identified the two blocking gaps.
+- Correction implementer: current Pi session; no separate implementer agent used.
+- Verifier: prior `verifier-008c` focused review plus current focused/full/frozen/a08 verification.
+- No mutation probe, commit, push, tag, or release.

@@ -95,6 +95,54 @@ def test_anchor_proof_must_be_a_dict():
         AnchorReceipt("a", "n", _DIGEST, "pending", proof=42)
 
 
+@pytest.mark.parametrize(
+    "bad, leaf, error",
+    [
+        ({"one": {"two": {"three": b"bytes"}}}, "three", TypeError),
+        ({"one": {"two": {"three": {1: "value"}}}}, "three", TypeError),
+        ({"one": {"two": {"three": {"value": float("nan")}}}}, "value", ValueError),
+        ({"one": {"two": {"three": {"value": {1, 2}}}}}, "value", TypeError),
+    ],
+)
+def test_anchor_proof_refuses_non_json_values_with_nested_path(bad, leaf, error):
+    with pytest.raises(error, match=rf"AnchorReceipt\.proof.*{leaf}.*J1"):
+        AnchorReceipt("a", "n", _DIGEST, "pending", proof=bad)
+
+
+def test_anchor_proof_accepts_valid_json_at_arbitrary_depth():
+    proof = value = {}
+    for index in range(100):
+        value["level"] = {}
+        value = value["level"]
+    value["answer"] = [None, True, 3, 4.5, "text"]
+    receipt = AnchorReceipt("a", "n", _DIGEST, "pending", proof=proof)
+    assert receipt.proof == proof
+
+
+def test_anchor_proof_uses_one_items_snapshot_for_dict_subclasses():
+    class Sneaky(dict):
+        def items(self):
+            yield "kind", "redacted"
+            yield "payload", b"not-json"
+
+    with pytest.raises(ValueError, match=r"AnchorReceipt\.proof.*J1"):
+        AnchorReceipt("a", "n", _DIGEST, "pending", proof=Sneaky({"safe": 1}))
+
+
+def test_anchor_proof_isolated_from_source_mutation():
+    source = {"safe": {"value": 1}}
+    receipt = AnchorReceipt("a", "n", _DIGEST, "pending", proof=source)
+    source["unsafe"] = b"not-json"
+    assert receipt.to_dict()["proof"] == {"safe": {"value": 1}}
+
+
+def test_anchor_proof_accessor_mutation_is_refused_on_serialization():
+    receipt = AnchorReceipt("a", "n", _DIGEST, "pending", proof={"safe": True})
+    receipt.proof["unsafe"] = float("nan")
+    with pytest.raises(ValueError, match=r"AnchorReceipt\.proof.*unsafe.*J1"):
+        receipt.to_dict()
+
+
 def test_nullable_schema_classification_is_exhaustive():
     expected = {
         (Commitment, "root"), (Commitment, "outcome"),
