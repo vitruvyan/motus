@@ -758,3 +758,22 @@ def test_an_accepted_int_subclass_is_normalised_to_a_plain_int_on_the_wire():
     assert value == 42
     assert type(value) is int, (
         f"the wire still carries a {type(value).__name__}, not a plain int")
+
+def test_the_public_append_is_a_producing_boundary_too():
+    """A caller building a trace by hand, not through `Runtime`, meets the
+    same J4 refusal at `Trace.append`: the gate belongs to the writer that
+    stamps the version, whoever calls it. The mutation probe that removed
+    the gate from `append` alone survived the suite until this test."""
+    def node(state, ctx):
+        return state.with_fact(Fact("n", 1, "test", NOW))
+    trace = _run(node).trace
+    before = len(trace.to_dict()["records"])
+    with pytest.raises(NonIntegerNumber) as refused:
+        trace.append({"kind": "note", "payload": {"nested": [{"ratio": 0.5}]}})
+    assert "J4" in str(refused.value)
+    assert f"$.records[{before}].payload.nested[0].ratio" in str(refused.value)
+    # nothing was appended by the refused call
+    assert len(trace.to_dict()["records"]) == before
+    # and an integer at the same place is accepted
+    grown = trace.append({"kind": "note", "payload": {"nested": [{"ratio": 5000}]}})
+    assert len(grown.to_dict()["records"]) == before + 1
