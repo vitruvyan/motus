@@ -31,6 +31,7 @@ What went wrong the first time, so it is not repeated: 506faec refused non-integ
 - Orbis: `confidence` and its two siblings become integers at the pin bump — the declared migration orbis#63 already scheduled — and the shadow tree gains 10 of 90 traces verifiable from Node. Limen: nothing changes. The demo: the cold-chain scenario writes `-14` at scale 1 (degrees) or `-140` at scale 10, and says which; the frozen `demo/out` stays as written.
 - **What is given up:** a producer with a real number has to choose a scale, and a badly chosen one loses precision silently. That is the producer's contract to declare, and #130 (vectors, 82 % of a consumer's numbers) is the case where "an integer" is not the answer at all: a vector is carried by reference to bytes, not as a JSON array, and that ADR follows this one.
 - Nothing about roots already anchored moves: the rule applies to documents not yet written.
+- **Resuming a pre-3.2.0 segment carrying a float is refused, not silently accepted (2026-09-06 review correction):** the refusal fires at the writer building the resumed run's `run_started.initial_state` or header `metadata`, before any record of the new segment is stored, and the consumer migrates the value to an integer at a declared scale before resuming; the old segment itself is untouched.
 
 ## Alternatives rejected
 
@@ -40,6 +41,6 @@ What went wrong the first time, so it is not repeated: 506faec refused non-integ
 
 ## Hypothesis, and how it fails
 
-**H1 — no consumer needs a non-integer number in a trace value.** Measured true on Orbis (three fields, all scalable) and Limen (none). It fails the day a producer has a value with no sane integer scale and no string form; then option 2 is reopened. The implementation adds a test that greps the two consumers' pinned code for float writes into Facts, so the migration is checked, not assumed.
+**H1 — no consumer needs a non-integer number in a trace value.** Measured true on Orbis (three fields, all scalable) and Limen (none). It fails the day a producer has a value with no sane integer scale and no string form; then option 2 is reopened. **(2026-09-06 review correction)** The original text claimed the implementation greps "the two consumers' pinned code" — it cannot, from this repository: Orbis and Limen live in separate repositories this one does not check out. The check that matters lives in each consumer's own tree (Orbis #63's guard test is theirs to write and run). What this repository CAN and does check is its own producers — the demo, the examples and the end-to-end probe — with an AST walk over literal floats inside `Fact(`/`Decision(`/`Rejection(`/`with_fact(`-shaped calls at any depth, so at least the evidence this repository ships is checked, not assumed.
 
 **H2 — the safe-integer bound is 2^53 − 1 on both sides.** Falsified by any JSON implementation in use that loses integers below that bound; none is known, and the reverted commit's table records `2^53 + 1` as the first disagreement.

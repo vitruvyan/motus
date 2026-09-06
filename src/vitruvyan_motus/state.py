@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from vitruvyan_motus.trace import (
-    Decision, Fact, NonIntegerNumber, Rejection, RedactedValue, _ChunkedLog,
-    _integer_only, _strict_plain_json, _value,
+    Decision, Fact, Rejection, RedactedValue, _ChunkedLog, _value,
 )
 
 __all__ = ["State"]
@@ -88,20 +87,6 @@ def _isolate_item_value(value: Fact | Decision | Rejection) -> Fact | Decision |
     return copy.deepcopy(value)
 
 
-def _refuse_non_integer(value: Any, path: str, *, surface: str) -> None:
-    """Rule J4 (ADR-030) at a producing boundary, naming the write.
-
-    `_integer_only` knows the value and the path inside it; it does not know
-    which write it was handed, and a message that says "at $.value" without
-    naming the fact is a message that sends a node author to grep. The surface
-    prefixes the walk's finding: `fact 'temperature': rule J4 ...`.
-    """
-    try:
-        _integer_only(value, path)
-    except NonIntegerNumber as exc:
-        raise NonIntegerNumber(f"{surface}: {exc}") from None
-
-
 class State:
     """An immutable state snapshot.
 
@@ -127,7 +112,6 @@ class State:
         events: _ChunkedLog[dict[str, Any]] | None = None,
         lineage: object | None = None,
         index: _StateIndex | None = None,
-        _check_integers: bool = True,
     ) -> None:
         if not isinstance(intent, str):
             raise TypeError("intent must be a string")
@@ -140,16 +124,12 @@ class State:
         for key in _STRING_METADATA_KEYS:
             if key in raw_metadata and not isinstance(raw_metadata[key], str):
                 raise TypeError(f"standard metadata field {key!r} must be a string")
-        # The runtime's metadata seeding is a producing boundary: the header's
-        # metadata is hashed by T11, and under rule J4 (ADR-030) every number
-        # in a 3.2.0 trace is a JSON integer. The refusal therefore happens
-        # here, at `State.empty`/`State.new` — before the run starts, before
-        # anything is written. `from_snapshot` (a READER) clears the flag:
-        # evidence written before J4 existed stays readable without rewriting.
-        if _check_integers:
-            for key, value in raw_metadata.items():
-                _refuse_non_integer(
-                    value, f"$.metadata.{key}", surface=f"metadata {key!r}")
+        # ADR-030 decision 2: a State carries no trace schema version, so it
+        # cannot know which rule J4 scope applies — a State built here might
+        # seed a fresh run (governed) or reconstruct a decade-old snapshot
+        # (not). Rule J4 is enforced once, at the trace-producing boundary
+        # that DOES know its version (`Trace.__init__` for the header this
+        # metadata becomes, `Runtime._execute` for a node's writes), not here.
         self._metadata = {key: _value(value) for key, value in raw_metadata.items()}
         self._reads = reads
         self._events = _ChunkedLog() if events is None else events
@@ -183,9 +163,8 @@ class State:
     @classmethod
     def empty(
         cls, intent: str = "", metadata: dict[str, Any] | None = None,
-        *, _check_integers: bool = True,
     ) -> "State":
-        return cls(intent=intent, metadata=metadata, _check_integers=_check_integers)
+        return cls(intent=intent, metadata=metadata)
 
     @classmethod
     def new(
@@ -196,9 +175,8 @@ class State:
         decisions: Iterable[Decision] = (),
         rejections: Iterable[Rejection] = (),
         metadata: dict[str, Any] | None = None,
-        _check_integers: bool = True,
     ) -> "State":
-        state = cls.empty(intent, metadata, _check_integers=_check_integers)
+        state = cls.empty(intent, metadata)
         initial: list[_StateItem] = []
         for collection, values in (
             ("facts", facts), ("decisions", decisions), ("rejections", rejections)
@@ -213,20 +191,12 @@ class State:
                     raise TypeError(
                         f"State.new {collection} must contain only {expected.__name__} values"
                     )
-                # `State.new` seeds `run_started.initial_state`, which rule J4
-                # (ADR-030) covers — a number in it is a number in the trace.
-                # Skip the walk when READING (`from_snapshot`), whose documents
-                # were truthful under their own version.
-                if _check_integers and collection == "facts":
-                    _refuse_non_integer(
-                        value.value, "$.value", surface=f"fact {value.key!r}")
-                elif _check_integers and collection == "decisions":
-                    _refuse_non_integer(
-                        value.value, "$.value", surface=f"decision {value.key!r}")
-                elif _check_integers:
-                    _refuse_non_integer(
-                        value.evidence, "$.evidence",
-                        surface=f"rejection {value.what!r}")
+                # `State.new` seeds `run_started.initial_state`, a position
+                # rule J4 (ADR-030) covers when the trace being built is
+                # governed — but a State does not know that, so it takes
+                # whatever `Fact`/`Decision`/`Rejection` already accepted
+                # (a float included) and leaves the refusal to whichever
+                # trace-producing boundary this state ends up feeding.
                 initial.append(_StateItem(collection, _isolate_item_value(value), {
                     "kind": "initial", "collection": collection, "index": index,
                 }))
@@ -243,7 +213,14 @@ class State:
         intent: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> "State":
-        """Re-seed state from a trace snapshot for playback or resume."""
+        """Re-seed state from a trace snapshot for playback or resume.
+
+        A plain reader (ADR-030 decision 2/3): a `State` is version-agnostic,
+        so a float from a pre-3.2.0 snapshot re-seeds cleanly here. If this
+        state goes on to seed a NEW run, that run's `Trace` — which knows its
+        own version — is where a value J4 refuses is refused: `run_started`
+        does not get written for a resumed run whose seed does not conform.
+        """
         if not isinstance(snapshot, dict):
             raise TypeError("snapshot must be an object")
         facts = [Fact(**item) for item in snapshot.get("facts", [])]
@@ -252,14 +229,6 @@ class State:
         return cls.new(
             intent, facts=facts, decisions=decisions, rejections=rejections,
             metadata=metadata,
-            # A reader, not a producer: `from_snapshot` re-seeds state from a
-            # document that declares its own version, and evidence written
-            # before rule J4 existed stays readable without rewriting
-            # (ADR-030 decision 2). The document-level J4 gate lives at
-            # `Trace.from_json`/`from_dict`, which know the declared version;
-            # a 3.2.0 document carrying a float is refused there, before it
-            # can reach a snapshot.
-            _check_integers=False,
         )
 
     def snapshot(self) -> dict[str, list[dict[str, Any]]]:
@@ -449,29 +418,24 @@ class State:
     def with_fact(self, fact: Fact) -> "State":
         if not isinstance(fact, Fact):
             raise TypeError("with_fact requires Fact")
-        # The producing boundary for a fact value (ADR-030, rule J4): refuse a
-        # number this trace's version cannot carry BEFORE the write is pending.
-        # The Fact constructor stays lenient on purpose — `State.from_snapshot`
-        # and `_replay_commit` construct through it while READING a document
-        # that declares its own (possibly pre-J4) version.
-        _refuse_non_integer(fact.value, "$.value", surface=f"fact {fact.key!r}")
+        # No rule J4 (ADR-030) check here: a State is version-agnostic (ADR-030
+        # decision 2) and cannot know whether the trace this write eventually
+        # lands in is governed. `Runtime._execute` checks the pending write
+        # before wrapping it into a transition record, where the trace being
+        # built DOES know its version, and a refusal there becomes this node's
+        # failure exactly as any other exception it raised would.
         item = _StateItem("facts", _isolate_item_value(fact), {"kind": "pending"})
         return self._spawn(pending=self._pending.append(item))
 
     def with_decision(self, decision: Decision) -> "State":
         if not isinstance(decision, Decision):
             raise TypeError("with_decision requires Decision")
-        _refuse_non_integer(
-            decision.value, "$.value", surface=f"decision {decision.key!r}")
         item = _StateItem("decisions", _isolate_item_value(decision), {"kind": "pending"})
         return self._spawn(pending=self._pending.append(item))
 
     def with_rejection(self, rejection: Rejection) -> "State":
         if not isinstance(rejection, Rejection):
             raise TypeError("with_rejection requires Rejection")
-        _refuse_non_integer(
-            rejection.evidence, "$.evidence",
-            surface=f"rejection {rejection.what!r}")
         item = _StateItem("rejections", copy.deepcopy(rejection), {"kind": "pending"})
         return self._spawn(pending=self._pending.append(item))
 

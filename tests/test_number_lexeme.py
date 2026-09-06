@@ -689,3 +689,26 @@ def test_a_fingerprint_is_never_taken_over_something_that_is_not_json():
 
     # and nothing legitimate moved
     assert validate.canonical_json({"a": 1, "b": "x"}) == b'{"a":1,"b":"x"}'
+
+
+def test_j2_stays_governed_at_the_current_schema_version():
+    """ADR-030 decision 1 and `contract/README.md`'s J2 note: at 3.2.0 and
+    above, rule J4 refuses every non-integer number at the producing
+    boundary, so J2's only reachable witnesses there are values J4 already
+    refuses — J2 and J4 do not co-occur. J2 stays in the allow-list anyway,
+    so that a FUTURE version dropping it is a decision an ADR records, not a
+    line quietly falling out of an allow-list. A guard tied to
+    `TRACE_SCHEMA_VERSION` rather than the literal `"3.2.0"`: it fails the
+    moment either allow-list stops covering the version this package
+    actually writes, not only when someone remembers to update a string."""
+    from vitruvyan_motus import TRACE_SCHEMA_VERSION
+    from vitruvyan_motus.trace import _LEXICALLY_GOVERNED
+
+    assert TRACE_SCHEMA_VERSION in _LEXICALLY_GOVERNED, (
+        "the runtime's own J2 allow-list no longer covers the version it "
+        "writes — J2 silently stopped protecting new evidence"
+    )
+    assert TRACE_SCHEMA_VERSION in validate._LEXICALLY_GOVERNED, (
+        "the validator's J2 allow-list no longer covers the version it "
+        "validates — J2 silently stopped being checked"
+    )

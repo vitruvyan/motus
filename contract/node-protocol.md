@@ -272,6 +272,16 @@ is a pre-3.2.0 record; a reader accepts it in documents of that age, and a
 future mediated numeric source: what the trace records is the integer, what
 the node receives is derived from it by a formula the contract states.
 
+**A caller-supplied `random_source` is quantised to that grid, not required
+to already sit on it (2026-09-06 review correction).** `n = floor(v * 2^53)`
+for any finite `v` in `[0, 1)`; the trace records `n`, and the node receives
+`n / 2^53`, the quantised value — not `v` itself. A source is refused only
+when it returns something non-finite or outside `[0, 1)`. `random.random()`
+already emits values of the form `k / 2^53`, so it quantises to itself and
+replay reproduces its floats bit-for-bit unchanged; an ordinary probability
+like `0.1` or `0.42` is accepted and recorded at the nearest point on the
+grid, rather than refused for not already being on it.
+
 6.2. A node using ambient sources (`datetime.now()`, `random`, `uuid4`,
 unrecorded network reads) in a reproducibility-declared run downgrades the
 run's `replay_capability` to `partial` or `none` when detected, with a named

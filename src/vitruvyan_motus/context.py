@@ -282,39 +282,34 @@ class _RunController:
         return value
 
     def _node_rand(self) -> float:
-        # ADR-030 decision 5. `ctx.rand()` is the contract's own second numeric
-        # source, and rule J4 would refuse a recorded draw that is a float —
-        # so from trace schema 3.2.0 the record carries the 53-bit integer n
-        # the float is made from, and the node receives n / 2^53, exactly the
-        # construction of CPython's `random.random()` and exact in binary64.
-        # The random SOURCE is unchanged: it returns the same floats as
-        # 0.13.0 for the same seed, because `random.random()` outputs are
-        # exactly k / 2^53 — so n = round(value * 2^53) recovers the integer
-        # without loss, and n / 2^53 == value. Replay reads n and reproduces
-        # the same float on every platform, which the float itself did not
-        # guarantee. A source returning a float that is not of that form is
-        # refused rather than silently quantised: the contract states the
-        # formula, and a draw that cannot be reproduced under it is not a
-        # draw this runtime can record honestly.
+        # ADR-030 decision 5, and decision 4's correction to it. `ctx.rand()`
+        # is the contract's own second numeric source, and rule J4 would
+        # refuse a recorded draw that is a float — so from trace schema 3.2.0
+        # the record carries the 53-bit integer n, and the node receives
+        # n / 2^53, exactly the construction of CPython's `random.random()`
+        # and exact in binary64.
+        #
+        # A caller-supplied source is QUANTISED to that grid, not required to
+        # already sit on it: `random.random()` outputs happen to be exactly
+        # k / 2^53, but 0.42, 0.1 and 1/3 are ordinary floats a caller is
+        # entitled to hand `random_source=`, and refusing them (as an earlier
+        # exact-match check did) refused most of the previously legal domain
+        # for no reason the contract states anywhere. n = floor(v * 2^53) is
+        # exact — multiplying a double in [0, 1) by a power of two moves only
+        # the exponent, so the product never rounds and never reaches 2^53 —
+        # and the node receives n / 2^53, the quantised value, not v itself:
+        # what is recorded and what is handed to the node are the same number
+        # on every platform, which is what makes the draw replayable at all.
+        # Only non-finite or out-of-range values are refused; a source that
+        # already emits k / 2^53 (random.random's own contract) quantises to
+        # itself, so replay reproduces its floats bit-for-bit unchanged.
         value = self._random()
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("the run random source must return a number")
         numeric = float(value)
         if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
             raise ValueError("a rand draw must be finite and in [0, 1)")
-        n = round(numeric * 2 ** 53)
-        # The recorded integer must REPRODUCE the float under the contract's
-        # formula: n / 2^53 == numeric. That is exactly the condition that
-        # numeric is of the form k / 2^53 (equivalently: is what
-        # `random.random()` returns), and it is the honest test rather than a
-        # range guess — 0.1 is 3602879701896397 / 2^55 and fails it even
-        # though round(0.1 * 2^53) sits inside [0, 2^53). Replay must hand a
-        # node the same float the run handed it, on every platform.
-        if not (0 <= n < 2 ** 53 and n / 2 ** 53 == numeric):
-            raise ValueError(
-                f"the run random source returned {numeric!r}, which is not of "
-                "the form k / 2^53 with k < 2^53; a rand draw must be exactly "
-                "reproducible under the contract's formula n / 2^53")
+        n = math.floor(numeric * 2 ** 53)
         draw = ContextDraw("rand", n)
         self._draws.append(draw)
         return n / 2 ** 53

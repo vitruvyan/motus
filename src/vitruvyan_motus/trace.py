@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import math
+import operator
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -119,8 +120,17 @@ def _strict_plain_json(value: Any, *, reserve_redacted: bool = True,
             return _encodable(value) if scalars_required else value
         except (TypeError, ValueError) as exc:
             refuse(type(exc), str(exc))
-    if value is None or isinstance(value, (bool, int)):
+    if value is None or isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        # `operator.index` reads the interpreter's own PyLong bits rather than
+        # calling any Python-level dunder, so an int SUBCLASS whose `__abs__`
+        # or `__repr__` lies (an adversarial or merely careless value) cannot
+        # smuggle a different magnitude past whatever inspects it downstream
+        # — `json.dumps` already ignores such overrides for a real int, and
+        # this makes every other reader of the isolated value see the same
+        # honest int rather than a landmine that only `json.dumps` defuses.
+        return operator.index(value)
     if isinstance(value, float):
         if not math.isfinite(value):
             refuse(ValueError, "NaN and Infinity are not RFC 8259 JSON values")
@@ -200,6 +210,14 @@ def _integer_only(value: Any, path: str = "$") -> None:
     included — `-14.0` and `-14` are the same RFC 8259 number and two different
     canonical texts, which is the entire reason for the rule.
 
+    The magnitude is read through `operator.index`, not `abs`: an `int`
+    SUBCLASS can override `__abs__` to answer whatever it likes (found by
+    review — `abs(Sneaky(2**70))` answered `0`) and `json.dumps` would still
+    write the true 2**70, because the C encoder reads the interpreter's own
+    PyLong bits rather than calling the Python-level method. `operator.index`
+    reads those same bits for the same reason, so the bound check and the
+    serialisation always agree about what is being written.
+
     Iterative rather than recursive: a genuine trace nested 489 deep raised
     `RecursionError` out of the withdrawn `J3` reader, and a refusal a document
     does not deserve is the worst answer a verifier gives. `bool` passes: JSON
@@ -212,9 +230,10 @@ def _integer_only(value: Any, path: str = "$") -> None:
         if isinstance(item, bool):
             continue
         if isinstance(item, int):
-            if abs(item) > _MAX_SAFE_INTEGER:
+            plain = operator.index(item)
+            if abs(plain) > _MAX_SAFE_INTEGER:
                 raise NonIntegerNumber(
-                    f"rule J4 (ADR-030): the integer {item} at {item_path} is "
+                    f"rule J4 (ADR-030): the integer {plain} at {item_path} is "
                     f"beyond 2^53 - 1 ({_MAX_SAFE_INTEGER}), the largest "
                     "integer every JSON implementation in use writes identically. "
                     "Record it as a string if it is an identifier, or carry it "
@@ -615,10 +634,31 @@ class Trace:
             raise ValueError("trace schema_version must be a non-empty string")
         self._schema_version = schema_version
         self._run = _strict_plain_json(run, reserve_redacted=False)
+        # ADR-030 decision 1: the header IS a producing boundary — it carries
+        # metadata, the sink's own numbers (`flush_interval_ms`,
+        # `chunk_records`) and everything else T11 hashes outside the record
+        # log. `__init__` builds a header from scratch (readers reconstruct a
+        # Trace through `_from_parts`, never through here), so this is the one
+        # place a bad header can be refused before a run does anything at all.
+        self._refuse_j4(self._run, "$.run")
         self._records = _ChunkedLog() if records is None else records
         self._view_cache = None
         self._json_cache = None
         self._root_cache = _MISSING
+
+    def _refuse_j4(self, value: Any, path: str) -> None:
+        """Rule J4 (ADR-030), scoped by THIS trace's own declared version.
+
+        The single producing-boundary check, called from three places: here
+        (the header), `append`/`_append_runtime` (a record), and the runtime's
+        `_execute` (a node's writes, before they are wrapped into a
+        transition record, so a refusal becomes that node's failure exactly
+        like any exception the node raised itself). All three ask the same
+        question of the same allow-list, so the version that governs is never
+        answered twice.
+        """
+        if self._schema_version in _INTEGER_ONLY_GOVERNED:
+            _integer_only(value, path)
 
     @classmethod
     def _from_parts(
@@ -707,10 +747,16 @@ class Trace:
         # checks so a caller is told which CONTRACT its document breaks without
         # J4 preempting a structural finding it may also have.
         if plain["schema_version"] in _INTEGER_ONLY_GOVERNED:
-            _integer_only(plain["run"])
+            _integer_only(plain["run"], "$.run")
             for index, record in enumerate(plain["records"]):
                 _integer_only(record, f"$.records[{index}]")
-        return cls(plain["run"], log, schema_version=plain["schema_version"])
+        # `_from_parts`, not `cls(...)`: `plain` is already isolated and
+        # already walked for J4 above under the rules THIS document declares,
+        # so building through `__init__` would isolate and walk it all again
+        # — for every read, not only a producing one — and would run the
+        # producer's OWN J4 check a second time, unconditionally, since
+        # `__init__` cannot tell "reading" from "producing" apart.
+        return cls._from_parts(plain["run"], log, plain["schema_version"])
 
     def _view(self) -> dict[str, Any]:
         if self._view_cache is None:
@@ -759,6 +805,10 @@ class Trace:
 
     def append(self, record: dict[str, Any]) -> "Trace":
         isolated = _strict_plain_json(record, reserve_redacted=False)
+        # ADR-030 decision 1: the public append is a producing boundary too —
+        # a caller building a trace by hand rather than through `Runtime` gets
+        # the same refusal the runtime's own `_append_runtime` gives.
+        self._refuse_j4(isolated, f"$.records[{len(self._records)}]")
         return Trace._from_parts(
             self._run, self._records.append(isolated), self._schema_version
         )
@@ -826,7 +876,18 @@ class Trace:
         return sealed
 
     def _append_runtime(self, record: dict[str, Any]) -> "Trace":
-        """Append a record already built from validated runtime primitives."""
+        """Append a record already built from validated runtime primitives.
+
+        ADR-030 decision 1: the backstop half of the producing boundary. A
+        node's own writes are checked earlier, in `Runtime._execute`, so a
+        refusal there becomes that node's failure — by the time a transition
+        record reaches here its `writes` are already empty on any such
+        failure. What lands here regardless is `run_started.initial_state`
+        (seeded by the caller, not by a node) and any other record the
+        runtime assembles directly, so this is where those are refused before
+        the record is stored or handed to a sink.
+        """
+        self._refuse_j4(record, f"$.records[{len(self._records)}]")
         return Trace._from_parts(
             self._run, self._records.append(record), self._schema_version
         )

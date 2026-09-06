@@ -131,6 +131,16 @@ correctly, because that is the whole point of `J2`. The two halves are not
 inconsistent: **whitespace and member order are absorbed by the digest and
 numeric lexemes are not**, which is exactly the line ADR-024 draws.
 
+**At 3.2.0 and above, J2 and J4 do not co-occur — and J2 stays in scope
+anyway.** From 3.2.0 every number is an integer (`J4`), so the only lexemes
+`J2` could still catch there are the ones `J4` already refuses (a float, or
+an integer beyond the safe range, rewritten as a different lexeme of the same
+kind never reaches a document `J4` accepts). `J2` is not dropped from 3.2.0's
+scope for that reason: a future version that keeps `J4` but not `J2` would
+silently reopen the numeric-lexeme hole for whatever `J4` no longer covers,
+and nothing would notice. `J2` stays governed so that decision has to be made
+on purpose, by a version that says so, rather than by omission.
+
 **And there is a third thing a store does, which this section did not name
 until #116 found it the hard way: it may read a document with the wrong
 number form.** From trace schema 3.2.0, rule `J4` (ADR-030) closes that: every
@@ -140,6 +150,15 @@ so a 3.2.0 trace survives `JSON.parse` + `JSON.stringify` in a browser byte
 for byte, which is the property the freeze promises. A store or a reader that
 parses numbers and re-renders them cannot change a 3.2.0 trace's meaning, and
 the validator applies `J4` to exactly those documents.
+
+**Resuming a pre-3.2.0 segment that carries a float is refused, not silently
+accepted (2026-09-06 review correction).** `J4` governs the WRITER, so a
+value it refuses surfaces the moment a resumed run tries to seed
+`run_started.initial_state` or the header's `metadata` from the old segment —
+before any record of the new segment is stored. The consumer migrates the
+value (to an integer at a declared scale) before resuming; the old segment
+itself is untouched and keeps loading, replaying and verifying under its own
+version, exactly as it did before this rule existed.
 
 **For documents below 3.2.0 the canonical number form is CPython's, and that
 is a requirement on a verifier written in another language, stated here so it

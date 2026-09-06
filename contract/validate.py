@@ -86,6 +86,7 @@ import argparse
 import hashlib
 import json
 import math
+import operator
 import re
 import sys
 from collections import Counter
@@ -469,7 +470,15 @@ _LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0", "3.2.0", _UNDECLARED})
 #: the trace is a JSON integer with |n| <= 2^53 - 1. An allow-list like the
 #: ones above; a future version that keeps the rule adds itself here, and one
 #: that does not removes itself and says so in its ADR.
-_INTEGER_ONLY_GOVERNED = frozenset({"3.2.0", _UNDECLARED})
+#:
+#: No `_UNDECLARED` here, unlike the other allow-lists above: `_j4_violations`
+#: is only ever reached through `_trace_semantics`, which `validate_trace`/
+#: `validate_jsonl` call only AFTER the document has already passed full JSON
+#: Schema validation — and `schema_version` is a required enum-constrained
+#: string there, so a trace with no declared (or non-string) version never
+#: survives to this check. Including it was dead configuration a mutant could
+#: flip without any test noticing.
+_INTEGER_ONLY_GOVERNED = frozenset({"3.2.0"})
 
 
 def _lexically_governed(document: Any) -> bool:
@@ -633,10 +642,17 @@ def _j4_violations(document: Any, prefix: str = "$") -> list[Violation]:
         if isinstance(value, bool):
             continue  # bool is not a number to JSON; isinstance(True, int) must not accuse it
         if isinstance(value, int):
-            if abs(value) > _MAX_SAFE_INTEGER:
+            # `operator.index`, not `abs`: an `int` SUBCLASS can override
+            # `__abs__` to answer whatever it likes, and `json.dumps` would
+            # still write its true magnitude — the C encoder reads the
+            # interpreter's own PyLong bits, not the Python-level method.
+            # `operator.index` reads those same bits, so the bound check
+            # and the bytes on disk always agree about what is being written.
+            plain = operator.index(value)
+            if abs(plain) > _MAX_SAFE_INTEGER:
                 out.append(Violation(
                     "J4", path,
-                    f"the integer {value} at {path} is beyond 2^53 - 1 "
+                    f"the integer {plain} at {path} is beyond 2^53 - 1 "
                     f"({_MAX_SAFE_INTEGER}), the largest integer every JSON "
                     "implementation in use writes identically. Record it as a "
                     "string if it is an identifier, or carry it as an integer "

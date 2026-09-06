@@ -29,8 +29,8 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import (
-    Decision, Fact, GraphSpec, InMemoryTraceSink, NonIntegerNumber, Rejection,
-    Runtime, State, Trace, TraceBundle, ReplayEngine, ReplayStatus,
+    Decision, Fact, GraphSpec, InMemoryTraceSink, NodeFailed, NonIntegerNumber,
+    Rejection, Runtime, State, Trace, TraceBundle, ReplayEngine, ReplayStatus,
 )
 from vitruvyan_motus.context import _RunController
 from vitruvyan_motus.trace import _canonical_bytes
@@ -117,38 +117,63 @@ def _diverge(mutate):
     ({"nested": [{"deep": 1.5}]}, "a float at depth"),
     ([1, [2, [3.0]]], "an integral float at depth"),
 ])
-def test_with_fact_refuses_a_number_j4_does_not_admit(value, what):
-    with pytest.raises(NonIntegerNumber) as caught:
-        State.empty("x").with_fact(Fact("k", value, "s", NOW))
-    message = str(caught.value)
+def test_with_fact_does_not_refuse_but_the_node_write_does(value, what):
+    """ADR-030 decision 2: `State` is version-agnostic, so `with_fact` itself
+    never refuses — it cannot know whether the trace this write will land in
+    is even governed by J4. Decision 1 moves the refusal to the trace-
+    producing boundary the runtime checks a node's writes against, where it
+    becomes that node's own failure, exactly as any exception it raised
+    would (`NodeFailed`, a `run_failed` terminal, never a bare
+    `NonIntegerNumber` out of `.run()`)."""
+    State.empty("x").with_fact(Fact("k", value, "s", NOW))  # does NOT raise
+
+    def node(state):
+        return state.with_fact(Fact("k", value, "s", NOW))
+
+    with pytest.raises(NodeFailed) as caught:
+        _run(node)
+    cause = caught.value.__cause__
+    assert isinstance(cause, NonIntegerNumber)
+    message = str(cause)
     assert "J4" in message, message
     assert "rule J4 (ADR-030)" in message
-    assert "fact 'k'" in message
-    # The JSON path to the number, present so a caller can find it.
+    # The JSON path to the number is DOCUMENT-ABSOLUTE, naming the write's
+    # position in the transition record being refused before it is stored.
     if isinstance(value, dict):
-        assert "$.value.nested[0].deep" in message
+        assert "$.writes.facts[0].value.nested[0].deep" in message
     elif isinstance(value, list):
-        assert "$.value[1][1][0]" in message
+        assert "$.writes.facts[0].value[1][1][0]" in message
     else:
-        assert "$.value" in message
+        assert "$.writes.facts[0].value" in message
 
 
 def test_every_producing_position_is_covered_and_not_only_facts():
-    """A rule that holds on facts and not on decisions is not a rule."""
-    for build in (
-        lambda: State.empty("x").with_fact(Fact("k", -14.0, "s", NOW)),
-        lambda: State.empty("x").with_decision(Decision("k", -14.0, NOW)),
-        lambda: State.empty("x").with_rejection(
+    """A rule that holds on facts and not on decisions is not a rule.
+
+    A node's own write becomes that node's failure (`NodeFailed`). The run's
+    SEED — its initial state and its metadata, both settled before any node
+    runs — aborts the run itself with a bare `NonIntegerNumber`, because
+    there is no node attempt to blame it on (ADR-030 decisions 1 and 2)."""
+    for node in (
+        lambda state: state.with_fact(Fact("k", -14.0, "s", NOW)),
+        lambda state: state.with_decision(Decision("k", -14.0, NOW)),
+        lambda state: state.with_rejection(
             Rejection("what", "why", NOW, evidence={"n": -14.0})),
-        lambda: State.new("x", facts=[Fact("k", -14.0, "s", NOW)]),
-        lambda: State.new("x", decisions=[Decision("k", 5.5, NOW)]),
-        lambda: State.new("x", rejections=[Rejection(
+    ):
+        with pytest.raises(NodeFailed) as caught:
+            _run(node)
+        assert isinstance(caught.value.__cause__, NonIntegerNumber)
+
+    for seed in (
+        State.new("x", facts=[Fact("k", -14.0, "s", NOW)]),
+        State.new("x", decisions=[Decision("k", 5.5, NOW)]),
+        State.new("x", rejections=[Rejection(
             "what", "why", NOW, evidence=[-14.0])]),
-        lambda: State.empty("x", metadata={"reading": -14.0}),
-        lambda: State.empty("x", metadata={"nested": {"a": [0.5]}}),
+        State.empty("x", metadata={"reading": -14.0}),
+        State.empty("x", metadata={"nested": {"a": [0.5]}}),
     ):
         with pytest.raises(NonIntegerNumber):
-            build()
+            Runtime(_spec(), {"a": lambda s: s}).run(seed, run_id="seed")
 
 
 def test_a_rejection_without_evidence_passes():
@@ -179,11 +204,17 @@ def test_bool_is_not_a_number_and_the_walk_does_not_descend_into_strings():
 
 
 def test_the_metadata_refusal_happens_before_the_run_starts():
-    """The runtime does its metadata seeding from the State it is handed; a
-    caller supplying a float metadata value must fail before anything is
-    written, not mid-run and not at validation."""
-    with pytest.raises(NonIntegerNumber):
-        State.empty("x", metadata={"confidence": 0.87})
+    """`State.empty` itself does not refuse (ADR-030 decision 2) — the
+    metadata becomes the trace HEADER, and `Trace.__init__` is where a
+    non-conforming value is refused, before `_start` writes anything: no
+    `run_started`, no node attempt, a bare `NonIntegerNumber` out of
+    `.run()` rather than a `NodeFailed` or a validation finding."""
+    state = State.empty("x", metadata={"confidence": 0.87})  # does NOT raise
+    with pytest.raises(NonIntegerNumber) as caught:
+        Runtime(_spec(), {"a": lambda s: s}).run(state, run_id="seed")
+    message = str(caught.value)
+    assert "J4" in message
+    assert "$.run.metadata.confidence" in message
 
 
 def test_a_runtime_run_never_emits_a_document_j4_refuses():
@@ -274,11 +305,23 @@ def test_j4_reaches_every_position_t11_hashes_in_a_3_2_0_document():
     assert "$.records[3].value" in str(caught.value)
     assert validate.validate_trace(json.loads(json.dumps(resealed)))
 
-    # metadata in the header.
+    # metadata in the header — and the reader's path must be the SAME path
+    # the validator names, document-absolute (b08: they once disagreed,
+    # `Trace.from_dict` saying `$.metadata.temperature` while the validator
+    # said `$.run.metadata.temperature` for the identical document, because
+    # the reader's header walk started at `$` instead of `$.run`).
     def header_metadata(d):
         d["run"]["metadata"] = {"temperature": -14.0}
-    violations = validate.validate_trace(_diverge(header_metadata))
-    assert any(v.rule == "J4" and "run.metadata" in v.path for v in violations)
+    header_document = _diverge(header_metadata)
+    violations = validate.validate_trace(json.loads(json.dumps(header_document)))
+    assert [v.rule for v in violations] == ["J4"]
+    validator_path = violations[0].path
+    assert validator_path == "$.run.metadata.temperature"
+    with pytest.raises(NonIntegerNumber) as caught:
+        Trace.from_dict(header_document)
+    assert validator_path in str(caught.value), (
+        f"reader says {caught.value!s}, validator says {validator_path!r} — "
+        "one document, two paths")
 
 
 @pytest.mark.parametrize("value", [2 ** 53, -(2 ** 53) - 1, -14.0, 0.87])
@@ -302,12 +345,22 @@ def test_a_3_2_0_document_at_the_safe_boundary_is_valid():
 
 
 def test_a_zero_point_twelve_trace_with_minus_14_0_loads_replays_and_verifies():
-    """The ADR's witness, verbatim: 0.12.0 wrote schema 3.0.0 and could
-    write `-14.0` into a fact. That document must load, derive its root,
-    validate clean, play back and verify exactly as it did before J4."""
+    """The ADR's witness, corrected (2026-09-06 review correction): the
+    original version of this test substituted a DIFFERENT node body at
+    verify time — one writing the integer `-14` — because on the first
+    version of this implementation the ORIGINAL body, writing a genuine
+    non-integral float, would have made `with_fact` itself raise `J4` even
+    though the DOCUMENT being replayed is 3.0.0. That substitution hid
+    exactly the defect decision 2 exists to fix: it made the test pass
+    whether or not `State` was version-agnostic. `0.87` (not `-14.0`, which
+    is an INTEGRAL float and would pass even a check that only special-cased
+    whole numbers) replayed through the SAME node body the document itself
+    used is the property — `State` does not know or care what version of
+    trace it is helping to reconstruct."""
     def node(state):
-        return state.with_fact(Fact("temperature", 1, "sensor", NOW))
-    document = _run(node).trace.to_dict()
+        return state.with_fact(Fact("temperature", 0.87, "sensor", NOW))
+    document = _run(lambda s: s.with_fact(
+        Fact("temperature", 1, "sensor", NOW))).trace.to_dict()
     document["schema_version"] = "3.0.0"
     for record in document["records"]:
         if record.get("kind") == "transition":
@@ -315,22 +368,23 @@ def test_a_zero_point_twelve_trace_with_minus_14_0_loads_replays_and_verifies():
             record["violations"] = []
         for fact in (record.get("writes") or {}).get("facts", []):
             if fact["key"] == "temperature":
-                fact["value"] = -14.0
+                fact["value"] = 0.87
     trace = Trace.from_json(json.dumps(_resealed(document)))
     assert trace.root is not None
     assert validate.validate_trace(json.loads(trace.to_json())) == [], (
-        "a 3.0.0 document carrying -14.0 must validate exactly as it always did")
+        "a 3.0.0 document carrying 0.87 must validate exactly as it always did")
     jsonl_violations, _ = validate.validate_jsonl(trace.to_jsonl())
     assert jsonl_violations == []
 
     bundle = TraceBundle(_spec(), trace)
     playback = ReplayEngine(bundle).playback()
-    assert playback.state.fact("temperature") == -14.0
+    assert playback.state.fact("temperature") == 0.87
 
-    def same(state):
-        return state.with_fact(Fact("temperature", -14, "sensor", NOW))
-
-    verified = ReplayEngine(bundle).verify({"a": same})
+    # The ORIGINAL node body — not a substitute writing an acceptable int.
+    # Without ADR-030 decision 2 (State stays version-agnostic), `with_fact`
+    # here would raise NonIntegerNumber and this would be a NodeFailed, not
+    # a verified replay of a document from before rule J4 existed.
+    verified = ReplayEngine(bundle).verify({"a": node})
     assert verified.verified == (("a", 3),)
 
 
@@ -552,24 +606,55 @@ def test_the_3_1_0_float_fixture_loads_silently():
 
 def test_this_repository_writes_only_integers_into_producing_positions():
     """The demo, the examples and the e2e probe are the producers this
-    repository can see. A float literal in a Fact/Decision/Rejection value or
-    a metadata map would be refused by rule J4 the moment it ran, so the grep
-    is the migration check for our own tree. Orbis and Limen are separate
-    repositories; their migration to integer fact values is checked at their
-    pin bump (orbis#63) — this test asserts ours."""
-    import re
-    pattern = re.compile(
-        r"(?:with_fact|with_decision|with_rejection|State\.new|State\.empty)"
-        r"\([^\n]*?,\s*(-?\d+\.\d+)(?:,|\))", re.MULTILINE)
-    offenders = []
+    repository can see (ADR-030 H1, 2026-09-06 review correction: the ADR
+    cannot grep Orbis's or Limen's pinned code from this repository — that
+    check is theirs, at their own pin bump, orbis#63). This asserts ours.
+
+    An AST walk, not a regular expression: a pattern matching `,\\s*-?\\d+\\.\\d+`
+    answers a question about CHARACTERS, and this question is about values —
+    it would miss a float built any way other than a bare literal in the
+    obvious argument position, and it would flag a float-shaped STRING it
+    never should have looked at in the first place (AGENTS.md's own example).
+    Parsing the source and walking each call's actual argument tree finds a
+    literal float at any depth — inside a nested list or dict passed as
+    `evidence=` or `metadata=`, not only as the second positional argument."""
+    import ast
+
+    producing_calls = {
+        "Fact", "Decision", "Rejection",
+        "with_fact", "with_decision", "with_rejection",
+    }
+
+    def call_name(node: ast.Call) -> str | None:
+        func = node.func
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            return func.attr
+        return None
+
+    offenders: list[str] = []
+    seen: set[tuple[str, int, int]] = set()
     for directory in ("demo", "examples", "e2e"):
         for path in sorted(Path(ROOT, directory).rglob("*.py")):
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if pattern.search(line):
-                    offenders.append(f"{path}:{number}: {line.strip()}")
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or call_name(node) not in producing_calls:
+                    continue
+                arguments = list(node.args) + [kw.value for kw in node.keywords]
+                for argument in arguments:
+                    for sub in ast.walk(argument):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, float):
+                            key = (str(path), sub.lineno, sub.col_offset)
+                            if key not in seen:
+                                seen.add(key)
+                                offenders.append(
+                                    f"{path}:{sub.lineno}: {call_name(node)}(...) "
+                                    f"writes the float literal {sub.value!r}")
     assert offenders == [], (
-        "a producer in this tree writes a float into a producing position; "
-        "rule J4 (ADR-030) would refuse it at runtime:\n" + "\n".join(offenders))
+        "a producer in this tree writes a float literal into a producing "
+        "position; rule J4 (ADR-030) would refuse it at runtime:\n" +
+        "\n".join(sorted(offenders)))
 
 
 def test_an_injected_float_cannot_hide_inside_a_3_2_0_document_hand_built():
@@ -590,3 +675,86 @@ def test_an_injected_float_cannot_hide_inside_a_3_2_0_document_hand_built():
         for v in violations), [v.path for v in violations]
     with pytest.raises(NonIntegerNumber):
         Trace.from_json(json.dumps(resealed))
+
+
+# --------------------------------------------------------------------------- #
+# A lying `__abs__` cannot smuggle a magnitude past the bound check           #
+# --------------------------------------------------------------------------- #
+
+class _SneakyInt(int):
+    """`abs()` lies; `json.dumps` still writes the true PyLong bits (b04/b05).
+
+    The C JSON encoder never calls a Python-level dunder for a real int, so
+    this is not a synthetic worry: `json.dumps(_SneakyInt(2 ** 70))` writes
+    `1180591620717411303424` regardless of what `__abs__` answers, which is
+    exactly why the bound check must read the same bits the encoder does.
+    """
+
+    def __abs__(self) -> int:
+        return 0
+
+
+def test_an_int_subclass_with_a_lying_abs_cannot_smuggle_a_magnitude_past_j4():
+    """A bound check written as `abs(item) > MAX` trusts the object to grade
+    its own homework. `_SneakyInt(2 ** 70).__abs__()` answers `0`, so such a
+    check would accept it — and the wire would still carry `2**70`, because
+    `json.dumps` reads the interpreter's own PyLong bits, not `__abs__`.
+    `operator.index` reads those same bits, so the check and the bytes on
+    disk can never disagree about what is being written."""
+    assert abs(_SneakyInt(2 ** 70)) == 0, "the premise: __abs__ really lies"
+    assert json.dumps(_SneakyInt(2 ** 70)) == "1180591620717411303424", (
+        "the premise: json.dumps writes the true magnitude regardless")
+
+    def node(state):
+        return state.with_fact(Fact("amount", _SneakyInt(2 ** 70), "s", NOW))
+
+    with pytest.raises(NodeFailed) as caught:
+        _run(node)
+    cause = caught.value.__cause__
+    assert isinstance(cause, NonIntegerNumber), cause
+    assert "1180591620717411303424" in str(cause), str(cause)
+
+
+def test_the_validators_bound_check_reads_the_same_bits_json_dumps_does():
+    """The validator's own walk (`_j4_violations`) has the identical hole
+    and the identical fix, over a hand-built document rather than a run."""
+    violations = validate._j4_violations({"amount": _SneakyInt(2 ** 70)})
+    assert [v.rule for v in violations] == ["J4"]
+    assert "1180591620717411303424" in violations[0].message
+
+
+def test_the_walks_own_bound_check_is_not_only_saved_by_isolation():
+    """`_integer_only` called directly — as `Trace.from_dict` calls it on an
+    already-isolated document, and as any future caller might on data that
+    never passed through `_strict_plain_json` at all. This is the walk's
+    OWN defence, independent of `_strict_plain_json` normalising the value
+    first: the two are separate fixes for the same class of hole, and this
+    proves the walk does not rely solely on the other one having run."""
+    from vitruvyan_motus.trace import _integer_only
+    with pytest.raises(NonIntegerNumber) as caught:
+        _integer_only({"amount": _SneakyInt(2 ** 70)})
+    assert "1180591620717411303424" in str(caught.value)
+
+
+def test_an_accepted_int_subclass_is_normalised_to_a_plain_int_on_the_wire():
+    """Decision 1's "serialise THAT plain int", proven on the value rather
+    than on the refusal: an int SUBCLASS within range is accepted (nothing
+    about its magnitude is wrong), and what actually lands in the trace is a
+    genuine `int` — not the subclass instance — so nothing downstream that
+    ever inspects `type(value)` or calls an overridden dunder for some
+    unrelated reason inherits a landmine that merely happens to be dormant
+    today. This is `_strict_plain_json`'s own contribution, independent of
+    `_integer_only`'s bound check: a value can be perfectly IN RANGE and
+    still be worth normalising."""
+    class _Loud(int):
+        """A harmless subclass; the point under test is TYPE, not behaviour."""
+
+    def node(state):
+        return state.with_fact(Fact("amount", _Loud(42), "s", NOW))
+
+    result = _run(node)
+    written = next(r for r in result.trace.records if r["kind"] == "transition")
+    value = written["writes"]["facts"][0]["value"]
+    assert value == 42
+    assert type(value) is int, (
+        f"the wire still carries a {type(value).__name__}, not a plain int")

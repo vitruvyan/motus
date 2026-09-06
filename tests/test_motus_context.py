@@ -83,14 +83,28 @@ def test_context_draw_accepts_a_53_bit_integer_and_a_pre_3_2_float():
     assert ContextDraw("rand", 0.25).value == 0.25
 
 
-def test_a_rand_source_that_is_not_k_over_2_53_is_refused():
-    # A draw must be reproducible under the contract's formula n / 2^53. A
-    # source returning 0.1 (== k / 2^55, not k / 2^53) cannot be recorded
-    # honestly: the integer would either leave [0, 2^53) or reproduce a
-    # different float. Refused rather than silently quantised.
+def test_a_rand_source_that_is_not_k_over_2_53_is_quantised_not_refused():
+    # ADR-030 decision 4 (2026-09-06 review correction): a caller-supplied
+    # source is not required to already sit on the k / 2^53 grid. 0.1 is an
+    # ordinary probability a caller is entitled to pass as `random_source=`;
+    # refusing it (an earlier exact-match check did) refused most of the
+    # domain the parameter used to accept, for no reason the contract states.
+    # n = floor(v * 2^53) quantises it, and the node receives n / 2^53 — the
+    # quantised value, not 0.1 itself — so what is recorded and what the node
+    # saw always agree.
     control = _RunController(random_source=lambda: 0.1)
-    with pytest.raises(ValueError, match=r"2\^53"):
-        control.node_context.rand()
+    given = control.node_context.rand()
+    n = control.draws_since(0)[0].value
+    assert isinstance(n, int) and not isinstance(n, bool)
+    assert 0 <= n < 2 ** 53
+    assert n / 2 ** 53 == given
+
+
+def test_a_rand_source_outside_the_unit_interval_is_still_refused():
+    for bad in (1.0, -0.0001, float("nan"), float("inf")):
+        control = _RunController(random_source=lambda bad=bad: bad)
+        with pytest.raises(ValueError, match=r"\[0, 1\)"):
+            control.node_context.rand()
 
 
 def test_replay_constraints_are_strings_not_string_iterables():

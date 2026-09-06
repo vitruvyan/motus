@@ -1333,6 +1333,14 @@ class Runtime:
                     try:
                         assert returned is not None
                         writes = returned._writes_wire()
+                        # ADR-030 decision 1/2: `State.with_fact` no longer
+                        # gates rule J4 — a State does not know the trace
+                        # version it will end up in. This trace does, and
+                        # checking the write HERE, inside the node's own
+                        # try/except, makes a refusal indistinguishable from
+                        # any other exception the node raised: it becomes this
+                        # attempt's failure, not an exception out of `.run()`.
+                        self._trace._refuse_j4(writes, "$.writes")
                         committed = attempt_state._committed(returned, transition_seq)
                     except Exception as exc:
                         error = exc
