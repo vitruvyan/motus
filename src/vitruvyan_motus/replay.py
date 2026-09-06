@@ -553,10 +553,21 @@ class ReplayEngine:
                     from datetime import datetime
                     return datetime.fromisoformat(str(take("now")).replace("Z", "+00:00"))
 
+                def rand():
+                    # ADR-030 decision 5: from trace schema 3.2.0 the draw is
+                    # recorded as the 53-bit integer n, and the node receives
+                    # n / 2^53 — the same construction on every platform. A
+                    # float draw is a pre-3.2.0 record, reproduced as-is (the
+                    # float itself was what the node received then).
+                    draw = take("rand")
+                    if isinstance(draw, bool) or not isinstance(draw, int):
+                        return float(draw)
+                    return draw / 2 ** 53
+
                 def reject_effect(_effect):
                     raise ReplayMismatch(record["node"], record["seq"], "effects")
 
-                ctx = RunContext(now, lambda: float(take("rand")), lambda: str(take("uuid")), reject_effect)
+                ctx = RunContext(now, rand, lambda: str(take("uuid")), reject_effect)
                 positional = [
                     p for p in inspect.signature(node).parameters.values()
                     if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)

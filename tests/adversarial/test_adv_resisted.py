@@ -421,7 +421,7 @@ def _validate_both(trace, spec_doc):
 
 def test_runtime_traces_validate_identically_as_json_and_as_jsonl():
     def writer(state: State) -> State:
-        return state.with_fact(Fact("x", {"nested": [1, 2.5, True, None, "ü✓"]}, "s", NOW))
+        return state.with_fact(Fact("x", {"nested": [1, 2, True, None, "ü✓"]}, "s", NOW))
 
     result = Runtime(LINEAR, {"a": writer, "b": _identity}).run(State.empty("conf"))
     json_violations, jsonl_violations = _validate_both(result.trace, LINEAR_DOC)

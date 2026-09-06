@@ -1,0 +1,136 @@
+{
+ "artifact": "trace",
+ "expect": "valid",
+ "layer": "semantic",
+ "spec": null,
+ "instance": {
+  "schema_version": "3.2.0",
+  "run": {
+   "run_id": "j4fx-1",
+   "graph": {
+    "name": "j4fx",
+    "version": "1.0.0",
+    "graph_fingerprint": "graph:sha256:36166aa8df84e933b2e963239d6707c83865959066d4cee502ae07ab4a1b0a44",
+    "code_fingerprint": "code:sha256:3a23c8cbaae89cd3ceea7c1be376799bcf7ded8c0f5245d8dfee4a0ed993ec4c",
+    "spec_schema_version": "1.0.0"
+   },
+   "policy": "strict",
+   "durability_profile": "in-memory",
+   "replay": {
+    "capability": "none",
+    "constraints": [
+     "undeclared"
+    ]
+   },
+   "metadata": {},
+   "created_ts": "2026-09-06T08:00:00Z",
+   "sink": {
+    "flush_interval_ms": 0,
+    "chunk_records": 1
+   }
+  },
+  "records": [
+   {
+    "seq": 1,
+    "ts": "2026-09-06T08:00:00Z",
+    "kind": "run_started",
+    "integrity": {
+     "payload_hash": "sha256:8b65aadf4ed88297576ba71d8170aaea20b690341efdd3fa27ce51d0e60d674c",
+     "prev_hash": "sha256:9db942270fc2ccfde2756a0dc34e6531b0bd4dae3b42a64554c0a356f51c870b"
+    },
+    "intent": "x",
+    "initial_state": {
+     "facts": [],
+     "decisions": [],
+     "rejections": []
+    }
+   },
+   {
+    "seq": 2,
+    "ts": "2026-09-06T08:00:00Z",
+    "kind": "attempt_started",
+    "integrity": {
+     "payload_hash": "sha256:285b1a5c2c0c1d18c66f202fea2f6c20048d061ab5d5ad5f4cf4832342d20895",
+     "prev_hash": "sha256:8b65aadf4ed88297576ba71d8170aaea20b690341efdd3fa27ce51d0e60d674c"
+    },
+    "node": "worker",
+    "attempt": 1
+   },
+   {
+    "seq": 3,
+    "ts": "2026-09-06T08:00:00Z",
+    "kind": "transition",
+    "integrity": {
+     "payload_hash": "sha256:39df1826a1548635aa78d4639b587134477a2b0ac8e653850d029e43553c1ddb",
+     "prev_hash": "sha256:285b1a5c2c0c1d18c66f202fea2f6c20048d061ab5d5ad5f4cf4832342d20895"
+    },
+    "node": "worker",
+    "attempt": 1,
+    "outcome": "returned",
+    "disposition": "commit",
+    "effect_class": "pure",
+    "reads": [],
+    "writes": {
+     "facts": [
+      {
+       "key": "drawn",
+       "value": 250,
+       "source": "ctx",
+       "ts": "2026-09-06T08:00:00Z"
+      }
+     ],
+     "decisions": [],
+     "rejections": []
+    },
+    "effects": [],
+    "context_draws": [
+     {
+      "source": "rand",
+      "value": 2251799813685248
+     }
+    ],
+    "violations": null,
+    "error": null
+   },
+   {
+    "seq": 4,
+    "ts": "2026-09-06T08:00:00Z",
+    "kind": "routing",
+    "integrity": {
+     "payload_hash": "sha256:d52df03be39dbc542ce9cd2b92f649feb4e333f583697c9f0ea5847d71dc7b86",
+     "prev_hash": "sha256:39df1826a1548635aa78d4639b587134477a2b0ac8e653850d029e43553c1ddb"
+    },
+    "after": "worker",
+    "on": null,
+    "value": null,
+    "origin": null,
+    "outcome": "static",
+    "selected": "END",
+    "candidates": [
+     {
+      "condition": {
+       "kind": "static"
+      },
+      "target": "END",
+      "taken": true
+     }
+    ]
+   },
+   {
+    "seq": 5,
+    "ts": "2026-09-06T08:00:00Z",
+    "kind": "run_completed",
+    "integrity": {
+     "payload_hash": "sha256:32189ba7cde31e440f2167acb7ae5ba84bd4aa31ccc98bc6817eadee18c08ee7",
+     "prev_hash": "sha256:d52df03be39dbc542ce9cd2b92f649feb4e333f583697c9f0ea5847d71dc7b86"
+    },
+    "replay": {
+     "capability": "none",
+     "constraints": [
+      "undeclared"
+     ]
+    }
+   }
+  ]
+ }
+}

@@ -37,7 +37,7 @@ class ContextDraw:
     """One node-visible nondeterministic value captured by the trace."""
 
     source: DrawSource
-    value: str | float
+    value: str | int | float
 
     def __post_init__(self) -> None:
         if self.source not in ("now", "rand", "uuid"):
@@ -45,13 +45,24 @@ class ContextDraw:
         if self.source == "rand":
             if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
                 raise TypeError("a rand draw must be a JSON number")
-            numeric = float(self.value)
-            if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
-                raise ValueError("a rand draw must be finite and in [0, 1)")
+            if isinstance(self.value, int):
+                # ADR-030 decision 5: from trace schema 3.2.0 a rand draw is
+                # recorded as the 53-bit integer n the float is made from, so
+                # the wire form satisfies rule J4 and any reader reproduces
+                # n / 2^53. The integer is the unit of account: [0, 2^53).
+                if not 0 <= self.value < 2 ** 53:
+                    raise ValueError(
+                        f"a rand draw integer must be in [0, 2^53), got {self.value}")
+            else:
+                # Pre-3.2.0 traces recorded the draw as the float itself; the
+                # class still accepts one so a reader reproducing an old draw
+                # can build it. 0.13.0's constraint, unchanged.
+                if not math.isfinite(self.value) or not 0.0 <= self.value < 1.0:
+                    raise ValueError("a rand draw must be finite and in [0, 1)")
         elif not isinstance(self.value, str):
             raise TypeError(f"a {self.source} draw must be a string")
 
-    def to_dict(self) -> dict[str, str | float]:
+    def to_dict(self) -> dict[str, str | int | float]:
         return {"source": self.source, "value": self.value}
 
 
@@ -271,13 +282,42 @@ class _RunController:
         return value
 
     def _node_rand(self) -> float:
+        # ADR-030 decision 5. `ctx.rand()` is the contract's own second numeric
+        # source, and rule J4 would refuse a recorded draw that is a float —
+        # so from trace schema 3.2.0 the record carries the 53-bit integer n
+        # the float is made from, and the node receives n / 2^53, exactly the
+        # construction of CPython's `random.random()` and exact in binary64.
+        # The random SOURCE is unchanged: it returns the same floats as
+        # 0.13.0 for the same seed, because `random.random()` outputs are
+        # exactly k / 2^53 — so n = round(value * 2^53) recovers the integer
+        # without loss, and n / 2^53 == value. Replay reads n and reproduces
+        # the same float on every platform, which the float itself did not
+        # guarantee. A source returning a float that is not of that form is
+        # refused rather than silently quantised: the contract states the
+        # formula, and a draw that cannot be reproduced under it is not a
+        # draw this runtime can record honestly.
         value = self._random()
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("the run random source must return a number")
         numeric = float(value)
-        draw = ContextDraw("rand", numeric)
+        if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
+            raise ValueError("a rand draw must be finite and in [0, 1)")
+        n = round(numeric * 2 ** 53)
+        # The recorded integer must REPRODUCE the float under the contract's
+        # formula: n / 2^53 == numeric. That is exactly the condition that
+        # numeric is of the form k / 2^53 (equivalently: is what
+        # `random.random()` returns), and it is the honest test rather than a
+        # range guess — 0.1 is 3602879701896397 / 2^55 and fails it even
+        # though round(0.1 * 2^53) sits inside [0, 2^53). Replay must hand a
+        # node the same float the run handed it, on every platform.
+        if not (0 <= n < 2 ** 53 and n / 2 ** 53 == numeric):
+            raise ValueError(
+                f"the run random source returned {numeric!r}, which is not of "
+                "the form k / 2^53 with k < 2^53; a rand draw must be exactly "
+                "reproducible under the contract's formula n / 2^53")
+        draw = ContextDraw("rand", n)
         self._draws.append(draw)
-        return numeric
+        return n / 2 ** 53
 
     def _node_uuid(self) -> str:
         value = self.kernel_uuid()

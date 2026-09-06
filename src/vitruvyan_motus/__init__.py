@@ -21,7 +21,9 @@ __version__ = "0.14.0"
 #: ``contract/trace.v1.schema.json``'s ``properties.schema_version.const``
 #: by ``tests/test_schema_version.py`` (contract/README.md, "One source per
 #: fact"; ADR-003 §Decision 2).
-TRACE_SCHEMA_VERSION = "3.1.0"
+#: 3.2.0 is ADR-030's rule J4: every number in a trace is a JSON integer
+#: with |n| <= 2^53 - 1.
+TRACE_SCHEMA_VERSION = "3.2.0"
 
 from vitruvyan_motus.context import ContextDraw, ReplayStatus, RunContext
 from vitruvyan_motus.effects import EffectClass, EffectDescriptor, EffectReceipt
@@ -55,7 +57,8 @@ from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.evidence import PackageVerdict, pack, verify_package
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
-    Decision, Fact, NonCanonicalNumber, RedactedValue, Rejection, Trace, redact,
+    Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
+    Rejection, Trace, redact,
 )
 
 __all__ = [
@@ -74,5 +77,5 @@ __all__ = [
     "TraceBundle", "ReplayResult", "ReplayEngine",
     "pack", "verify_package", "PackageVerdict",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
-    "NonCanonicalNumber",
+    "NonCanonicalNumber", "NonIntegerNumber",
 ]

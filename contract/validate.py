@@ -399,10 +399,10 @@ def _loads_strict(text: str, *, governed_as: str | None = None) -> Any:
 _UNDECLARED = "__undeclared__"
 
 
-_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0", _UNDECLARED})
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0", "3.2.0", _UNDECLARED})
 
 #: Trace schema versions at which Transition.violations may be null (ADR-029).
-_VIOLATIONS_NULL_ADMITTED = frozenset({"3.1.0"})
+_VIOLATIONS_NULL_ADMITTED = frozenset({"3.1.0", "3.2.0"})
 
 
 def _looks_like_a_trace(document: Any) -> bool:
@@ -462,7 +462,14 @@ def _scalar_governed(document: Any) -> bool:
 #: collision to attack, so J2 has nothing to protect and refusing an older
 #: document would break `contract/README.md`'s promise that old evidence stays
 #: valid without rewriting.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0", _UNDECLARED})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0", "3.2.0", _UNDECLARED})
+
+
+#: Trace schema versions at which rule J4 (ADR-030) governs: every number in
+#: the trace is a JSON integer with |n| <= 2^53 - 1. An allow-list like the
+#: ones above; a future version that keeps the rule adds itself here, and one
+#: that does not removes itself and says so in its ADR.
+_INTEGER_ONLY_GOVERNED = frozenset({"3.2.0", _UNDECLARED})
 
 
 def _lexically_governed(document: Any) -> bool:
@@ -590,6 +597,68 @@ def _j1_violations(instance: Any, prefix: str = "$") -> tuple[list[Violation], b
             )
     out.sort(key=lambda violation: violation.path)
     return out, structural
+
+
+#: The largest integer JavaScript can hold exactly — `Number.MAX_SAFE_INTEGER`.
+#: ADR-030's rule J4 admits every integer with |n| <= this, and nothing else.
+_MAX_SAFE_INTEGER = 2 ** 53 - 1
+
+
+def _j4_violations(document: Any, prefix: str = "$") -> list[Violation]:
+    """Rule J4 (ADR-030) over the parsed document: integers only, within 2^53.
+
+    From trace schema 3.2.0 every number in a trace is a JSON integer with
+    |n| <= 2^53 - 1 — at every position T11 hashes: Fact, Decision and
+    Rejection values at any depth, `initial_state`, metadata, routing values
+    and `context_draws[].value`. A float is refused even when integral
+    (`-14.0`), because `-14` and `-14.0` are the same RFC 8259 number and two
+    different canonical texts: a document carrying one has a root only CPython
+    can derive, which is the defect ADR-030 exists to close. An integer beyond
+    the safe range is refused because a double cannot represent every integer
+    there and the implementations stop agreeing.
+
+    A walk of the PARSED value, never a regular expression over the text: a
+    pattern would flag `{"note": "cost 5.10 eur"}`, where 5.10 is somebody's
+    prose and not a number at all.
+
+    Scoped by the document's OWN declared version — `_trace_semantics` calls
+    this only when the version is 3.2.0 or above, so a 0.12.0 trace carrying
+    `-14.0` validates exactly as it always did. The rule says nothing below
+    3.2.0 because those documents were truthful under their own version.
+    """
+    out: list[Violation] = []
+    stack: list[tuple[Any, str]] = [(document, prefix)]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, bool):
+            continue  # bool is not a number to JSON; isinstance(True, int) must not accuse it
+        if isinstance(value, int):
+            if abs(value) > _MAX_SAFE_INTEGER:
+                out.append(Violation(
+                    "J4", path,
+                    f"the integer {value} at {path} is beyond 2^53 - 1 "
+                    f"({_MAX_SAFE_INTEGER}), the largest integer every JSON "
+                    "implementation in use writes identically. Record it as a "
+                    "string if it is an identifier, or carry it as an integer "
+                    "at a declared scale (rule J4, ADR-030)."))
+            continue
+        if isinstance(value, float):
+            out.append(Violation(
+                "J4", path,
+                f"the number {value!r} at {path} is not a JSON integer with "
+                f"|n| <= 2^53 - 1 ({_MAX_SAFE_INTEGER}). From trace schema "
+                "3.2.0 every number in a trace is an integer; a quantity that "
+                "is not an integer is carried at a declared scale (basis "
+                "points, milliseconds, whole units) or as a string the "
+                "producer owns (rule J4, ADR-030)."))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                stack.append((item, f"{path}.{key}"))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                stack.append((item, f"{path}[{index}]"))
+    out.sort(key=lambda violation: violation.path)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1675,6 +1744,17 @@ def _trace_semantics(
     records = doc.get("records") or []
     run = doc.get("run") or {}
 
+    # J4 (ADR-030), scoped by the document's OWN declared version as every
+    # version-scoped rule in this file is (ADR-019/024/026/029): from trace
+    # schema 3.2.0 every number in a trace is a JSON integer with |n| <= 2^53 - 1,
+    # and below 3.2.0 the rule says nothing, because those documents were
+    # truthful under their own version — `-14.0` from 0.12.0 among them.
+    # The walk covers every position T11 hashes. This sits at the semantic
+    # layer so the JSON and JSONL encodings of one trace get the same verdict
+    # from the one place (the reassembled JSONL document flows through here).
+    if _governing_version(doc) in _INTEGER_ONLY_GOVERNED:
+        v.extend(_j4_violations(doc))
+
     # H2 — resume provenance links two distinct immutable trace segments.
     resume = run.get("resume") or {}
     if resume and resume.get("source_run_id") == run.get("run_id"):
@@ -1800,7 +1880,7 @@ def _trace_semantics(
     # is recompute the rest of the chain without also holding whatever anchored
     # its root.
     version = doc.get("schema_version")
-    if version in ("2.0.0", "3.0.0", "3.1.0"):
+    if version in ("2.0.0", "3.0.0", "3.1.0", "3.2.0"):
         # The chain starts at the HEADER, so the first record's prev_hash is the
         # header's digest and never null. Without this the header sat outside
         # the root: run_id, policy, metadata and graph.code_fingerprint could all
@@ -1898,7 +1978,7 @@ def _trace_semantics(
             digest = receipt.get("interaction_fingerprint")
             salt = receipt.get("fingerprint_salt")
             path = f"$.records[{i}].effects[{j}].receipt"
-            if version not in ("2.0.0", "3.0.0", "3.1.0") and (
+            if version not in ("2.0.0", "3.0.0", "3.1.0", "3.2.0") and (
                 digest is not None or salt is not None
             ):
                 v.append(
@@ -3567,7 +3647,7 @@ def derived_root(doc: dict) -> str | None:
     implementation would agree with any drift.
     """
     version = doc.get("schema_version")
-    if version not in ("3.0.0", "3.1.0"):
+    if version not in ("3.0.0", "3.1.0", "3.2.0"):
         # Below 3.0.0 the digests do not cover prev_hash, so the terminal's
         # hash covers one record rather than the run. There is no root to have.
         return None

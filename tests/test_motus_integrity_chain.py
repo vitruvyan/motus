@@ -93,9 +93,9 @@ def _root_of(document: dict) -> str:
     return document["records"][-1]["integrity"]["payload_hash"]
 
 
-def test_the_emitted_schema_is_3_1_0():
-    assert TRACE_SCHEMA_VERSION == "3.1.0"
-    assert _run().trace.to_dict()["schema_version"] == "3.1.0"
+def test_the_emitted_schema_is_3_2_0():
+    assert TRACE_SCHEMA_VERSION == "3.2.0"
+    assert _run().trace.to_dict()["schema_version"] == "3.2.0"
 
 
 def test_the_recipe_reproduces_what_the_runtime_sealed():
@@ -281,8 +281,15 @@ def test_a_malformed_integrity_block_yields_no_root_and_no_crash(integrity):
     property whose entire contract is to answer None when the document has not
     earned a root — an anchor ingesting a malformed file must be told "do not
     anchor this", never handed a crash to catch.
+
+    The document is relabelled to 3.1.0 so the question being asked is the
+    one this test asks — what a malformed INTEGRITY block does to `root`.
+    A 3.2.0 document carrying the float `3.5` anywhere is refused at load by
+    rule J4 (ADR-030), which is a different and earlier question.
     """
     document = _run().trace.to_dict()
+    document["schema_version"] = "3.1.0"
+    _reseal(document, bind_prev=True)
     document["records"][0]["integrity"] = integrity
     assert Trace.from_dict(document).root is None
 

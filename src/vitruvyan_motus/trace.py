@@ -27,7 +27,7 @@ T = TypeVar("T")
 # version not in it — a typo, a future 4.0.0, a string an editor put in the
 # header — was treated as chained and got a root. A guard about what may be
 # anchored has to fail closed.
-_CHAIN_BINDS_PREV = frozenset({"3.0.0", "3.1.0"})
+_CHAIN_BINDS_PREV = frozenset({"3.0.0", "3.1.0", "3.2.0"})
 
 
 class _Missing:
@@ -168,6 +168,75 @@ class NonCanonicalNumber(ValueError):
     """
 
 
+#: The largest integer JavaScript can hold exactly — `Number.MAX_SAFE_INTEGER`.
+#: ADR-030's rule J4 admits every integer with |n| <= this, and nothing else.
+_MAX_SAFE_INTEGER = 2 ** 53 - 1
+
+
+class NonIntegerNumber(ValueError):
+    """A number rule J4 (ADR-030) refuses: produced or read in a 3.2.0 trace.
+
+    From trace schema 3.2.0 every number in a trace is a JSON integer with
+    |n| <= 2^53 - 1. A float — including an integral one like `-14.0`, which
+    JavaScript writes as `-14` while Python keeps the `.0` — and an integer
+    beyond the safe range cannot be serialised identically by the JSON
+    implementations in use, so a document carrying one has a root only CPython
+    can derive. The producer side raises this where the value is supplied
+    (`State.with_fact`/`with_decision`/`with_rejection`, metadata seeding); the
+    reader side raises it from `Trace.from_json`/`from_dict` when the document
+    DECLARES itself 3.2.0 or above, because such a document is not what it
+    claims to be. The message names rule J4 and the JSON path to the number.
+    """
+
+
+def _integer_only(value: Any, path: str = "$") -> None:
+    """Refuse a number that rule J4 (ADR-030) does not admit, naming its path.
+
+    A walk over the PARSED value, never a regular expression over the text: a
+    pattern would flag `{"note": "cost 5.10 eur"}`, where `5.10` is somebody's
+    prose and not a number at all. The rule: a value is a JSON integer with
+    |n| <= 2^53 - 1 iff `isinstance(value, int)` and not `bool` and
+    `abs(value) <= _MAX_SAFE_INTEGER`. Every float is refused, integral ones
+    included — `-14.0` and `-14` are the same RFC 8259 number and two different
+    canonical texts, which is the entire reason for the rule.
+
+    Iterative rather than recursive: a genuine trace nested 489 deep raised
+    `RecursionError` out of the withdrawn `J3` reader, and a refusal a document
+    does not deserve is the worst answer a verifier gives. `bool` passes: JSON
+    has booleans, not numbers, and `isinstance(True, int)` must not accuse a
+    boolean.
+    """
+    stack: list[tuple[Any, str]] = [(value, path)]
+    while stack:
+        item, item_path = stack.pop()
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int):
+            if abs(item) > _MAX_SAFE_INTEGER:
+                raise NonIntegerNumber(
+                    f"rule J4 (ADR-030): the integer {item} at {item_path} is "
+                    f"beyond 2^53 - 1 ({_MAX_SAFE_INTEGER}), the largest "
+                    "integer every JSON implementation in use writes identically. "
+                    "Record it as a string if it is an identifier, or carry it "
+                    "as an integer at a declared scale.")
+            continue
+        if isinstance(item, float):
+            raise NonIntegerNumber(
+                f"rule J4 (ADR-030): the number {item!r} at {item_path} is not "
+                f"a JSON integer with |n| <= 2^53 - 1 ({_MAX_SAFE_INTEGER}). "
+                "From trace schema 3.2.0 every number in a trace is an "
+                "integer; a quantity that is not an integer is carried at a "
+                "declared scale (basis points, milliseconds, whole units) or "
+                "as a string the producer owns. A float cannot be verified by "
+                "a second implementation, which is what this rule is for.")
+        elif isinstance(item, dict):
+            for key, child in item.items():
+                stack.append((child, f"{item_path}.{key}"))
+        elif isinstance(item, list):
+            for index, child in enumerate(item):
+                stack.append((child, f"{item_path}[{index}]"))
+
+
 def _canonical_number(lexeme: str, cast: Any) -> Any:
     """ADR-024 rule J2, hooked into the parser rather than matched by pattern.
 
@@ -278,8 +347,15 @@ def _loads_canonical(text: str) -> Any:
 #: evidence stays valid without rewriting.
 #:
 #: The producing side is scoped by neither: it writes 3.0.0 and refuses always.
-_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0"})
-_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0"})
+_LEXICALLY_GOVERNED = frozenset({"3.0.0", "3.1.0", "3.2.0"})
+_SCALAR_GOVERNED = frozenset({"2.0.0", "3.0.0", "3.1.0", "3.2.0"})
+
+
+#: Trace schema versions at which rule J4 (ADR-030) governs: every number in
+#: the document is a JSON integer with |n| <= 2^53 - 1. An allow-list like the
+#: ones above; a future version that keeps the rule adds itself here, and one
+#: that does not removes itself and says so in its ADR.
+_INTEGER_ONLY_GOVERNED = frozenset({"3.2.0"})
 
 
 def _governed(document: Any, versions: frozenset[str]) -> bool:
@@ -595,7 +671,7 @@ class Trace:
             raise TypeError("trace document must be an object")
         if set(plain) != {"schema_version", "run", "records"}:
             raise ValueError("trace document requires schema_version, run and records")
-        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0", "3.1.0"):
+        if plain["schema_version"] not in ("1.0.0", "1.1.0", "2.0.0", "3.0.0", "3.1.0", "3.2.0"):
             raise ValueError("unsupported trace schema version")
         if not isinstance(plain["run"], dict) or not isinstance(plain["records"], list):
             raise TypeError("trace run must be an object and records an array")
@@ -617,6 +693,23 @@ class Trace:
                 "run_completed", "run_failed", "run_cancelled"
             )
             log = log.append(record)
+        # Rule J4 (ADR-030), scoped by the document's OWN declared version as
+        # every version-scoped rule in this file is (ADR-019/024/026): a
+        # document that declares itself 3.2.0 or above claims its numbers are
+        # JSON integers within 2^53 - 1, so a number that is not one is not
+        # the document it says it is, and a reader must refuse it rather than
+        # reproduce a root only CPython can derive. Below 3.2.0 the rule says
+        # nothing: those documents were truthful under their version, and
+        # refusing `-14.0` now would break the promise that old evidence stays
+        # valid without rewriting. The walk covers every position T11 hashes:
+        # fact/decision/rejection values at any depth, initial_state, metadata,
+        # routing values and context_draws[].value. It runs after the shape
+        # checks so a caller is told which CONTRACT its document breaks without
+        # J4 preempting a structural finding it may also have.
+        if plain["schema_version"] in _INTEGER_ONLY_GOVERNED:
+            _integer_only(plain["run"])
+            for index, record in enumerate(plain["records"]):
+                _integer_only(record, f"$.records[{index}]")
         return cls(plain["run"], log, schema_version=plain["schema_version"])
 
     def _view(self) -> dict[str, Any]:

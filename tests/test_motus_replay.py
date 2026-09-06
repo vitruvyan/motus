@@ -132,8 +132,11 @@ def test_imported_bundle_rejects_a_semantically_impossible_node():
 
 
 def test_verify_reexecutes_only_pure_nodes_and_detects_divergence():
+    # J4 (ADR-030) refuses a raw float in a fact value, so the write carries
+    # the draw at a scale the producer declares — 1/1000 — like any real
+    # producer of a 3.2.0 trace.
     def pure(state, ctx):
-        return state.with_fact(Fact("draw", ctx.rand(), "ctx", NOW))
+        return state.with_fact(Fact("draw", int(ctx.rand() * 1000), "ctx", NOW))
 
     graph = spec(
         [{"name": "pure", "effect_class": "pure", "writes_declared": ["draw"]}],
@@ -145,9 +148,16 @@ def test_verify_reexecutes_only_pure_nodes_and_detects_divergence():
     engine = ReplayEngine(TraceBundle(graph, result.trace))
     verified = engine.verify({"pure": pure})
     assert verified.verified == (("pure", 3),)
+    # The draw is recorded as the 53-bit integer n (2^51 for 0.25) and replay
+    # reproduces the float by the contract's formula.
+    transition = next(
+        r for r in result.trace.records if r["kind"] == "transition")
+    assert transition["context_draws"] == [
+        {"source": "rand", "value": 2 ** 51}]
+    assert transition["writes"]["facts"][0]["value"] == 250
 
     def changed(state, ctx):
-        return state.with_fact(Fact("draw", ctx.rand() + 1, "ctx", NOW))
+        return state.with_fact(Fact("draw", int(ctx.rand() * 1000) + 1, "ctx", NOW))
 
     with pytest.raises(ReplayMismatch, match="writes"):
         engine.verify({"pure": changed})

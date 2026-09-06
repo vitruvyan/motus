@@ -8,6 +8,8 @@ number.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import importlib.util
 import json
 import sys
@@ -16,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State, TRACE_SCHEMA_VERSION
-from vitruvyan_motus.trace import NonCanonicalNumber, Trace
+from vitruvyan_motus import Fact, GraphSpec, InMemoryTraceSink, Runtime, State
+from vitruvyan_motus.trace import _canonical_bytes, NonCanonicalNumber, Trace
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
@@ -44,18 +46,63 @@ SPEC = GraphSpec.from_dict({
 })
 
 
+#: The values that make J2 reachable, and which rule J4 (ADR-030) now
+#: refuses at the producing boundary: `5e18` and `0.0` are integral floats,
+#: which JavaScript writes without a fractional part while Python keeps it, so
+#: a document carrying them has a root only CPython can derive.
+#:
+#: **They are injected rather than written, and that is the point.** The __run__
+#: fixture relabels its document to schema 3.1.0 — a pre-J4 version a release
+#: before this ADR could genuinely have written — and injects these values
+#: before sealing. J2 is a rule about READING a document whose number lexemes
+#: were rewritten, and such documents still exist: produced before 3.2.0, or
+#: by an attacker, who is under no obligation to use our API. The 3.1.0
+#: version is what keeps the fixture readable: J4 governs only 3.2.0+.
+_DIVERGING = {"importo": 5e18, "score": 0.87, "zero": 0.0}
+
+
 @pytest.fixture()
 def run():
     """A real run carrying the values that make this defect reachable."""
     def node(state):
         return (state
-                .with_fact(Fact("importo", 5e18, "test", NOW))
-                .with_fact(Fact("score", 0.87, "test", NOW))
-                .with_fact(Fact("zero", 0.0, "test", NOW))
+                .with_fact(Fact("importo", 1, "test", NOW))
+                .with_fact(Fact("score", 1, "test", NOW))
+                .with_fact(Fact("zero", 1, "test", NOW))
                 .with_fact(Fact("count", 42, "test", NOW)))
     result = Runtime(SPEC, {"a": node}, sink=InMemoryTraceSink()).run(
         State.empty("x"), run_id="r1")
-    return result.trace
+
+    document = result.trace.to_dict()
+    # Below 3.2.0 the trace schema's canonical number form is CPython's, so a
+    # 3.1.0 document can genuinely carry these floats; a 3.2.0 one cannot.
+    document["schema_version"] = "3.1.0"
+    for record in document["records"]:
+        for fact in (record.get("writes") or {}).get("facts", []):
+            if fact["key"] in _DIVERGING:
+                fact["value"] = _DIVERGING[fact["key"]]
+    return Trace.from_dict(_resealed(document))
+
+
+def _resealed(document):
+    """Re-seal the chain after injecting values the producing API refuses.
+
+    Editing a record changes its bytes, so every link after it stops matching —
+    the chain doing its job. J2 is being asked about a document that VERIFIES
+    and whose numbers were nonetheless written in characters the contract would
+    not produce, so the chain has to hold for the question to be asked at all.
+    The 3.1.0 recipe binds prev_hash, exactly as the runtime's does.
+    """
+    out = copy.deepcopy(document)
+    prev = "sha256:" + hashlib.sha256(_canonical_bytes({
+        "schema_version": out["schema_version"], "run": out["run"]})).hexdigest()
+    for record in out["records"]:
+        payload = dict(record)
+        payload["integrity"] = {"payload_hash": None, "prev_hash": prev}
+        digest = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+        record["integrity"] = {"payload_hash": digest, "prev_hash": prev}
+        prev = digest
+    return out
 
 
 # -- the property that makes J2 affordable ----------------------------------
@@ -439,10 +486,13 @@ def test_escaping_j2s_scope_costs_the_attacker_the_root(run):
     genuine = run.to_json()
     assert run.root is not None
 
+    # The fixture declares schema 3.1.0 (pre-J4, so it may carry the floats
+    # J2 exists to police). The attacker relabels it 2.0.0 to walk out of J2's
+    # scope — and loses the root, which is the point of the test.
     key = json.dumps("schema_version")
     before, after = genuine.split(key, 1)
-    relabelled = before + key + after.replace(TRACE_SCHEMA_VERSION, "2.0.0", 1)
-    assert relabelled != genuine, "the fixture no longer declares the current schema version as written"
+    relabelled = before + key + after.replace("3.1.0", "2.0.0", 1)
+    assert relabelled != genuine, "the relabelling changed nothing"
 
     document = json.loads(relabelled)
     assert validate._lexically_governed(document) is False, (

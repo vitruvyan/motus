@@ -947,7 +947,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
   `JsonlTraceSink`, `StreamDriver`, `AsyncStreamDriver`;
 - evidence: `Trace`, `TRACE_SCHEMA_VERSION`, `RedactedValue`, `ContextDraw`,
-  `RunContext`, `NonCanonicalNumber`;
+  `RunContext`, `NonCanonicalNumber`, `NonIntegerNumber`;
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
@@ -960,6 +960,23 @@ while `jq`, `git diff` and a human read different numbers. The characters are
 the evidence, and a parser destroys them, so `from_dict` cannot make this check
 and no implementation could: by the time it is called, the two documents are
 one object (ADR-024).
+
+**And from trace schema 3.2.0 every number in a trace is a JSON integer with
+|n| ≤ 2^53 − 1 (rule `J4`, ADR-030).** `NonIntegerNumber` is what a `Fact`,
+`Decision` or `Rejection` value, a metadata value, or the CLI's document
+parser raises for a float — integral ones included, because `-14` and `-14.0`
+are the same RFC 8259 number and two different canonical texts — or for an
+integer beyond `Number.MAX_SAFE_INTEGER`, with the rule id and the JSON path
+in the message. The refusal lives at the producing boundary (`with_fact`,
+`with_decision`, `with_rejection`, metadata seeding) *before anything is
+written*; readers are scoped by the document's own declared version, so a
+0.12.0 trace carrying `-14.0` loads, replays and verifies exactly as it
+always did. A quantity that is not an integer is carried at a declared scale
+— basis points, milliseconds, whole units — or as a string the producer
+owns; the contract does not choose the scale. `ctx.rand()` draws are recorded
+as the 53-bit integer they are made from and handed to the node as `n / 2^53`,
+so a 3.2.0 trace survives `JSON.parse` + `JSON.stringify` in a browser with
+its root unchanged — the property #116 was filed for.
 
 **Which escape form a string was written in is not checked, and ADR-026 settles
 that as intended rather than as a hole.** `"appro\u0076ed"` and `"approved"`
