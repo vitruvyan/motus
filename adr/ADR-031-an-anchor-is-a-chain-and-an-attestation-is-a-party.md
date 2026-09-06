@@ -33,12 +33,11 @@
      "issuer":         Identifier,        // who asserts; a name a reader can look up, never "us"
      "subject":        Digest,            // WHAT is asserted about: a checkpoint digest or the run root in THIS receipt
      "issued_at":      Timestamp,         // when the issuer says it asserted; the issuer's claim, not ours
-     "algorithm":      Identifier,
-     "signature":      Identifier,        // opaque token; format decided by `type`
-     "proof":          object             // strict plain JSON (J1), bounded; what a reader hands to the issuer's tooling
+     "algorithm":      Identifier,        // the digest algorithm of the imprint the issuer signed over
+     "proof":          object             // strict plain JSON (J1), bounded; the verification material, REQUIRED, shape fixed per `type`
    }
    ```
-   `additionalProperties: false`; all of `attestation_id, type, issuer, subject, issued_at, algorithm, signature` required; `proof` optional and defaulting to `{}`. `evidence_ref` became `subject` and became **required**: an attestation that does not say what it attests is decoration, the C1 argument again, and this time it is written into the schema rather than found by a round. `signed_at` became `issued_at` because a timestamp token is *issued*, not signed by the subject, and the field means the same thing for all types. `key_id` is dropped from the envelope and lives in `proof` for the types that have one: an RFC 3161 token carries its signer's certificate inside the token, and a required `key_id` beside it would be a second copy a forger could make disagree.
+   `additionalProperties: false`; all seven required. `proof` is **required, not optional**, and its shape is fixed per `type` by an `if/then` in the schema, the way `$defs.Anchor` fixes `reference` and `published_at` for `anchored`: for `rfc3161_timestamp`, `proof.token_der` is the complete `TimeStampResp` as base64 — the certificate-bearing DER that `openssl ts -verify -in response.tsr` needs — and `proof.tsa_url` names where it came from. There is no `signature` field in the envelope: for a timestamp token the signature *is* the token, and a 200-character `Identifier` cannot carry a CMS structure; a future type that has a detached signature declares it inside its own `proof` shape. (Review correction 2 below.) `evidence_ref` became `subject` and became **required**: an attestation that does not say what it attests is decoration, the C1 argument again, and this time it is written into the schema rather than found by a round. `signed_at` became `issued_at` because a timestamp token is *issued*, not signed by the subject, and the field means the same thing for all types. `key_id` is dropped from the envelope and lives in `proof` for the types that have one: an RFC 3161 token carries its signer's certificate inside the token, and a required `key_id` beside it would be a second copy a forger could make disagree.
 
 4. **`type` is a closed set, and unknown means refuse.** ADR-021 decision 8 already says so; this ADR gives it a rule and a first member:
 
@@ -49,16 +48,18 @@
    | `electronic_seal` | *`subject` was produced by legal person `issuer`* | 5 PROVENANCE, 6 IDENTITY | named, refused |
    | `identity` | *key K belongs to `issuer`'s principal* | 6 IDENTITY | named, refused |
 
-   The three refused rows are in this table so that adding one is a decision recorded against a row rather than a string that appears one day in a receipt. Each needs its own ADR, because each brings a semantics the validator does not have (a trusted list; a certificate chain; revocation, which ADR-020 says is *not never-valid*). The validator's known set is a frozenset beside `KNOWN_ANCHOR_NETWORKS`, and a test enumerates the four rows with their verdicts so a fifth fails the suite until somebody writes its row.
+   The three refused rows are in this table so that adding one is a decision recorded against a row rather than a string that appears one day in a receipt. Each needs its own ADR, because each brings a semantics the validator does not have (a trusted list; a certificate chain; revocation, which ADR-020 says is *not never-valid*). The validator's known set is a frozenset beside `KNOWN_ANCHOR_NETWORKS`, and a test enumerates the four rows with their verdicts so a fifth fails the suite until somebody writes its row. Each known row also fixes the algorithms it admits and the `proof` keys it requires; `rfc3161_timestamp` admits `sha256` and requires `proof.token_der` and `proof.tsa_url`.
 
 5. **The one added for real is `rfc3161_timestamp`, and it is chosen because it is the weakest.** It supports level 2 only — the level an anchor already supports — so adding it proves the block is extensible **without pretending a level this distribution cannot reach**. A public TSA issues these free of charge, over HTTP, against a SHA-256 imprint; the plug `plugs/motus-attest-rfc3161` implements `Attester.attest(subject: bytes) -> Attestation`, builds the DER request and reads `genTime` and the TSA name out of the response **without a dependency** (hypothesis H1 below). The contract validator checks structure (`P9`, `P10`), reports EXISTENCE as **CLAIMED** naming the issuer and the `openssl ts -verify` incantation in `proof`, and never verifies the CMS signature — same posture as an anchor, same reason.
 
 6. **Two rules and one refusal**, mirroring P4 and P5 so a reader who knows anchors knows attestations:
    - **`P9`** — an attestation whose `subject` is not a checkpoint digest or the run root of this receipt. *An assertion about a digest that is not here says nothing about this run.*
-   - **`P10`** — an attestation whose `type` is outside the known set. Reported as a violation **and** as a refusal (non-zero exit), for the reason README gives for P5: *a refusal outranks a violation*, because a document may be correct under a type we cannot read.
+   - **`P10`** — an attestation whose `type` is outside the known set, **or whose `algorithm` is outside the set the known type admits** (`rfc3161_timestamp`: `sha256` at 1.0.0), **or whose `proof` lacks the material its type requires**. Reported as a violation **and** as a refusal (non-zero exit), for the reason README gives for P5 and for an unknown signature algorithm: *a refusal outranks a violation*, because a document may be correct under an algorithm we cannot read, and unreadable cryptography must never sit on the same footing as checked cryptography. (Review correction 3.)
    - An attestation never raises a level above what its row allows, and no attestation moves `mode`: `qualified` stays refused by P3 until the `qualified_timestamp` and `identity` rows are opened, and even then P3 will ask for both.
 
 7. **What an attestation is not.** It is not a witness acknowledgement (that stays on the BEGIN, in `commitment.v1`, with C1); it is not an anchor (nothing is *pending*; a token is issued or absent); and it is not verified by this validator (claimed, with the issuer named). A receipt whose only support for EXISTENCE is an attestation is at level 2 *on the issuer's word*; a receipt with an anchor is at level 2 *on a chain's record*. The verdict text says which, because a buyer will ask.
+
+   **And an attestation establishes existence of what its `subject` covers, not of the run.** ADR-021 decision 7: proving a checkpoint proves a checkpoint. For a completed receipt, EXISTENCE *of the execution* is CLAIMED only when `subject` is the run root or a checkpoint whose sealed range includes the END; an attestation over the BEGIN's checkpoint alone is reported as *existence of the BEGIN no later than T*, and EXISTENCE for the run stays NOT ESTABLISHED, in the verdict's own words. The same sentence is what the anchor path already needs, and the validator says it for both. (Review correction 1.)
 
 ## Consequences
 
@@ -75,6 +76,14 @@
 
 - **H1 — the RFC 3161 plug fits without a dependency.** Encoding a `TimeStampReq` (SEQUENCE of a version, a `MessageImprint`, a nonce, `certReq TRUE`) and reading `genTime` and the TSA's `GeneralName` back out of the `TimeStampResp` is a bounded DER walk. Guess: under 200 lines including the walker. **Falsified if** the walker needs `pyasn1`/`cryptography`, or if the three public TSAs tried disagree in a way the walker cannot tell apart from a malformed response. If falsified, the plug ships the token opaque (`proof.token_der`, base64) with `issued_at` taken from the HTTP exchange and the receipt says so — still a real attestation, weaker on `issuer`.
 - **H2 — no receipt in the compatibility corpus changes.** The block is optional; every fixture and every Limen receipt anchored so far verifies byte for byte after this change. Checked by the existing corpus in CI the moment the schema lands; falsified by any fixture failing.
+
+## Corrections from review (2026-09-06, on the accepted text, before merge)
+
+Three findings from the Codex review of PR #147, each applied above and marked at its place. None reverses a decision the founder accepted; each closes a hole the accepted text left open.
+
+1. **Existence was bound to a checkpoint, not to the execution.** The text let an RFC 3161 token over the BEGIN's checkpoint report EXISTENCE for a completed receipt whose END sealed in a later window — the exact conflation ADR-021 decision 7 forbids. Decision 7 now binds the verdict to what `subject` covers.
+2. **The verification material was optional, and the field meant to carry it could not.** `proof` was optional and `signature` was a 200-character Identifier; a certificate-bearing `TimeStampResp` fits in neither, so the advertised independent check had nothing to run on. `proof` is required and typed per row; `signature` is gone from the envelope.
+3. **An unknown algorithm under a known type slipped past P10.** The validator refuses an unknown signature algorithm everywhere else (`contract/README.md`, the witness path); P10 now refuses an algorithm the type does not admit, and a `proof` missing the type's material.
 
 ## Alternatives rejected
 
