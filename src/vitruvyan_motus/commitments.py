@@ -759,6 +759,11 @@ class CommitmentWindow:
     _resume_at: int = field(default=0, init=False)
     _sealed: str | None = field(default=None, init=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    # The one snapshot `checkpoint_at` most recently produced FROM THIS
+    # window, kept so `_mark_sealed_locked` can require the checkpoint it is
+    # handed to be that exact one rather than merely one shaped like it --
+    # see the comment there for why the O(1) dimension checks alone do not.
+    _snapshot_digest: str | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         """The public constructor makes a writer's FIRST window only.
@@ -814,6 +819,12 @@ class CommitmentWindow:
                     f"the commitment claims {commitment.sequence}")
             self._commitments.append(commitment)
             self._leaves.append(commitment.leaf)
+            # Any snapshot taken before this append no longer describes the
+            # live window -- the O(1) dimension checks in
+            # `_mark_sealed_locked` would already catch that case, but this
+            # closes it a second way and means the digest binding below
+            # never has to distinguish "changed" from "stale" itself.
+            self._snapshot_digest = None
             return len(self._leaves) - 1
 
     def _next_sequence_locked(self) -> int:
@@ -843,34 +854,75 @@ class CommitmentWindow:
     def proof_for(self, index: int) -> tuple[tuple[str, str], ...]:
         return merkle_path(self.leaves, index)
 
-    def seal(self, sealed_at: str) -> Checkpoint:
-        """Close the window, ONCE, from one snapshot taken under the lock.
+    def _checkpoint_locked(self, sealed_at: str) -> Checkpoint:
+        if self._sealed is not None:
+            raise ValueError("this window is already sealed")
+        if not self._leaves:
+            raise ValueError("an empty window is not evidence that nothing happened")
+        # ONE snapshot. Reading the root from `self.leaves` and then the
+        # count and terminal sequence from the live lists lets a concurrent
+        # append slip between them, and the checkpoint then passes its own
+        # range-vs-count check while claiming a leaf its root does not
+        # cover.
+        checkpoint = Checkpoint(
+            tenant=self.tenant, writer_id=self.writer_id, index=self.index,
+            window_root=merkle_root(tuple(self._leaves)), count=len(self._leaves),
+            first_sequence=self._commitments[0].sequence,
+            last_sequence=self._commitments[-1].sequence,
+            sealed_at=sealed_at, previous=self.previous,
+        )
+        # Recorded so `_mark_sealed_locked` can bind to THIS snapshot rather
+        # than to anything with the same shape. One slot: a second call to
+        # `checkpoint_at` (a caller re-snapshotting, or a retried seal)
+        # replaces it, because only the most recent snapshot is still the
+        # live window's account of itself.
+        self._snapshot_digest = checkpoint.digest
+        return checkpoint
 
-        An empty checkpoint would assert that a writer produced no commitments
-        in an interval, which is a claim this structure cannot support: silence
-        and absence are the same shape here, and ADR-020 forbids reporting one
-        as the other.
-        """
+    def checkpoint_at(self, sealed_at: str) -> Checkpoint:
+        """Return a checkpoint snapshot without sealing this window."""
         with self._lock:
-            if self._sealed is not None:
-                raise ValueError("this window is already sealed")
-            if not self._leaves:
-                raise ValueError("an empty window is not evidence that nothing happened")
-            # ONE snapshot. Reading the root from `self.leaves` and then the
-            # count and terminal sequence from the live lists lets a concurrent
-            # append slip between them, and the checkpoint then passes its own
-            # range-vs-count check while claiming a leaf its root does not
-            # cover.
-            leaves = tuple(self._leaves)
-            first = self._commitments[0].sequence
-            last = self._commitments[-1].sequence
-            checkpoint = Checkpoint(
-                tenant=self.tenant, writer_id=self.writer_id, index=self.index,
-                window_root=merkle_root(leaves), count=len(leaves),
-                first_sequence=first, last_sequence=last,
-                sealed_at=sealed_at, previous=self.previous,
-            )
-            self._sealed = checkpoint.digest
+            return self._checkpoint_locked(sealed_at)
+
+    def _mark_sealed_locked(self, checkpoint: Checkpoint) -> None:
+        # A full rebuild-and-compare here cost 2x a seal (measured 1.67ms ->
+        # 3.77ms at 1000 leaves) to reconfirm a root `checkpoint_at` already
+        # computed from the same lock-held snapshot. These four O(1) facts
+        # are still checked first, and still catch an append landing between
+        # snapshot and mark -- an append moves count and last_sequence,
+        # nothing moves first_sequence or index, and sealing itself is the
+        # fifth way this snapshot could go stale -- but they do NOT suffice
+        # on their own: two different windows for the same writer with the
+        # same index, count and sequence range (a fork, or another live
+        # window entirely) pass every one of them while their roots differ,
+        # because none of the four is a function of WHICH commitments are in
+        # the window, only of how many and where they fall in the sequence.
+        # The digest comparison below is what actually ties the mark to the
+        # exact snapshot `checkpoint_at` produced from this window.
+        if (self._sealed is not None
+                or len(self._leaves) != checkpoint.count
+                or checkpoint.index != self.index
+                or self._commitments[-1].sequence != checkpoint.last_sequence
+                or self._commitments[0].sequence != checkpoint.first_sequence):
+            raise ValueError("the live window changed after its checkpoint snapshot")
+        if checkpoint.digest != self._snapshot_digest:
+            raise ValueError(
+                "this checkpoint was not snapshotted from this window: its "
+                "dimensions match, but its digest was not produced by this "
+                "window's own checkpoint_at(), so its root does not describe "
+                "what this window holds")
+        self._sealed = checkpoint.digest
+
+    def mark_sealed(self, checkpoint: Checkpoint) -> None:
+        """Seal only if the live window is the one that was snapshotted."""
+        with self._lock:
+            self._mark_sealed_locked(checkpoint)
+
+    def seal(self, sealed_at: str) -> Checkpoint:
+        """Snapshot and mark a checkpoint atomically under one lock."""
+        with self._lock:
+            checkpoint = self._checkpoint_locked(sealed_at)
+            self._mark_sealed_locked(checkpoint)
             return checkpoint
 
     @property

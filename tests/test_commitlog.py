@@ -6,16 +6,18 @@ restored backup has removed the guarantee without removing the sentence.
 
 from __future__ import annotations
 
+import errno
 import json
 
 import pytest
+import vitruvyan_motus.commitlog as commitlog
 
 from vitruvyan_motus.commitlog import (
     STORE_FORMAT, CommitmentLog, CommitmentLogBusy, CommitmentLogFork,
     InclusionProof,
 )
 from vitruvyan_motus.commitments import (
-    Checkpoint, CommitmentKind, CommitmentWindow, merkle_root, verify_inclusion,
+    Checkpoint, Commitment, CommitmentKind, CommitmentWindow, merkle_root, verify_inclusion,
 )
 
 AT = "2026-08-12T09:14:00Z"
@@ -24,7 +26,7 @@ ROOT = "sha256:" + "a" * 64
 
 def _log(tmp_path, tenant="acme", writer="w1", **kw) -> CommitmentLog:
     return CommitmentLog(tmp_path, tenant=tenant, writer_id=writer,
-                         fsync=False, **kw)
+                         fsync=kw.pop("fsync", False), **kw)
 
 
 def _run(log: CommitmentLog, name: str) -> None:
@@ -187,31 +189,390 @@ def test_an_empty_window_cannot_be_sealed(tmp_path):
     log.close()
 
 
-def test_a_failed_seal_poisons_rather_than_leaving_a_stale_window(tmp_path, monkeypatch):
+# Declared from which side of the rename each fault lands on -- not read
+# back from the disk state the implementation itself produces. An oracle
+# built from `Path.exists()` after the fact would agree with a mutant that
+# poisons on the wrong side of the boundary, because both compute the
+# "same" fact from the same place.
+_SEAL_FAULT_EXPECTS_POISON = {
+    "temp-open": False, "temp-write": False, "temp-fsync": False,
+    "replace-before": False, "replace-after": True, "dir-sync": True,
+    "mark-sealed": True, "handle-close": True, "following": True,
+}
+
+
+@pytest.mark.parametrize("fault", [
+    "temp-open", "temp-write", "temp-fsync", "replace-before",
+    "replace-after", "dir-sync", "mark-sealed", "handle-close", "following",
+], ids=str)
+@pytest.mark.parametrize("fsync", [False, True], ids=lambda value: f"fsync={value}")
+def test_seal_fault_sweep_covers_retryable_and_poisoned_recovery(
+        tmp_path, monkeypatch, fault, fsync):
+    """Sweep every named boundary, including continuation and reopen evidence."""
+    log = _log(tmp_path, fsync=fsync)
+    _run(log, "r1")
+    if fault == "temp-open":
+        original = commitlog.Path.open
+        monkeypatch.setattr(commitlog.Path, "open", lambda self, *a, **k:
+                            (_ for _ in ()).throw(OSError("open"))
+                            if self.name.endswith(".tmp") else original(self, *a, **k))
+    elif fault == "temp-write":
+        monkeypatch.setattr(commitlog, "_prepare_atomic_write",
+                            lambda *a, **k: (_ for _ in ()).throw(OSError("write")))
+    elif fault == "temp-fsync":
+        if fsync:
+            monkeypatch.setattr(commitlog.os, "fsync",
+                                lambda fd: (_ for _ in ()).throw(OSError("fsync")))
+    elif fault == "replace-before":
+        monkeypatch.setattr(commitlog.os, "replace",
+                            lambda *a: (_ for _ in ()).throw(OSError("replace")))
+    elif fault == "replace-after":
+        original = commitlog.os.replace
+        def replace_then_raise(*args):
+            original(*args)
+            raise OSError("replace reported after completion")
+        monkeypatch.setattr(commitlog.os, "replace", replace_then_raise)
+        original_unlink = commitlog.Path.unlink
+        monkeypatch.setattr(commitlog.Path, "unlink", lambda self, *a, **k:
+                            (_ for _ in ()).throw(OSError("cleanup failed"))
+                            if self.name.endswith(".tmp") else original_unlink(self, *a, **k))
+    elif fault == "dir-sync":
+        if fsync:
+            monkeypatch.setattr(commitlog, "_sync_directory",
+                                lambda *a, **k: (_ for _ in ()).throw(OSError("dir-sync")))
+    elif fault == "mark-sealed":
+        monkeypatch.setattr(CommitmentWindow, "mark_sealed",
+                            lambda *a: (_ for _ in ()).throw(OSError("mark")))
+    elif fault == "handle-close":
+        handle = log._open_handle()
+        monkeypatch.setattr(handle, "close",
+                            lambda: (_ for _ in ()).throw(OSError("close")))
+    else:
+        monkeypatch.setattr(CommitmentWindow, "following",
+                            classmethod(lambda *a: (_ for _ in ()).throw(OSError("following"))))
+
+    not_invoked = fault in {"temp-fsync", "dir-sync"} and not fsync
+    if not_invoked:
+        checkpoint = log.seal(AT)
+        assert checkpoint.count == 2 and log._poisoned is None
+    else:
+        expected_poisoned = _SEAL_FAULT_EXPECTS_POISON[fault]
+        with pytest.raises(OSError):
+            log.seal(AT)
+        assert (log._poisoned is not None) is expected_poisoned
+        # Whether cleanup ran, not whether the fault was retryable or
+        # poisoned: a "cleanup never runs" mutant leaves the checkpoint's
+        # correctness untouched but an orphaned .tmp on every named boundary,
+        # and nothing above this line would have noticed.
+        assert not list(log.directory.glob("*.tmp"))
+        # The on-disk rename is a second, independent check -- never the
+        # oracle -- because reading it back to decide `expected_poisoned`
+        # would make this test agree with whatever the implementation did.
+        renamed = (log.directory / "checkpoint-000000.json").exists()
+        assert renamed is expected_poisoned
+        monkeypatch.undo()
+        if expected_poisoned:
+            # The durable chain is sealed despite the caller seeing an error;
+            # refusal is required before this poisoned handle is discarded.
+            for operation in (
+                lambda: log.begin("refused-begin", at=AT, nonce="refused-begin"),
+                lambda: log.end("r1", root=ROOT, outcome="failed", at=AT,
+                                nonce="refused-end"),
+                lambda: log.seal(AT),
+            ):
+                with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+                    operation()
+            log.close()
+            reopened = _log(tmp_path, fsync=fsync)
+            assert reopened.open_window.index == 1
+            assert reopened.verify_chain() == 1
+            sealed, commitments = reopened._sealed_window(0)
+            assert sealed.count == 2 and [c.sequence for c in commitments] == [0, 1]
+            reopened.begin("r2", at=AT, nonce="n2")
+            reopened.end("r2", root=ROOT, outcome="completed", at=AT, nonce="e2")
+            assert reopened.open_window.next_sequence == 4
+            reopened.close()
+        else:
+            if fault == "replace-before":
+                assert not (log.directory / "checkpoint-000000.json.tmp").exists()
+            # No durable checkpoint: the same live window remains open and can
+            # continue, be resealed, and be reopened as the same chain.
+            assert log.open_window.sealed is None
+            log.begin("r2", at=AT, nonce="n2")
+            log.end("r2", root=ROOT, outcome="completed", at=AT, nonce="e2")
+            checkpoint = log.seal(AT)
+            assert checkpoint.count == 4
+            log.close()
+            reopened = _log(tmp_path, fsync=fsync)
+            assert reopened.verify_chain() == 1
+            assert reopened._sealed_window(0)[0].digest == checkpoint.digest
+            assert [c.sequence for c in reopened._sealed_window(0)[1]] == [0, 1, 2, 3]
+            reopened.close()
+    if not_invoked:
+        log.close()
+
+
+def test_seal_reports_a_real_directory_fsync_failure_after_replace(tmp_path, monkeypatch):
+    """`_sync_directory` used to swallow every `OSError` from its own fsync,
+    including one raised after `_commit_atomic_write` had already renamed the
+    checkpoint into place. That let a genuine EIO/ENOSPC on the *directory*
+    fsync -- not the monkeypatch of the whole helper the sweep above uses --
+    disappear before `_commit_atomic_write`'s `except BaseException` could
+    ever see it, so `seal()` returned a checkpoint and reported the log
+    durable while its directory entry might not survive a crash. This drives
+    the fault through the real syscall boundary (`os.fsync`, filtered to the
+    directory descriptor by `fstat`), which only `_sync_directory(...,
+    strict=True)` re-raising makes reach `seal()` at all.
+    """
+    import os as os_module
+    import stat as stat_module
+
+    log = _log(tmp_path, fsync=True)
+    _run(log, "r1")
+    real_fsync = os_module.fsync
+
+    def fsync_that_refuses_directories(fd):
+        if stat_module.S_ISDIR(os_module.fstat(fd).st_mode):
+            raise OSError(errno.EIO, "directory fsync refused")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os_module, "fsync", fsync_that_refuses_directories)
+    with pytest.raises(OSError):
+        log.seal(AT)
+    # The rename already happened -- the checkpoint IS on disk -- which is
+    # exactly why this failure must poison rather than being retryable: a
+    # retry would issue sequence numbers already claimed by a durable file.
+    assert (log.directory / "checkpoint-000000.json").exists()
+    assert log._poisoned is not None
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.seal(AT)
+    monkeypatch.undo()
+    log.close()
+
+    reopened = _log(tmp_path, fsync=True)
+    assert reopened.open_window.index == 1
+    assert reopened.verify_chain() == 1
+    reopened.close()
+
+
+def test_checkpoint_snapshot_and_mark_require_same_live_window():
+    window = CommitmentWindow(tenant="acme", writer_id="w1")
+    first = Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                       sequence=0, run_id="r1", at=AT, nonce="n1")
+    window.append(first)
+    checkpoint = window.checkpoint_at(AT)
+    window.append(Commitment(kind=CommitmentKind.END, tenant="acme", writer_id="w1",
+                             sequence=1, run_id="r1", at=AT, nonce="e1",
+                             root=ROOT, outcome="completed"))
+    with pytest.raises(ValueError, match="changed"):
+        window.mark_sealed(checkpoint)
+    assert window.sealed is None
+
+
+def test_append_remember_failure_poisoned_after_durable_line(tmp_path, monkeypatch):
+    log = _log(tmp_path)
+    original = CommitmentLog._remember
+
+    def fail_once(self, commitment):
+        if commitment.run_id == "remember-fault":
+            raise MemoryError("remember failed")
+        return original(self, commitment)
+
+    monkeypatch.setattr(CommitmentLog, "_remember", fail_once)
+    with pytest.raises(MemoryError, match="remember failed"):
+        log.begin("remember-fault", at=AT, nonce="remember-nonce")
+    assert log._poisoned is not None
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("retry", at=AT, nonce="retry")
+    log.close()
+    monkeypatch.undo()
+    reopened = _log(tmp_path)
+    assert reopened.open_window.next_sequence == 1
+    reopened.close()
+
+
+@pytest.mark.parametrize("fault", ["replace", "dir-sync"])
+def test_identity_atomic_write_preserves_original_failure(fault, tmp_path, monkeypatch):
+    if fault == "replace":
+        monkeypatch.setattr(commitlog.os, "replace",
+                            lambda *a: (_ for _ in ()).throw(OSError(errno.ENOSPC, "full")))
+    else:
+        monkeypatch.setattr(commitlog, "_sync_directory",
+                            lambda *a, **k: (_ for _ in ()).throw(OSError(errno.EIO, "sync")))
+    with pytest.raises(OSError) as raised:
+        CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
+    assert type(raised.value) is OSError
+    assert raised.value.errno == (errno.ENOSPC if fault == "replace" else errno.EIO)
+
+
+@pytest.mark.parametrize("target_exists,temp_exists,expected", [
+    (False, True, False), (True, False, True), (True, True, False),
+    (False, False, True),
+])
+def test_replace_observation_requires_both_entries(tmp_path, target_exists,
+                                                    temp_exists, expected):
+    target = tmp_path / "checkpoint.json"
+    temporary = tmp_path / "checkpoint.json.tmp"
+    if target_exists:
+        target.write_text("target")
+    if temp_exists:
+        temporary.write_text("temp")
+    assert commitlog._replace_was_completed(temporary, target) is expected
+
+
+@pytest.mark.parametrize("stat_target", [True, False],
+                        ids=lambda v: "target-stat-raises" if v else "temp-stat-raises")
+@pytest.mark.parametrize("stat_errno", [errno.EIO, errno.EACCES],
+                        ids=lambda v: errno.errorcode[v])
+def test_an_unreadable_stat_after_a_real_rename_poisons_rather_than_retrying(
+        tmp_path, monkeypatch, stat_target, stat_errno):
+    """`_replace_was_completed`'s `target_present is None or temporary_present
+    is None: return True` branch had no test: nothing would have noticed it
+    flipped to `False`. An EIO or EACCES on `stat` is not "absent" (ENOENT
+    already has its own branch) and not "present" -- it is "the filesystem
+    won't say", and the only safe reading of "won't say" after a rename that
+    genuinely happened is the same as a confirmed rename: poison. Treating it
+    as retryable instead would let a second process reuse a sequence a
+    durable checkpoint already holds.
+    """
     log = _log(tmp_path)
     _run(log, "r1")
 
-    def boom(*args, **kwargs):
-        raise OSError("checkpoint unavailable")
+    # `seal()` calls `path.exists()` -- itself a `.stat()` -- BEFORE ever
+    # attempting a write, to refuse a chain position sealed twice. Watching
+    # the target's name unconditionally would misfire there, before any
+    # rename happened, and answer a different question than this test asks.
+    # Only `os.replace` reporting failure means `_replace_was_completed` is
+    # about to run, so that is what arms the fault.
+    triggered = False
+    original_replace = commitlog.os.replace
 
-    monkeypatch.setattr("vitruvyan_motus.commitlog._atomic_write", boom)
+    def replace_then_raise(*args):
+        nonlocal triggered
+        original_replace(*args)  # the rename really happens
+        triggered = True
+        raise OSError(errno.ENOSPC, "reported after completion")
+
+    monkeypatch.setattr(commitlog.os, "replace", replace_then_raise)
+
+    original_stat = commitlog.Path.stat
+    target_name = "checkpoint-000000.json"
+    watched_name = target_name if stat_target else target_name + ".tmp"
+
+    def flaky_stat(self, *a, **k):
+        if triggered and self.name == watched_name:
+            raise OSError(stat_errno, "device fault")
+        return original_stat(self, *a, **k)
+
+    monkeypatch.setattr(commitlog.Path, "stat", flaky_stat)
+
     with pytest.raises(OSError):
         log.seal(AT)
-    for operation in (
-        lambda: log.begin("r2", at=AT, nonce="n2"),
-        lambda: log.end("r1", root=ROOT, outcome="failed", at=AT, nonce="e2"),
-        lambda: log.seal(AT),
-    ):
-        with pytest.raises(CommitmentLogFork, match="stopped being writable"):
-            operation()
+    assert log._poisoned is not None
+    monkeypatch.undo()
+
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("refused", at=AT, nonce="refused")
     log.close()
 
     reopened = _log(tmp_path)
-    assert not (reopened.directory / "checkpoint-000000.json").exists()
-    assert [c.sequence for c in reopened.open_window._commitments] == [0, 1]
-    reopened.begin("r2", at=AT, nonce="n2")
-    assert reopened.open_window.next_sequence == 3
+    assert reopened.verify_chain() == 1
+    sealed, commitments = reopened._sealed_window(0)
+    assert sealed.count == 2 and [c.sequence for c in commitments] == [0, 1]
     reopened.close()
+
+
+def test_a_keyboard_interrupt_during_post_rename_cleanup_still_poisons(
+        tmp_path, monkeypatch):
+    """Narrowing `_unlink_temporary` to `except OSError` lets a real
+    interrupt through instead of swallowing it -- but that alone would make
+    the interrupt preempt poisoning too, since it replaces the
+    `_AtomicWriteFailure` `_commit_atomic_write` was mid-raise of. `seal()`
+    must recover `after_replace` from that failure's `__context__` (where
+    Python chains it when a `finally` block's exception takes over), not
+    lose it, or a Ctrl-C landing here would leave a durable checkpoint on
+    disk and an unpoisoned instance free to reuse its sequence.
+    """
+    log = _log(tmp_path)
+    _run(log, "r1")
+
+    original_replace = commitlog.os.replace
+
+    def replace_then_raise(*args):
+        original_replace(*args)  # the rename really happens
+        raise OSError(errno.ENOSPC, "reported after completion")
+
+    monkeypatch.setattr(commitlog.os, "replace", replace_then_raise)
+
+    def raise_keyboard_interrupt(self, *a, **k):
+        # A plain `raise`, not the `(_ for _ in ()).throw(...)` idiom used
+        # elsewhere in this file for one-line faults: throwing into a
+        # generator that never started drops `__context__`, and this test
+        # exists to prove that context survives.
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(commitlog.Path, "unlink", raise_keyboard_interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        log.seal(AT)
+    assert log._poisoned is not None
+    monkeypatch.undo()
+
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.begin("refused", at=AT, nonce="refused")
+    log.close()
+
+    reopened = _log(tmp_path)
+    assert reopened.verify_chain() == 1
+    reopened.close()
+
+
+def test_a_pre_rename_seal_failure_does_not_pin_the_writer_lock(
+        tmp_path, monkeypatch):
+    """`_poison`'s docstring cites #99: storing an exception on a long-lived
+    object pins every frame beneath it. `raise exc.cause` from inside
+    `except _AtomicWriteFailure as exc:` reintroduced that class one level
+    up -- it chains `cause.__context__ = exc`, and `exc.cause` already
+    points at `cause`, a reference cycle whose traceback frames hold `self`.
+    Only the cyclic GC breaks a cycle, so this `CommitmentLog` (and the flock
+    it holds, released only on collection -- there is no `__del__`, `close()`
+    is the only other releaser) survived past its last ordinary reference
+    until the next cyclic-gc pass. `CommitmentLog` has no `__weakref__` slot,
+    so the proof is behavioural: a same-process reopen must succeed on
+    refcounting alone, with the cyclic collector disabled throughout.
+    """
+    import gc
+
+    log = _log(tmp_path)
+    _run(log, "r1")
+    monkeypatch.setattr(commitlog.os, "replace",
+                        lambda *a: (_ for _ in ()).throw(OSError(errno.ENOSPC, "full")))
+    with pytest.raises(OSError):
+        log.seal(AT)
+    monkeypatch.undo()
+    assert log._poisoned is None  # pre-rename: retryable, not poisoned
+
+    gc.disable()
+    try:
+        del log
+        # If seal()'s failure path left the log reachable only through the
+        # reference cycle this fix breaks, only the cyclic collector (which
+        # is disabled here) frees it -- and until then the flock it never
+        # released is still held, so this reopen raises CommitmentLogBusy.
+        reopened = _log(tmp_path)
+        reopened.close()
+    finally:
+        gc.enable()
+
+
+def test_atomic_identity_replace_preserves_permission_error(tmp_path, monkeypatch):
+    def denied(*args):
+        raise PermissionError(errno.EACCES, "denied")
+    monkeypatch.setattr(commitlog.os, "replace", denied)
+    with pytest.raises(PermissionError) as raised:
+        CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
+    assert type(raised.value) is PermissionError
+    assert raised.value.errno == errno.EACCES
 
 
 def test_a_failed_handle_close_during_seal_also_poisons(tmp_path):
@@ -268,63 +629,6 @@ def test_a_failed_begin_after_durable_write_poisons_and_reopen_counts_it(
     assert issued.sequence == 2
     reopened.close()
 
-
-@pytest.mark.parametrize("fault", ["checkpoint-write", "handle-close",
-                                    "window-advance", "append", "remember"],
-                         ids=str)
-def test_every_known_post_write_step_poisons_the_live_store(tmp_path, monkeypatch,
-                                                              fault):
-    """The property covers the currently known post-write steps; a future
-    step must be added here when it is introduced between durable state and
-    the successful return (this is an explicit sweep, not magic coverage)."""
-    log = _log(tmp_path)
-    _run(log, "r1")
-    if fault == "append":
-        original = CommitmentWindow.append
-
-        def fail_append(self, commitment):
-            if commitment.run_id == "fault":
-                raise ValueError("forced")
-            return original(self, commitment)
-
-        monkeypatch.setattr(CommitmentWindow, "append", fail_append)
-        with pytest.raises(ValueError, match="forced"):
-            log.begin("fault", at=AT, nonce="fault")
-    elif fault == "remember":
-        original = CommitmentLog._remember
-
-        def fail_remember(self, commitment):
-            if commitment.run_id == "fault":
-                raise MemoryError("forced")
-            return original(self, commitment)
-
-        monkeypatch.setattr(CommitmentLog, "_remember", fail_remember)
-        with pytest.raises(MemoryError, match="forced"):
-            log.begin("fault", at=AT, nonce="fault")
-        with pytest.raises(CommitmentLogFork, match="stopped being writable"):
-            log.begin("retry", at=AT, nonce="fault")
-    else:
-        if fault == "checkpoint-write":
-            monkeypatch.setattr("vitruvyan_motus.commitlog._atomic_write",
-                                lambda *a, **k: (_ for _ in ()).throw(OSError("write")))
-        elif fault == "handle-close":
-            handle = log._open_handle()
-            handle.close = lambda: (_ for _ in ()).throw(OSError("close"))  # type: ignore[method-assign]
-        else:
-            monkeypatch.setattr(CommitmentWindow, "following",
-                                classmethod(lambda cls, checkpoint: (_ for _ in ()).throw(OSError("advance"))))
-        with pytest.raises(OSError):
-            log.seal(AT)
-    assert log._poisoned is not None
-    log.close()
-    monkeypatch.undo()
-    reopened = _log(tmp_path)
-    sequences = []
-    for path in reopened.directory.glob("window-*.jsonl"):
-        sequences.extend(json.loads(line)["commitment"]["sequence"]
-                         for line in path.read_text().splitlines() if line)
-    assert sorted(sequences) == list(range(len(sequences)))
-    reopened.close()
 
 
 # -- the proof --------------------------------------------------------------
