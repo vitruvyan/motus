@@ -131,6 +131,55 @@ correctly, because that is the whole point of `J2`. The two halves are not
 inconsistent: **whitespace and member order are absorbed by the digest and
 numeric lexemes are not**, which is exactly the line ADR-024 draws.
 
+**At 3.2.0 and above, J2 and J4 do not co-occur — and J2 stays in scope
+anyway.** From 3.2.0 every number is an integer (`J4`), so the only lexemes
+`J2` could still catch there are the ones `J4` already refuses (a float, or
+an integer beyond the safe range, rewritten as a different lexeme of the same
+kind never reaches a document `J4` accepts). `J2` is not dropped from 3.2.0's
+scope for that reason: a future version that keeps `J4` but not `J2` would
+silently reopen the numeric-lexeme hole for whatever `J4` no longer covers,
+and nothing would notice. `J2` stays governed so that decision has to be made
+on purpose, by a version that says so, rather than by omission.
+
+**And there is a third thing a store does, which this section did not name
+until #116 found it the hard way: it may read a document with the wrong
+number form.** From trace schema 3.2.0, rule `J4` (ADR-030) closes that: every
+number in a 3.2.0+ trace is a JSON integer with |n| ≤ 2^53 − 1, and integers
+within that range serialise identically in every JSON implementation in use —
+so a 3.2.0 trace survives `JSON.parse` + `JSON.stringify` in a browser byte
+for byte, which is the property the freeze promises. A store or a reader that
+parses numbers and re-renders them cannot change a 3.2.0 trace's meaning, and
+the validator applies `J4` to exactly those documents.
+
+**Resuming a pre-3.2.0 segment that carries a float is refused, not silently
+accepted (2026-09-06 review correction).** `J4` governs the WRITER, so a
+value it refuses surfaces the moment a resumed run tries to seed
+`run_started.initial_state` or the header's `metadata` from the old segment —
+before any record of the new segment is stored. The consumer migrates the
+value (to an integer at a declared scale) before resuming; the old segment
+itself is untouched and keeps loading, replaying and verifying under its own
+version, exactly as it did before this rule existed.
+
+**For documents below 3.2.0 the canonical number form is CPython's, and that
+is a requirement on a verifier written in another language, stated here so it
+is a choice rather than a discovery.** A verifier in another language that
+wants to re-derive the root of a 1.x–3.1.x trace MUST replicate CPython's
+`repr(float)` (and its `json.dumps` number emission) exactly. The two
+implementations disagree about exactly three classes of value, each measured:
+
+- **integral floats** — `-14.0` is written `-14` by JavaScript and `-14.0` by
+  Python, `0.0` and `118.0` included;
+- **floats outside [1e-4, 1e16)** — the two switch to exponent notation at
+  different thresholds (`1e-06` against `0.000001` at the small end);
+- **integers beyond 2^53** — where a double cannot represent every integer
+  (`9007199254740993` is written `…993` by Python and `…992` by JavaScript;
+  the boundary witness is `2^53 + 1`, not `2^53`).
+
+Nothing else disagreed across two measured samples of tens of thousands of
+values. Nobody can re-derive those roots without replicating `repr(float)`;
+that is the honest sentence, and it is why the freeze needed `J4` rather than
+a better float printer.
+
 **A Motus string is Unicode text.** Every string in a Motus document — a value
 or a member name — MUST denote a sequence of Unicode scalar values. An
 unpaired surrogate (U+D800–U+DFFF with no partner) denotes no character, has
@@ -179,7 +228,8 @@ executable and versioned in this repository:
   violations may be null), E1–E11 (the execution state machine), SB1–SB4
   (spec binding, including recomputed graph fingerprints and from 3.1.0
   whether null matches the declaration),
-  H1–H2, J1–J2, JSONL1–3; JSON and JSONL forms. H2 binds
+  H1–H2, J1, J2, and from 3.2.0 J4 (ADR-030: every number in a trace is a
+  JSON integer with |n| ≤ 2^53 − 1), JSONL1–3; JSON and JSONL forms. H2 binds
   resume provenance to a distinct run identity. It reads its input as BYTES
   and decodes explicitly — a reader that laundered CRLF into
   LF would judge a document the file does not contain.

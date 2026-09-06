@@ -55,6 +55,13 @@ ourselves. **The demo is not dodging the defect** — it is filed, it is
 freeze-blocking, and the audit page says in one line that these traces are
 integer-only and why.
 
+**And each field declares its scale in its own key** — `excursion_low_c` is
+whole degrees Celsius, `excursion_minutes` whole minutes, `flow_rate_m3h`
+whole cubic metres per hour, the channel counts are counts. That is ADR-030's
+rule: the producer declares the scale and the contract does not choose one, so
+a reader in another language re-derives the root without knowing anything
+about temperatures.
+
 ## And the one thing all three share
 
 Each domain carries a field the assessor **must not** use — a large customer, a

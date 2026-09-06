@@ -213,6 +213,8 @@ ADVERTISED_RULES = {
     "SB1", "SB2", "SB3", "SB4",
     # Header, JSON strictness, JSONL encoding, schema layer
     "H1", "H2", "J1", "JSONL1", "JSONL2", "JSONL3", "SCHEMA",
+    # Numbers are integers within 2^53 from trace schema 3.2.0 (ADR-030)
+    "J4",
     # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
     "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8",
     # A number commits to the characters it was written as (ADR-024)

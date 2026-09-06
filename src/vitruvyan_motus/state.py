@@ -6,7 +6,9 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from vitruvyan_motus.trace import Decision, Fact, Rejection, RedactedValue, _ChunkedLog, _strict_plain_json, _value
+from vitruvyan_motus.trace import (
+    Decision, Fact, Rejection, RedactedValue, _ChunkedLog, _value,
+)
 
 __all__ = ["State"]
 
@@ -122,6 +124,12 @@ class State:
         for key in _STRING_METADATA_KEYS:
             if key in raw_metadata and not isinstance(raw_metadata[key], str):
                 raise TypeError(f"standard metadata field {key!r} must be a string")
+        # ADR-030 decision 2: a State carries no trace schema version, so it
+        # cannot know which rule J4 scope applies — a State built here might
+        # seed a fresh run (governed) or reconstruct a decade-old snapshot
+        # (not). Rule J4 is enforced once, at the trace-producing boundary
+        # that DOES know its version (`Trace.__init__` for the header this
+        # metadata becomes, `Runtime._execute` for a node's writes), not here.
         self._metadata = {key: _value(value) for key, value in raw_metadata.items()}
         self._reads = reads
         self._events = _ChunkedLog() if events is None else events
@@ -153,7 +161,9 @@ class State:
         return state
 
     @classmethod
-    def empty(cls, intent: str = "", metadata: dict[str, Any] | None = None) -> "State":
+    def empty(
+        cls, intent: str = "", metadata: dict[str, Any] | None = None,
+    ) -> "State":
         return cls(intent=intent, metadata=metadata)
 
     @classmethod
@@ -181,6 +191,12 @@ class State:
                     raise TypeError(
                         f"State.new {collection} must contain only {expected.__name__} values"
                     )
+                # `State.new` seeds `run_started.initial_state`, a position
+                # rule J4 (ADR-030) covers when the trace being built is
+                # governed — but a State does not know that, so it takes
+                # whatever `Fact`/`Decision`/`Rejection` already accepted
+                # (a float included) and leaves the refusal to whichever
+                # trace-producing boundary this state ends up feeding.
                 initial.append(_StateItem(collection, _isolate_item_value(value), {
                     "kind": "initial", "collection": collection, "index": index,
                 }))
@@ -197,7 +213,14 @@ class State:
         intent: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> "State":
-        """Re-seed state from a trace snapshot for playback or resume."""
+        """Re-seed state from a trace snapshot for playback or resume.
+
+        A plain reader (ADR-030 decision 2/3): a `State` is version-agnostic,
+        so a float from a pre-3.2.0 snapshot re-seeds cleanly here. If this
+        state goes on to seed a NEW run, that run's `Trace` — which knows its
+        own version — is where a value J4 refuses is refused: `run_started`
+        does not get written for a resumed run whose seed does not conform.
+        """
         if not isinstance(snapshot, dict):
             raise TypeError("snapshot must be an object")
         facts = [Fact(**item) for item in snapshot.get("facts", [])]
@@ -395,6 +418,12 @@ class State:
     def with_fact(self, fact: Fact) -> "State":
         if not isinstance(fact, Fact):
             raise TypeError("with_fact requires Fact")
+        # No rule J4 (ADR-030) check here: a State is version-agnostic (ADR-030
+        # decision 2) and cannot know whether the trace this write eventually
+        # lands in is governed. `Runtime._execute` checks the pending write
+        # before wrapping it into a transition record, where the trace being
+        # built DOES know its version, and a refusal there becomes this node's
+        # failure exactly as any other exception it raised would.
         item = _StateItem("facts", _isolate_item_value(fact), {"kind": "pending"})
         return self._spawn(pending=self._pending.append(item))
 

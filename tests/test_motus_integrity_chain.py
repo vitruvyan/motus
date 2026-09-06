@@ -28,7 +28,7 @@ import pytest
 from vitruvyan_motus import (
     Fact, GraphSpec, JsonlTraceSink, Runtime, State, TRACE_SCHEMA_VERSION,
 )
-from vitruvyan_motus.trace import Trace, _canonical_bytes
+from vitruvyan_motus.trace import NonIntegerNumber, Trace, _canonical_bytes
 
 NOW = datetime(2026, 8, 12, tzinfo=timezone.utc)
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -93,9 +93,9 @@ def _root_of(document: dict) -> str:
     return document["records"][-1]["integrity"]["payload_hash"]
 
 
-def test_the_emitted_schema_is_3_1_0():
-    assert TRACE_SCHEMA_VERSION == "3.1.0"
-    assert _run().trace.to_dict()["schema_version"] == "3.1.0"
+def test_the_emitted_schema_is_3_2_0():
+    assert TRACE_SCHEMA_VERSION == "3.2.0"
+    assert _run().trace.to_dict()["schema_version"] == "3.2.0"
 
 
 def test_the_recipe_reproduces_what_the_runtime_sealed():
@@ -281,10 +281,40 @@ def test_a_malformed_integrity_block_yields_no_root_and_no_crash(integrity):
     property whose entire contract is to answer None when the document has not
     earned a root — an anchor ingesting a malformed file must be told "do not
     anchor this", never handed a crash to catch.
+
+    The document is relabelled to 3.1.0 so the question being asked is the
+    one this test asks — what a malformed INTEGRITY block does to `root`.
+    A 3.2.0 document carrying the float `3.5` anywhere is refused at load by
+    rule J4 (ADR-030), which is a different and earlier question.
     """
     document = _run().trace.to_dict()
+    document["schema_version"] = "3.1.0"
+    _reseal(document, bind_prev=True)
     document["records"][0]["integrity"] = integrity
     assert Trace.from_dict(document).root is None
+
+
+@pytest.mark.parametrize("integrity", ["a-string", 42, [], None, True, 3.5])
+def test_a_malformed_integrity_block_at_3_2_0_is_decided_not_hidden(integrity):
+    """The same malformed block, at the CURRENT version, made an explicit
+    decision rather than left to fall out of the test above by relabelling:
+    every OTHER malformed shape still answers `root is None` exactly as it
+    did before rule J4 (ADR-030) existed — J4 has nothing to say about a
+    string, an int, a list, `None` or a bool. `3.5` is different: at 3.2.0 a
+    float anywhere in the document is not what the document claims to be
+    (every number a JSON integer), so it is refused before `root` is asked
+    to make sense of it at all, rather than quietly answering `None` for a
+    reason that has nothing to do with rule J4.
+    """
+    document = _run().trace.to_dict()
+    assert document["schema_version"] == TRACE_SCHEMA_VERSION
+    _reseal(document, bind_prev=True)
+    document["records"][0]["integrity"] = integrity
+    if integrity == 3.5:
+        with pytest.raises(NonIntegerNumber):
+            Trace.from_dict(document)
+    else:
+        assert Trace.from_dict(document).root is None
 
 
 def test_the_version_guard_fails_closed():

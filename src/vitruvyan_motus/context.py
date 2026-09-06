@@ -37,7 +37,7 @@ class ContextDraw:
     """One node-visible nondeterministic value captured by the trace."""
 
     source: DrawSource
-    value: str | float
+    value: str | int | float
 
     def __post_init__(self) -> None:
         if self.source not in ("now", "rand", "uuid"):
@@ -45,13 +45,24 @@ class ContextDraw:
         if self.source == "rand":
             if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
                 raise TypeError("a rand draw must be a JSON number")
-            numeric = float(self.value)
-            if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
-                raise ValueError("a rand draw must be finite and in [0, 1)")
+            if isinstance(self.value, int):
+                # ADR-030 decision 5: from trace schema 3.2.0 a rand draw is
+                # recorded as the 53-bit integer n the float is made from, so
+                # the wire form satisfies rule J4 and any reader reproduces
+                # n / 2^53. The integer is the unit of account: [0, 2^53).
+                if not 0 <= self.value < 2 ** 53:
+                    raise ValueError(
+                        f"a rand draw integer must be in [0, 2^53), got {self.value}")
+            else:
+                # Pre-3.2.0 traces recorded the draw as the float itself; the
+                # class still accepts one so a reader reproducing an old draw
+                # can build it. 0.13.0's constraint, unchanged.
+                if not math.isfinite(self.value) or not 0.0 <= self.value < 1.0:
+                    raise ValueError("a rand draw must be finite and in [0, 1)")
         elif not isinstance(self.value, str):
             raise TypeError(f"a {self.source} draw must be a string")
 
-    def to_dict(self) -> dict[str, str | float]:
+    def to_dict(self) -> dict[str, str | int | float]:
         return {"source": self.source, "value": self.value}
 
 
@@ -271,13 +282,37 @@ class _RunController:
         return value
 
     def _node_rand(self) -> float:
+        # ADR-030 decision 5, and decision 4's correction to it. `ctx.rand()`
+        # is the contract's own second numeric source, and rule J4 would
+        # refuse a recorded draw that is a float — so from trace schema 3.2.0
+        # the record carries the 53-bit integer n, and the node receives
+        # n / 2^53, exactly the construction of CPython's `random.random()`
+        # and exact in binary64.
+        #
+        # A caller-supplied source is QUANTISED to that grid, not required to
+        # already sit on it: `random.random()` outputs happen to be exactly
+        # k / 2^53, but 0.42, 0.1 and 1/3 are ordinary floats a caller is
+        # entitled to hand `random_source=`, and refusing them (as an earlier
+        # exact-match check did) refused most of the previously legal domain
+        # for no reason the contract states anywhere. n = floor(v * 2^53) is
+        # exact — multiplying a double in [0, 1) by a power of two moves only
+        # the exponent, so the product never rounds and never reaches 2^53 —
+        # and the node receives n / 2^53, the quantised value, not v itself:
+        # what is recorded and what is handed to the node are the same number
+        # on every platform, which is what makes the draw replayable at all.
+        # Only non-finite or out-of-range values are refused; a source that
+        # already emits k / 2^53 (random.random's own contract) quantises to
+        # itself, so replay reproduces its floats bit-for-bit unchanged.
         value = self._random()
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("the run random source must return a number")
         numeric = float(value)
-        draw = ContextDraw("rand", numeric)
+        if not math.isfinite(numeric) or not 0.0 <= numeric < 1.0:
+            raise ValueError("a rand draw must be finite and in [0, 1)")
+        n = math.floor(numeric * 2 ** 53)
+        draw = ContextDraw("rand", n)
         self._draws.append(draw)
-        return numeric
+        return n / 2 ** 53
 
     def _node_uuid(self) -> str:
         value = self.kernel_uuid()

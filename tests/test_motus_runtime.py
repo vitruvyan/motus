@@ -231,7 +231,7 @@ def test_current_trace_null_and_empty_violations_round_trip_across_all_readers()
     assert [record["violations"] for record in transitions] == [None, []]
 
     document = trace.to_dict()
-    assert document["schema_version"] == "3.1.0"
+    assert document["schema_version"] == "3.2.0"
     round_trips = [
         Trace.from_json(trace.to_json()),
         Trace.from_dict(document),
@@ -244,7 +244,7 @@ def test_current_trace_null_and_empty_violations_round_trip_across_all_readers()
         assert loaded.root == trace.root
 
     unsupported = dict(document)
-    unsupported["schema_version"] = "3.2.0"
+    unsupported["schema_version"] = "3.3.0"
     with pytest.raises(ValueError) as raised:
         Trace.from_json(json.dumps(unsupported))
     assert str(raised.value) == "unsupported trace schema version"
@@ -690,7 +690,10 @@ def test_reproducible_runs_differ_only_when_the_context_source_differs():
     def draws(state, ctx):
         return state.with_fact(Fact(
             "draws",
-            {"time": ctx.now().isoformat(), "random": ctx.rand(), "id": ctx.uuid()},
+            {"time": ctx.now().isoformat(),
+             # J4 (ADR-030): the draw itself is a float, so the fact carries
+             # it at a scale the producer declares.
+             "random": int(ctx.rand() * 1000), "id": ctx.uuid()},
             "context",
             instant,
         ))

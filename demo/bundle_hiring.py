@@ -83,7 +83,7 @@ def canonical(value):
 
 
 def derived_root(doc):
-    if doc.get("schema_version") not in ("3.0.0", "3.1.0"):
+    if doc.get("schema_version") not in ("3.0.0", "3.1.0", "3.2.0"):
         return None, "below trace schema 3.0.0 or outside the anchorable chain versions"
     records = doc.get("records") or []
     if not records:
