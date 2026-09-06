@@ -1,8 +1,8 @@
 # ADR-031 — an anchor is a chain, an attestation is a party
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-06
-- **Accepted:** —
+- **Accepted:** 2026-09-06 by the founder
 - **Authority:** CTO proposes; the founder accepts. Closes the decision #123 asks for (M1 freeze requirement, blocks 1.0.0). Depends on #117, closed by ADR-027.
 - **Depends on:** ADR-020 (the seven levels; decision 8 reserves `attestations`), ADR-021 (decision 7: what a receipt carries; decision 8: unknown attestation type → refuse), ADR-027 (`execution`, the last block added to `receipt.v1`).
 - **Amends:** `contract/receipt.v1.schema.json` — adds one optional top-level array, `attestations`, and one `$defs` object, `Attestation` (decisions 2–4). `contract/README.md` — two rules, `P9` and `P10`, and one refusal. **ADR-020 decision 8** — its field list only (decision 3 says what changed and why); its two statements, *reserved from version 1* and *adding one must not be a format break*, are kept and this ADR is how they are honoured. ADR-021 decision 7 — one word: *"anchor attestations"* becomes *"anchors"* (decision 1 says why the word matters). Nothing about `anchors` changes.
