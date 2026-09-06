@@ -22,7 +22,10 @@ before writing the same rule again.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 from unittest.mock import Mock, create_autospec
+
+from vitruvyan_motus.commitlog import CommitmentLog
 
 import pytest
 
@@ -113,6 +116,67 @@ def test_a_forwarding_proxy_is_a_legitimate_sink(tmp_path):
         State.empty("x"), run_id="r1")
     assert result.status == "completed"
     assert list(tmp_path.rglob("*.jsonl")), "the proxy's target wrote nothing"
+
+
+# Boundary inventory: every keyword accepted by the two public entry points is
+# listed, including values so a new keyword cannot quietly acquire an undecided
+# boundary meaning. Protocol rows carry the stand-in verdict and its reason.
+BOUNDARY_INVENTORY = (
+    ("Runtime.__init__", "policy", "value", "VALUE", "configuration"),
+    ("Runtime.__init__", "durability_profile", "value", "VALUE", "configuration"),
+    ("Runtime.__init__", "sink", "protocol", "AUTHORITATIVE", "sink acceptance controls evidence"),
+    ("Runtime.__init__", "listeners", "protocol", "NON-AUTHORITATIVE", "guarantees.md §6; a stand-in listener cannot alter the authoritative evidence verdict (it may affect scheduling)"),
+    ("Runtime.__init__", "max_attempts", "value", "VALUE", "configuration"),
+    ("Runtime.__init__", "chunk_records", "value", "VALUE", "configuration"),
+    ("Runtime.__init__", "flush_interval_ms", "value", "VALUE", "configuration"),
+    ("Runtime.__init__", "clock", "protocol", "INPUT-SOURCE", "called only to supply timestamps"),
+    ("Runtime.__init__", "identity", "protocol", "INPUT-SOURCE", "called only to supply identifiers"),
+    ("Runtime.__init__", "random_source", "protocol", "INPUT-SOURCE", "called only to supply draws"),
+    ("Runtime.__init__", "commitments", "protocol", "AUTHORITATIVE", "commitment return is checked before success"),
+    ("Runtime.__init__", "witness", "protocol", "WITNESS-GATED", "only a real acknowledgement changes assurance"),
+    ("CommitmentLog.begin", "at", "value", "VALUE", "commitment data"),
+    ("CommitmentLog.begin", "nonce", "value", "VALUE", "commitment data"),
+    ("CommitmentLog.begin", "witness", "value", "VALUE", "WitnessAck acknowledgement value"),
+    ("CommitmentLog.begin", "ask", "protocol", "LOCAL", "_ask_witness requires WitnessAck; a stand-in degrades honestly to AssuranceMode.LOCAL"),
+    ("CommitmentLog.begin", "continues", "value", "VALUE", "continuation data"),
+    ("CommitmentLog.begin", "continues_fingerprint", "value", "VALUE", "continuation data"),
+    ("CommitmentLog.begin", "continues_sequence", "value", "VALUE", "continuation data"),
+    ("CommitmentLog.receipt_for", "anchors", "value", "VALUE", "AnchorReceipt evidence data"),
+)
+
+
+def test_the_boundary_inventory_covers_inspected_keyword_parameters():
+    """A public keyword forces an explicit protocol/value decision."""
+    signatures = {
+        "Runtime.__init__": inspect.signature(Runtime.__init__),
+        "CommitmentLog.begin": inspect.signature(CommitmentLog.begin),
+        "CommitmentLog.receipt_for": inspect.signature(CommitmentLog.receipt_for),
+    }
+    inspected = {
+        (surface, name)
+        for surface, signature in signatures.items()
+        for name, parameter in signature.parameters.items()
+        if name != "self" and parameter.kind is parameter.KEYWORD_ONLY
+    }
+    rows = {(surface, name): (kind, verdict, reason)
+            for surface, name, kind, verdict, reason in BOUNDARY_INVENTORY}
+    assert set(rows) == inspected
+    assert len(rows) == len(BOUNDARY_INVENTORY)
+    expected_protocols = {
+        ("Runtime.__init__", "sink"): ("AUTHORITATIVE", "sink acceptance controls evidence"),
+        ("Runtime.__init__", "listeners"): ("NON-AUTHORITATIVE", "guarantees.md §6; a stand-in listener cannot alter the authoritative evidence verdict (it may affect scheduling)"),
+        ("Runtime.__init__", "clock"): ("INPUT-SOURCE", "called only to supply timestamps"),
+        ("Runtime.__init__", "identity"): ("INPUT-SOURCE", "called only to supply identifiers"),
+        ("Runtime.__init__", "random_source"): ("INPUT-SOURCE", "called only to supply draws"),
+        ("Runtime.__init__", "commitments"): ("AUTHORITATIVE", "commitment return is checked before success"),
+        ("Runtime.__init__", "witness"): ("WITNESS-GATED", "only a real acknowledgement changes assurance"),
+        ("CommitmentLog.begin", "ask"): ("LOCAL", "_ask_witness requires WitnessAck; a stand-in degrades honestly to AssuranceMode.LOCAL"),
+    }
+    for (surface, name), (kind, verdict, reason) in rows.items():
+        assert kind in {"protocol", "value"}, (surface, name)
+        assert verdict and reason, (surface, name)
+        if kind == "protocol":
+            assert (verdict, reason) == expected_protocols[(surface, name)]
 
 
 def test_the_commitment_log_check_is_a_different_rule_and_it_stays(tmp_path):
