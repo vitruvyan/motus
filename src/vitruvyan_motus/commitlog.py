@@ -600,10 +600,10 @@ class CommitmentLog:
         #   `_canonical_bytes` cannot encode reaches the disk through it. The
         #   store survives — nothing digests it — and the receipt that leaves
         #   the building is refused by the contract validator under J1;
-        # - `seal()` still has the ordering this line exists to fix, inverted:
-        #   it marks the window sealed in memory before the checkpoint is
-        #   durable, and a failed write there plus two ordinary run starts put
-        #   a duplicate sequence on disk that no process can ever open (#129).
+        # - `seal()` used to have the same ordering defect: it marked the
+        #   window sealed in memory before its checkpoint was durable. Its
+        #   prepare/commit split now leaves pre-rename failures retryable and
+        #   poisons the instance at the durable rename boundary (#129).
         #
         # What this line does close is real and worth having: the commitment
         # BODY cannot reach the disk undigestible, and the failure arrives with
@@ -815,22 +815,56 @@ class CommitmentLog:
                 raise CommitmentLogFork(
                     f"{path.name} already exists: another account of this "
                     "chain position was sealed before ours")
-            checkpoint = self._window.seal(at)
+            checkpoint = self._window.checkpoint_at(at)
+            text = json.dumps(checkpoint.to_dict(), indent=2) + "\n"
+            renamed = False
+            failure: _AtomicWriteFailure | None = None
             try:
-                _atomic_write(path, json.dumps(checkpoint.to_dict(), indent=2) + "\n",
-                              fsync=self._fsync)
+                temporary = _prepare_atomic_write(path, text, fsync=self._fsync)
+                _commit_atomic_write(temporary, path, fsync=self._fsync)
+                renamed = True
+                self._window.mark_sealed(checkpoint)
                 if self._handle is not None:
                     self._handle.close()
                     self._handle = None
                 self._window = CommitmentWindow.following(checkpoint)
                 self._nonces.clear()
+            except _AtomicWriteFailure as exc:
+                # Poison is the correctness action, and must not depend on
+                # cleanup or another filesystem query succeeding -- and it
+                # does not need to run one: `_prepare_atomic_write` and
+                # `_commit_atomic_write` already remove their own temporary
+                # on every exit (proved by the sweep's glob assertion below),
+                # so there is nothing left here for this handler to clean up.
+                if exc.after_replace:
+                    self._poison(
+                        f"the checkpoint was renamed and a later seal step "
+                        f"failed ({type(exc.cause).__name__}: {exc.cause})")
+                failure = exc
             except BaseException as exc:
-                self._poison(
-                    f"the window was marked sealed and the checkpoint then "
-                    f"failed to become durable ({type(exc).__name__}: {exc}); "
-                    "whether it reached disk is unknown, so this instance "
-                    "must not be trusted to seal or append again")
+                # A KeyboardInterrupt landing inside `_commit_atomic_write`'s
+                # own cleanup (now that `_unlink_temporary` lets it through
+                # instead of swallowing it) preempts the `_AtomicWriteFailure`
+                # that call was mid-raise of. That failure is not lost: Python
+                # chains a `finally` block's exception onto the one it
+                # replaced as `__context__`, so it is still there to classify
+                # a rename `_commit_atomic_write` can no longer report on.
+                context = exc.__context__
+                if renamed or (isinstance(context, _AtomicWriteFailure)
+                               and context.after_replace):
+                    self._poison(
+                        f"the checkpoint was durable and seal completion failed "
+                        f"({type(exc).__name__}: {exc})")
                 raise
+            if failure is not None:
+                # `_unwrap` both cuts `failure`'s links to its cause AND
+                # returns it rather than binding it to a local in THIS frame
+                # -- see its docstring for why `raise` needs both. The flock
+                # this log holds is only released when it is collected, and
+                # the reference cycle either omission leaves behind pinned it
+                # until the next cyclic-gc pass: a same-process reopen raised
+                # CommitmentLogBusy for an arbitrary stretch in between.
+                raise _unwrap(failure)
             return checkpoint
 
     # -- reading ----------------------------------------------------------
@@ -1276,17 +1310,133 @@ def _ask_witness(witness: Witness, commitment: Commitment,
     return acknowledged
 
 
-def _atomic_write(path: Path, text: str, *, fsync: bool) -> None:
-    """Whole or absent, never half. A rename is the only atomic step here."""
+class _AtomicWriteFailure(OSError):
+    def __init__(self, cause: BaseException, *, after_replace: bool) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+        self.after_replace = after_replace
+
+
+def _unwrap(failure: "_AtomicWriteFailure") -> BaseException:
+    """Strip `failure` for a bare `raise _unwrap(failure)`, never `raise cause`.
+
+    Two things must both be true, not just one:
+
+    * every link FROM `failure` back to its cause is cut (`.cause`,
+      `__cause__`, `__context__`, all set when `failure` was first raised
+      `from` that same object) -- #99's class one level up, where
+      `_AtomicWriteFailure` <-> its cause is a two-node cycle whose traceback
+      frames hold a live `CommitmentLog` and the flock it will not release
+      until the cyclic collector runs;
+    * `cause` is returned rather than bound to a local in the CALLER's frame.
+      `raise cause` from a `cause = failure.cause` a few lines up would still
+      leave `cause` in the caller's `f_locals` while that very frame joins
+      `cause.__traceback__` as it propagates out -- an unavoidable
+      frame-references-its-own-raised-value cycle for ANY raise of a
+      pre-existing local, cut only by returning the value from a callee
+      whose own frame returns normally instead of raising.
+    """
+    cause = failure.cause
+    failure.cause = None
+    failure.__cause__ = None
+    failure.__context__ = None
+    failure.__traceback__ = None
+    return cause
+
+
+def _unlink_temporary(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        # Cleanup is best effort and must never mask the durability verdict
+        # -- but that only covers "the filesystem refused". A KeyboardInterrupt
+        # or SystemExit landing here is a real interrupt, not a cleanup
+        # failure, and `except BaseException` used to swallow it whole.
+        pass
+
+
+def _prepare_atomic_write(path: Path, text: str, *, fsync: bool) -> Path:
+    """Write and flush the temporary file; the target is untouched."""
     temporary = path.with_name(path.name + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
-        handle.write(text)
-        handle.flush()
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            if fsync:
+                os.fsync(handle.fileno())
+    except BaseException:
+        _unlink_temporary(temporary)
+        raise
+    return temporary
+
+
+def _replace_was_completed(temporary: Path, path: Path) -> bool:
+    """Conservatively determine whether rename completed before reporting."""
+    try:
+        target_present = path.stat() is not None
+    except FileNotFoundError:
+        target_present = False
+    except BaseException:
+        target_present = None
+    try:
+        temporary_present = temporary.stat() is not None
+    except FileNotFoundError:
+        temporary_present = False
+    except BaseException:
+        temporary_present = None
+
+    # Both observations are required: an unknown state poisons rather than
+    # risking a retry. The only definite pre-rename states are target absent
+    # with temp present, or both entries present.
+    if target_present is None or temporary_present is None:
+        return True
+    if target_present and not temporary_present:
+        return True
+    if not target_present and temporary_present:
+        return False
+    if target_present and temporary_present:
+        return False
+    return True
+
+
+def _commit_atomic_write(temporary: Path, path: Path, *, fsync: bool) -> None:
+    """Rename a prepared file and sync its directory, reporting the phase."""
+    try:
+        os.replace(temporary, path)
+    except BaseException as exc:
+        replaced = _replace_was_completed(temporary, path)
+        try:
+            raise _AtomicWriteFailure(exc, after_replace=replaced) from exc
+        finally:
+            # `_AtomicWriteFailure` is already the exception in flight when
+            # this cleanup runs, so if the cleanup itself raises -- a
+            # KeyboardInterrupt `_unlink_temporary` no longer swallows --
+            # Python chains it onto THIS exception as `__context__` instead
+            # of discarding it. `seal()` reads that back, because it cannot
+            # ask this function directly once its own raise is preempted.
+            _unlink_temporary(temporary)
+    try:
         if fsync:
-            os.fsync(handle.fileno())
-    os.replace(temporary, path)
-    if fsync:
-        _sync_directory(path.parent)
+            _sync_directory(path.parent)
+    except BaseException as exc:
+        raise _AtomicWriteFailure(exc, after_replace=True) from exc
+
+
+def _atomic_write(path: Path, text: str, *, fsync: bool) -> None:
+    """Whole-or-absent convenience wrapper used by identity writes."""
+    temporary = _prepare_atomic_write(path, text, fsync=fsync)
+    failure: _AtomicWriteFailure | None = None
+    try:
+        _commit_atomic_write(temporary, path, fsync=fsync)
+    except _AtomicWriteFailure as exc:
+        # This private phase marker must not leak through the older helper's
+        # public behavior, nor turn the original errno/type into OSError.
+        failure = exc
+    if failure is not None:
+        # See `_unwrap`'s docstring: both the cleared links and the fact
+        # that this raises its RETURN VALUE rather than a local of this
+        # frame are load-bearing.
+        raise _unwrap(failure)
 
 
 _LEGACY_KEY_DIAGNOSTIC = "written by a Motus before 0.14.0"

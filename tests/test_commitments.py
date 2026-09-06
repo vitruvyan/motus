@@ -435,6 +435,41 @@ def test_a_sealed_window_refuses_further_commitments():
         w.seal(AT)
 
 
+def test_mark_sealed_catches_a_leaf_count_out_of_step_with_its_own_range():
+    """`mark_sealed` replaced a full rebuild-and-compare with four O(1) facts:
+    not-yet-sealed, count, first_sequence, last_sequence, index. Every append
+    the public API can make moves `last_sequence` (and therefore, given
+    `Checkpoint`'s own `last - first + 1 == count` invariant, moves `count`
+    too) -- so `last_sequence` alone already catches every REACHABLE
+    divergence, and this test cannot use `append` to isolate the count check.
+    It pokes `_leaves` directly instead, to prove that check still fires on
+    its own if `_leaves` and `_commitments` ever fell out of step some other
+    way, rather than resting on an invariant nothing here re-verifies.
+    """
+    window = _window(3)
+    checkpoint = window.checkpoint_at(AT)
+    window._leaves.append("sha256:" + "b" * 64)
+    with pytest.raises(ValueError, match="changed"):
+        window.mark_sealed(checkpoint)
+    assert window.sealed is None
+
+
+def test_mark_sealed_refuses_a_checkpoint_carrying_another_windows_index():
+    """`seal()` always builds the checkpoint it marks from `self`, so no
+    caller reachable through it can supply a mismatched index -- but
+    `mark_sealed` is public, and nothing else in its four facts would catch a
+    checkpoint for the right leaves at the wrong chain position.
+    """
+    import dataclasses
+
+    window = _window(3)
+    checkpoint = window.checkpoint_at(AT)
+    foreign = dataclasses.replace(checkpoint, index=checkpoint.index + 1)
+    with pytest.raises(ValueError, match="changed"):
+        window.mark_sealed(foreign)
+    assert window.sealed is None
+
+
 def test_sealing_takes_one_snapshot_under_the_lock():
     """The root came from `self.leaves` while the count and the terminal
     sequence were read from the live lists afterwards. A concurrent append
