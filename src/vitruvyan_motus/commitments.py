@@ -25,11 +25,12 @@ import hashlib
 import re
 import threading
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from enum import Enum
 from collections.abc import Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from vitruvyan_motus.trace import _canonical_bytes
+from vitruvyan_motus.trace import _canonical_bytes, _strict_plain_json
 
 __all__ = [
     "AssuranceMode", "CommitmentKind", "Commitment", "Continuation", "WitnessAck",
@@ -109,7 +110,25 @@ def _require_index(value: Any, what: str) -> int:
     return value
 
 
-def _require_digest(value: str, what: str) -> str:
+_IDENTIFIER_MAX_LENGTH = 200  # mirrored from commitment.v1.schema.json $defs.Identifier
+
+
+def _require_identifier(value: Any, what: str) -> str:
+    _require_text(value, what)
+    if len(value) > _IDENTIFIER_MAX_LENGTH:
+        raise ValueError(
+            f"{what} is {len(value)} characters long; the schema's Identifier "
+            f"bounds it to at most {_IDENTIFIER_MAX_LENGTH} characters")
+    return value
+
+
+def _require_timestamp(value: Any, what: str) -> str:
+    # commitment.v1 deliberately has no RFC3339 requirement today; this is
+    # exactly its non-blank Timestamp bound. See ADR-021 and schema parity test.
+    return _require_text(value, what)
+
+
+def _require_digest(value: Any, what: str) -> str:
     """A digest names its algorithm or it is refused.
 
     The one anchor Vitruvyan has published carries a bare 64-hex string, so a
@@ -118,11 +137,31 @@ def _require_digest(value: str, what: str) -> str:
     produce another one.
     """
     if not isinstance(value, str) or not value.startswith(_PREFIX):
-        raise ValueError(f"{what} must be prefixed with {_PREFIX!r}")
+        raise ValueError(f"{what} must be prefixed with {_PREFIX!r} (schema type Digest)")
     body = value[len(_PREFIX):]
     if len(body) != 64 or any(c not in "0123456789abcdef" for c in body):
-        raise ValueError(f"{what} must be 64 lowercase hex characters")
+        raise ValueError(f"{what} must be 64 lowercase hex characters (schema type Digest)")
     return value
+
+
+def _require_bundle_fingerprint(value: Any, what: str) -> str:
+    if not isinstance(value, str) or not _BUNDLE.fullmatch(value):
+        raise ValueError(
+            f"{what} must match bundle:sha256:<64 lowercase hex> "
+            "(schema type BundleFingerprint)")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class _SchemaType:
+    name: str
+    validate: Callable[[Any, str], str]
+
+
+_IDENTIFIER = _SchemaType("Identifier", _require_identifier)
+_DIGEST = _SchemaType("Digest", _require_digest)
+_TIMESTAMP = _SchemaType("Timestamp", _require_timestamp)
+_BUNDLE_FINGERPRINT = _SchemaType("BundleFingerprint", _require_bundle_fingerprint)
 
 
 class AssuranceMode(str, Enum):
@@ -168,10 +207,7 @@ class WitnessAck:
     algorithm: str = "ed25519"
 
     def __post_init__(self) -> None:
-        _require_text(self.witness_id, "a witness acknowledgement's witness_id")
-        _require_text(self.signature, "a witness acknowledgement's signature")
-        _require_text(self.acknowledged_at, "a witness acknowledgement's timestamp")
-        _require_digest(self.commitment, "the acknowledged commitment")
+        _validate_schema_fields(self)
         _require_index(self.position, "witness position")
 
     def to_dict(self) -> dict[str, Any]:
@@ -202,26 +238,30 @@ class AnchorReceipt:
     def __post_init__(self) -> None:
         if self.state not in ("pending", "anchored"):
             raise ValueError("an anchor receipt is pending or anchored")
+        isolated = _validate_schema_fields(self)
+        if "proof" in isolated:
+            object.__setattr__(self, "proof", isolated["proof"])
         if self.state == "anchored":
-            _require_text(self.reference,
-                          "an anchored receipt's transaction reference")
+            if self.reference is None:
+                raise ValueError("an anchored receipt's transaction reference is required")
+            if self.published_at is None:
+                raise ValueError("an anchored receipt's publication time is required")
             # The contract requires it (receipt.v1), and the producer did not,
             # so this class could build an object the validator refuses --
             # authority order backwards. `anchored` without a time says the
             # publication finished and declines to say when, which is the one
             # thing an EXISTENCE claim is about.
-            _require_text(self.published_at,
-                          "an anchored receipt's publication time")
-        _require_text(self.anchor_id, "an anchor receipt's anchor_id")
-        _require_text(self.network, "an anchor receipt's network")
-        _require_digest(self.checkpoint, "anchored checkpoint")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "anchor_id": self.anchor_id, "network": self.network,
             "checkpoint": self.checkpoint, "state": self.state,
             "reference": self.reference, "published_at": self.published_at,
-            "proof": self.proof,
+            # Revalidate and isolate again so mutation through the public
+            # dict value cannot reach the wire without a path-aware J1 refusal.
+            "proof": _strict_plain_json(
+                self.proof, path="AnchorReceipt.proof"
+            ),
         }
 
 
@@ -254,14 +294,7 @@ class Continuation:
     sequence: int | None = None
 
     def __post_init__(self) -> None:
-        _require_text(self.run_id, "a continuation's source run_id")
-        if not isinstance(self.bundle_fingerprint, str) or not \
-                _BUNDLE.fullmatch(self.bundle_fingerprint):
-            raise ValueError(
-                "a continuation's bundle_fingerprint must look like "
-                "'bundle:sha256:<64 lowercase hex>' -- it is the value a "
-                "verifier recomputes over the predecessor's whole bundle, and "
-                "a shape we cannot recompute is a shape we cannot check")
+        _validate_schema_fields(self)
         if (self.writer_id is None) != (self.sequence is None):
             raise ValueError(
                 "a continuation names its predecessor by BOTH writer_id and "
@@ -269,7 +302,6 @@ class Continuation:
                 "coordinate with an axis missing, and it would read as "
                 "resolved while naming a set")
         if self.writer_id is not None:
-            _require_text(self.writer_id, "a continuation's writer_id")
             _require_index(self.sequence, "a continuation's sequence")
 
     @property
@@ -311,11 +343,9 @@ class Commitment:
     continues: Continuation | None = None
 
     def __post_init__(self) -> None:
-        _require_text(self.tenant, "a commitment's tenant")
-        _require_text(self.writer_id, "a commitment's writer_id")
-        _require_text(self.run_id, "a commitment's run_id")
-        _require_text(self.at, "a commitment's timestamp")
-        _require_text(self.nonce, "a commitment's nonce")
+        _validate_schema_fields(self)
+        if type(self.kind) is not CommitmentKind:
+            raise ValueError("Commitment.kind must be a CommitmentKind")
         _require_index(self.sequence, "sequence")
         if self.kind is CommitmentKind.BEGIN:
             if self.root is not None or self.outcome is not None:
@@ -326,8 +356,9 @@ class Commitment:
                     "an END cannot continue anything: a segment is continued "
                     "at the moment it starts, and an END written after the "
                     "fact could name a predecessor the run never resumed from")
-            _require_text(self.outcome,
-                          "an END's outcome -- it names why the run terminated")
+            # Presence is a business rule; its schema bound was checked above.
+            if self.outcome is None:
+                raise ValueError("an END's outcome -- it names why the run terminated must be present")
             # `root=None` was accepted by the field default, so an END could
             # say a run finished and point at nothing: a receipt built on it
             # proves an outcome was CLAIMED, never which trace earned it.
@@ -336,6 +367,10 @@ class Commitment:
             # an END is the wrong place to paper that over.
             _require_digest(self.root, "an END's root -- it binds the outcome "
                                        "to the evidence that produced it")
+        if self.witness is not None and type(self.witness) is not WitnessAck:
+            raise ValueError("Commitment.witness must be a WitnessAck")
+        if self.continues is not None and type(self.continues) is not Continuation:
+            raise ValueError("Commitment.continues must be a Continuation")
         if self.witness is not None and self.witness.commitment != self.leaf:
             raise ValueError(
                 "this acknowledgement is for a different commitment: an ACK "
@@ -495,18 +530,14 @@ class Checkpoint:
     previous: str | None = None
 
     def __post_init__(self) -> None:
-        _require_digest(self.window_root, "window root")
-        _require_text(self.tenant, "a checkpoint's tenant")
-        _require_text(self.writer_id, "a checkpoint's writer_id")
-        _require_text(self.sealed_at, "a checkpoint's seal time")
-        if self.previous is not None:
-            _require_digest(self.previous, "previous checkpoint")
+        _validate_schema_fields(self)
         _require_index(self.index, "checkpoint index")
         # Sealed from real commitments these can never be negative, because
         # Commitment refuses a negative sequence. The raw constructor did not
         # say so, and a Checkpoint is exactly what somebody builds by hand.
         _require_index(self.first_sequence, "first_sequence")
         _require_index(self.last_sequence, "last_sequence")
+        _require_index(self.count, "checkpoint count")
         if self.count <= 0:
             raise ValueError("a checkpoint seals at least one commitment")
         if self.last_sequence - self.first_sequence + 1 != self.count:
@@ -532,6 +563,101 @@ class Checkpoint:
         that does not cover its own link leaves the link free to be restated.
         """
         return _digest(_CHECKPOINT + _canonical_bytes(self.to_dict()))
+
+
+# TenantCheckpoint has no contract schema counterpart yet; extend these tables
+# if a tenant_checkpoint schema is introduced.
+_SCHEMA_FIELDS: dict[type, dict[str, _SchemaType]] = {
+    WitnessAck: {
+        "witness_id": _IDENTIFIER, "commitment": _DIGEST,
+        "acknowledged_at": _TIMESTAMP, "algorithm": _IDENTIFIER,
+        "signature": _IDENTIFIER,
+    },
+    AnchorReceipt: {
+        "anchor_id": _IDENTIFIER, "network": _IDENTIFIER, "checkpoint": _DIGEST,
+        "reference": _IDENTIFIER, "published_at": _TIMESTAMP,
+    },
+    Continuation: {
+        "run_id": _IDENTIFIER, "bundle_fingerprint": _BUNDLE_FINGERPRINT,
+        "writer_id": _IDENTIFIER,
+    },
+    Commitment: {
+        "tenant": _IDENTIFIER, "writer_id": _IDENTIFIER, "run_id": _IDENTIFIER,
+        "at": _TIMESTAMP, "nonce": _IDENTIFIER, "root": _DIGEST, "outcome": _IDENTIFIER,
+    },
+    Checkpoint: {
+        "tenant": _IDENTIFIER, "writer_id": _IDENTIFIER, "window_root": _DIGEST,
+        "sealed_at": _TIMESTAMP, "previous": _DIGEST,
+    },
+}
+
+
+_NON_SCHEMA_FIELDS: dict[type, dict[str, str]] = {
+    WitnessAck: {"position": "integer; checked by _require_index"},
+    AnchorReceipt: {
+        "state": "closed enum",
+        "proof": "JSON object (dict); contents are opaque",
+    },
+    Continuation: {"sequence": "optional integer; checked by _require_index"},
+    Commitment: {
+        "kind": "closed enum; checked by CommitmentKind",
+        "sequence": "integer; checked by _require_index",
+        "witness": "nested WitnessAck; delegates validation",
+        "continues": "nested Continuation; delegates validation",
+    },
+    Checkpoint: {
+        "index": "integer; checked by _require_index",
+        "count": "non-negative integer; checked by _require_index; checkpoint invariant requires >= 1",
+        "first_sequence": "integer; checked by _require_index",
+        "last_sequence": "integer; checked by _require_index",
+    },
+}
+
+# Precompute the per-class validation tuples once at import time.
+_NULLABLE_SCHEMA_FIELDS = frozenset({
+    (Commitment, "root"), (Commitment, "outcome"),
+    (Checkpoint, "previous"), (Continuation, "writer_id"),
+    (AnchorReceipt, "reference"), (AnchorReceipt, "published_at"),
+})
+
+# Dict-valued fields in schema-bound dataclasses are explicitly allow-listed:
+# their contents still have to be values the JSON contract can carry.
+_JSON_FIELDS: dict[type, frozenset[str]] = {
+    AnchorReceipt: frozenset({"proof"}),
+}
+
+_SCHEMA_VALIDATORS: dict[type, tuple[tuple[str, Callable[[Any, str], str], str], ...]] = {
+    cls: tuple(
+        (name, schema_type.validate, schema_type.name)
+        for name, schema_type in fields.items()
+    )
+    for cls, fields in _SCHEMA_FIELDS.items()
+}
+
+
+def _validate_schema_fields(instance: Any) -> dict[str, Any]:
+    isolated: dict[str, Any] = {}
+    labels = {
+        (WitnessAck, "commitment"): "acknowledged commitment",
+        (AnchorReceipt, "reference"): "an anchored receipt's transaction reference",
+    }
+    for name, validator, what in _SCHEMA_VALIDATORS.get(type(instance), ()):
+        value = getattr(instance, name)
+        if value is None and (type(instance), name) in _NULLABLE_SCHEMA_FIELDS:
+            continue
+        label = labels.get((type(instance), name),
+                           f"{type(instance).__name__}.{name}")
+        validator(value, f"{label} (schema type {what})")
+    for name in _JSON_FIELDS.get(type(instance), ()):
+        value = getattr(instance, name)
+        if name == "proof" and not isinstance(value, dict):
+            # Preserve the outer-object requirement separately from J1's
+            # recursive value validation.
+            raise ValueError("AnchorReceipt.proof must be a dict (schema type object)")
+        isolated[name] = _strict_plain_json(
+            value, path=f"{type(instance).__name__}.{name}"
+        )
+    return isolated
 
 
 @dataclass(frozen=True, slots=True)

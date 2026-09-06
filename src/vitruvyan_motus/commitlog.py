@@ -854,8 +854,28 @@ class CommitmentLog:
         commitments = []
         for line in raw.split(b"\n"):
             if line.strip():
-                commitments.append(_commitment_from(
-                    json.loads(line), diagnostics=self._diagnostics)[0])
+                try:
+                    body = json.loads(line)
+                    if "commitment" in body and "c" in body:
+                        # Preserve the explicit ambiguity diagnostic; callers
+                        # historically use this as a programmer-facing error.
+                        raise ValueError(
+                            "a window line contains both commitment and legacy c envelope keys")
+                    commitments.append(_commitment_from(
+                        body, diagnostics=self._diagnostics)[0])
+                except ValueError as exc:
+                    if str(exc) == (
+                            "a window line contains both commitment and legacy c envelope keys"):
+                        raise
+                    raise CommitmentLogFork(
+                        f"window {index} contains an unreadable commitment "
+                        f"({exc})"
+                    ) from None
+                except (KeyError, TypeError) as exc:
+                    raise CommitmentLogFork(
+                        f"window {index} contains an unreadable commitment "
+                        f"({exc})"
+                    ) from None
         if len(commitments) != checkpoint.count:
             raise CommitmentLogFork(
                 f"window {index} holds {len(commitments)} commitments and its "
@@ -1017,33 +1037,9 @@ class CommitmentLog:
         visited_positions = {first_record_position}
 
         def entry(index: int, commitment: Commitment) -> dict[str, Any]:
-            # The log accepts opaque identifiers more broadly than receipt.v1.
-            # Check every included commitment, checkpoint and acknowledgement,
-            # not merely the canonical first BEGIN.
             proof = self.proof_for(commitment.run_id, commitment.kind, index,
                                    sequence=commitment.sequence)
-            body = proof.to_dict()
-            commitment_fields = ["tenant", "writer_id", "run_id", "nonce"]
-            if body["commitment"].get("kind") == "end":
-                commitment_fields.append("outcome")
-            identifier_fields = (
-                (body["commitment"], tuple(commitment_fields)),
-                (body["checkpoint"], ("tenant", "writer_id")),
-            )
-            if "continues" in body["commitment"]:
-                identifier_fields += ((body["commitment"]["continues"],
-                                       ("run_id", "writer_id")),)
-            if "witness" in body:
-                identifier_fields += ((body["witness"],
-                                       ("witness_id", "algorithm", "signature")),)
-            for object_body, fields in identifier_fields:
-                for field in fields:
-                    value = object_body.get(field)
-                    if isinstance(value, str) and len(value) > 200:
-                        raise ValueError(
-                            f"cannot produce receipt.v1: {field} exceeds the schema limit "
-                            "of 200 characters (Identifier)")
-            return body
+            return proof.to_dict()
 
         def paired_end(begin_position: int, begin: Commitment) -> tuple[int, Commitment] | None:
             """Pair by position, refusing multiple ENDs for one segment."""
@@ -1119,13 +1115,6 @@ class CommitmentLog:
         anchor_list = list(anchors)
         if anchor_list:
             anchor_dicts = [anchor.to_dict() for anchor in anchor_list]
-            for anchor in anchor_dicts:
-                for field in ("anchor_id", "network", "reference"):
-                    value = anchor.get(field)
-                    if isinstance(value, str) and len(value) > 200:
-                        raise ValueError(
-                            f"cannot produce receipt.v1: anchor {field} exceeds "
-                            "the schema Identifier limit of 200 characters")
             receipt["anchors"] = anchor_dicts
         return receipt
 
