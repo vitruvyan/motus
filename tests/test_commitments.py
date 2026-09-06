@@ -470,6 +470,54 @@ def test_mark_sealed_refuses_a_checkpoint_carrying_another_windows_index():
     assert window.sealed is None
 
 
+def test_mark_sealed_refuses_a_checkpoint_snapshotted_from_a_different_window():
+    """CRITICAL. Two windows for the same writer can share every one of the
+    four O(1) facts `_mark_sealed_locked` used to rely on alone -- index,
+    count, first_sequence, last_sequence -- while holding entirely different
+    commitments, because none of the four is a function of WHICH commitments
+    are inside, only of how many and where they fall in the sequence. Before
+    the digest binding, window B would accept window A's checkpoint: every
+    check would pass and `_sealed` would be set to a digest whose root does
+    not describe what B actually holds.
+    """
+    a = CommitmentWindow(tenant="acme", writer_id="w1")
+    b = CommitmentWindow(tenant="acme", writer_id="w1")
+    for i in range(3):
+        a.append(Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                            sequence=i, run_id=f"a-run-{i}", at=AT, nonce=f"a-n{i}"))
+        b.append(Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
+                            sequence=i, run_id=f"b-run-{i}", at=AT, nonce=f"b-n{i}"))
+
+    from_a = a.checkpoint_at(AT)
+    assert from_a.index == 0 and from_a.count == 3
+    with pytest.raises(ValueError, match="not snapshotted from this window"):
+        b.mark_sealed(from_a)
+    assert b.sealed is None
+
+    # B still seals normally against its OWN snapshot -- the binding refuses
+    # a foreign checkpoint, not every checkpoint.
+    own = b.checkpoint_at(AT)
+    b.mark_sealed(own)
+    assert b.sealed == own.digest
+
+
+def test_mark_sealed_refuses_after_a_real_append_between_snapshot_and_mark():
+    """The four O(1) checks already catch this reachable case on their own --
+    an append moves `last_sequence` and, via `Checkpoint`'s own invariant,
+    `count`. This pins that clearing `_snapshot_digest` on every append (the
+    mechanism the digest binding actually depends on) did not accidentally
+    make that binding the ONLY thing standing between a stale snapshot and a
+    seal, by proving the append-then-mark path still refuses when the O(1)
+    checks fire first.
+    """
+    window = _window(3)
+    checkpoint = window.checkpoint_at(AT)
+    window.append(_begin(3))
+    with pytest.raises(ValueError, match="changed"):
+        window.mark_sealed(checkpoint)
+    assert window.sealed is None
+
+
 def test_sealing_takes_one_snapshot_under_the_lock():
     """The root came from `self.leaves` while the count and the terminal
     sequence were read from the live lists afterwards. A concurrent append

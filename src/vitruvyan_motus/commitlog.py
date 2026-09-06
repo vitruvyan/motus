@@ -146,13 +146,27 @@ def _require_identifier(value: Any, what: str) -> str:
     return value
 
 
-def _sync_directory(directory: Path) -> None:
-    """Commit a directory entry, which fsync on the file does not."""
+def _sync_directory(directory: Path, *, strict: bool = False) -> None:
+    """Commit a directory entry, which fsync on the file does not.
+
+    `strict=False` is the historical behaviour: some filesystems refuse a
+    directory fsync outright, and a caller with nothing to compare the
+    failure against (`_open_handle`, opening a brand-new window) cannot tell
+    a refused-but-harmless fsync from one that lost an entry -- that
+    unresolved question is issue #151, and this parameter does not settle it.
+    `strict=True` is for a caller that already knows what a failure here
+    means: `_commit_atomic_write` runs this after a rename it can no longer
+    undo, so an OSError here is real information -- the checkpoint's
+    directory entry may not survive a crash -- and swallowing it would let
+    `seal()` report durability it cannot back up.
+    """
     descriptor = os.open(directory, os.O_RDONLY)
     try:
         os.fsync(descriptor)
     except OSError:
-        pass                       # not every filesystem permits it
+        if strict:
+            raise
+        # not every filesystem permits it
     finally:
         os.close(descriptor)
 
@@ -523,6 +537,9 @@ class CommitmentLog:
             new = not path.exists()
             self._handle = path.open("a", encoding="utf-8")
             if new and self._fsync:
+                # Non-strict on purpose: whether a refused directory fsync
+                # here should poison the log or merely go unlogged is
+                # issue #151's open question, not this call's to decide.
                 _sync_directory(self._dir)
         return self._handle
 
@@ -1417,7 +1434,13 @@ def _commit_atomic_write(temporary: Path, path: Path, *, fsync: bool) -> None:
             _unlink_temporary(temporary)
     try:
         if fsync:
-            _sync_directory(path.parent)
+            # strict=True: the rename above already happened, so an OSError
+            # here is not "not every filesystem permits it" -- it is the
+            # entry that rename just created possibly not surviving a crash,
+            # and `seal()`'s caller must be told rather than left believing
+            # the checkpoint is durable (issue #151, but the reachable case
+            # rather than the still-open one).
+            _sync_directory(path.parent, strict=True)
     except BaseException as exc:
         raise _AtomicWriteFailure(exc, after_replace=True) from exc
 

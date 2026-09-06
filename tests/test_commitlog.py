@@ -239,7 +239,7 @@ def test_seal_fault_sweep_covers_retryable_and_poisoned_recovery(
     elif fault == "dir-sync":
         if fsync:
             monkeypatch.setattr(commitlog, "_sync_directory",
-                                lambda *a: (_ for _ in ()).throw(OSError("dir-sync")))
+                                lambda *a, **k: (_ for _ in ()).throw(OSError("dir-sync")))
     elif fault == "mark-sealed":
         monkeypatch.setattr(CommitmentWindow, "mark_sealed",
                             lambda *a: (_ for _ in ()).throw(OSError("mark")))
@@ -312,6 +312,49 @@ def test_seal_fault_sweep_covers_retryable_and_poisoned_recovery(
         log.close()
 
 
+def test_seal_reports_a_real_directory_fsync_failure_after_replace(tmp_path, monkeypatch):
+    """`_sync_directory` used to swallow every `OSError` from its own fsync,
+    including one raised after `_commit_atomic_write` had already renamed the
+    checkpoint into place. That let a genuine EIO/ENOSPC on the *directory*
+    fsync -- not the monkeypatch of the whole helper the sweep above uses --
+    disappear before `_commit_atomic_write`'s `except BaseException` could
+    ever see it, so `seal()` returned a checkpoint and reported the log
+    durable while its directory entry might not survive a crash. This drives
+    the fault through the real syscall boundary (`os.fsync`, filtered to the
+    directory descriptor by `fstat`), which only `_sync_directory(...,
+    strict=True)` re-raising makes reach `seal()` at all.
+    """
+    import os as os_module
+    import stat as stat_module
+
+    log = _log(tmp_path, fsync=True)
+    _run(log, "r1")
+    real_fsync = os_module.fsync
+
+    def fsync_that_refuses_directories(fd):
+        if stat_module.S_ISDIR(os_module.fstat(fd).st_mode):
+            raise OSError(errno.EIO, "directory fsync refused")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os_module, "fsync", fsync_that_refuses_directories)
+    with pytest.raises(OSError):
+        log.seal(AT)
+    # The rename already happened -- the checkpoint IS on disk -- which is
+    # exactly why this failure must poison rather than being retryable: a
+    # retry would issue sequence numbers already claimed by a durable file.
+    assert (log.directory / "checkpoint-000000.json").exists()
+    assert log._poisoned is not None
+    with pytest.raises(CommitmentLogFork, match="stopped being writable"):
+        log.seal(AT)
+    monkeypatch.undo()
+    log.close()
+
+    reopened = _log(tmp_path, fsync=True)
+    assert reopened.open_window.index == 1
+    assert reopened.verify_chain() == 1
+    reopened.close()
+
+
 def test_checkpoint_snapshot_and_mark_require_same_live_window():
     window = CommitmentWindow(tenant="acme", writer_id="w1")
     first = Commitment(kind=CommitmentKind.BEGIN, tenant="acme", writer_id="w1",
@@ -355,7 +398,7 @@ def test_identity_atomic_write_preserves_original_failure(fault, tmp_path, monke
                             lambda *a: (_ for _ in ()).throw(OSError(errno.ENOSPC, "full")))
     else:
         monkeypatch.setattr(commitlog, "_sync_directory",
-                            lambda *a: (_ for _ in ()).throw(OSError(errno.EIO, "sync")))
+                            lambda *a, **k: (_ for _ in ()).throw(OSError(errno.EIO, "sync")))
     with pytest.raises(OSError) as raised:
         CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=True)
     assert type(raised.value) is OSError
