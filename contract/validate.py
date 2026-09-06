@@ -3244,6 +3244,26 @@ _CHECKPOINT_DOMAIN = b"\x02"
 # an unknown network is refused rather than passed through.
 KNOWN_ANCHOR_NETWORKS = frozenset({"tron:nile", "opentimestamps:bitcoin"})
 
+# Attestation types this validator can evaluate (ADR-031 decision 4). A closed
+# set with one member is the same ceremony as KNOWN_ANCHOR_NETWORKS had with
+# one member, and it is what made adding OpenTimestamps a row instead of a
+# rewrite: an unknown type is refused (P10), never passed through as a
+# violation that happens to exit 0.
+KNOWN_ATTESTATION_TYPES = frozenset({"rfc3161_timestamp"})
+
+#: What each known row fixes beyond the envelope: the digest algorithms it
+#: admits and the `proof` keys it requires (ADR-031 decisions 4 and 6). "Each
+#: known row also fixes the algorithms it admits and the `proof` keys it
+#: requires; `rfc3161_timestamp` admits `sha256` and requires `proof.token_der`
+#: and `proof.tsa_url`."
+_ATTESTATION_TYPE_RULES: dict[str, dict[str, Any]] = {
+    "rfc3161_timestamp": {
+        "algorithms": frozenset({"sha256"}),
+        "proof_keys": ("token_der", "tsa_url"),
+    },
+}
+
+
 
 def _sha256_digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
@@ -3559,6 +3579,51 @@ def validate_receipt(document: dict) -> list[Violation]:
                 f"{anchor['network']!r}, so it will not report what an anchor "
                 "there establishes. Known: "
                 f"{', '.join(sorted(KNOWN_ANCHOR_NETWORKS))}"))
+
+    # Attestations — the second container (ADR-031), and a second binding rule
+    # and a second known-set, mirroring P4/P5 so a reader who knows anchors
+    # knows attestations. What the END commits to is the run root: a subject
+    # that is neither a checkpoint of this receipt nor that root asserts about
+    # a digest that is not here, and says nothing about this run.
+    last_segment_end = segments[-1].get("end")
+    run_root = (last_segment_end["commitment"]["root"]
+                if last_segment_end is not None else None)
+    for index, attestation in enumerate(document.get("attestations", [])):
+        if (attestation["subject"] not in present
+                and attestation["subject"] != run_root):
+            violations.append(Violation(
+                "P9", f"$.attestations[{index}].subject",
+                f"this attestation asserts {attestation['subject']}, and no "
+                "checkpoint in this receipt digests to it and it is not the "
+                "run root this receipt's END commits to. An assertion about a "
+                "digest that is not here says nothing about this run"))
+        kind = attestation["type"]
+        rules = _ATTESTATION_TYPE_RULES.get(kind)
+        if kind not in KNOWN_ATTESTATION_TYPES:
+            violations.append(Violation(
+                "P10", f"$.attestations[{index}].type",
+                f"this validator cannot evaluate the attestation type "
+                f"{kind!r}, so it will not report what an attestation of that "
+                "type establishes. Known: "
+                f"{', '.join(sorted(KNOWN_ATTESTATION_TYPES))}"))
+        else:
+            if attestation["algorithm"] not in rules["algorithms"]:
+                violations.append(Violation(
+                    "P10", f"$.attestations[{index}].algorithm",
+                    f"attestation type {kind!r} admits "
+                    f"{', '.join(sorted(rules['algorithms']))} and this one "
+                    f"carries {attestation['algorithm']!r}, which this "
+                    "validator cannot read. Unreadable cryptography must not "
+                    "sit on the same footing as checked cryptography"))
+            missing = [key for key in rules["proof_keys"]
+                       if key not in attestation["proof"]]
+            if missing:
+                violations.append(Violation(
+                    "P10", f"$.attestations[{index}].proof",
+                    f"an attestation of type {kind!r} needs the proof material "
+                    f"{', '.join(rules['proof_keys'])} and this proof lacks "
+                    f"{', '.join(missing)}. A token nobody can check is not "
+                    "an attestation"))
     return violations
 
 
@@ -3802,6 +3867,42 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
                         f"{', '.join(sorted(KNOWN_WITNESS_ALGORITHMS))}")
                 return Verdict(tuple(findings), tuple(violations), tuple(notes))
 
+    # P10 as a refusal, exactly the P5 pattern: the violation above says the
+    # document broke the rule; this says the verifier cannot evaluate it at
+    # all, and a refusal outranks a violation — a document may be perfectly
+    # correct under a type or algorithm we cannot read, and unreadable
+    # cryptography must never sit on the same footing as checked cryptography.
+    for index, attestation in enumerate(receipt.get("attestations") or []):
+        if not isinstance(attestation, dict) or not receipt.get("segments"):
+            continue
+        kind = attestation.get("type")
+        rules = _ATTESTATION_TYPE_RULES.get(kind)
+        if kind not in KNOWN_ATTESTATION_TYPES:
+            reason = (f"this receipt carries an attestation of type {kind!r}, "
+                      "which this verifier cannot evaluate. Known: "
+                      f"{', '.join(sorted(KNOWN_ATTESTATION_TYPES))}")
+        else:
+            algorithm = attestation.get("algorithm")
+            if algorithm not in rules["algorithms"]:
+                reason = (f"this receipt carries an attestation of type "
+                          f"{kind!r} imprinted with {algorithm!r}, which this "
+                          "verifier cannot name. That type admits: "
+                          f"{', '.join(sorted(rules['algorithms']))}")
+            else:
+                proof = attestation.get("proof")
+                missing = [key for key in rules["proof_keys"]
+                           if not isinstance(proof, dict) or key not in proof]
+                if not missing:
+                    continue
+                reason = (f"this receipt carries an attestation of type "
+                          f"{kind!r} whose proof lacks "
+                          f"{', '.join(missing)}. A token with no material to "
+                          "check is not an attestation this verifier will "
+                          "report on")
+        for level in LEVELS:
+            add(level, REFUSED, reason)
+        return Verdict(tuple(findings), tuple(violations), tuple(notes))
+
     if violations:
         for level in LEVELS:
             add(level, NOT_ESTABLISHED,
@@ -3877,49 +3978,133 @@ def verify(receipt: dict, trace: dict | None = None) -> Verdict:
     published = [a for a in anchors
                  if a["state"] == "anchored" and a["checkpoint"] in covered]
     pending = [a for a in anchors if a["state"] == "pending"]
-    if published:
+    attestations = receipt.get("attestations")
+
+    # **A claim is a claim about what its subject covers.** ADR-031 decision 7
+    # (review correction 1) binds the verdict to the subject: EXISTENCE *of the
+    # execution* is reported only when the subject is the run root or a
+    # checkpoint whose sealed range includes the END. A checkpoint that seals
+    # only the BEGIN (or an unfinished receipt, which has no END at all) can
+    # support "existence of the BEGIN no later than T" and nothing further --
+    # for an anchor and for an attestation alike, as the ADR says it for both.
+    last_end_entry = segments[-1].get("end")
+    end_checkpoint = (checkpoint_digest(last_end_entry["checkpoint"])
+                      if last_end_entry is not None else None)
+    run_root = (last_end_entry["commitment"]["root"]
+                if last_end_entry is not None else None)
+
+    def _covers_execution(subject: Any) -> bool:
+        """Does this subject name the execution rather than only its BEGIN?"""
+        return (last_end_entry is not None and subject is not None
+                and (subject == run_root or subject == end_checkpoint))
+
+    anchors_covering = [a for a in published
+                        if _covers_execution(a["checkpoint"])]
+    anchors_begin_only = [a for a in published
+                          if not _covers_execution(a["checkpoint"])]
+
+    execution_claims: list[str] = []
+    begin_claims: list[str] = []
+
+    if anchors_covering:
         # **This verifier contacts no network, and an anchor is a CLAIM until
         # somebody does.** ADR-021 decision 8 is explicit that for EXISTENCE it
-        # needs the chain and not us — and the first version of this function
+        # needs the chain and not us -- and the first version of this function
         # read `state: "anchored"` out of the receipt and reported EXISTENCE
         # established, which let a holder mint the property by typing it. An
         # allow-listed network says we could evaluate that chain, never that we
         # did.
         #
-        # So the honest status is CLAIMED, and what this verifier can offer
-        # instead of a verdict is the address of the thing it declined to
-        # check. Contacting the chain belongs in the anchor plugs (phase 3),
-        # not in a contract validator that must run offline and stdlib-only.
+        # So the status is CLAIMED, and what this verifier can offer instead
+        # of a verdict is the address of the thing it declined to check.
+        # Contacting the chain belongs in the anchor plugs (phase 3), not in a
+        # contract validator that must run offline and stdlib-only.
         lookups = []
-        for anchor in published:
+        for anchor in anchors_covering:
             resolve = ANCHOR_LOOKUPS.get(anchor["network"])
-            detail = resolve(anchor["reference"]) if resolve else anchor["reference"]
+            detail = (resolve(anchor["reference"])
+                      if resolve else anchor["reference"])
             lookups.append(f"{anchor['network']} {detail}")
         where = "; ".join(lookups)
-        add("EXISTENCE", UNCHECKED,
+        execution_claims.append(
             f"this receipt CLAIMS publication at {where}. This verifier "
             "contacts no network, so it has not confirmed that transaction "
             "exists or that it commits to this checkpoint. Look it up and the "
-            "answer is yours, not ours — which is the point")
-        add("RETENTION", UNCHECKED,
-            "it rests entirely on the anchor above. If that transaction is "
-            "real and carries this checkpoint, removing or reordering the "
-            "commitment would mean rewriting a chain that is already "
-            "published; if it is not, nothing here has left its author")
+            "answer is yours, not ours -- which is the point")
+    if anchors_begin_only:
+        begin_claims.append(
+            "the anchored checkpoint does not cover this receipt's END, so the "
+            "publication can only support existence of the BEGIN no later than "
+            "T, and says nothing about the completed execution")
+    for attestation in attestations or []:
+        subject = attestation.get("subject")
+        if _covers_execution(subject):
+            # **An attestation is CLAIMED, never verified.** ADR-031 decision 5:
+            # this verifier holds no TSA key, checks no CMS signature and
+            # contacts no network -- same posture as an anchor, same reason.
+            # What it CAN hand the reader is the issuer and the incantation
+            # that would settle it without us.
+            execution_claims.append(
+                f"this attestation by {attestation['issuer']} CLAIMS the "
+                f"execution existed no later than "
+                f"{attestation['issued_at']}, from "
+                f"{attestation['proof'].get('tsa_url')}: its "
+                "`proof.token_der` is the complete TimeStampResp, which a "
+                "reader checks for themselves with "
+                "`openssl ts -verify -in response.tsr` -- claimed, never "
+                "checked here")
+        else:
+            if last_end_entry is None:
+                scope = ("the run reached no END, so the claim is about the "
+                         "run's beginning, not about a completion")
+            else:
+                scope = ("its subject is a checkpoint that does not seal this "
+                         "receipt's END, so the execution's existence is not "
+                         "established by it")
+            begin_claims.append(
+                f"this attestation of {attestation['issuer']} asserts "
+                "existence of the BEGIN no later than "
+                f"{attestation['issued_at']}: {scope}")
+
+    if execution_claims or begin_claims:
+        if execution_claims or last_end_entry is None:
+            add("EXISTENCE", UNCHECKED, " ".join(execution_claims + begin_claims))
+        else:
+            add("EXISTENCE", NOT_ESTABLISHED,
+                " ".join(execution_claims + begin_claims))
     elif pending:
         add("EXISTENCE", NOT_YET,
             "an anchor is recorded as `pending`. An intention to publish is "
             "not a publication, and until it confirms this receipt supports "
             "INTEGRITY and nothing more")
+    else:
+        add("EXISTENCE", NOT_ESTABLISHED,
+            "no anchor is present. `LOCAL` means written, never published -- "
+            "ADR-020: \"checkpointed\" means externally anchored, and a local "
+            "chain proves nothing to a third party")
+
+    # RETENTION is an anchor's and only an anchor's (ADR-031 decision 4: the
+    # rfc3161_timestamp row supports level 2 EXISTENCE alone). An anchored
+    # checkpoint that does not seal the END has published nothing that resists
+    # rewriting the run's completion.
+    if anchors_covering:
+        add("RETENTION", UNCHECKED,
+            "it rests entirely on the anchor above. If that transaction is "
+            "real and carries this checkpoint, removing or reordering the "
+            "commitment would mean rewriting a chain that is already "
+            "published; if it is not, nothing here has left its author")
+    elif published:
+        add("RETENTION", NOT_ESTABLISHED,
+            "the published anchor does not cover this receipt's END, so the "
+            "completion could still be removed or reordered without breaking "
+            "a chain that is already published. RETENTION for this run is "
+            "not established")
+    elif pending:
         add("RETENTION", NOT_YET,
             "the checkpoint has not left the operator's control yet, and a "
             "checkpoint that has not left is one more file its author can "
             "rewrite")
     else:
-        add("EXISTENCE", NOT_ESTABLISHED,
-            "no anchor is present. `LOCAL` means written, never published — "
-            "ADR-020: \"checkpointed\" means externally anchored, and a local "
-            "chain proves nothing to a third party")
         add("RETENTION", NOT_ESTABLISHED,
             "nothing here has left the operator's machine, so nothing here "
             "resists its author")

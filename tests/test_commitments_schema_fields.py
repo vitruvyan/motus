@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import commitments
-from vitruvyan_motus.commitments import AnchorReceipt, Checkpoint, Commitment, Continuation, WitnessAck
+from vitruvyan_motus.commitments import (
+    AnchorReceipt, Attestation, Checkpoint, Commitment, Continuation, WitnessAck,
+)
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork, InclusionProof
 
-_CLASSES = [WitnessAck, AnchorReceipt, Continuation, Commitment, Checkpoint]
+_CLASSES = [WitnessAck, AnchorReceipt, Attestation, Continuation, Commitment, Checkpoint]
 CONTRACT_DIR = Path(__file__).parents[1] / "contract"
 
 @pytest.mark.parametrize("cls", _CLASSES, ids=lambda cls: cls.__name__)
@@ -159,6 +161,9 @@ def test_nullable_schema_classification_is_exhaustive():
     instances = {
         WitnessAck: WitnessAck("w", _DIGEST, 0, "at", "sig"),
         AnchorReceipt: AnchorReceipt("a", "n", _DIGEST, "pending"),
+        Attestation: Attestation("aid", "type", "issuer", _DIGEST, "at",
+                                 "sha256", proof={"token_der": "AAA=",
+                                                    "tsa_url": "tsa.example"}),
         Continuation: Continuation("r", _FINGERPRINT),
         Commitment: _begin(),
         Checkpoint: Checkpoint("t", "w", 0, _DIGEST, 1, 0, 0, "at"),

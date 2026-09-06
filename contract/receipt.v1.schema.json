@@ -23,9 +23,60 @@
       "description": "Zero or more. Each names the checkpoint it published, so a verifier can tell which segment it covers rather than assuming it covers the run.",
       "items": { "$ref": "#/$defs/Anchor" }
     },
+    "attestations": {
+      "type": "array",
+      "description": "Zero or more, and absent and empty mean the same thing: nobody asserted anything. An attestation is an ISSUER's signed assertion about a digest in this receipt (ADR-031) — verification material whose cryptography this validator never checks, reported as CLAIMED. It stays optional at 1.0.0: a receipt at levels 1-4 with no party involved is the common case.",
+      "items": { "$ref": "#/$defs/Attestation" }
+    },
     "execution": { "$ref": "#/$defs/Execution" }
   },
   "$defs": {
+    "Attestation": {
+      "type": "object",
+      "description": "ADR-031 decision 3. An issuer's signed assertion: WHAT (the subject's digest) was asserted, WHO (issuer), WHEN (issued_at — the issuer's claim, not ours), and the material to verify it (proof, REQUIRED, shape fixed per type). Seven fields, no signature: for a timestamp token the signature IS the token inside proof.token_der.",
+      "required": ["attestation_id", "type", "issuer", "subject", "issued_at", "algorithm", "proof"],
+      "additionalProperties": false,
+      "properties": {
+        "attestation_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "type": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "issuer": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "subject": {
+          "$ref": "commitment.v1.schema.json#/$defs/Digest",
+          "description": "WHAT is asserted about: a checkpoint digest or the run root IN THIS RECEIPT (rule P9)."
+        },
+        "issued_at": { "$ref": "commitment.v1.schema.json#/$defs/Timestamp" },
+        "algorithm": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "proof": {
+          "type": "object",
+          "description": "Strict plain JSON (J1). The verification material, required, shape fixed per type below."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "rfc3161_timestamp" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "proof": {
+                "type": "object",
+                "required": ["token_der", "tsa_url"],
+                "additionalProperties": false,
+                "properties": {
+                  "token_der": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+                    "description": "Base64 of the COMPLETE TimeStampResp (RFC 3161) — the certificate-bearing DER that `openssl ts -verify -in response.tsr` needs."
+                  },
+                  "tsa_url": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" }
+                },
+                "description": "An rfc3161_timestamp attestation whose proof has no token is an attestation nobody can check: the signature IS the token, and no token means no signature (ADR-031 decision 3)."
+              }
+            },
+            "required": ["proof"],
+            "description": "The proof shape is fixed per type the way $defs.Anchor fixes reference and published_at for anchored."
+          }
+        }
+      ]
+    },
     "Execution": {
       "type": "object",
       "description": "ADR-027 decision 4: the execution locator and canonical fingerprint. `ref` locates the original BEGIN; `fingerprint` is the Trace.root (null while the execution has no terminal record), never a receipt or partial-trace digest. `run_id` is carried for the embedder's correlation and is NOT a key. Optional until schema_version 1.0.0; required from 1.0.0.",

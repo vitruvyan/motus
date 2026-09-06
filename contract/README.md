@@ -72,11 +72,13 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P6` | A chain of segments the receipt asserts by position and by nothing else: a later segment that continues nothing, one that names a predecessor other than the segment before it, or a segment with an `END` that has a successor — a trace that reached a terminal record cannot be resumed |
 | `P7` | An `execution.ref` that is malformed, or names a `(tenant, writer_id, sequence)` other than the receipt's original BEGIN |
 | `P8` | A completed receipt whose `execution.fingerprint` disagrees with the root derived from the paired trace. An unfinished receipt has no END and legitimately carries `null`. |
+| `P9` | An attestation whose `subject` is not a checkpoint digest or the run root of this receipt. An assertion about a digest that is not here says nothing about this run |
+| `P10` | An attestation outside the known type set, an algorithm its type does not admit (`rfc3161_timestamp` admits `sha256`), or a `proof` lacking the material its type requires. A violation AND a refusal — *unreadable cryptography must never sit on the same footing as checked cryptography* |
 
 ### What the verifier will not tell you
 
 `motus-validate receipt <receipt> --trace <trace>` answers all seven ADR-020
-levels, including the ones it could not reach. Three of its refusals are the
+levels, including the ones it could not reach. Four of its refusals are the
 point of the tool rather than limitations of it:
 
 - **an anchor is a CLAIM.** This validator contacts no network — it is offline
@@ -85,15 +87,37 @@ point of the tool rather than limitations of it:
   unchecked*, with the explorer URL, so the reader can settle it against a
   chain we do not operate. ADR-021 decision 8: for `EXISTENCE` it needs the
   chain, and not us;
+- **an attestation is a CLAIM, and a claim about whatever its `subject`
+  covers — never more.** The contract validator holds no TSA key and checks
+  no CMS signature, so an `rfc3161_timestamp` attestation is reported with
+  the issuer named and the incantation that would settle it (`openssl ts
+  -verify -in response.tsr` over `proof.token_der`), never as established.
+  ADR-031 decision 7: for a completed receipt, EXISTENCE *of the execution*
+  is reported only when `subject` is the run root or a checkpoint whose
+  sealed range includes the END; a token over the BEGIN's checkpoint alone
+  yields "existence of the BEGIN no later than T" and EXISTENCE for the run
+  stays NOT ESTABLISHED — the same sentence is said for an anchor whose
+  checkpoint does not seal the END. No attestation moves `mode`;
 - **a witness acknowledgement does not establish `EXECUTION_CONTINUITY`.** It
   is bound to the commitment, which is what makes its signature checkable by
   somebody holding the witness's key. This validator holds none, and says so;
-- **an unknown hash algorithm, anchor network or signature algorithm ends the
-  answer.** Not a downgrade — a refusal, and the CLI exits non-zero, so a
-  caller reading only the exit code cannot mistake *I cannot tell* for
-  *verified*. **A refusal outranks a violation**: an unknown network is also a
-  P5 violation, and reporting it as one says "this document is wrong" about a
-  document that may be perfectly correct on a chain we cannot read.
+- **an unknown hash algorithm, anchor network, attestation type or
+  signature algorithm ends the answer.** Not a downgrade — a refusal, and the
+  CLI exits non-zero, so a caller reading only the exit code cannot mistake
+  *I cannot tell* for *verified*. **A refusal outranks a violation**: an
+  unknown anchor network or an unknown attestation type is also a P5 or P10
+  violation, and reporting it as one says "this document is wrong" about a
+  document that may be perfectly correct on a chain we cannot read or under
+  a type we cannot read.
+
+**What an attestation is not** (ADR-031 decision 7). It is not a witness
+acknowledgement — that stays on the BEGIN, in `commitment.v1`, under C1; it
+is not an anchor — nothing is *pending*: a token is issued or it is absent;
+and it is not verified by this validator — it is claimed, with the issuer
+named. A receipt whose only support for EXISTENCE is an `attestations` entry
+sits at level 2 *on the issuer's word*; a receipt with an anchor sits at level
+2 *on a chain's record*, and the verdict text says which, because a buyer
+will ask.
 
 ## Fingerprints (canonical form)
 

@@ -47,6 +47,12 @@ jobs:
           python -m pip install -e "./plugs/motus-anchor-opentimestamps[test]"
       - name: Run the plug's own suite
         run: python -m pytest plugs/motus-anchor-opentimestamps/tests -q
+      # ADR-031's H1 plug: same posture, its own distribution, its own
+      # dependencies (jsonschema, test-only — see the plug's pyproject.toml).
+      - name: Install the RFC 3161 attestation plug
+        run: python -m pip install -e "./plugs/motus-attest-rfc3161[test]"
+      - name: Run the RFC 3161 plug's own suite
+        run: python -m pytest plugs/motus-attest-rfc3161/tests -q
 
   slo-baseline:
     name: slo-baseline

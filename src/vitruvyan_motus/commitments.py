@@ -35,7 +35,7 @@ from vitruvyan_motus.trace import _canonical_bytes, _strict_plain_json
 __all__ = [
     "AssuranceMode", "CommitmentKind", "Commitment", "Continuation", "WitnessAck",
     "AnchorReceipt", "Checkpoint", "TenantCheckpoint", "CommitmentWindow",
-    "Witness", "Anchor",
+    "Witness", "Anchor", "Attestation", "Attester",
     "merkle_root", "merkle_path", "verify_merkle_path", "verify_inclusion",
 ]
 
@@ -261,6 +261,48 @@ class AnchorReceipt:
             # dict value cannot reach the wire without a path-aware J1 refusal.
             "proof": _strict_plain_json(
                 self.proof, path="AnchorReceipt.proof"
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Attestation:
+    """An issuer's signed assertion about a digest in this receipt (ADR-031).
+
+    The seven fields are ADR-020 decision 8's reserve made real, with the
+    corrections ADR-031 decision 3 records: there is NO `signature` field (for
+    a timestamp token the signature IS the token, inside `proof.token_der`) and
+    `proof` is required, because an attestation that carries no material to
+    verify is an attestation nobody can check. `subject` names WHAT is asserted
+    — a checkpoint digest or the run root of the receipt it travels on (rule
+    P9 holds it to that) — and `issued_at` is the issuer's claim about when,
+    never this process's clock.
+    """
+
+    attestation_id: str
+    type: str
+    issuer: str
+    subject: str
+    issued_at: str
+    algorithm: str
+    proof: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        isolated = _validate_schema_fields(self)
+        if "proof" in isolated:
+            object.__setattr__(self, "proof", isolated["proof"])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attestation_id": self.attestation_id,
+            "type": self.type, "issuer": self.issuer,
+            "subject": self.subject, "issued_at": self.issued_at,
+            "algorithm": self.algorithm,
+            # Revalidate and isolate again so mutation through the public
+            # dict value cannot reach the wire without a path-aware J1
+            # refusal, exactly as AnchorReceipt.proof is treated.
+            "proof": _strict_plain_json(
+                self.proof, path="Attestation.proof"
             ),
         }
 
@@ -577,6 +619,11 @@ _SCHEMA_FIELDS: dict[type, dict[str, _SchemaType]] = {
         "anchor_id": _IDENTIFIER, "network": _IDENTIFIER, "checkpoint": _DIGEST,
         "reference": _IDENTIFIER, "published_at": _TIMESTAMP,
     },
+    Attestation: {
+        "attestation_id": _IDENTIFIER, "type": _IDENTIFIER,
+        "issuer": _IDENTIFIER, "subject": _DIGEST,
+        "issued_at": _TIMESTAMP, "algorithm": _IDENTIFIER,
+    },
     Continuation: {
         "run_id": _IDENTIFIER, "bundle_fingerprint": _BUNDLE_FINGERPRINT,
         "writer_id": _IDENTIFIER,
@@ -596,6 +643,9 @@ _NON_SCHEMA_FIELDS: dict[type, dict[str, str]] = {
     WitnessAck: {"position": "integer; checked by _require_index"},
     AnchorReceipt: {
         "state": "closed enum",
+        "proof": "JSON object (dict); contents are opaque",
+    },
+    Attestation: {
         "proof": "JSON object (dict); contents are opaque",
     },
     Continuation: {"sequence": "optional integer; checked by _require_index"},
@@ -624,6 +674,7 @@ _NULLABLE_SCHEMA_FIELDS = frozenset({
 # their contents still have to be values the JSON contract can carry.
 _JSON_FIELDS: dict[type, frozenset[str]] = {
     AnchorReceipt: frozenset({"proof"}),
+    Attestation: frozenset({"proof"}),
 }
 
 _SCHEMA_VALIDATORS: dict[type, tuple[tuple[str, Callable[[Any, str], str], str], ...]] = {
@@ -652,8 +703,12 @@ def _validate_schema_fields(instance: Any) -> dict[str, Any]:
         value = getattr(instance, name)
         if name == "proof" and not isinstance(value, dict):
             # Preserve the outer-object requirement separately from J1's
-            # recursive value validation.
-            raise ValueError("AnchorReceipt.proof must be a dict (schema type object)")
+            # recursive value validation. Named for the concrete type so the
+            # message names the object the caller built, Anchors and
+            # attestations alike.
+            raise ValueError(
+                f"{type(instance).__name__}.proof must be a dict "
+                "(schema type object)")
         isolated[name] = _strict_plain_json(
             value, path=f"{type(instance).__name__}.{name}"
         )
@@ -961,3 +1016,20 @@ class Anchor(Protocol):
     def publish(self, checkpoint: bytes) -> AnchorReceipt: ...
 
     def state(self, receipt: AnchorReceipt) -> Literal["pending", "anchored"]: ...
+
+
+@runtime_checkable
+class Attester(Protocol):
+    """A party who will say a digest existed no later than a time they assert.
+
+    The second socket ADR-031 opens beside `Anchor`: an anchor needs a chain
+    and no key; an attestation needs the issuer's key and a decision about
+    whether that issuer is to be believed. ``attest`` is called with the
+    digest the caller wants asserted — for this receipt, a checkpoint digest or
+    the run root (rule P9) — and returns the ready-to-attach ``Attestation``
+    with ``proof`` holding the material a reader can verify independently.
+    It is the issuer's claim, never this process's word: Motus verifies
+    nothing at this boundary and must not.
+    """
+
+    def attest(self, subject: bytes) -> Attestation: ...

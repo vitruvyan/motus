@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motus-attest-rfc3161"
+version = "0.1.0"
+description = "An RFC 3161 Attester for Motus receipts — a public TSA's word, no dependency"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Vitruvyan" }]
+# A SEPARATE DISTRIBUTION, which is the whole point (ADR-020 rejected putting
+# an anchor in the runtime; ADR-031's H1 is that the RFC 3161 path needs no
+# dependency at all): `vitruvyan-motus` declares zero runtime dependencies and
+# this package must not be able to change that.
+dependencies = []
+
+[project.optional-dependencies]
+# jsonschema is here, not in `dependencies`: only one test (checking the
+# built Attestation against contract/receipt.v1.schema.json) needs it, the
+# plug's own code parses no schema and needs none. Pinned the same as the
+# kernel's own test extra so both environments resolve to one version.
+test = ["pytest>=8,<9", "jsonschema>=4.21,<5"]
+
+[tool.setuptools]
+packages = ["motus_attest_rfc3161"]
+package-dir = { "" = "src" }

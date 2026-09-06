@@ -146,6 +146,7 @@ BOUNDARY_INVENTORY = (
     ("CommitmentLog.begin", "continues_sequence", "value", "VALUE", "continuation data"),
     ("CommitmentLog.receipt_for", "execution_ref", "value", "VALUE", "execution reference data"),
     ("CommitmentLog.receipt_for", "anchors", "value", "VALUE", "AnchorReceipt evidence data"),
+    ("CommitmentLog.receipt_for", "attestations", "value", "VALUE", "Attestation evidence data"),
 )
 
 
