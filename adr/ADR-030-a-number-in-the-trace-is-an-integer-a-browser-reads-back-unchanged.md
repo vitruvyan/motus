@@ -1,8 +1,8 @@
 # ADR-030 — a number in the trace is an integer a browser reads back unchanged
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-06
-- **Accepted:** —
+- **Accepted:** 2026-09-06 by the founder
 - **Authority:** CTO proposes; the founder accepts. Closes #116 (P0, pre-freeze, contract) and gives #130 (vectors in Facts) its premise. Records the founder's decision of 2026-08-29 that consumers do not need floats, which 506faec implemented without this document and 0aced05 reverted for that reason.
 - **Depends on:** ADR-024 (rule `J2`, a store may not renumber), ADR-026 (the root commits to the JSON value, decision 1: same value → same commitment).
 - **Amends:** `contract/trace.v1.schema.json` (`x-current-version` 3.2.0; one rule, `J4`, in the description), `contract/README.md` (the storage section gains the third thing a store does), `contract/node-protocol.md` §3 (what a value may be). ADR-024 and ADR-026 are not amended: this rule sits beside them.
