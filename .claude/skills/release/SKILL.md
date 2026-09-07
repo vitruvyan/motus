@@ -31,17 +31,30 @@ thing to ask for.
    `check_relative_baseline.py` over all three.
 5. **PR, green, merge** with a merge commit. Verify the reviewed SHA is an
    ancestor of `main` before tagging.
-6. **Annotated tag** on the verified merge SHA, then the GitHub Release.
-7. **Publish**, which fires on the **published** GitHub Release, not the
-   tag push — a version on the index whose note does not exist yet is a
-   version nobody can assess. Confirm three equalities before calling
-   the release finished: the workflow ran and succeeded; the version on
-   the index equals the tag; the SHA-256 on the index equals the SHA-256
-   in the release note. A publication that did not happen is a release
-   that is not finished. PyPI does not allow a version to be
-   re-uploaded — a wrong wheel is yanked and a new version released —
-   the same discipline *What will go wrong* already imposes when it says
-   never to make the gate pass by retrying, now with an external witness.
+6. **Annotated tag** on the verified merge SHA. The tag fires a build job that
+   builds the wheel and sdist **once**, runs every gate against those exact
+   files, attaches them as assets to a **draft** GitHub Release, and *also*
+   uploads them as a workflow-run artifact with their SHA-256 written into both
+   the draft body and the run summary. The Release is where the bytes are
+   shown; the run is where they are authenticated — a draft is editable by
+   anyone with `contents: write`, a completed run's artifact is not.
+7. **Read the draft and publish it.** Check the hash against the run summary,
+   not the draft body — the summary is what cannot be rewritten. This is the
+   founder's act and it is the approval, made with the artifact and its hash on
+   screen rather than a click on an automated gate: required reviewers on a
+   deployment environment are public-repository-only on this plan, so for the
+   first publication there is no button to press. Publishing the draft fires
+   `release: [published]`, which runs the publish job.
+8. The publish job **downloads both the run artifact and the Release assets,
+   and refuses unless they are byte-identical** — a swapped asset is a named
+   failure, not a publication. It does not build. Confirm three equalities
+   before calling the release finished: the workflow ran and succeeded; the
+   version on the index equals the tag; the SHA-256 on the index equals the
+   SHA-256 in the release note. A publication that did not happen is a release
+   that is not finished. PyPI does not allow a version to be re-uploaded — a
+   wrong wheel is yanked and a new version released — the same discipline *What
+   will go wrong* already imposes when it says never to make the gate pass by
+   retrying, now with an external witness.
 
 ## What will go wrong, because it did
 
