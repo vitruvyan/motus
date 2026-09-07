@@ -82,9 +82,13 @@ jobs:
           CANDIDATE_REF: ${{ github.ref_name }}
           PAIRS_OUT: ${{ steps.refs.outputs.pairs }}
         run: |
-          ANCHOR_ARGS=""
+          # An array, not a string: $ANCHOR_ARGS unquoted would word-split an
+          # attacker-supplied ref into extra arguments to the harness. That is
+          # not command execution, so the env: move above does not close it —
+          # the same value, one layer down, choosing flags instead of code.
+          ANCHOR_ARGS=()
           if [ -n "$ANCHOR_REF" ]; then
-            ANCHOR_ARGS="--anchor-src /tmp/anchor/src --anchor-ref $ANCHOR_REF"
+            ANCHOR_ARGS=(--anchor-src /tmp/anchor/src --anchor-ref "$ANCHOR_REF")
           fi
           python benchmarks/collect_relative_baseline.py \
             --baseline-src /tmp/baseline/src \
@@ -92,7 +96,7 @@ jobs:
             --candidate-src src \
             --candidate-ref "$CANDIDATE_REF" \
             --pairs "$PAIRS_OUT" \
-            $ANCHOR_ARGS \
+            "${ANCHOR_ARGS[@]}" \
             > benchmarks/relative-latest.json
 
       - name: Report the ratios this job measured
