@@ -252,19 +252,23 @@ def test_the_built_wheel_declares_project_urls_for_repository_contract_and_licen
     )
 
 
-def test_check_publishable_metadata_accepts_the_real_wheel_once_the_readme_is_corrected(
+def test_the_real_wheel_carries_exactly_the_claims_publication_has_yet_to_fix(
     built_wheel,
 ):
-    """The gate ADR-033 decision 6 asks for, run against the wheel this
-    repository actually builds today — not a synthetic stand-in.
+    """The gate of ADR-033 decision 6, run against the wheel this repository
+    actually builds today -- not a synthetic stand-in.
 
-    This is deliberately allowed to fail right now. README.md still carries
-    the four sentences publication makes false (lines 21, 337, 339-340,
-    1097-1098); correcting them is the commit the release tag points at, a
-    separate task from building the gate that makes shipping them
-    impossible. A red result here is that finding, stated as a test rather
-    than prose — faking a pass by weakening the check would hide the exact
-    thing this gate exists to catch.
+    It cannot assert that the wheel passes: ``README.md`` still carries the
+    sentences publication makes false, and correcting them is the commit the
+    release tag points at, not this one (ADR-033 decision 6 and its Amends
+    clause both say so).  A test left deliberately red would be a red on
+    ``main`` that everybody learns to ignore, which is worse than no test.
+
+    So it asserts the debt exactly instead: **these four claims and no
+    fifth.**  A new false sentence added to ``README.md`` fails this, and so
+    does fixing one -- which is the point, because the release commit that
+    corrects them must come here and say so in the same change rather than
+    leaving a stale count behind.
     """
     script = REPO_ROOT / "tools" / "check_publishable_metadata.py"
     result = subprocess.run(
@@ -273,10 +277,28 @@ def test_check_publishable_metadata_accepts_the_real_wheel_once_the_readme_is_co
         text=True,
         timeout=30,
     )
-    assert result.returncode == 0, (
-        "the real built wheel is not yet publishable under ADR-033 decision "
-        "6 — README.md still carries at least one claim that publication "
-        f"makes false:\n{result.stderr}"
+
+    assert result.returncode != 0, (
+        "the real wheel now passes the gate -- README.md has been corrected. "
+        "Update this test to assert the wheel is publishable, and delete the "
+        "expected-claims list below."
+    )
+
+    reported = {
+        line.split("source ", 1)[1].split(" ", 1)[0].rstrip(":")
+        for line in result.stdout.splitlines() + result.stderr.splitlines()
+        if "forbidden claim shipped in METADATA" in line and "source " in line
+    }
+    assert reported == {
+        "README.md:21",
+        "README.md:337",
+        "README.md:339-340",
+        "README.md:1097-1098",
+    }, (
+        "the set of claims the built wheel still ships has changed; if one was "
+        "fixed, fix this list in the same commit, and if one was added, that is "
+        f"a new false promise heading for the index. Got: {sorted(reported)}\n"
+        f"{result.stdout}{result.stderr}"
     )
 
 
