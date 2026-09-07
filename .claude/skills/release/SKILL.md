@@ -40,8 +40,8 @@ thing to ask for.
    in the release note. A publication that did not happen is a release
    that is not finished. PyPI does not allow a version to be
    re-uploaded — a wrong wheel is yanked and a new version released —
-   the same discipline step 5's "never make the gate pass by retrying"
-   already imposes, now with an external witness.
+   the same discipline *What will go wrong* already imposes when it says
+   never to make the gate pass by retrying, now with an external witness.
 
 ## What will go wrong, because it did
 
