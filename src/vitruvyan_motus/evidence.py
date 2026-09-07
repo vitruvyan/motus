@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
-    from vitruvyan_motus.commitments import AnchorReceipt
+    from vitruvyan_motus.commitments import AnchorReceipt, Attestation
     from vitruvyan_motus.replay import TraceBundle
     from vitruvyan_motus.contract.validate import Verdict
 
@@ -131,6 +131,7 @@ def pack(
     *,
     log: CommitmentLog | None = None,
     anchors: Iterable[AnchorReceipt] = (),
+    attestations: Iterable[Attestation] = (),
     proofs: Mapping[str, bytes] = {},
     attachments: Mapping[str, bytes] = {},
 ) -> bytes:
@@ -146,7 +147,8 @@ def pack(
         from vitruvyan_motus.commitlog import CommitmentLog  # type: ignore[import-not-found]
         run_id = trace_dict["run"]["run_id"]
         execution_ref = log.find_execution_ref(run_id)
-        receipt = log.receipt_for(execution_ref, anchors=anchors)
+        receipt = log.receipt_for(execution_ref, anchors=anchors,
+                                  attestations=attestations)
         execution = dict(receipt["execution"])
     else:
         receipt = None

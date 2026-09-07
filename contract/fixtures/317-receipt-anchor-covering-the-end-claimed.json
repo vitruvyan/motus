@@ -1,0 +1,86 @@
+{
+  "artifact": "receipt",
+  "spec": null,
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "mode": "local",
+    "segments": [
+      {
+        "begin": {
+          "commitment": {
+            "kind": "begin",
+            "tenant": "acme",
+            "writer_id": "w1",
+            "sequence": 0,
+            "run_id": "r1",
+            "at": "2026-09-06T22:23:21.055751Z",
+            "nonce": "f8f9b165-e80c-4b73-907c-76f4ba69837a"
+          },
+          "proof": [
+            {
+              "side": "right",
+              "digest": "sha256:9e60678c175d92f76697b4db9931dccf788aee1bfefb83717589f0884de12f83"
+            }
+          ],
+          "checkpoint": {
+            "tenant": "acme",
+            "writer_id": "w1",
+            "index": 0,
+            "window_root": "sha256:63f00995bcd0b490fa7d6985e7db9c85abaf138873924cc5a01e6fa6f6aeb12b",
+            "count": 2,
+            "first_sequence": 0,
+            "last_sequence": 1,
+            "sealed_at": "2026-08-13T10:00:00Z",
+            "previous": null
+          }
+        },
+        "end": {
+          "commitment": {
+            "kind": "end",
+            "tenant": "acme",
+            "writer_id": "w1",
+            "sequence": 1,
+            "run_id": "r1",
+            "at": "2026-09-06T22:23:21.056828Z",
+            "nonce": "c1d9f248-04b8-4dd4-b50d-3f333fef68a1",
+            "root": "sha256:67519683929e5890e1722db5407ad6c17552547174da410777dca7bce2f91d26",
+            "outcome": "run_completed"
+          },
+          "proof": [
+            {
+              "side": "left",
+              "digest": "sha256:2a2ac1f9b3c545c36827956ab71d78a4be8f112496ff67e7092c930084800d21"
+            }
+          ],
+          "checkpoint": {
+            "tenant": "acme",
+            "writer_id": "w1",
+            "index": 0,
+            "window_root": "sha256:63f00995bcd0b490fa7d6985e7db9c85abaf138873924cc5a01e6fa6f6aeb12b",
+            "count": 2,
+            "first_sequence": 0,
+            "last_sequence": 1,
+            "sealed_at": "2026-08-13T10:00:00Z",
+            "previous": null
+          }
+        }
+      }
+    ],
+    "execution": {
+      "ref": "acme/w1/0",
+      "fingerprint": "sha256:67519683929e5890e1722db5407ad6c17552547174da410777dca7bce2f91d26",
+      "run_id": "r1"
+    },
+    "anchors": [
+      {
+        "anchor_id": "tron",
+        "network": "tron:nile",
+        "checkpoint": "sha256:5f6c991e7a441503c4acf0009d9b768e2a014d591a19c4a4baf10162351621a8",
+        "state": "anchored",
+        "reference": "6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0",
+        "published_at": "2026-08-13T10:05:00Z"
+      }
+    ]
+  }
+}

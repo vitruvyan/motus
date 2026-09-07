@@ -62,7 +62,7 @@ except ImportError:                                    # pragma: no cover
 from vitruvyan_motus.commitments import (
     Continuation,
     Checkpoint, Commitment, CommitmentKind, CommitmentWindow, Witness,
-    WitnessAck, AnchorReceipt, merkle_path, merkle_root,
+    WitnessAck, AnchorReceipt, Attestation, merkle_path, merkle_root,
 )
 from vitruvyan_motus.errors import MotusError
 from vitruvyan_motus.trace import _canonical_bytes
@@ -1002,7 +1002,8 @@ class CommitmentLog:
         return f"{chosen.tenant}/{chosen.writer_id}/{chosen.sequence}"
 
     def receipt_for(self, execution_ref: str, *,
-                   anchors: Iterable[AnchorReceipt] = ()) -> dict[str, Any]:
+                   anchors: Iterable[AnchorReceipt] = (),
+                   attestations: Iterable[Attestation] = ()) -> dict[str, Any]:
         """Return the receipt for the BEGIN named by ``execution_ref``.
 
         The reference is a coordinate of any included BEGIN.  For a resumed
@@ -1167,6 +1168,10 @@ class CommitmentLog:
         if anchor_list:
             anchor_dicts = [anchor.to_dict() for anchor in anchor_list]
             receipt["anchors"] = anchor_dicts
+        attestation_list = list(attestations)
+        if attestation_list:
+            attestation_dicts = [a.to_dict() for a in attestation_list]
+            receipt["attestations"] = attestation_dicts
         return receipt
 
     def verify_chain(self) -> int:

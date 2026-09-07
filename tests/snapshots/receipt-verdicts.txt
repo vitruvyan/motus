@@ -1,0 +1,401 @@
+==============================================================================
+204-receipt-a-run-of-one-segment.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             NOT ESTABLISHED
+                        no anchor is present. `LOCAL` means written, never published — ADR-020: "checkpointed" means externally anchored, and a local chain proves nothing to a third party
+  RETENTION             NOT ESTABLISHED
+                        nothing here has left the operator's machine, so nothing here resists its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+  NOTE  the first included segment continues a predecessor whose BEGIN is not present in this receipt or available from this log; that predecessor is omitted and the continuation claim is UNVERIFIABLE rather than false
+
+  NOTE  this run has 1 segments. Each one's claim to continue its predecessor is checkable only against that predecessor's whole BUNDLE — bundle_version, the complete graph_spec and the trace. Whoever holds only this receipt cannot check it, and its absence makes the claim UNVERIFIABLE rather than false.
+
+==============================================================================
+205-receipt-a-run-resumed-once.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             NOT ESTABLISHED
+                        no anchor is present. `LOCAL` means written, never published — ADR-020: "checkpointed" means externally anchored, and a local chain proves nothing to a third party
+  RETENTION             NOT ESTABLISHED
+                        nothing here has left the operator's machine, so nothing here resists its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+  NOTE  segment(s) 0 have a BEGIN and no END. That is AN EXECUTION THAT LEFT NO COMPLETION, and it is never a finding of suppression: a process can die, a stream driver can be abandoned mid-iteration, and ADR-020 declares that class rather than discovering it. It is a question, not a verdict.
+
+  NOTE  this run has 2 segments. Each one's claim to continue its predecessor is checkable only against that predecessor's whole BUNDLE — bundle_version, the complete graph_spec and the trace. Whoever holds only this receipt cannot check it, and its absence makes the claim UNVERIFIABLE rather than false.
+
+==============================================================================
+214-receipt-p1-path-lands-elsewhere.json
+==============================================================================
+P1 $.segments[1].begin.proof: this path takes the commitment to sha256:ce04fbd6a5d77d1ce29ce1adcbabbd9e6f3f7045e0e54edf5bf8bf67b4912e94, and the checkpoint sealed sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb. A proof that lands anywhere else proves a different window
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+215-receipt-p2-sequence-outside-the-window.json
+==============================================================================
+P2 $.segments[0].begin.commitment.sequence: sequence 0 is outside the range this checkpoint sealed (50..52). A commitment proved against a window it was never in is a proof about somebody else
+P2 $.segments[1].begin.commitment.sequence: sequence 1 is outside the range this checkpoint sealed (50..52). A commitment proved against a window it was never in is a proof about somebody else
+P2 $.segments[1].end.commitment.sequence: sequence 2 is outside the range this checkpoint sealed (50..52). A commitment proved against a window it was never in is a proof about somebody else
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (3 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+216-receipt-p3-qualified-cannot-be-established-here.json
+==============================================================================
+P3 $.segments[1].begin: this receipt claims qualified but segment 1's BEGIN carries no acknowledgement. Every included segment must support the claimed assurance mode
+P3 $.mode: QUALIFIED needs an identity attestation and a qualified timestamp (ADR-020 levels 6 and 7), and this distribution produces neither. A mode nothing here can establish must not be claimed here
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+217-receipt-p4-anchor-names-a-checkpoint-not-here.json
+==============================================================================
+P4 $.anchors[0].checkpoint: this anchor published sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, and no checkpoint in this receipt digests to it. An anchor for a checkpoint that is not here says nothing about this run
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+218-receipt-p5-unknown-network.json
+==============================================================================
+P5 $.anchors[0].network: this validator cannot evaluate the network 'unheard-of:main', so it will not report what an anchor there establishes. Known: opentimestamps:bitcoin, tron:nile
+
+  INTEGRITY             REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  EXISTENCE             REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  RETENTION             REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  EXECUTION_CONTINUITY  REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  PROVENANCE            REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  IDENTITY              REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+  LEGAL_TIME            REFUSED
+                        this receipt is anchored on 'unheard-of:main', which this verifier cannot evaluate. Known: opentimestamps:bitcoin, tron:nile
+
+==============================================================================
+220-receipt-p6-a-chain-asserted-by-position-only.json
+==============================================================================
+P6 $.segments[1].begin.commitment.continues: this segment follows another in the receipt and states that it continues nothing. A chain asserted by position and by nothing else is a chain the holder arranged
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+221-receipt-p6-a-segment-with-an-end-has-a-successor.json
+==============================================================================
+P6 $.segments[0].end: a segment with an END has a successor in this receipt, and a trace that reached a terminal record cannot be resumed. Either this is not the run's order, or these segments belong to different runs
+P6 $.segments[1].begin.commitment.continues.run_id: this segment continues 'seg-1', and the segment before it in this receipt is 'seg-2'
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (2 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+222-receipt-p6-names-a-predecessor-that-is-not-the-one-here.json
+==============================================================================
+P6 $.segments[1].begin.commitment.continues.run_id: this segment continues 'seg-b', and the segment before it in this receipt is 'seg-a'
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+223-receipt-p7-execution-ref-names-a-different-begin.json
+==============================================================================
+P7 $.execution.ref: execution.ref must be a canonical tenant/writer/sequence coordinate naming the receipt's original BEGIN
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+224-receipt-p8-unfinished-has-fingerprint.json
+==============================================================================
+P8 $.execution.fingerprint: an unfinished receipt has no END and must carry a null execution.fingerprint
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+311-receipt-attestation-rfc3161-claimed.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             CLAIMED, UNCHECKED
+                        this attestation by 'fake-tsa.example' CLAIMS the execution existed no later than 2026-08-13T10:00:00Z, from https://tsa.example/timestamp: its `proof.token_der` is the complete TimeStampResp and its `proof.message_imprint` is sha256 of this subject's digest bytes — the double hash RFC 3161 itself requires, not this validator's choice — so a reader checks it with `openssl ts -reply -in response.tsr -token_out -out token.p7`, then `openssl pkcs7 -inform DER -in token.p7 -print_certs -out certs.pem`, then `openssl ts -verify -in response.tsr -digest e05e9415f9a17034898f932a6cce4b3b1913c3be1d31003912bc0ba3726ff278 -CAfile certs.pem` — claimed, never checked here
+  RETENTION             NOT ESTABLISHED
+                        nothing here has left the operator's machine, so nothing here resists its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+==============================================================================
+312-receipt-p9-subject-is-not-a-checkpoint-or-root.json
+==============================================================================
+P9 $.attestations[0].subject: this attestation asserts sha256:b28f681455ceef2d8374fb85fe204b4cf4854bd202e4a54ab8be5416605fc2e8, and no checkpoint in this receipt digests to it and it is not the run root this receipt's END commits to. An assertion about a digest that is not here says nothing about this run
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+313-receipt-p10-unknown-type.json
+==============================================================================
+P10 $.attestations[0].type: this validator cannot evaluate the attestation type 'qualified_timestamp', so it will not report what an attestation of that type establishes. Known: rfc3161_timestamp
+
+  INTEGRITY             REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  EXISTENCE             REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  RETENTION             REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  EXECUTION_CONTINUITY  REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  PROVENANCE            REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  IDENTITY              REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+  LEGAL_TIME            REFUSED
+                        this receipt carries an attestation of type 'qualified_timestamp', which this verifier cannot evaluate. Known: rfc3161_timestamp
+
+==============================================================================
+314-receipt-p10-algorithm-not-admitted.json
+==============================================================================
+P10 $.attestations[0].algorithm: attestation type 'rfc3161_timestamp' admits sha256 and this one carries 'sha1', which this validator cannot read. Unreadable cryptography must not sit on the same footing as checked cryptography
+
+  INTEGRITY             REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  EXISTENCE             REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  RETENTION             REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  EXECUTION_CONTINUITY  REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  PROVENANCE            REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  IDENTITY              REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+  LEGAL_TIME            REFUSED
+                        this receipt carries an attestation of type 'rfc3161_timestamp' imprinted with 'sha1', which this verifier cannot name. That type admits: sha256
+
+==============================================================================
+315-receipt-attestation-proof-missing-token-der.json
+==============================================================================
+SCHEMA $.attestations[0].proof: 'token_der' is a required property
+
+  INTEGRITY             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXISTENCE             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  RETENTION             NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  PROVENANCE            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  IDENTITY              NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+  LEGAL_TIME            NOT ESTABLISHED
+                        the receipt does not satisfy the contract (1 violation(s)); nothing is established over a document that is not what it says
+
+==============================================================================
+316-receipt-attestation-over-the-begins-checkpoint.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             NOT ESTABLISHED
+                        this attestation of 'fake-tsa.example' asserts existence of the BEGIN no later than 2026-08-13T10:00:00Z: its subject is a checkpoint that does not seal this receipt's END, so the execution's existence is not established by it
+  RETENTION             NOT ESTABLISHED
+                        nothing here has left the operator's machine, so nothing here resists its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+==============================================================================
+317-receipt-anchor-covering-the-end-claimed.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             CLAIMED, UNCHECKED
+                        this receipt CLAIMS publication at tron:nile https://nile.tronscan.org/#/transaction/6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0. This verifier contacts no network, so it has not confirmed that transaction exists or that it commits to this checkpoint. Look it up and the answer is yours, not ours — which is the point
+  RETENTION             CLAIMED, UNCHECKED
+                        it rests entirely on the anchor above. If that transaction is real and carries this checkpoint, removing or reordering the commitment would mean rewriting a chain that is already published; if it is not, nothing here has left its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+==============================================================================
+318-receipt-anchor-over-the-only-checkpoint-unfinished-claimed.json
+==============================================================================
+  INTEGRITY             NOT ESTABLISHED
+                        no trace was supplied. The receipt's own arithmetic checks out, which says the commitments are internally consistent and nothing at all about a run
+  EXISTENCE             CLAIMED, UNCHECKED
+                        this receipt CLAIMS publication at tron:nile https://nile.tronscan.org/#/transaction/6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0. This verifier contacts no network, so it has not confirmed that transaction exists or that it commits to this checkpoint. Look it up and the answer is yours, not ours — which is the point
+  RETENTION             CLAIMED, UNCHECKED
+                        it rests entirely on the anchor above. If that transaction is real and carries this checkpoint, removing or reordering the commitment would mean rewriting a chain that is already published; if it is not, nothing here has left its author
+  EXECUTION_CONTINUITY  NOT ESTABLISHED
+                        the run's first BEGIN carries no acknowledgement. The property holds when the BEGIN left the operator's unilateral control before the outcome was known, and a local write does not do that
+  PROVENANCE            NOT ESTABLISHED
+                        no signature over this evidence was verified. This distribution produces no keys and this verifier was given none
+  IDENTITY              NOT ESTABLISHED
+                        binding a key to a legal entity is ADR-020 level 6, which is sold rather than shipped, and nothing here attempts it
+  LEGAL_TIME            NOT ESTABLISHED
+                        a qualified timestamp is ADR-020 level 7 and needs a QTSP. The times in this receipt are the writer's own clock
+
+  NOTE  segment(s) 0 have a BEGIN and no END. That is AN EXECUTION THAT LEFT NO COMPLETION, and it is never a finding of suppression: a process can die, a stream driver can be abandoned mid-iteration, and ADR-020 declares that class rather than discovering it. It is a question, not a verdict.

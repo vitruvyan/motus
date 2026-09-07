@@ -1,0 +1,51 @@
+{
+  "artifact": "receipt",
+  "spec": null,
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "mode": "local",
+    "segments": [
+      {
+        "begin": {
+          "commitment": {
+            "kind": "begin",
+            "tenant": "acme",
+            "writer_id": "w1",
+            "sequence": 0,
+            "run_id": "r1",
+            "at": "2026-08-13T10:00:00Z",
+            "nonce": "n0"
+          },
+          "proof": [],
+          "checkpoint": {
+            "tenant": "acme",
+            "writer_id": "w1",
+            "index": 0,
+            "window_root": "sha256:20b67e38ddb35fbdc8a07a6f8c269774d5b15765127e8396e2580d14c2883861",
+            "count": 1,
+            "first_sequence": 0,
+            "last_sequence": 0,
+            "sealed_at": "2026-08-13T10:00:00Z",
+            "previous": null
+          }
+        }
+      }
+    ],
+    "execution": {
+      "ref": "acme/w1/0",
+      "fingerprint": null,
+      "run_id": "r1"
+    },
+    "anchors": [
+      {
+        "anchor_id": "tron",
+        "network": "tron:nile",
+        "checkpoint": "sha256:cbe22f0de499b14382b0d6e54b13ef88da49dfd7b14d2dbb428db7f60458845d",
+        "state": "anchored",
+        "reference": "6010ded80e15b8005a14c5f13ef44aa36a11d9f0cde75c961ef5e11a49ea17b0",
+        "published_at": "2026-08-13T10:05:00Z"
+      }
+    ]
+  }
+}
