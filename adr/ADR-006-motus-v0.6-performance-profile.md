@@ -75,3 +75,8 @@ ceiling.
 Motus 0.6 may proceed only while this gate is green. The profile cannot be
 silently relaxed, substituted with a local machine, or compared as if it
 were the Axis workload. No PyPI publication is authorized by this ADR.
+**Amended by ADR-032 (accepted 2026-09-07), decision 1: `vitruvyan-motus`
+is published on PyPI from the tag of each release, by Trusted Publishing
+under the PyPI organisation `vitruvyan`. The gate described above is
+untouched and becomes a precondition of publication — a publication
+cannot pass a gate that failed.**

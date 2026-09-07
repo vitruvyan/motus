@@ -12,7 +12,9 @@ runtime identity does not match. Bumping without re-characterizing makes CI red
 for a reason unrelated to the code.
 
 **Never do any of this without explicit founder authorisation.** It creates
-public objects. Motus is not published to PyPI; do not.
+public objects. Since ADR-032, a release also publishes to PyPI as its
+last step — the same authorisation covers both; that is not a second
+thing to ask for.
 
 ## Order, and why it is this order
 
@@ -30,6 +32,16 @@ public objects. Motus is not published to PyPI; do not.
 5. **PR, green, merge** with a merge commit. Verify the reviewed SHA is an
    ancestor of `main` before tagging.
 6. **Annotated tag** on the verified merge SHA, then the GitHub Release.
+7. **Publish**, which fires on the **published** GitHub Release, not the
+   tag push — a version on the index whose note does not exist yet is a
+   version nobody can assess. Confirm three equalities before calling
+   the release finished: the workflow ran and succeeded; the version on
+   the index equals the tag; the SHA-256 on the index equals the SHA-256
+   in the release note. A publication that did not happen is a release
+   that is not finished. PyPI does not allow a version to be
+   re-uploaded — a wrong wheel is yanked and a new version released —
+   the same discipline step 5's "never make the gate pass by retrying"
+   already imposes, now with an external witness.
 
 ## What will go wrong, because it did
 
