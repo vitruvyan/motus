@@ -1,10 +1,11 @@
 """Executable gate for ``contract/guarantees.md`` section 3.
 
-The default mode validates the committed Axis reference evidence.  It
-recomputes every aggregate from the raw runs and checks that the published
-Markdown table tells the same story.  ``--candidate`` additionally enforces
-the target-plus-tolerance ceilings against a separately characterized Motus
-profile; it must not be used for an uncharacterized runner class.
+Always validates the committed Axis reference evidence: recomputes every
+aggregate from the raw runs and checks that the published Markdown table
+tells the same story.  ``--candidate`` (default ``DEFAULT_CANDIDATE``, the
+release's characterized profile) additionally enforces the target-plus-
+tolerance ceilings against a separately characterized Motus profile; it must
+not be pointed at an uncharacterized runner class.
 """
 
 from __future__ import annotations
@@ -411,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     parser.add_argument("--guarantees", type=Path, default=DEFAULT_GUARANTEES)
-    parser.add_argument("--candidate", type=Path)
+    parser.add_argument("--candidate", type=Path, default=DEFAULT_CANDIDATE)
     args = parser.parse_args(argv)
     try:
         results = run_gate(args.baseline, args.guarantees, args.candidate)
