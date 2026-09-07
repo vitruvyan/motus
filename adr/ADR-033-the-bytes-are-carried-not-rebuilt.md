@@ -1,8 +1,8 @@
 # ADR-033 — the bytes are carried, not rebuilt
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-07
-- **Accepted:** — (the founder accepts; the founder authorised this ADR on 2026-09-07)
+- **Accepted:** 2026-09-07, by the founder, all ten decisions. The four hypotheses are accepted as hypotheses: H1 and H2 are tested before the first publication, H3 and H4 are falsifiable by the first run of the machinery they describe, and each names what this ADR is amended to say if it fails.
 - **Authority:** CTO proposes; the founder accepts. ADR-032 decided *that* the open half ships on PyPI and left *how* to the workflow of PR #72. An adversarial round against that workflow on 2026-09-07 returned ten findings, three of which are unfixable inside the shape the workflow has. This ADR settles the shape. Nothing here reopens an ADR-032 decision.
 - **Depends on:** ADR-032 (all eight decisions stand), ADR-006 (the version string is coupled to committed evidence), ADR-012 (a release states its own cost, and the gate is relative), ADR-020 §7 (the runtime ships an interface and never an anchor).
 - **Amends:** **ADR-032 decision 2, its mechanism only** — *"the wheel and sdist that the release workflow uploads to PyPI are the same bytes attached to the GitHub Release"* is kept exactly, and decision 2 below says the one way it can be achieved, because the obvious way is measurably impossible. **ADR-032 decision 3, one clause added** — reservation by pending publisher is kept; decision 3 below adds that a publisher is matched on the *workflow filename*, which forces one publish workflow per distribution. **ADR-032 decision 4, made specific** — "the last step of the release act" acquires the two human steps it turns out to need. **ADR-032's hypothesis H1 is replaced** by H1 below: as written, H1 proposed to test the system by walking through the hole this ADR closes. No ADR-032 *decision* is amended, and decision 8 (public at first publication) is untouched.
