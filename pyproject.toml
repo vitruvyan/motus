@@ -45,6 +45,18 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+# ADR-033 decision 6: the PyPI project page renders this distribution's
+# METADATA and nothing else, and until this table existed it carried no way
+# back to the repository, the contract that is this runtime's authority
+# (ADR-001), or the licence under which any of it may be used. All three
+# resolve once the repository goes public at first publication (ADR-032
+# decision 8) — `contract/` and `LICENSE` are paths that exist in this tree
+# today, not ones invented for the page.
+[project.urls]
+Repository = "https://github.com/vitruvyan/motus"
+Contract = "https://github.com/vitruvyan/motus/tree/main/contract"
+License = "https://github.com/vitruvyan/motus/blob/main/LICENSE"
+
 [project.optional-dependencies]
 # The declared, pinned test environment (ADR-001 first-commit conditions):
 # "the suite passes" is meaningless until the environment is part of the

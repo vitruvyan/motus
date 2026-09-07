@@ -187,6 +187,157 @@ def test_wheel_metadata_is_accurate(built_wheel):
     assert "Synaptic Bus" not in metadata
 
 
+def _load_check_publishable_metadata():
+    """Load `tools/check_publishable_metadata.py` by path.
+
+    It is a repository tool, not a packaged module — `vitruvyan_motus` does
+    not import it and never will — so there is nothing to `import` it as
+    without pointing `importlib` at the file directly.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "check_publishable_metadata",
+        REPO_ROOT / "tools" / "check_publishable_metadata.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _wheel_with_rewritten_metadata(source_wheel: Path, dest_path: Path, rewrite) -> Path:
+    """Copy `source_wheel` to `dest_path`, replacing only its METADATA body.
+
+    Every other member — including the METADATA header block — is carried
+    over byte-for-byte. The point of the tests that use this is what ONE
+    sentence in the long description does to the verdict; a hand-built
+    wheel would also be testing whether the test itself built a valid wheel.
+    """
+    with zipfile.ZipFile(source_wheel) as source:
+        metadata_name = next(
+            n for n in source.namelist() if n.endswith(".dist-info/METADATA")
+        )
+        original = source.read(metadata_name).decode("utf-8")
+        header, separator, body = original.partition("\n\n")
+        assert separator, "METADATA has no blank line separating header from body"
+        rewritten = f"{header}{separator}{rewrite(body)}"
+
+        with zipfile.ZipFile(dest_path, "w") as dest:
+            for item in source.infolist():
+                content = source.read(item.filename)
+                if item.filename == metadata_name:
+                    content = rewritten.encode("utf-8")
+                dest.writestr(item, content)
+    return dest_path
+
+
+def test_the_built_wheel_declares_project_urls_for_repository_contract_and_license(
+    built_wheel,
+):
+    """ADR-033 decision 6, the `[project.urls]` half: before this change
+    `main` shipped METADATA with no `Project-URL:` header at all, so the
+    PyPI page of a product whose own claim is "verification is always open"
+    carried no way back to the repository, the contract, or the licence.
+    """
+    with zipfile.ZipFile(built_wheel) as archive:
+        metadata_name = next(
+            n for n in archive.namelist() if n.endswith(".dist-info/METADATA")
+        )
+        metadata = archive.read(metadata_name).decode("utf-8")
+
+    project_urls = [
+        line for line in metadata.splitlines() if line.startswith("Project-URL:")
+    ]
+    labels = {line.split(":", 1)[1].split(",", 1)[0].strip() for line in project_urls}
+    assert {"Repository", "Contract", "License"} <= labels, (
+        f"required Project-URL labels missing, found only: {project_urls}"
+    )
+
+
+def test_the_real_wheel_carries_exactly_the_claims_publication_has_yet_to_fix(
+    built_wheel,
+):
+    """The gate of ADR-033 decision 6, run against the wheel this repository
+    actually builds today -- not a synthetic stand-in.
+
+    It cannot assert that the wheel passes: ``README.md`` still carries the
+    sentences publication makes false, and correcting them is the commit the
+    release tag points at, not this one (ADR-033 decision 6 and its Amends
+    clause both say so).  A test left deliberately red would be a red on
+    ``main`` that everybody learns to ignore, which is worse than no test.
+
+    So it asserts the debt exactly instead: **these four claims and no
+    fifth.**  A new false sentence added to ``README.md`` fails this, and so
+    does fixing one -- which is the point, because the release commit that
+    corrects them must come here and say so in the same change rather than
+    leaving a stale count behind.
+    """
+    script = REPO_ROOT / "tools" / "check_publishable_metadata.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(built_wheel)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0, (
+        "the real wheel now passes the gate -- README.md has been corrected. "
+        "Update this test to assert the wheel is publishable, and delete the "
+        "expected-claims list below."
+    )
+
+    reported = {
+        line.split("source ", 1)[1].split(" ", 1)[0].rstrip(":")
+        for line in result.stdout.splitlines() + result.stderr.splitlines()
+        if "forbidden claim shipped in METADATA" in line and "source " in line
+    }
+    assert reported == {
+        "README.md:21",
+        "README.md:337",
+        "README.md:339-340",
+        "README.md:1097-1098",
+    }, (
+        "the set of claims the built wheel still ships has changed; if one was "
+        "fixed, fix this list in the same commit, and if one was added, that is "
+        f"a new false promise heading for the index. Got: {sorted(reported)}\n"
+        f"{result.stdout}{result.stderr}"
+    )
+
+
+def test_check_publishable_metadata_refuses_a_wheel_carrying_a_frozen_claim(
+    built_wheel, tmp_path
+):
+    """The refusal path, proved against a wheel built from the real one.
+
+    Rewriting only the METADATA body of a copy — never hand-building a
+    wheel from nothing — means everything else this gate could get wrong
+    (finding the `*.dist-info/`, decoding it, reading the header block)
+    runs through the same artifact as the passing case; only the one
+    sentence under test differs. The claim is read out of the script's own
+    FORBIDDEN_CLAIMS rather than retyped here, so this test stays true to
+    whatever the frozen list actually says, not to a copy of it.
+    """
+    gate = _load_check_publishable_metadata()
+    claim_source, claim_text = next(iter(gate.FORBIDDEN_CLAIMS.items()))
+
+    tainted = _wheel_with_rewritten_metadata(
+        built_wheel,
+        tmp_path / "tainted.whl",
+        rewrite=lambda body: body + "\n\n" + claim_text + "\n",
+    )
+
+    script = REPO_ROOT / "tools" / "check_publishable_metadata.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(tainted)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0, (
+        f"a wheel whose METADATA carries a frozen forbidden claim ({claim_source}) "
+        "must be refused, not accepted"
+    )
+    assert claim_text in result.stderr, result.stderr
+
+
 def test_installed_alone_motus_imports_and_axis_does_not(built_wheel, tmp_path):
     """The sharpest form of "axis is not in the wheel": install the wheel
     BY ITSELF, in a venv rooted outside this checkout, and try both
