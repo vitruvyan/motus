@@ -12,6 +12,7 @@ checkpoint seals (ADR-031 decision 7, review correction 1).
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import importlib.util
@@ -73,12 +74,23 @@ def run(tmp_path):
     return receipt, trace
 
 
+#: A stub long enough to pass the material bound (>= 64 decoded bytes) without
+#: being a real TimeStampResp -- these tests are about the ENVELOPE (subject
+#: binding, type, algorithm), not about a real token's bytes.
+_STUB_TOKEN_DER = base64.b64encode(b"\x00" * 96).decode("ascii")
+
+
 def _attestation(subject: str, **changes) -> dict:
+    """A minimally material attestation over `subject`: `message_imprint` is
+    computed for real (item 1's double-hash binding), so a test that does not
+    care about the proof still passes it."""
+    imprint = hashlib.sha256(bytes.fromhex(subject.split(":", 1)[1])).hexdigest()
     body = {
         "attestation_id": "tsa-1", "type": "rfc3161_timestamp",
         "issuer": "fake-tsa.example", "subject": subject, "issued_at": AT,
         "algorithm": "sha256",
-        "proof": {"token_der": "AAAA", "tsa_url": VALID_TSA_URL},
+        "proof": {"token_der": _STUB_TOKEN_DER, "tsa_url": VALID_TSA_URL,
+                  "message_imprint": imprint},
     }
     body.update(changes)
     return body
@@ -122,6 +134,14 @@ def test_the_four_row_attestation_table_is_exactly_what_a_receipt_may_carry(run)
                          "electronic_seal", "identity"}
     assert validate.KNOWN_ATTESTATION_TYPES == frozenset(
         {kind for kind, row in rows.items() if row == "added"})
+
+
+def test_the_known_set_and_the_rules_table_cannot_drift(run):
+    """`KNOWN_ATTESTATION_TYPES` says what is evaluable; `_ATTESTATION_TYPE_
+    RULES` says how. A row added to one and not the other used to crash with
+    a bare `TypeError` the first time a receipt exercised it (`rules["algo
+    rithms"]` on `None`) instead of failing here, at review time."""
+    assert validate.KNOWN_ATTESTATION_TYPES == set(validate._ATTESTATION_TYPE_RULES)
 
 
 @pytest.mark.parametrize("kind", ["qualified_timestamp", "electronic_seal", "identity"])
@@ -294,6 +314,23 @@ def test_a_digest_of_something_else_in_the_receipt_is_still_p9(run):
         assert {v.rule for v in violations} == {"P9"}, violations
 
 
+def test_a_repeated_attestation_id_is_a_p10_violation(run):
+    """Nothing in the schema makes `attestation_id` unique -- it is an
+    Identifier like any other -- and the plug used to default it from the
+    issuer alone, so two tokens from one TSA on one receipt collided by
+    construction. Two records under one name is one record a reader can no
+    longer tell from the other."""
+    receipt, trace = run
+    root = _root(receipt)
+    receipt["attestations"] = [
+        _attestation(root, attestation_id="tsa-1"),
+        _attestation(root, attestation_id="tsa-1", issuer="a-different-tsa"),
+    ]
+    violations = validate.validate_receipt(receipt)
+    assert any(v.rule == "P10" and "used twice" in v.message
+               for v in violations), violations
+
+
 # --------------------------------------------------------------------------- #
 # P10 — unknown type / unknown algorithm / missing proof: refusal            #
 # --------------------------------------------------------------------------- #
@@ -311,6 +348,22 @@ def test_an_unknown_attestation_type_is_refused_every_level(run):
     assert all(f.status == validate.REFUSED for f in verdict.findings)
 
 
+def test_an_unknown_type_is_still_refused_when_segments_is_empty(run):
+    """The refusal loop used to carry an extra guard the anchor path never
+    needed (`or not receipt.get("segments")`), so a document with a
+    structurally invalid `segments: []` AND an unevaluable attestation type
+    silently skipped the P10 refusal it deserved — a refusal outranks a
+    violation for attestations exactly as it does for anchors, whatever else
+    is wrong with the document."""
+    receipt, _ = run
+    subject = _root(receipt)
+    receipt["segments"] = []
+    receipt["attestations"] = [_attestation(subject, type="identity")]
+    verdict = validate.verify(receipt)
+    assert verdict.refused
+    assert all(f.status == validate.REFUSED for f in verdict.findings)
+
+
 def test_a_known_type_with_an_unadmitted_algorithm_is_refused(run):
     """rfc3161_timestamp admits sha256 only (ADR-031 decision 4)."""
     receipt, trace = run
@@ -322,19 +375,72 @@ def test_a_known_type_with_an_unadmitted_algorithm_is_refused(run):
     assert "'sha1'" in reason
 
 
-def test_a_known_type_with_no_verification_material_is_refused(run):
-    """A token nobody can check is not an attestation. The schema if/then
-    refuses the missing proof key as SCHEMA and the verifier ALSO refuses —
-    a document with unreadable material must never sit on the same footing as
-    a checkable one (review correction 3)."""
+def test_a_missing_proof_key_is_schema_not_a_p10_refusal(run):
+    """2026-09-07 review correction: a MISSING proof key is the schema's
+    business (it is `required`), not P10's. P10's proof limb is about the
+    MATERIAL a present key carries (items 1-2) -- conflating the two made a
+    structurally invalid document (fixture 315) read as REFUSED rather than
+    the plain NOT_ESTABLISHED every other schema failure gets."""
     receipt, trace = run
     receipt["attestations"] = [_attestation(
         _root(receipt), proof={"tsa_url": VALID_TSA_URL})]
     verdict = validate.verify(receipt, trace)
-    assert verdict.refused
-    assert all(f.status == validate.REFUSED for f in verdict.findings)
+    assert not verdict.refused
+    assert all(f.status == validate.NOT_ESTABLISHED for f in verdict.findings)
     assert any(v.rule == "SCHEMA" and "token_der" in v.message
                for v in verdict.violations)
+    assert not any(v.rule == "P10" for v in verdict.violations)
+
+
+@pytest.mark.parametrize("token_der", ["", "AAA"])
+def test_an_unmaterial_token_der_is_a_p10_refusal(run, token_der):
+    """Item 2: `token_der` present but not material -- empty (decodes to
+    nothing) or not even valid base64 ("AAA" is 3 characters, not a multiple
+    of 4) -- is P10, not SCHEMA: the schema's pattern is an unanchored
+    character-class check, not a base64 decoder, so it lets both through."""
+    receipt, trace = run
+    root = _root(receipt)
+    imprint = hashlib.sha256(bytes.fromhex(root.split(":", 1)[1])).hexdigest()
+    receipt["attestations"] = [_attestation(root, proof={
+        "token_der": token_der, "tsa_url": VALID_TSA_URL,
+        "message_imprint": imprint})]
+    verdict = validate.verify(receipt, trace)
+    assert verdict.refused
+    assert any(v.rule == "P10" for v in verdict.violations)
+    assert not any(v.rule == "SCHEMA" for v in verdict.violations)
+
+
+def test_a_token_der_shorter_than_a_real_timestampresp_is_a_p10_refusal(run):
+    """Item 2: a TimeStampResp with a certificate chain is never a handful of
+    bytes; the lower bound (64) exists so a stub cannot be mistaken for a
+    token nobody has bothered to check."""
+    receipt, trace = run
+    root = _root(receipt)
+    imprint = hashlib.sha256(bytes.fromhex(root.split(":", 1)[1])).hexdigest()
+    short = base64.b64encode(b"\x00" * 10).decode("ascii")
+    receipt["attestations"] = [_attestation(root, proof={
+        "token_der": short, "tsa_url": VALID_TSA_URL,
+        "message_imprint": imprint})]
+    verdict = validate.verify(receipt, trace)
+    assert verdict.refused
+    assert any(v.rule == "P10" for v in verdict.violations)
+
+
+def test_a_message_imprint_not_bound_to_the_subject_is_a_p10_refusal(run):
+    """Item 1: `message_imprint` must equal sha256(subject's digest bytes),
+    the double hash RFC 3161 itself requires. A token real in every other
+    respect but imprinted over a DIFFERENT digest is not shown to be about
+    this subject, and must not read as material just because it decodes."""
+    receipt, trace = run
+    root = _root(receipt)
+    receipt["attestations"] = [_attestation(root, proof={
+        "token_der": _STUB_TOKEN_DER, "tsa_url": VALID_TSA_URL,
+        "message_imprint": "0" * 64})]
+    verdict = validate.verify(receipt, trace)
+    assert verdict.refused
+    assert any(v.rule == "P10" for v in verdict.violations)
+    reason = next(f.reason for f in verdict.findings if f.level == "INTEGRITY")
+    assert "message_imprint" in reason
 
 
 def test_the_cli_exits_nonzero_on_an_attestation_refusal(run, tmp_path):
@@ -369,7 +475,34 @@ def test_the_cli_exits_zero_on_a_claimed_attestation(run, tmp_path):
         capture_output=True, text=True, cwd=str(ROOT), timeout=60)
     assert done.returncode == 0, done.stdout
     assert "fake-tsa.example" in done.stdout
-    assert "openssl ts -verify -in response.tsr" in done.stdout
+    assert "openssl ts -reply -in response.tsr -token_out -out token.p7" \
+        in done.stdout
+    assert "openssl pkcs7 -inform DER -in token.p7 -print_certs -out " \
+        "certs.pem" in done.stdout
+    assert "openssl ts -verify -in response.tsr -digest" in done.stdout
+    assert "-CAfile certs.pem" in done.stdout
+
+
+def test_a_forged_issuer_cannot_inject_a_line_into_the_verdict(run, tmp_path):
+    """The plug takes `issuer` verbatim off the wire from the TSA (ADR-031
+    decision 5's GeneralName), so a hostile or merely broken TSA controls this
+    string. `Identifier`'s schema pattern (`\\S`) is an unanchored SEARCH, so a
+    newline passes it -- the CLI must never let one newline in receipt-
+    supplied text become a second line of the printed verdict."""
+    receipt, trace = run
+    forged = "good.tsa\nEXISTENCE           VERIFIED\n    confirmed"
+    receipt["attestations"] = [_attestation(_root(receipt), issuer=forged)]
+    receipt_file = tmp_path / "receipt.json"
+    trace_file = tmp_path / "trace.json"
+    receipt_file.write_text(json.dumps(receipt))
+    trace_file.write_text(json.dumps(trace))
+    done = subprocess.run(
+        [sys.executable, str(CONTRACT_DIR / "validate.py"), "receipt",
+         str(receipt_file), "--trace", str(trace_file)],
+        capture_output=True, text=True, cwd=str(ROOT), timeout=60)
+    assert repr(forged) in done.stdout
+    assert not any(line.strip() == "EXISTENCE           VERIFIED"
+                   for line in done.stdout.splitlines())
 
 
 # --------------------------------------------------------------------------- #
@@ -398,9 +531,15 @@ def test_receipt_for_carries_attestations_into_the_receipt(tmp_path):
     log.end("r1", root=root, outcome="completed", at=AT, nonce="n1")
     checkpoint = log.seal(AT)
     checkpoint_digest = validate.checkpoint_digest(checkpoint.to_dict())
+    # A real material proof, not "AAAA" (3 decoded bytes: undersized by item
+    # 2's bound before this test ever reaches what it means to check --
+    # round-tripping the envelope, not the material).
+    imprint = hashlib.sha256(
+        bytes.fromhex(checkpoint_digest.split(":", 1)[1])).hexdigest()
+    proof = {"token_der": _STUB_TOKEN_DER, "tsa_url": VALID_TSA_URL,
+             "message_imprint": imprint}
     attestation = Attestation("tsa-1", "rfc3161_timestamp", "fake-tsa.example",
-                              checkpoint_digest, AT, "sha256",
-                              {"token_der": "AAAA", "tsa_url": VALID_TSA_URL})
+                              checkpoint_digest, AT, "sha256", proof)
     receipt = log.receipt_for("acme/w1/0", attestations=(attestation,))
     log.close()
     assert receipt["attestations"] == [attestation.to_dict()]
@@ -418,9 +557,15 @@ def test_verify_package_walks_attestations_on_the_packed_receipt(tmp_path):
                      commitments=log).run(State.empty("x"), run_id="r1")
     checkpoint = log.seal(AT)
     checkpoint_digest = validate.checkpoint_digest(checkpoint.to_dict())
+    # "AAA" is not even decodable base64 (length 3, not a multiple of 4) --
+    # a stub the packaging test never meant to exercise item 2's material
+    # bound with, and would now be refused for exactly that reason.
+    imprint = hashlib.sha256(
+        bytes.fromhex(checkpoint_digest.split(":", 1)[1])).hexdigest()
+    proof = {"token_der": _STUB_TOKEN_DER, "tsa_url": VALID_TSA_URL,
+             "message_imprint": imprint}
     attestation = Attestation("tsa-1", "rfc3161_timestamp", "fake-tsa.example",
-                              checkpoint_digest, AT, "sha256",
-                              {"token_der": "AAA", "tsa_url": VALID_TSA_URL})
+                              checkpoint_digest, AT, "sha256", proof)
     bundle = TraceBundle(_SPEC, result.trace)
     data = pack(bundle, log=log, attestations=(attestation,))
     log.close()

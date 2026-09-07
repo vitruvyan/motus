@@ -19,19 +19,35 @@ receipt = log.receipt_for("acme/w1/0", attestations=(attestation,))
 with a **bounded DER walker that has no dependency** (ADR-031 hypothesis H1):
 `genTime` — the moment the TSA says it issued — and the TSA's GeneralName,
 which becomes the receipt's `issuer`. The walker refuses hostile paths with a
-named `TokenError`: truncation, indefinite or oversized lengths, nesting
-beyond a bound, a wrong OID, and a token whose imprint is not the digest we
-sent. No `pyasn1`, no `cryptography`.
+named `TokenError`: truncation, indefinite or oversized lengths, a wrong OID,
+a token whose imprint is not the digest we sent, and a response that does not
+echo the nonce this request sent (RFC 3161 §2.4.2 — otherwise a replayed
+token would answer a query it was never issued for). `_fetch` follows no
+redirect (a TSA is not who a redirect sends you to) and turns an HTTP error
+or a timeout into the same named `TokenError`, never a bare exception from
+`urllib`. No `pyasn1`, no `cryptography`.
 
 ## It is a claim, and the receipt says so
 
 The contract validator reports an attestation as **CLAIMED**, with the issuer
 named, and never verifies the CMS signature — it holds no TSA key, same
-posture as an anchor, same reason. What makes the claim independently
-settleable is that `proof.token_der` carries the COMPLETE TimeStampResp:
-base64-decode it to `response.tsr` and run
+posture as an anchor, same reason. It DOES check the structural binding:
+`proof.message_imprint` must equal `sha256(subject's digest bytes)` — the
+double hash RFC 3161 itself requires, because `subject` is already a digest
+and the TSA's imprint is a hash of the thing being stamped. What makes the
+claim independently settleable is that `proof.token_der` carries the
+COMPLETE TimeStampResp: base64-decode it to `response.tsr` and run
 
-    openssl ts -verify -in response.tsr
+    openssl ts -reply -in response.tsr -token_out -out token.p7
+    openssl pkcs7 -inform DER -in token.p7 -print_certs -out certs.pem
+    openssl ts -verify -in response.tsr -digest <message_imprint> -CAfile certs.pem
+
+(`-CAfile` and `-digest` are both required: `openssl ts -verify` needs the
+certificate chain to check the signature against and, since nobody here
+still holds the original data, the digest it was computed over — the
+certificates travel inside `response.tsr` itself, extracted by the first two
+commands, and `<message_imprint>` is `proof.message_imprint` from the
+receipt.)
 
 ## Install
 

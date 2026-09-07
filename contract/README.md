@@ -73,7 +73,7 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P7` | An `execution.ref` that is malformed, or names a `(tenant, writer_id, sequence)` other than the receipt's original BEGIN |
 | `P8` | A completed receipt whose `execution.fingerprint` disagrees with the root derived from the paired trace. An unfinished receipt has no END and legitimately carries `null`. |
 | `P9` | An attestation whose `subject` is not a checkpoint digest or the run root of this receipt. An assertion about a digest that is not here says nothing about this run |
-| `P10` | An attestation outside the known type set, an algorithm its type does not admit (`rfc3161_timestamp` admits `sha256`), or a `proof` lacking the material its type requires. A violation AND a refusal — *unreadable cryptography must never sit on the same footing as checked cryptography* |
+| `P10` | An attestation outside the known type set, an algorithm its type does not admit (`rfc3161_timestamp` admits `sha256`), or a `proof` whose MATERIAL this validator will not trust — `token_der` that does not decode as base64 or decodes too short or too long, or a `message_imprint` that is not `sha256(subject)`. A violation AND a refusal — *unreadable cryptography must never sit on the same footing as checked cryptography*. A `proof` MISSING a required key is SCHEMA, not P10 — the schema already requires it, and P10's proof limb is about what a present key contains, never about its absence |
 
 ### What the verifier will not tell you
 
@@ -90,8 +90,16 @@ point of the tool rather than limitations of it:
 - **an attestation is a CLAIM, and a claim about whatever its `subject`
   covers — never more.** The contract validator holds no TSA key and checks
   no CMS signature, so an `rfc3161_timestamp` attestation is reported with
-  the issuer named and the incantation that would settle it (`openssl ts
-  -verify -in response.tsr` over `proof.token_der`), never as established.
+  the issuer named and the incantation that would settle it. It DOES check
+  the structural binding: `proof.message_imprint` must equal
+  `sha256(subject's digest bytes)` — the double hash RFC 3161 itself
+  requires, because `subject` is already a digest and the imprint the TSA
+  actually signed is a hash of the thing being stamped. To settle the claim
+  itself, base64-decode `proof.token_der` to `response.tsr` and run
+  `openssl ts -reply -in response.tsr -token_out -out token.p7`, then
+  `openssl pkcs7 -inform DER -in token.p7 -print_certs -out certs.pem`, then
+  `openssl ts -verify -in response.tsr -digest <message_imprint> -CAfile
+  certs.pem` — never as established here.
   ADR-031 decision 7: for a completed receipt, EXISTENCE *of the execution*
   is reported only when `subject` is the run root or a checkpoint whose
   sealed range includes the END; a token over the BEGIN's checkpoint alone

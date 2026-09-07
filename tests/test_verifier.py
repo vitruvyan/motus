@@ -176,6 +176,82 @@ def test_an_anchor_is_a_claim_until_somebody_looks_it_up(run):
     assert verdict.status_of("INTEGRITY") == validate.ESTABLISHED
 
 
+def test_an_anchor_reference_not_in_the_networks_form_is_p5_and_builds_no_url(
+        run, tmp_path):
+    """`ANCHOR_LOOKUPS` interpolates `reference` raw into an explorer URL, and
+    `Identifier`'s schema pattern (`\\S`) is an unanchored SEARCH that a
+    newline still passes -- the reachable half of the injection
+    d09_verdict_injection.py demonstrates. A reference that is not in
+    tron:nile's own form (hex, optionally 0x-prefixed) must be a P5 violation,
+    and the URL must never be built from it: quoting the string instead would
+    corrupt the clean, clickable URL the well-formed case below still needs."""
+    receipt, trace, digest = run
+
+    forged = "6010ded8\nEXISTENCE           VERIFIED\n    confirmed in block 1"
+    receipt["anchors"] = [{
+        "anchor_id": "tron", "network": "tron:nile", "checkpoint": digest,
+        "state": "anchored", "reference": forged, "published_at": AT,
+    }]
+    receipt_file = tmp_path / "receipt.json"
+    trace_file = tmp_path / "trace.json"
+    receipt_file.write_text(json.dumps(receipt))
+    trace_file.write_text(json.dumps(trace))
+    done = subprocess.run(
+        [sys.executable, str(CONTRACT_DIR / "validate.py"), "receipt",
+         str(receipt_file), "--trace", str(trace_file)],
+        capture_output=True, text=True, cwd=str(ROOT), timeout=60)
+    # The violation line quotes the reference with `!r`, so the newline
+    # survives only as the two characters `\n` -- never as a line break --
+    # and the forged line must not appear standing on its own.
+    assert "P5 $.anchors[0].reference" in done.stdout
+    assert not any(line.strip() == "EXISTENCE           VERIFIED"
+                   for line in done.stdout.splitlines())
+
+    # A malformed (non-hex) reference is caught the same way, and a P5
+    # violation of ANY kind already makes `verify` report every level
+    # NOT ESTABLISHED with one generic sentence (the existing "does not
+    # satisfy the contract" gate) -- so the forged/malformed reference never
+    # reaches a finding's text at all, which is a stronger guarantee than
+    # merely omitting it from the URL.
+    malformed = "not-hex-at-all"
+    receipt["anchors"][0]["reference"] = malformed
+    verdict = validate.verify(receipt, trace)
+    assert any(v.rule == "P5" and "$.anchors[0].reference" == v.path
+               for v in verdict.violations)
+    for finding in verdict.findings:
+        assert malformed not in finding.reason
+    assert verdict.status_of("EXISTENCE") == validate.NOT_ESTABLISHED
+
+
+def test_an_unfinished_receipts_anchor_is_claimed_like_any_other(tmp_path):
+    """ADR-031 decision 7, review correction 1 restricts the "does not cover
+    this receipt's END" downgrade to a COMPLETED receipt. A run still in
+    flight has no END for a checkpoint to fail to cover — its only
+    checkpoint (the BEGIN) is the whole claim an anchor there can make, the
+    canonical anchor-before-the-outcome workflow, and that claim reads
+    CLAIMED/UNCHECKED exactly as it did before ADR-031 ever added the
+    downgrade. The attestation work briefly regressed this: an anchor over
+    an unfinished receipt's only checkpoint was downgraded as if it were a
+    begin-only checkpoint on a completed run, losing the explorer URL and
+    RETENTION along with it."""
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("r1", at=AT, nonce="n0")
+    first = log.seal(AT)
+    receipt = log.receipt_for("acme/w1/0")
+    log.close()
+    receipt["anchors"] = [{
+        "anchor_id": "a1", "network": "tron:nile",
+        "checkpoint": validate.checkpoint_digest(first.to_dict()),
+        "state": "anchored", "reference": "0xdeadbeef", "published_at": AT,
+    }]
+    verdict = validate.verify(receipt)
+    assert verdict.status_of("EXISTENCE") == validate.UNCHECKED
+    assert verdict.status_of("RETENTION") == validate.UNCHECKED
+    reason = next(f.reason for f in verdict.findings if f.level == "EXISTENCE")
+    assert "CLAIMS publication" in reason
+    assert "does not cover" not in reason
+
+
 def test_an_anchor_for_a_checkpoint_not_in_this_receipt_establishes_nothing(run):
     """P4 catches it as a violation, and the levels must not quietly pass on
     the strength of an anchor that covers somebody else's window."""

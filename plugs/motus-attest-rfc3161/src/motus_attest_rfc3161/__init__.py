@@ -13,11 +13,16 @@ carries the COMPLETE TimeStampResp so a reader can, with `openssl ts -verify
 -in response.tsr`.
 
 The walker is the part an adversarial round will attack, so every refusal is
-a named `TokenError` and every bound — nesting depth, length arithmetic,
-total response size — is stated once below. No pyasn1, no cryptography: if
-this file ever needs either, hypothesis H1 is falsified and the fallback of
-ADR-031 decision H1 applies (token opaque, `issued_at` from the HTTP
-exchange).
+a named `TokenError` and every bound — length arithmetic, total response
+size, the position `_tlv` is called from — is stated once below. `_MAX_DEPTH`
+is a real bound on `_tlv`'s own `depth` parameter, but every call site passes
+a literal matching the TimeStampResp shape this walker expects (never the
+attacker's own nesting), so garbage nested deeper than that shape is refused
+by an ordinary mismatch first — the bound is correct and untested by any
+input that would need it, which is recorded rather than hidden (see
+`_tlv`'s docstring). No pyasn1, no cryptography: if this file ever needs
+either, hypothesis H1 is falsified and the fallback of ADR-031 decision H1
+applies (token opaque, `issued_at` from the HTTP exchange).
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import base64
 import hashlib
 import os
 import re
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -40,8 +46,14 @@ ATTESTATION_TYPE = "rfc3161_timestamp"
 
 # Bounds that make the walker and the HTTP read total, whatever a responder
 # sends. A genuine TimeStampResp with its certificate chain is a few tens of
-# KiB; the bounds sit orders of magnitude above that and refuse anything that
-# would take unbounded memory or time to walk.
+# KiB; `_MAX_RESPONSE_BYTES` sits orders of magnitude above that and refuses
+# anything that would take unbounded memory or time to walk. `_MAX_DEPTH` is
+# NOT that kind of bound: `depth` is a schema POSITION passed at each call
+# site (how deep this fixed shape's fields nest), never a counter that grows
+# with an attacker's nesting -- nothing here recurses on the caller's data, so
+# nothing here can walk deeper than the shape already calls for. It is
+# checked because it is cheap and correct, not because reachability was
+# proven; see `_tlv`'s docstring.
 _MAX_DEPTH = 32
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
@@ -54,15 +66,26 @@ _OID_CN = bytes.fromhex("550403")                          # 2.5.4.3
 # GeneralName CHOICE tags whose VALUE is an IA5String name (RFC 5280 4.2.1.6).
 _IA5_NAME_TAGS = frozenset({0x81, 0x82, 0x86})   # rfc822Name, dNSName, URI
 
-# ASN.1 TIME forms the walker turns into an instant: UTCTime (YYMMDDHHMMSS)
-# or GeneralizedTime (YYYYMMDDHHMMSS), optional fraction, then Z, ±HHMM, or
-# nothing. RFC 3161 2.4.4 requires UTC, so the no-zone form is refused rather
-# than located by guesswork.
-_TIME_RE = re.compile(
-    rb"^(?P<year>\d{2}|\d{4})(?P<mon>\d{2})(?P<day>\d{2})"
+# ASN.1 TIME forms the walker turns into an instant. The TAG selects the
+# grammar, not the digit count found by trying to match either: UTCTime is
+# EXACTLY YYMMDDHHMMSS (12 digits, no fraction — X.690 defines fractional
+# seconds for GeneralizedTime only) and GeneralizedTime is EXACTLY
+# YYYYMMDDHHMMSS (14 digits), each followed by an optional fraction and then
+# Z or a ±HHMM offset — never bare, since RFC 3161 2.4.4 requires UTC and a
+# missing zone is refused rather than assumed. A 14-digit value under a
+# UTCTime tag or a 12-digit value under a GeneralizedTime tag is refused
+# rather than read as if the other tag had been sent: the tag is not a hint,
+# it is what the sender committed to.
+_UTCTIME_RE = re.compile(
+    rb"^(?P<year>\d{2})(?P<mon>\d{2})(?P<day>\d{2})"
     rb"(?P<hour>\d{2})(?P<min>\d{2})(?P<sec>\d{2})"
-    rb"(?:\.(?P<frac>\d{1,6}))? *"
-    rb"(?P<zone>Z|[+-]\d{4})?$"
+    rb"(?P<zone>Z|[+-]\d{4})$"
+)
+_GENTIME_RE = re.compile(
+    rb"^(?P<year>\d{4})(?P<mon>\d{2})(?P<day>\d{2})"
+    rb"(?P<hour>\d{2})(?P<min>\d{2})(?P<sec>\d{2})"
+    rb"(?:\.(?P<frac>\d{1,6}))?"
+    rb"(?P<zone>Z|[+-]\d{4})$"
 )
 
 _GRANTED_STATUSES = (0, 1)  # PKIStatus: granted, grantedWithMods
@@ -70,6 +93,27 @@ _GRANTED_STATUSES = (0, 1)  # PKIStatus: granted, grantedWithMods
 
 class TokenError(ValueError):
     """The TSA answered something this walker refuses to name."""
+
+
+class _Redirected(Exception):
+    """Raised inside `urllib`'s handler chain; caught and renamed in `_fetch`."""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuses every redirect rather than following it (item 12).
+
+    `proof.tsa_url` is the record of who answered; a redirect would let a
+    DIFFERENT host answer in the configured TSA's name, silently. Overriding
+    both `http_error_302` (302/303/307 dispatch here) and `http_error_301`
+    covers every redirect status urllib recognises without needing to know
+    which one a given server sends.
+    """
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        raise _Redirected(f"HTTP {code} to {headers.get('Location')!r}")
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = \
+        http_error_302
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +126,17 @@ def _tlv(data: bytes, pos: int, limit: int, depth: int) -> tuple[int, int, int]:
 
     Refuses every shape a DER walker must not guess at: truncation, an
     indefinite length (not DER), a length that overruns the input, leading
-    zeroes in a long-form length, and nesting beyond ``_MAX_DEPTH``.
+    zeroes in a long-form length, and a ``depth`` beyond ``_MAX_DEPTH``.
+
+    ``depth`` is a POSITION in the fixed TimeStampResp shape this walker
+    expects (TimeStampResp/ContentInfo/SignedData/.../TSTInfo), passed as a
+    literal by every call site in `_parse_timestamp_resp` -- never a counter
+    this function increments on the caller's own nesting. A document wrapped
+    in far more SEQUENCEs than that shape has is refused by an ordinary
+    "wrong tag at this position" mismatch, at a depth this walker's own call
+    sites reach anyway, before ``_MAX_DEPTH`` is the reason. The check is
+    correct and cheap to keep; it has not been shown reachable by any input
+    that needs it.
     """
     if pos + 2 > limit:
         raise TokenError("truncated tag or length")
@@ -136,30 +190,64 @@ def _integer(data: bytes, element: tuple, what: str) -> int:
     return int.from_bytes(raw, "big")
 
 
+def _safe_int_repr(value: int) -> str:
+    """``str(value)``, unless the value is attacker-sized.
+
+    CPython 3.11+ caps int-to-str conversion at 4300 digits by default, and a
+    responder can send a ~1.8 KB INTEGER well inside `_MAX_RESPONSE_BYTES`
+    that trips it: an f-string formatting `value` would then raise a bare
+    `ValueError` from the middle of building a `TokenError`'s OWN message,
+    escaping this module's promise that every refusal is a named TokenError.
+    Comparing against a fixed bound and reporting a byte count instead never
+    touches CPython's digit-count limit at all.
+    """
+    if -(10 ** 20) < value < 10 ** 20:
+        return str(value)
+    return f"an INTEGER of {(value.bit_length() + 7) // 8} bytes"
+
+
 def _asn1_time(tag: int, raw: bytes) -> str:
     """A contract Timestamp string from a UTCTime/GeneralizedTime value.
 
-    Z and ±HHMM zones are accepted (offsets converted to UTC), a missing
-    zone is refused, and fractional seconds survive trimmed to microseconds.
+    The TAG picks the grammar (see `_UTCTIME_RE`/`_GENTIME_RE` above); a value
+    with the wrong digit count for its tag is refused, never read under the
+    other tag's rule. Z and ±HHMM zones are accepted (offsets converted to
+    UTC), a missing zone is refused, and a GeneralizedTime fraction survives
+    trimmed to microseconds — UNLESS it is not DER to begin with: X.690
+    §11.7.4 forbids a fraction that is all zeros or carries a trailing zero
+    (both cases are exactly "ends in the digit 0"), so ".0", ".00" and ".500"
+    are refused rather than rendered as a timestamp with an empty or
+    misleading fraction.
     """
-    if tag not in (0x17, 0x18):
+    if tag == 0x17:
+        match = _UTCTIME_RE.fullmatch(raw)
+        if match is None:
+            raise TokenError(f"malformed UTCTime {raw!r}")
+        year = int(match.group("year"))
+        year = (1900 if year >= 50 else 2000) + year  # RFC 5280 pivot
+        frac = None
+    elif tag == 0x18:
+        match = _GENTIME_RE.fullmatch(raw)
+        if match is None:
+            raise TokenError(f"malformed GeneralizedTime {raw!r}")
+        year = int(match.group("year"))
+        frac = match.group("frac")
+        if frac is not None and frac.endswith(b"0"):
+            raise TokenError(
+                f"fractional seconds {raw!r} are all zero or carry a "
+                "trailing zero, which X.690 §11.7.4 makes not DER")
+    else:
         raise TokenError(f"tag {tag:#x} is not a time")
-    match = _TIME_RE.fullmatch(raw)
-    if match is None:
-        raise TokenError(f"malformed ASN.1 time {raw!r}")
-    year = match.group("year")
-    if len(year) == 2:  # UTCTime: 50..99 -> 19xx, 00..49 -> 20xx (RFC 5280)
-        year = ("19" if int(year) >= 50 else "20") + year.decode("ascii")
     parts = (int(match.group(g)) for g in
              ("mon", "day", "hour", "min", "sec"))
     try:
-        moment = datetime(int(year), *parts, tzinfo=timezone.utc)
+        moment = datetime(year, *parts, tzinfo=timezone.utc)
     except ValueError as exc:
         raise TokenError(f"impossible ASN.1 time {raw!r}: {exc}") from exc
-    zone = match.group("zone") or b""
+    zone = match.group("zone")
     if zone == b"Z":
         pass
-    elif zone:
+    else:
         hours, minutes = int(zone[1:3]), int(zone[3:5])
         if hours > 23 or minutes > 59:
             raise TokenError(f"impossible zone {zone!r}")
@@ -167,10 +255,6 @@ def _asn1_time(tag: int, raw: bytes) -> str:
         if zone[:1] == b"-":
             offset = -offset
         moment = (moment - offset).replace(tzinfo=timezone.utc)
-    else:
-        raise TokenError(f"ASN.1 time {raw!r} carries no zone; RFC 3161 "
-                         "requires UTC")
-    frac = match.group("frac")
     if frac is None:
         return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
     micros = int(frac.decode("ascii")) * 10 ** (6 - len(frac))
@@ -209,13 +293,30 @@ def _directory_cn(data: bytes, start: int, end: int, depth: int) -> str | None:
     return None
 
 
+def _tst_nonce(data: bytes, tst: list) -> int | None:
+    """The `nonce` INTEGER from TSTInfo's optional tail, or ``None``.
+
+    RFC 3161's `nonce` carries no context tag of its own — `accuracy` is a
+    SEQUENCE, `ordering` a BOOLEAN, `tsa` and `extensions` are `[0]`/`[1]` —
+    so it is the one element there tagged as a universal INTEGER (0x02), and
+    that tag cannot belong to any other optional TSTInfo field.
+    """
+    for element in tst[5:]:
+        if element[1] == 0x02:
+            return _integer(data, element, "the nonce")
+    return None
+
+
 def _tsa_name(data: bytes, tst: list, depth: int) -> str | None:
     """The TSA GeneralName from TSTInfo's optional `tsa [0]`, or None.
 
     UniformResourceIdentifier / dNSName / rfc822Name are taken verbatim;
     directoryName yields its commonName. A name nobody can look up is worth
     nothing, so any other CHOICE form returns None and the Attester falls
-    back to the URL it talked to.
+    back to the URL it talked to — and so does a name containing a control
+    character or otherwise not printable: a TSA is not required to send a
+    sane name, and `issuer` is printed straight into the verdict (`!r`
+    quotes it, but a name a reader cannot even read is not a name).
     """
     for element in tst[5:]:
         if element[1] != 0xA0:                  # tsa [0] EXPLICIT
@@ -225,25 +326,36 @@ def _tsa_name(data: bytes, tst: list, depth: int) -> str | None:
             raise TokenError("the tsa field is one GeneralName")
         _, raw, primitive, s, e = named[0]
         if raw in _IA5_NAME_TAGS and primitive:
-            return data[s:e].decode("ascii", "replace")
-        if raw == 0xA4:                         # directoryName
-            return _directory_cn(data, s, e, depth + 1)
-        return None
+            name = data[s:e].decode("ascii", "replace")
+        elif raw == 0xA4:                       # directoryName
+            name = _directory_cn(data, s, e, depth + 1)
+        else:
+            return None
+        return name if name is not None and name.isprintable() else None
     return None
 
 
-def _parse_timestamp_resp(data: bytes, imprint: bytes) -> tuple[str, str | None]:
+def _parse_timestamp_resp(data: bytes, imprint: bytes,
+                          nonce: bytes) -> tuple[str, str | None]:
     """``(genTime, TSA name)`` from a TimeStampResp, walking it bounded.
 
     The walk peels the explicit wrappers a real TSA emits — TimeStampResp,
     ContentInfo, SignedData, encapContentInfo, TSTInfo — checking each OID
-    and the status, and verifies the BINDING: the token's MessageImprint must
-    be the SHA-256 of precisely the bytes we asked to have stamped.
+    and the status, and verifies TWO bindings: the token's MessageImprint
+    must be the SHA-256 of precisely the bytes we asked to have stamped, and
+    (RFC 3161 §2.4.2) its `nonce` must be the one THIS request sent — without
+    it a token issued for any earlier query answers this one too, which is a
+    replay wearing the shape of a fresh timestamp.
     """
-    top = _children(data, 0, len(data), 0)
-    if len(top) != 1 or top[0][1] != 0x30:
+    # "Exactly one top-level TLV" must not mean "walk every top-level TLV and
+    # count them": a response that is nothing but two-byte TLVs would make
+    # `_children` build one tuple per pair before anyone asked how many there
+    # were. Parsing the FIRST TLV and demanding it span the whole buffer
+    # answers the same question in one call, whatever comes after byte 2.
+    tag, content_start, content_end = _tlv(data, 0, len(data), 0)
+    if tag != 0x30 or content_end != len(data):
         raise TokenError("a TimeStampResp is one SEQUENCE")
-    root = _children(data, top[0][3], top[0][4], 1)
+    root = _children(data, content_start, content_end, 1)
     if not root:
         raise TokenError("the response has no status")
     status_seq = _children(data, root[0][3], root[0][4], 2)
@@ -251,7 +363,8 @@ def _parse_timestamp_resp(data: bytes, imprint: bytes) -> tuple[str, str | None]
         raise TokenError("the status is empty")
     status = _integer(data, status_seq[0], "the PKIStatus")
     if status not in _GRANTED_STATUSES:
-        raise TokenError(f"the TSA refused this query (PKIStatus {status})")
+        raise TokenError("the TSA refused this query (PKIStatus "
+                          f"{_safe_int_repr(status)})")
     if len(root) < 2:
         raise TokenError("a granted response carries no token")
 
@@ -301,6 +414,19 @@ def _parse_timestamp_resp(data: bytes, imprint: bytes) -> tuple[str, str | None]
     if imprint_seq[1][1] != 0x04 or data[imprint_seq[1][3]:imprint_seq[1][4]] != imprint:
         raise TokenError("the token's imprint is not the digest we sent")
 
+    got_nonce = _tst_nonce(data, tst)
+    sent_nonce = int.from_bytes(nonce, "big")
+    if got_nonce is None:
+        raise TokenError("the response carries no nonce; RFC 3161 2.4.2 "
+                          "requires the one this request sent to be echoed "
+                          "back, and a response that omits it cannot be "
+                          "told apart from a replay")
+    if got_nonce != sent_nonce:
+        raise TokenError(
+            "the response's nonce does not match the one this request "
+            "sent; RFC 3161 2.4.2 exists so a token issued for a different "
+            "query cannot answer this one")
+
     return gen_time, _tsa_name(data, tst, 5)
 
 
@@ -328,8 +454,15 @@ def build_timestamp_request(subject: bytes, nonce: bytes) -> bytes:
     """
     if len(subject) != 32:
         raise ValueError("the imprinted subject must be a 32-byte digest value")
-    if not 0 < len(nonce) <= 8 or nonce[0] == 0:
-        raise ValueError("a nonce is 1..8 bytes with a non-zero first byte")
+    if not 0 < len(nonce) <= 8 or nonce[0] == 0 or nonce[0] & 0x80:
+        # A first byte with the high bit set would encode as a NEGATIVE DER
+        # INTEGER once `_der(0x02, nonce)` writes it out unpadded (two's
+        # complement, no leading 0x00) -- exactly the bound `_fresh_nonce()`
+        # already keeps, made explicit here so a caller cannot bypass it by
+        # constructing the bytes itself.
+        raise ValueError(
+            "a nonce is 1..8 bytes with a non-zero first byte whose high "
+            "bit is clear")
     imprint = hashlib.sha256(subject).digest()
     message_imprint = _sequence(
         _sequence(_der(0x06, _OID_SHA256), _der(0x05, b"")),
@@ -396,7 +529,15 @@ class Rfc3161Attester:
 
     @staticmethod
     def _urlopen(request: Any, timeout: float) -> Any:
-        return urllib.request.urlopen(request, timeout=timeout)
+        # `proof.tsa_url` is a claim about WHO answered (ADR-031 decision 5,
+        # "independence is a reader's judgement from `issuer`"); a redirect
+        # lets some other host answer in the configured TSA's name, so this
+        # opener refuses to follow one rather than silently trusting it
+        # (item 12). Subclassing `HTTPRedirectHandler` and overriding both
+        # methods it dispatches through (perm/temp) makes `build_opener`
+        # replace urllib's default handler instead of adding a second one.
+        opener = urllib.request.build_opener(_NoRedirect())
+        return opener.open(request, timeout=timeout)
 
     def _fetch(self, request: bytes) -> bytes:
         query = urllib.request.Request(
@@ -404,8 +545,20 @@ class Rfc3161Attester:
             headers={"Content-Type": "application/timestamp-query",
                      "Accept": "application/timestamp-reply"},
             method="POST")
-        with self._opener(query, timeout=self._timeout) as response:
-            reply = response.read(_MAX_RESPONSE_BYTES + 1)
+        try:
+            with self._opener(query, timeout=self._timeout) as response:
+                reply = response.read(_MAX_RESPONSE_BYTES + 1)
+        except _Redirected as exc:
+            raise TokenError(
+                f"the TSA redirected ({exc}) rather than answering; "
+                "proof.tsa_url must be who actually answered") from exc
+        except urllib.error.URLError as exc:
+            # Covers HTTPError (a URLError subclass, non-2xx statuses) and a
+            # connection-level failure alike -- both are "this TSA did not
+            # answer", never a shape this walker should try to parse.
+            raise TokenError(f"the TSA request failed: {exc}") from exc
+        except TimeoutError as exc:
+            raise TokenError(f"the TSA did not answer in time: {exc}") from exc
         if len(reply) > _MAX_RESPONSE_BYTES:
             raise TokenError("the TSA response exceeds the size bound")
         return bytes(reply)
@@ -419,21 +572,34 @@ class Rfc3161Attester:
         genTime — the TSA's word about when, never this machine's clock.
         """
         raw = _digest_bytes(subject)
-        request = build_timestamp_request(raw, _fresh_nonce())
+        imprint = hashlib.sha256(raw).digest()
+        nonce = _fresh_nonce()
+        request = build_timestamp_request(raw, nonce)
         reply = self._fetch(request)
-        issued_at, tsa_name = _parse_timestamp_resp(reply, hashlib.sha256(raw).digest())
+        issued_at, tsa_name = _parse_timestamp_resp(reply, imprint, nonce)
 
         from vitruvyan_motus.commitments import Attestation
         issuer = tsa_name or self.tsa_url
-        return Attestation(
-            attestation_id=self._attestation_id or f"rfc3161:{issuer}",
-            type=ATTESTATION_TYPE,
-            issuer=issuer,
-            subject="sha256:" + raw.hex(),
-            issued_at=issued_at,
-            algorithm="sha256",
-            proof={
-                "token_der": base64.b64encode(reply).decode("ascii"),
-                "tsa_url": self.tsa_url,
-            },
-        )
+        try:
+            return Attestation(
+                attestation_id=self._attestation_id
+                or f"rfc3161:{issuer}:{raw.hex()[:16]}",
+                type=ATTESTATION_TYPE,
+                issuer=issuer,
+                subject="sha256:" + raw.hex(),
+                issued_at=issued_at,
+                algorithm="sha256",
+                proof={
+                    "token_der": base64.b64encode(reply).decode("ascii"),
+                    "tsa_url": self.tsa_url,
+                    "message_imprint": imprint.hex(),
+                },
+            )
+        except ValueError as exc:
+            # `issuer` came off the wire (a GeneralName this walker only
+            # checked was printable, never that it was SHORT); a name over
+            # `Identifier`'s 200 characters fails `Attestation`'s own field
+            # validation, and that ValueError must not escape this module's
+            # promise that a hostile response is always a named TokenError.
+            raise TokenError(
+                f"the TSA's name cannot become this attestation: {exc}") from exc
