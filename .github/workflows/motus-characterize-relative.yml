@@ -47,38 +47,51 @@ jobs:
 
       - name: Resolve the refs this run compares
         id: refs
+        env:
+          BASELINE_REF: ${{ github.event.inputs.baseline_ref }}
+          ANCHOR_REF: ${{ github.event.inputs.anchor_ref }}
+          PAIRS_IN: ${{ github.event.inputs.pairs }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          BASELINE="${{ github.event.inputs.baseline_ref }}"
-          ANCHOR="${{ github.event.inputs.anchor_ref }}"
-          PAIRS="${{ github.event.inputs.pairs }}"
+          BASELINE="$BASELINE_REF"
+          ANCHOR="$ANCHOR_REF"
+          PAIRS="$PAIRS_IN"
           # The scheduled arm takes no inputs, so it declares its own subjects.
           [ -z "$BASELINE" ] && BASELINE=v0.6.1
           [ -z "$PAIRS" ] && PAIRS=5
           # The cumulative anchor is declared by ADR-012 and moves only by ADR.
-          if [ "${{ github.event_name }}" = "schedule" ]; then ANCHOR=v0.6.1; fi
+          if [ "$EVENT_NAME" = "schedule" ]; then ANCHOR=v0.6.1; fi
           echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
           echo "anchor=$ANCHOR"     >> "$GITHUB_OUTPUT"
           echo "pairs=$PAIRS"       >> "$GITHUB_OUTPUT"
 
       - name: Check out the subjects beside the candidate
+        env:
+          BASELINE_REF: ${{ steps.refs.outputs.baseline }}
+          ANCHOR_REF: ${{ steps.refs.outputs.anchor }}
         run: |
-          git worktree add --detach /tmp/baseline "${{ steps.refs.outputs.baseline }}"
-          if [ -n "${{ steps.refs.outputs.anchor }}" ]; then
-            git worktree add --detach /tmp/anchor "${{ steps.refs.outputs.anchor }}"
+          git worktree add --detach /tmp/baseline "$BASELINE_REF"
+          if [ -n "$ANCHOR_REF" ]; then
+            git worktree add --detach /tmp/anchor "$ANCHOR_REF"
           fi
 
       - name: Measure both trees with the candidate's harness
+        env:
+          BASELINE_REF: ${{ steps.refs.outputs.baseline }}
+          ANCHOR_REF: ${{ steps.refs.outputs.anchor }}
+          CANDIDATE_REF: ${{ github.ref_name }}
+          PAIRS_OUT: ${{ steps.refs.outputs.pairs }}
         run: |
           ANCHOR_ARGS=""
-          if [ -n "${{ steps.refs.outputs.anchor }}" ]; then
-            ANCHOR_ARGS="--anchor-src /tmp/anchor/src --anchor-ref ${{ steps.refs.outputs.anchor }}"
+          if [ -n "$ANCHOR_REF" ]; then
+            ANCHOR_ARGS="--anchor-src /tmp/anchor/src --anchor-ref $ANCHOR_REF"
           fi
           python benchmarks/collect_relative_baseline.py \
             --baseline-src /tmp/baseline/src \
-            --baseline-ref "${{ steps.refs.outputs.baseline }}" \
+            --baseline-ref "$BASELINE_REF" \
             --candidate-src src \
-            --candidate-ref "${{ github.ref_name }}" \
-            --pairs "${{ steps.refs.outputs.pairs }}" \
+            --candidate-ref "$CANDIDATE_REF" \
+            --pairs "$PAIRS_OUT" \
             $ANCHOR_ARGS \
             > benchmarks/relative-latest.json
 
