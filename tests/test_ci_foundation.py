@@ -22,6 +22,7 @@ from benchmarks.check_slo_baseline import (
     MOTUS_CANDIDATE_TOLERANCE,
     SloRow,
     load_document,
+    main,
     recomputed_stat,
     run_gate,
     validate_document,
@@ -89,6 +90,41 @@ def test_the_slo_gate_carries_no_frozen_version_literal():
     )
 
 
+def test_agent_definitions_invoke_the_slo_gate_with_no_frozen_candidate():
+    """The sibling above guards the script; the same disease reappeared one
+    level up, in an agent definition, where nothing guarded it.
+    ``.claude/agents/motus-verifier.md`` told the agent to run
+    ``check_slo_baseline.py --candidate
+    benchmarks/candidate-v0.8.1-epyc-py310.json``, a path frozen at the
+    release it was written for.  Unlike ``ci.yml``, which names its candidate
+    explicitly but is retargeted at every release, this line was not, so for
+    six releases -- 0.8.1 through 0.14.0 -- the agent ran the gate against
+    evidence the runtime identity check was always going to refuse, and
+    reported a red that had nothing to do with the code under review.
+
+    Scoped to the invocation, not the file: prose recording that history (as
+    this docstring does) is not the defect.  A ``check_slo_baseline.py`` line
+    that also names a ``candidate-v<version>`` path is -- that is the agent
+    being told, again, to gate the wrong file.
+    """
+    agent_directories = [REPO_ROOT / ".claude" / "agents", REPO_ROOT / ".pi" / "agents"]
+    for directory in agent_directories:
+        assert directory.is_dir(), (
+            f"{directory} does not exist -- nothing to scan is not the same as nothing wrong"
+        )
+        paths = sorted(directory.glob("*.md"))
+        assert paths, f"{directory} has no *.md files -- an empty glob must not pass silently"
+        for path in paths:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if "check_slo_baseline.py" not in line:
+                    continue
+                assert "candidate-v" not in line, (
+                    f"{path}: {line.strip()!r} pins the SLO gate to a frozen "
+                    "candidate file; pass no --candidate and let the CLI's "
+                    "DEFAULT_CANDIDATE (retargeted every release) supply it"
+                )
+
+
 def test_reference_slo_evidence_reproduces_the_published_contract():
     results = dict(run_gate(DEFAULT_BASELINE, DEFAULT_GUARANTEES))
 
@@ -153,6 +189,33 @@ def test_committed_motus_candidate_passes_its_characterized_profile():
     ):
         assert results[label].startswith(("RECORDED", "MEETS TARGET")), results[label]
     assert results["Candidate trace completeness"] == "PASS"
+
+
+def test_the_cli_defaults_to_the_complete_gate_with_no_arguments(capsys):
+    """``--candidate`` carried no argparse default, so ``args.candidate`` was
+    ``None`` whenever nobody passed the flag, and ``run_gate`` skips its whole
+    candidate block behind ``if candidate_path is not None``.  An agent
+    definition removed the frozen ``--candidate`` literal from its invocation
+    on the belief that ``DEFAULT_CANDIDATE`` already drove the CLI -- it did
+    not, so that fix traded a loud false red for a quiet PASS that never ran
+    the candidate's runtime-identity check, its metric comparison, or its
+    trace-completeness assertion.  The sibling above proves ``run_gate``
+    itself is correct when called directly with ``DEFAULT_CANDIDATE``; this
+    proves the *command line*, which is what an agent actually runs, reaches
+    the same result with no arguments at all.
+    """
+    exit_code = main([])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    for label in (
+        "Candidate Per-node overhead",
+        "Candidate 100-node no-op",
+        "Candidate Trace serialization",
+        "Candidate Superlinear accumulation",
+        "Candidate trace completeness",
+    ):
+        assert label in output, f"CLI with no --candidate never reached the candidate block: {output!r}"
 
 
 def test_candidate_evidence_cannot_disagree_with_its_own_raw_runs(tmp_path):
