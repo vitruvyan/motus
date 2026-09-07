@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -90,39 +91,100 @@ def test_the_slo_gate_carries_no_frozen_version_literal():
     )
 
 
-def test_agent_definitions_invoke_the_slo_gate_with_no_frozen_candidate():
+def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     """The sibling above guards the script; the same disease reappeared one
-    level up, in an agent definition, where nothing guarded it.
-    ``.claude/agents/motus-verifier.md`` told the agent to run
-    ``check_slo_baseline.py --candidate
-    benchmarks/candidate-v0.8.1-epyc-py310.json``, a path frozen at the
-    release it was written for.  Unlike ``ci.yml``, which names its candidate
-    explicitly but is retargeted at every release, this line was not, so for
-    six releases -- 0.8.1 through 0.14.0 -- the agent ran the gate against
-    evidence the runtime identity check was always going to refuse, and
-    reported a red that had nothing to do with the code under review.
+    level up, in the documents that tell somebody how to run it, where nothing
+    guarded it at all.
 
-    Scoped to the invocation, not the file: prose recording that history (as
-    this docstring does) is not the defect.  A ``check_slo_baseline.py`` line
-    that also names a ``candidate-v<version>`` path is -- that is the agent
-    being told, again, to gate the wrong file.
+    Two sites, found a day apart and neither reported by the other.
+    ``.claude/agents/motus-verifier.md`` told the agent to run
+    ``check_slo_baseline.py`` against
+    ``benchmarks/candidate-v0.8.1-epyc-py310.json``, frozen at the release it
+    was written for, so for six releases the agent gated evidence the runtime
+    identity check was always going to refuse and reported a red that had
+    nothing to do with the code under review.  ``benchmarks/README.md`` named
+    ``candidate-v0.6.1-epyc-py310.json`` as "the current characterized Motus
+    profile" from 0.6.1 until 0.14.0 -- nine candidate profiles later -- and
+    printed the matching command underneath.
+
+    So the property is not about agents.  It is: **a file that tells anyone to
+    run the gate against a named candidate must be one the release act
+    retargets.**  ``ci.yml`` names its candidate and is retargeted by step 2 of
+    the ``release`` skill, so it is exempt -- and the exemption is checked
+    against reality below, because an exemption for a file that stopped naming
+    a candidate is an exemption nobody would notice had died.
+
+    Scoped to the invocation, not the file: prose recording this history is not
+    the defect.  A mention of ``check_slo_baseline.py`` followed by a
+    ``candidate-v<version>`` path is.
+
+    **Where the class stays open.**  ``check_relative_baseline.py`` takes its
+    evidence as a positional ``benchmarks/relative-<X.Y.Z>/*.json``, and
+    ``README.md`` names one.  It has no ``DEFAULT_CANDIDATE`` to fall back on,
+    so there is nothing for a caller to omit and this test cannot cover it by
+    the same rule.  Closing it means giving that script a default too; until
+    then, that line goes stale at each release like the ones above did.
     """
-    agent_directories = [REPO_ROOT / ".claude" / "agents", REPO_ROOT / ".pi" / "agents"]
-    for directory in agent_directories:
-        assert directory.is_dir(), (
-            f"{directory} does not exist -- nothing to scan is not the same as nothing wrong"
+    # Retargeted at every release by `.claude/skills/release/SKILL.md` step 2.
+    exempt = {".github/workflows/ci.yml"}
+    # None of these is an instruction to run the gate today: this file is about
+    # the rule, and `audit/` and `adr/` are dated records of commands that were
+    # run in the past, where naming the candidate of the day is the point.
+    excluded = {"tests/test_ci_foundation.py"}
+    excluded_trees = {"audit", "adr"}
+    scanned_suffixes = {".md", ".yml", ".yaml", ".py", ".txt", ".toml"}
+    skipped_parents = {".git", "build", "worktrees", "node_modules", ".venv"}
+
+    offenders = []
+    seen = set()
+    for path in sorted(REPO_ROOT.rglob("*")):
+        if not path.is_file() or path.suffix not in scanned_suffixes:
+            continue
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        if skipped_parents.intersection(path.relative_to(REPO_ROOT).parts):
+            continue
+        if relative in excluded or path.relative_to(REPO_ROOT).parts[0] in excluded_trees:
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        # Not line by line: `ci.yml` writes the invocation as a folded YAML
+        # scalar, so the script and its `--candidate` land on separate lines --
+        # and so could a real offender. Collapse whitespace and look at what
+        # follows each mention of the script.
+        for match in re.finditer(r"check_slo_baseline\.py", body):
+            window = " ".join(body[match.end():match.end() + 200].split())
+            # The flag, not the mention: prose that names the script and then,
+            # a sentence later, names a candidate file is discussing the rule,
+            # not instructing anyone. An invocation puts `--candidate` between
+            # the two.
+            if "--candidate" not in window or "candidate-v" not in window:
+                continue
+            seen.add(relative)
+            if relative not in exempt:
+                offenders.append(f"{relative}: check_slo_baseline.py{window[:90]}")
+
+    assert not offenders, (
+        "these pin the SLO gate to a frozen candidate file; pass no --candidate "
+        "and let the CLI's DEFAULT_CANDIDATE (retargeted every release) supply "
+        "it:\n  " + "\n  ".join(offenders)
+    )
+
+    dead = exempt - seen
+    assert not dead, (
+        f"exempt but no longer naming a candidate: {sorted(dead)} -- the "
+        "exemption outlived the thing it excused, and would have hidden a real "
+        "one if that file changed again"
+    )
+
+    # An empty sweep must not pass silently: the two directories the first
+    # instance lived in have to have been read.
+    for directory in (REPO_ROOT / ".claude" / "agents", REPO_ROOT / ".pi" / "agents"):
+        assert directory.is_dir() and sorted(directory.glob("*.md")), (
+            f"{directory} is missing or empty -- nothing to scan is not the "
+            "same as nothing wrong"
         )
-        paths = sorted(directory.glob("*.md"))
-        assert paths, f"{directory} has no *.md files -- an empty glob must not pass silently"
-        for path in paths:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if "check_slo_baseline.py" not in line:
-                    continue
-                assert "candidate-v" not in line, (
-                    f"{path}: {line.strip()!r} pins the SLO gate to a frozen "
-                    "candidate file; pass no --candidate and let the CLI's "
-                    "DEFAULT_CANDIDATE (retargeted every release) supply it"
-                )
 
 
 def test_reference_slo_evidence_reproduces_the_published_contract():

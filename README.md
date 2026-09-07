@@ -881,7 +881,7 @@ Run the complete suite and contract validator with:
 ```console
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.14.0-epyc-py310.json
+python benchmarks/check_slo_baseline.py
 python benchmarks/check_relative_baseline.py benchmarks/relative-0.14.0/*.json
 ```
 

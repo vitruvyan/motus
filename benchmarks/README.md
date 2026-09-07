@@ -29,18 +29,25 @@ achievements. Run it with:
 python benchmarks/check_slo_baseline.py
 ```
 
-The optional `--candidate FILE` mode enforces every target-plus-tolerance
-ceiling and 100% trace completeness against a separately characterized Motus
-profile. It must not be pointed at timings from an uncharacterized runner
-class; guarantees.md §3 requires five published runs for each profile first.
+`--candidate FILE` enforces every target-plus-tolerance ceiling and 100% trace
+completeness against a separately characterized Motus profile. **It defaults to
+the current one**, so the command above is the whole gate and not half of it;
+the flag is for pointing the gate at a different profile. It must not be pointed
+at timings from an uncharacterized runner class; guarantees.md §3 requires five
+published runs for each profile first.
 
-The current characterized Motus profile is
-`candidate-v0.6.1-epyc-py310.json`: five GitHub-runner collections on Python
-3.10.12 and AMD EPYC 9V74. ADR-007 records the corrected cold-materialization
-method and supersedes the invalid 0.6.0 cache-hit serialization figure. Its
-3,002-record native trace retains the separate regression target established
-by ADR-006. Reproduce the release gate with:
+**This file does not name the current profile, and that is deliberate.** It is
+named once, in `check_slo_baseline.py`'s `DEFAULT_CANDIDATE`, which step 2 of the
+`release` skill retargets at every release. A filename repeated here is a
+filename that goes stale: this paragraph said `candidate-v0.6.1-epyc-py310.json`
+from 0.6.1 until 0.14.0 — nine candidate profiles later — so for nine releases it
+asserted, as a present fact, something that had stopped being true, and printed a
+command that gated the wrong evidence. `tests/test_ci_foundation.py` now fails if
+a frozen candidate filename reappears in an invocation of the gate, anywhere the
+release act does not retarget.
 
-```console
-python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.6.1-epyc-py310.json
-```
+The v0.6.1 profile is still the one ADR-007 discusses: five GitHub-runner
+collections on Python 3.10.12 and AMD EPYC 9V74, recording the corrected
+cold-materialization method and superseding the invalid 0.6.0 cache-hit
+serialization figure, its 3,002-record native trace retaining the separate
+regression target established by ADR-006.
