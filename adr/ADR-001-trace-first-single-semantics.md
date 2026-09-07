@@ -92,7 +92,10 @@ The evidence that shaped this decision:
 - The trace schema version exists in exactly one place in the package and a
   contract test asserts it equals `contract/trace.v1.schema.json`.
 - No PyPI publication before the license decision and the name-migration
-  plan are approved.
+  plan are approved. **Both terms are met (Apache-2.0; the `axis` →
+  `vitruvyan-motus` migration shipped), so this condition is satisfied and
+  not standing. ADR-032 (accepted 2026-09-07) authorises publication and
+  names this line in its `Amends:`.**
 - Local remotes, CI references and documentation URLs are updated explicitly
   after the GitHub rename; no consumer is left depending on the redirect.
 - The test environment is declared and pinned twice over: the `[test]`

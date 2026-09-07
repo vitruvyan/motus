@@ -22,10 +22,19 @@ If `.venv` is missing, say so and stop; do not create one.
 
 ```
 .venv/bin/python -m pytest -q
-.venv/bin/python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.8.1-epyc-py310.json
+.venv/bin/python benchmarks/check_slo_baseline.py
 .venv/bin/python tools/check_frozen_paths.py origin/main HEAD
 for f in examples/*.py; do .venv/bin/python "$f" >/dev/null; done
 ```
+
+**Pass no `--candidate` to the SLO gate.** `DEFAULT_CANDIDATE` inside that
+script is retargeted by step 2 of the `release` skill at every release, so the
+default is always the current candidate, while a version literal written here
+goes stale the day after it is written. It did: this line named `v0.8.1` from
+0.8.1 through 0.14.0 — six releases in which the gate result this agent
+reported was about a file the runtime identity check was always going to
+refuse. A red you produce yourself is worse than no red at all, because
+somebody spends a reasoning model explaining it.
 
 Plus these cheap consistency checks:
 
