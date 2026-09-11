@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Ask an OpenRouter-hosted model to review a pull request diff.
 
-Standalone (stdlib only, no new dependency for this repo's zero-dependency
-guarantee to worry about) so it can run in CI with nothing but the pinned
-Python interpreter.
+Standalone (stdlib only) so it runs in CI with nothing but the interpreter.
+Repository-agnostic by design: it reads the repo's own AGENTS.md/CLAUDE.md at
+runtime and hands it to the model as review doctrine, instead of encoding one
+project's rules here. That means the same script is reused, unmodified,
+across every repository that wants OpenRouter-based PR review.
 """
 
 from __future__ import annotations
@@ -17,28 +19,20 @@ import urllib.request
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Trimmed from AGENTS.md so the reviewer applies this repository's actual
-# review doctrine instead of a generic checklist.
-SYSTEM_PROMPT = """\
-You are reviewing a pull request against Vitruvyan Motus, a contract-first \
-Python runtime. Apply these rules, which are non-negotiable in this repository:
+GUIDELINE_FILENAMES = ("AGENTS.md", "CLAUDE.md")
+MAX_GUIDELINES_CHARS = 20_000
+MAX_DIFF_CHARS = 120_000
 
-- Authority order: ADR-001 -> contract/ -> frozen corpora (tests/contract/, \
-tests/compat/) -> implementation. When implementation and contract disagree, \
-the implementation is wrong.
-- tests/contract/ and tests/compat/ must never be edited by a PR. Flag it hard \
-if the diff touches them.
-- No assertion may be weakened, skipped, or deleted to make something pass.
-- A finding names an instance; the fix should repair the class. If a diff \
-fixes one occurrence of a bug shape, check whether the same shape exists \
-elsewhere in the changed files and say so if it does.
-- Regular expressions must not be used to parse structured text (JSON, source \
-code, etc.) that already has a real parser available; a regex over an opaque \
-token with a grammar the repo owns (a hash, an identifier shape) is fine.
-- No new runtime dependencies may be introduced; the package declares zero.
-- Every behavior fix should carry a test that would fail without it.
-- Prefer flagging real correctness bugs, contract violations, and missing \
-tests over style opinions.
+REVIEW_INSTRUCTIONS = """\
+You are reviewing a pull request diff for this repository. Below, wrapped in \
+<repo-guidelines>, are the repository's own instructions for how code should \
+be written and reviewed here. Honor them as this repository's actual review \
+doctrine, not generic best practice - a rule stated there beats a generic \
+style opinion.
+
+<repo-guidelines>
+{guidelines}
+</repo-guidelines>
 
 Write a concise code review of the diff below. Structure it as:
 1. A one-line verdict (approve / request changes / comment).
@@ -51,24 +45,36 @@ Keep it terse. Do not restate the whole diff back. If the diff is truncated, \
 say so and review only what you can see.
 """
 
-MAX_DIFF_CHARS = 120_000
+
+def load_guidelines(repo_root: str) -> str:
+    for name in GUIDELINE_FILENAMES:
+        path = os.path.join(repo_root, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            if len(text) > MAX_GUIDELINES_CHARS:
+                text = text[:MAX_GUIDELINES_CHARS] + "\n[guidelines truncated for length]"
+            return text
+    return "(no AGENTS.md or CLAUDE.md found at the repository root; apply general code-review judgement.)"
 
 
-def build_payload(diff: str, model: str) -> dict:
+def build_payload(diff: str, model: str, guidelines: str) -> dict:
     truncated = len(diff) > MAX_DIFF_CHARS
     if truncated:
         diff = diff[:MAX_DIFF_CHARS]
     user_content = diff + ("\n\n[diff truncated for length]" if truncated else "")
+    system_prompt = REVIEW_INSTRUCTIONS.format(guidelines=guidelines)
     return {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
     }
 
 
 def call_openrouter(api_key: str, payload: dict) -> str:
+    repository = os.environ.get("GITHUB_REPOSITORY", "openrouter-review")
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         OPENROUTER_URL,
@@ -77,8 +83,8 @@ def call_openrouter(api_key: str, payload: dict) -> str:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/vitruvyan/motus",
-            "X-Title": "Motus PR review",
+            "HTTP-Referer": f"https://github.com/{repository}",
+            "X-Title": f"{repository} PR review",
         },
     )
     try:
@@ -100,6 +106,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--diff", required=True, help="Path to a unified diff file")
     parser.add_argument("--out", required=True, help="Path to write the review markdown to")
+    parser.add_argument("--repo-root", default=".", help="Repository root to read AGENTS.md/CLAUDE.md from")
     args = parser.parse_args()
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -113,7 +120,8 @@ def main() -> int:
     if not diff.strip():
         review = "No diff content to review (empty diff)."
     else:
-        payload = build_payload(diff, model)
+        guidelines = load_guidelines(args.repo_root)
+        payload = build_payload(diff, model, guidelines)
         review = call_openrouter(api_key, payload)
 
     footer = f"\n\n---\n*Automated review via OpenRouter (`{model}`).*\n"
