@@ -1,0 +1,67 @@
+name: OpenRouter review
+
+# Automated PR review, routed through OpenRouter instead of a fixed vendor
+# connector. Requires the repository (or org) secret OPENROUTER_API_KEY.
+# Optionally set the repository/org variable OPENROUTER_MODEL to choose the
+# model (see .github/scripts/openrouter_review.py for the default).
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: openrouter-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+
+      # Forked-repo PRs do not receive repository secrets; skip cleanly
+      # instead of failing the check for external contributors.
+      - name: Check OpenRouter key is available
+        id: gate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "OPENROUTER_API_KEY is not set for this run (forked PR or missing secret) - skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute PR diff
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff "$BASE_SHA" "$HEAD_SHA" > /tmp/pr.diff
+
+      - name: Ask OpenRouter for a review
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+        run: python3 .github/scripts/openrouter_review.py --diff /tmp/pr.diff --out /tmp/review.md
+
+      - name: Post review to the pull request
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr review "$PR_NUMBER" --comment --body-file /tmp/review.md
