@@ -4,9 +4,16 @@ name: OpenRouter review
 # connector. Requires the repository (or org) secret OPENROUTER_API_KEY.
 # Optionally set the repository/org variable OPENROUTER_MODEL to choose the
 # model (see .github/scripts/openrouter_review.py for the default).
+#
+# Security model (DeepSeek review on motus #168, finding 1, 14/09/2026):
+# the job runs on `pull_request_target`, so the workflow, the script and
+# the doctrine files (AGENTS.md/CLAUDE.md) come from the BASE revision and
+# the secret is never in the environment of code the pull request wrote.
+# The pull request contributes DATA only: its head commit is fetched and
+# diffed, never checked out or executed.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize]
 
 permissions:
@@ -23,34 +30,39 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # Base revision only: on pull_request_target the default checkout is
+      # the base branch, and this step never switches to the PR head.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.10.12"
 
-      # Forked-repo PRs do not receive repository secrets; skip cleanly
-      # instead of failing the check for external contributors.
       - name: Check OpenRouter key is available
         id: gate
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           if [ -z "$OPENROUTER_API_KEY" ]; then
-            echo "OPENROUTER_API_KEY is not set for this run (forked PR or missing secret) - skipping." >&2
+            echo "OPENROUTER_API_KEY is not set for this run (missing secret) - skipping." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Compute PR diff
+      # The PR head is fetched as an object for the diff only — nothing from
+      # it is checked out, imported or run.
+      - name: Compute PR diff (merge-base, head fetched as data)
         if: steps.gate.outputs.skip == 'false'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: git diff "$BASE_SHA...$HEAD_SHA" > /tmp/pr.diff
+        run: |
+          git fetch --no-tags origin "$HEAD_SHA"
+          git diff "$BASE_SHA...$HEAD_SHA" > /tmp/pr.diff
 
       - name: Ask OpenRouter for a review
         if: steps.gate.outputs.skip == 'false'
