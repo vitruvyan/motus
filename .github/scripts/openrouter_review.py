@@ -112,7 +112,9 @@ def main() -> int:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise SystemExit("OPENROUTER_API_KEY is not set")
-    model = os.environ.get("OPENROUTER_MODEL") or "z-ai/glm-5.3-flash"
+    # Founder, 14/09/2026: DeepSeek flash for tests, code and reviews — not GLM.
+    # The repository variable OPENROUTER_MODEL still overrides this default.
+    model = os.environ.get("OPENROUTER_MODEL") or "deepseek/deepseek-v4.1-flash"
 
     with open(args.diff, encoding="utf-8") as f:
         diff = f.read()
