@@ -80,16 +80,25 @@ jobs:
       # with that marker and PATCHes it in place; only when there is none
       # does it create one. The job is serialised per PR by the concurrency
       # group above, so two pushes cannot both create the "first" comment.
+      #
+      # The lookup is not best-effort: `set -euo pipefail` means a failed
+      # `gh api` (missing permission, network) aborts the step loudly instead
+      # of yielding an empty id and falling through to post a SECOND comment.
+      # A visible failure is recoverable; a silent duplicate is not.
       - name: Upsert the review comment
         if: steps.gate.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          set -euo pipefail
+          # `sed -n '1p'` (not `head`): sed consumes the whole stream and
+          # exits 0, so a successful lookup never dies of SIGPIPE under
+          # pipefail and get mistaken for a failed lookup.
           comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
             --paginate --jq \
             '.[] | select(.body | contains("<!-- openrouter-review -->")) | .id' \
-            | head -n1)
+            | sed -n '1p')
           if [ -n "$comment_id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
               -f body="$(cat /tmp/review.md)"

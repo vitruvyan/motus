@@ -34,6 +34,11 @@ GUIDELINE_FILENAMES = (
 # are admitted, so a huge tree cannot flood the prompt.
 MAX_NESTED_GUIDELINES = 5
 MAX_GUIDELINES_CHARS = 40_000
+# Per-file truncation alone is not a budget: five files at the per-file cap are
+# 200k of prompt. This is the ceiling for the doctrine as a whole; past it the
+# files that no longer fit are omitted by name. The diff has its own budget
+# (MAX_DIFF_CHARS) and is never shortened to make room here.
+MAX_TOTAL_GUIDELINES_CHARS = 80_000
 MAX_DIFF_CHARS = 120_000
 
 # The marker a workflow greps for to update one review comment in place
@@ -71,6 +76,15 @@ def diff_paths(diff: str) -> list[str]:
     raw bytes. Both sides are kept so a rename contributes two directories.
     ``/dev/null`` is one side of an add or a delete, not a path, and is
     skipped.
+
+    This is prefix parsing, not a diff parser, and two limits are worth
+    naming. A *content* line can begin with ``-- a/`` or ``++ b/`` (a deleted
+    line whose text was ``-- a/foo`` restates itself as ``--- a/foo``), and is
+    then taken for a header; and git's quoted paths (special characters,
+    ``core.quotePath``) are not unquoted. Neither can raise: a path invented
+    this way is only ever looked up as a candidate ``AGENTS.md`` and skipped
+    when the base checkout has no such file, so the worst case is one extra
+    doctrine lookup, never a wrong result and never an error.
     """
     paths: list[str] = []
     for line in diff.splitlines():
@@ -82,27 +96,56 @@ def diff_paths(diff: str) -> list[str]:
     return paths
 
 
+def _stays_inside(repo_root: str, rel: str) -> bool:
+    """True when ``rel`` resolves inside ``repo_root``, with no ``..`` escape."""
+    root = os.path.abspath(repo_root)
+    candidate = os.path.abspath(os.path.join(root, rel))
+    return candidate == root or candidate.startswith(root + os.sep)
+
+
 def nested_guideline_paths(repo_root: str, diff: str) -> list[str]:
     """``AGENTS.md`` files in directories the diff touched, at most five.
 
     ``AGENTS.md`` is a tree convention: a component may carry its own rules
     under its directory, and a change to that directory is reviewed against
-    them too. Every ancestor directory of every touched path is checked, the
-    result is deduplicated and sorted so the same diff always yields the same
-    doctrine, and it is capped at ``MAX_NESTED_GUIDELINES``.
+    them too. Every ancestor directory of every touched path is checked and the
+    result is deduplicated.
+
+    Order is by proximity to the change, not by name: more touched paths under
+    a directory first, then the deeper directory, then alphabetical so the same
+    diff always yields the same doctrine. The cap at ``MAX_NESTED_GUIDELINES``
+    therefore keeps the five *nearest* files, not the five alphabetically first.
+
+    **The doctrine is the base revision's, never the pull request's.** The
+    workflow runs on ``pull_request_target`` and checks out the BASE commit, so
+    every candidate is tested for existence under ``repo_root`` and therefore a
+    path the diff names whose ``AGENTS.md`` exists only on the PR head simply
+    does not enter. Nothing is read outside ``repo_root``: a diff path that
+    tries to climb out with ``..`` is discarded, not followed.
     """
+    touched = diff_paths(diff)
     found: set[str] = set()
-    for path in diff_paths(diff):
+    for path in touched:
         directory = os.path.dirname(path)
         while directory:
             rel = os.path.join(directory, "AGENTS.md")
-            if os.path.isfile(os.path.join(repo_root, rel)):
+            if _stays_inside(repo_root, rel) and os.path.isfile(
+                os.path.join(repo_root, rel)
+            ):
                 found.add(rel.replace(os.sep, "/"))
             parent = os.path.dirname(directory)
             if parent == directory:
                 break
             directory = parent
-    return sorted(found)[:MAX_NESTED_GUIDELINES]
+
+    def proximity(rel: str) -> tuple[int, int, str]:
+        directory = os.path.dirname(rel).replace(os.sep, "/")
+        prefix = directory + "/"
+        nearer = sum(1 for path in touched if path.startswith(prefix))
+        depth = len([part for part in directory.split("/") if part])
+        return (-nearer, -depth, rel)
+
+    return sorted(found, key=proximity)[:MAX_NESTED_GUIDELINES]
 
 
 def _truncate_guidelines(text: str) -> str:
@@ -128,7 +171,14 @@ def load_guidelines(repo_root: str, diff: str = "") -> str:
 
     Every file that exists enters the doctrine under a ``## <path>`` heading,
     in the order ``GUIDELINE_FILENAMES`` declares and then the nested files the
-    diff names. A file that is not there is simply not doctrine.
+    diff names. A file that is not there is simply not doctrine. Each file is
+    truncated on its own to ``MAX_GUIDELINES_CHARS``, and once their combined
+    size reaches ``MAX_TOTAL_GUIDELINES_CHARS`` a file that would not fit is
+    omitted under a marker naming it; the diff is never shortened for this.
+
+    All of it is read from ``repo_root``, which the workflow has checked out at
+    the BASE revision: the pull request contributes a diff to read, not files
+    to read from.
     """
     names: list[str] = []
     seen: set[str] = set()
@@ -138,12 +188,19 @@ def load_guidelines(repo_root: str, diff: str = "") -> str:
             names.append(name)
 
     sections: list[str] = []
+    total = 0
     for name in names:
         path = os.path.join(repo_root, name)
         if not os.path.isfile(path):
             continue
         with open(path, encoding="utf-8") as f:
             text = _truncate_guidelines(f.read())
+        if total + len(text) > MAX_TOTAL_GUIDELINES_CHARS:
+            sections.append(
+                f"## {name}\n\n[guidelines omitted: {name} (total budget)]"
+            )
+            continue
+        total += len(text)
         sections.append(f"## {name}\n\n{text}")
 
     if not sections:

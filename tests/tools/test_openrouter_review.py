@@ -143,6 +143,63 @@ def test_only_touched_directories_contribute_nested_doctrine(review_mod, tmp_pat
     assert "untouched rules" not in doctrine
 
 
+def test_a_guideline_present_only_in_the_pull_request_does_not_enter(
+    review_mod, tmp_path
+):
+    # The workflow runs on pull_request_target and checks out the BASE revision.
+    # A path the diff names whose AGENTS.md exists only on the PR head is not
+    # read: it is outside --repo-root, and doctrine comes from the base only.
+    repo_root = tmp_path / "base"
+    repo_root.mkdir()
+    (tmp_path / "pr-only").mkdir()
+    (tmp_path / "pr-only" / "AGENTS.md").write_text(
+        "PR-ONLY-DOCTRINE", encoding="utf-8"
+    )
+    diff = "+++ b/pr-only/mod.py\n"
+
+    assert review_mod.nested_guideline_paths(str(repo_root), diff) == []
+    assert "PR-ONLY-DOCTRINE" not in review_mod.load_guidelines(str(repo_root), diff)
+
+
+def test_a_diff_path_cannot_escape_the_repo_root(review_mod, tmp_path):
+    repo_root = tmp_path / "base"
+    repo_root.mkdir()
+    (tmp_path / "AGENTS.md").write_text("OUTSIDE-DOCTRINE", encoding="utf-8")
+    diff = "+++ b/../mod.py\n"
+
+    assert review_mod.nested_guideline_paths(str(repo_root), diff) == []
+    assert "OUTSIDE-DOCTRINE" not in review_mod.load_guidelines(str(repo_root), diff)
+
+
+def test_nested_doctrine_is_ordered_by_proximity_not_alphabet(review_mod, tmp_path):
+    # `aaa` sorts before `zzz`, but `zzz` is where the change actually is:
+    # three touched files against one. Proximity wins over the alphabet.
+    for name in ("aaa", "zzz"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "AGENTS.md").write_text(f"{name} rules", encoding="utf-8")
+    diff = "+++ b/aaa/one.py\n" + "".join(
+        f"+++ b/zzz/mod{index}.py\n" for index in range(3)
+    )
+
+    names = review_mod.nested_guideline_paths(str(tmp_path), diff)
+
+    assert names[0] == "zzz/AGENTS.md"
+
+
+def test_nested_doctrine_breaks_proximity_ties_by_depth(review_mod, tmp_path):
+    # Two files under pkg/deep give pkg and pkg/deep the same count, so the
+    # tie must be broken by depth: the nearer doctrine is read first.
+    for rel in ("pkg/AGENTS.md", "pkg/deep/AGENTS.md"):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{rel} rules", encoding="utf-8")
+    diff = "+++ b/pkg/deep/mod.py\n+++ b/pkg/deep/other.py\n"
+
+    names = review_mod.nested_guideline_paths(str(tmp_path), diff)
+
+    assert names[0] == "pkg/deep/AGENTS.md"
+
+
 def test_at_most_five_nested_doctrine_files_enter(review_mod, tmp_path):
     for index in range(8):
         directory = tmp_path / f"pkg{index}" / "sub"
@@ -184,6 +241,38 @@ def test_long_doctrine_keeps_head_and_tail_with_a_marker(review_mod, tmp_path):
     assert tail_token in doctrine, "the tail (where the hard rules live) must survive"
     assert "[guidelines truncated:" in doctrine
     assert "chars omitted in the middle]" in doctrine
+
+
+def test_total_guidelines_budget_omits_files_beyond_it(review_mod, tmp_path):
+    # Five ~30k files are far more than the 80k total budget. The files that
+    # no longer fit are omitted, each named by a marker; nothing is taken from
+    # the diff to make room, because the budget is the doctrine's alone.
+    files = {
+        "AGENTS.md": "alpha",
+        "CLAUDE.md": "bravo",
+        ".github/copilot-instructions.md": "charlie",
+        ".pi/AGENTS.md": "delta",
+        "src/AGENTS.md": "echo",
+    }
+    for rel, token in files.items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(token + "x" * 29_990, encoding="utf-8")
+
+    doctrine = review_mod.load_guidelines(str(tmp_path), "+++ b/src/mod.py\n")
+
+    assert len("x" * 29_990) > 0
+    assert review_mod.MAX_TOTAL_GUIDELINES_CHARS == 80_000
+    assert doctrine.count("[guidelines omitted: ") == 3
+    assert (
+        "[guidelines omitted: .github/copilot-instructions.md (total budget)]"
+        in doctrine
+    )
+    assert "[guidelines omitted: .pi/AGENTS.md (total budget)]" in doctrine
+    assert "[guidelines omitted: src/AGENTS.md (total budget)]" in doctrine
+    # The two that fit come first and keep their content.
+    assert doctrine.index("alpha") < doctrine.index("[guidelines omitted: ")
+    assert doctrine.index("bravo") < doctrine.index("[guidelines omitted: ")
 
 
 def test_short_doctrine_is_not_truncated(review_mod, tmp_path):
@@ -285,6 +374,27 @@ def test_review_file_carries_model_marker_and_reviewed_commit(review_mod, tmp_pa
     assert review_mod.REVIEW_MARKER in text
 
 
+def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
+    # A best-effort lookup that swallowed a gh api failure would yield an empty
+    # id and post a duplicate comment. The step must abort instead.
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in workflow
+    assert "head -n1" not in workflow, "head would SIGPIPE the paginated gh api"
+
+
 def test_the_marker_is_exactly_the_workflow_marker(review_mod):
-    # The workflow greps for this literal to PATCH one comment in place.
+    # The workflow greps for this literal to PATCH one comment in place. The
+    # constant and the workflow's `contains("...")` lookup are two ends of one
+    # contract, so the test reads the workflow and pins the lookup expression:
+    # rename either side alone and the upsert silently stops finding its
+    # comment. (Checking a bare substring would be satisfied by the prose
+    # comment above the step, which is not what does the lookup.)
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
+    ).read_text(encoding="utf-8")
+
     assert review_mod.REVIEW_MARKER == "<!-- openrouter-review -->"
+    assert f'contains("{review_mod.REVIEW_MARKER}")' in workflow
