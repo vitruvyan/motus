@@ -69,11 +69,39 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
-        run: python3 .github/scripts/openrouter_review.py --diff /tmp/pr.diff --out /tmp/review.md
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 .github/scripts/openrouter_review.py \
+            --diff /tmp/pr.diff --out /tmp/review.md --commit "$HEAD_SHA"
 
-      - name: Post review to the pull request
+      # One comment per PR, not one per push (DeepSeek review on motus #168,
+      # finding 4). Every review body carries the marker the script writes,
+      # `<!-- openrouter-review -->`. This step finds the previous comment
+      # with that marker and PATCHes it in place; only when there is none
+      # does it create one. The job is serialised per PR by the concurrency
+      # group above, so two pushes cannot both create the "first" comment.
+      #
+      # The lookup is not best-effort: `set -euo pipefail` means a failed
+      # `gh api` (missing permission, network) aborts the step loudly instead
+      # of yielding an empty id and falling through to post a SECOND comment.
+      # A visible failure is recoverable; a silent duplicate is not.
+      - name: Upsert the review comment
         if: steps.gate.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr review "$PR_NUMBER" --comment --body-file /tmp/review.md
+        run: |
+          set -euo pipefail
+          # `sed -n '1p'` (not `head`): sed consumes the whole stream and
+          # exits 0, so a successful lookup never dies of SIGPIPE under
+          # pipefail and get mistaken for a failed lookup.
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate --jq \
+            '.[] | select(.body | contains("<!-- openrouter-review -->")) | .id' \
+            | sed -n '1p')
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$(cat /tmp/review.md)"
+          else
+            gh pr comment "$PR_NUMBER" --body-file /tmp/review.md
+          fi
