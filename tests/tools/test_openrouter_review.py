@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import sys
 import urllib.error
 from pathlib import Path
@@ -171,6 +172,35 @@ def test_a_diff_path_cannot_escape_the_repo_root(review_mod, tmp_path):
     assert "OUTSIDE-DOCTRINE" not in review_mod.load_guidelines(str(repo_root), diff)
 
 
+def test_a_symlink_pointing_outside_the_root_is_not_followed(review_mod, tmp_path):
+    # `sub` is spelled inside the root but resolves outside it. `abspath`
+    # would have called that safely inside; the doctrine is read where the
+    # bytes actually live, so the link is refused.
+    repo_root = tmp_path / "base"
+    repo_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "AGENTS.md").write_text("OUTSIDE-DOCTRINE", encoding="utf-8")
+    os.symlink(outside, repo_root / "sub")
+    diff = "+++ b/sub/mod.py\n"
+
+    assert review_mod.nested_guideline_paths(str(repo_root), diff) == []
+    assert "OUTSIDE-DOCTRINE" not in review_mod.load_guidelines(str(repo_root), diff)
+
+
+def test_a_symlink_pointing_inside_the_root_is_followed(review_mod, tmp_path):
+    # The counterpart: resolution must not reject a link merely because it is
+    # a link. A target that really is inside the root is doctrine.
+    repo_root = tmp_path / "base"
+    (repo_root / "real").mkdir(parents=True)
+    (repo_root / "real" / "AGENTS.md").write_text("INSIDE-DOCTRINE", encoding="utf-8")
+    os.symlink(repo_root / "real", repo_root / "alias")
+    diff = "+++ b/alias/mod.py\n"
+
+    assert review_mod._stays_inside(str(repo_root), "alias/AGENTS.md")
+    assert "INSIDE-DOCTRINE" in review_mod.load_guidelines(str(repo_root), diff)
+
+
 def test_nested_doctrine_is_ordered_by_proximity_not_alphabet(review_mod, tmp_path):
     # `aaa` sorts before `zzz`, but `zzz` is where the change actually is:
     # three touched files against one. Proximity wins over the alphabet.
@@ -261,9 +291,8 @@ def test_total_guidelines_budget_omits_files_beyond_it(review_mod, tmp_path):
 
     doctrine = review_mod.load_guidelines(str(tmp_path), "+++ b/src/mod.py\n")
 
-    assert len("x" * 29_990) > 0
-    assert review_mod.MAX_TOTAL_GUIDELINES_CHARS == 80_000
     assert doctrine.count("[guidelines omitted: ") == 3
+    assert review_mod.MAX_TOTAL_GUIDELINES_CHARS == 80_000
     assert (
         "[guidelines omitted: .github/copilot-instructions.md (total budget)]"
         in doctrine
@@ -273,6 +302,39 @@ def test_total_guidelines_budget_omits_files_beyond_it(review_mod, tmp_path):
     # The two that fit come first and keep their content.
     assert doctrine.index("alpha") < doctrine.index("[guidelines omitted: ")
     assert doctrine.index("bravo") < doctrine.index("[guidelines omitted: ")
+
+
+def test_two_files_at_the_per_file_cap_both_fit_the_total_budget(review_mod, tmp_path):
+    # Two files at exactly the per-file cap plus their headings overran an 80k
+    # total whose accounting ignored the headings. The per-file cap now covers
+    # the whole section, so neither is omitted and the assembled doctrine --
+    # headings and separators included -- stays inside the budget.
+    big = "x" * review_mod.MAX_GUIDELINES_CHARS
+    (tmp_path / "AGENTS.md").write_text(big, encoding="utf-8")
+    (tmp_path / "CLAUDE.md").write_text(big, encoding="utf-8")
+
+    doctrine = review_mod.load_guidelines(str(tmp_path), "")
+
+    assert "[guidelines omitted:" not in doctrine
+    assert "## AGENTS.md" in doctrine
+    assert "## CLAUDE.md" in doctrine
+    assert len(doctrine) <= review_mod.MAX_TOTAL_GUIDELINES_CHARS
+
+
+def test_a_third_file_at_the_cap_is_omitted_with_a_marker(review_mod, tmp_path):
+    big = "x" * review_mod.MAX_GUIDELINES_CHARS
+    for rel in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(big, encoding="utf-8")
+
+    doctrine = review_mod.load_guidelines(str(tmp_path), "")
+
+    assert doctrine.count("[guidelines omitted: ") == 1
+    assert (
+        "[guidelines omitted: .github/copilot-instructions.md (total budget)]"
+        in doctrine
+    )
 
 
 def test_short_doctrine_is_not_truncated(review_mod, tmp_path):
@@ -374,15 +436,91 @@ def test_review_file_carries_model_marker_and_reviewed_commit(review_mod, tmp_pa
     assert review_mod.REVIEW_MARKER in text
 
 
+def _workflow_steps(workflow: str) -> list[dict[str, str]]:
+    """The workflow's ``steps:`` entries, each with its ``name`` and ``run``.
+
+    PyYAML is not a declared test dependency (``constraints/test.txt`` pins
+    pytest, pytest-asyncio and jsonschema; nothing else may be assumed), so
+    this is a small parser for the one shape the workflow uses: a ``steps:``
+    list whose items are ``- name:`` mappings with an optional literal
+    ``run: |`` block. It is not a general YAML parser. It is line-based so a
+    ``set -euo pipefail`` inside a run block is attributed to *that* step,
+    which is the property the tests below need and a file-wide grep cannot
+    express.
+    """
+    lines = workflow.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == "steps:"), None
+    )
+    if start is None:
+        return []
+    base = len(lines[start]) - len(lines[start].lstrip())
+    steps: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    i = start + 1
+    while i < len(lines):
+        line = lines[i]
+        indent = len(line) - len(line.lstrip())
+        if line.strip() and indent <= base:
+            break
+        body = line.strip()
+        if body.startswith("- "):
+            body = body[2:]
+            current = {"name": "", "run": ""}
+            steps.append(current)
+        if body.startswith("name:") and current is not None:
+            current["name"] = body[len("name:"):].strip().strip('"').strip("'")
+            i += 1
+            continue
+        if body.startswith("run:") and current is not None:
+            run_lines: list[str] = []
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                nxt_indent = len(nxt) - len(nxt.lstrip())
+                if nxt.strip() and nxt_indent <= indent:
+                    break
+                run_lines.append(nxt)
+                i += 1
+            current["run"] = "\n".join(run_lines)
+            continue
+        i += 1
+    return steps
+
+
 def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
     # A best-effort lookup that swallowed a gh api failure would yield an empty
-    # id and post a duplicate comment. The step must abort instead.
+    # id and post a duplicate comment. The step must abort instead -- and the
+    # assertion is about *that step's* run block, not the file, because moving
+    # `set -euo pipefail` into another step would still satisfy a file-wide
+    # grep while leaving the lookup unprotected.
     workflow = (
         REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
     ).read_text(encoding="utf-8")
 
-    assert "set -euo pipefail" in workflow
-    assert "head -n1" not in workflow, "head would SIGPIPE the paginated gh api"
+    lookup = [
+        step
+        for step in _workflow_steps(workflow)
+        if "issues/$PR_NUMBER/comments" in step["run"]
+    ]
+    assert len(lookup) == 1, "exactly one step performs the comment lookup"
+    run = lookup[0]["run"]
+
+    assert any(line.strip() == "set -euo pipefail" for line in run.splitlines())
+    assert "head -n1" not in run, "head would SIGPIPE the paginated gh api"
+
+
+def test_the_comment_lookup_is_restricted_to_the_bot_and_the_marker(review_mod):
+    # The lookup must not pick up a comment the pull request itself wrote with
+    # the marker text: only the actions bot's comment is the review to PATCH.
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'select(.user.login == "github-actions[bot]" and '
+        '(.body | contains("<!-- openrouter-review -->")))'
+    ) in workflow
 
 
 def test_the_marker_is_exactly_the_workflow_marker(review_mod):
@@ -398,3 +536,4 @@ def test_the_marker_is_exactly_the_workflow_marker(review_mod):
 
     assert review_mod.REVIEW_MARKER == "<!-- openrouter-review -->"
     assert f'contains("{review_mod.REVIEW_MARKER}")' in workflow
+    assert 'select(.user.login == "github-actions[bot]"' in workflow

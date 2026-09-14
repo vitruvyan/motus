@@ -97,9 +97,17 @@ def diff_paths(diff: str) -> list[str]:
 
 
 def _stays_inside(repo_root: str, rel: str) -> bool:
-    """True when ``rel`` resolves inside ``repo_root``, with no ``..`` escape."""
-    root = os.path.abspath(repo_root)
-    candidate = os.path.abspath(os.path.join(root, rel))
+    """True when ``rel`` resolves inside ``repo_root``.
+
+    Resolution uses ``realpath``, so symlinks are followed: a link inside the
+    tree that points outside it is rejected, not trusted because its name is
+    inside. ``..`` segments are resolved the same way, so a path that climbs
+    out of the root is refused while one that leaves and comes back to a real
+    file inside is allowed. The property is about where the bytes live, not
+    how the path is spelled.
+    """
+    root = os.path.realpath(repo_root)
+    candidate = os.path.realpath(os.path.join(root, rel))
     return candidate == root or candidate.startswith(root + os.sep)
 
 
@@ -120,8 +128,10 @@ def nested_guideline_paths(repo_root: str, diff: str) -> list[str]:
     workflow runs on ``pull_request_target`` and checks out the BASE commit, so
     every candidate is tested for existence under ``repo_root`` and therefore a
     path the diff names whose ``AGENTS.md`` exists only on the PR head simply
-    does not enter. Nothing is read outside ``repo_root``: a diff path that
-    tries to climb out with ``..`` is discarded, not followed.
+    does not enter. Nothing is read outside ``repo_root``: paths are resolved
+    with ``realpath``, so a diff path that tries to climb out with ``..``, or
+    one that reaches the outside through a symlink, is discarded rather than
+    followed.
     """
     touched = diff_paths(diff)
     found: set[str] = set()
@@ -148,21 +158,36 @@ def nested_guideline_paths(repo_root: str, diff: str) -> list[str]:
     return sorted(found, key=proximity)[:MAX_NESTED_GUIDELINES]
 
 
-def _truncate_guidelines(text: str) -> str:
-    """Keep head and tail of one doctrine file.
+def _truncate_guidelines(text: str, cap: int = MAX_GUIDELINES_CHARS) -> str:
+    """Keep head and tail of one doctrine file, in at most ``cap`` characters.
 
     Head-only truncation drops the end of ``AGENTS.md``, which is where a
     repository tends to put the rules that matter most (Motus keeps its
     "Rules no agent may break" there), so the omitted middle is what is
     thrown away and both ends are kept. Applied per file so one oversized
     file cannot evict every file that follows it.
+
+    The truncation marker counts against ``cap``, because the cap is prompt
+    the model actually receives, not just the payload it was cut from. The
+    marker reports its own omission count, so its length depends on the
+    number it carries; the loop below solves that small fixed point before
+    slicing, so the result is never longer than ``cap`` whenever ``cap`` is at
+    least the marker's own length (every call site passes a cap near 40k).
     """
-    if len(text) <= MAX_GUIDELINES_CHARS:
+    if len(text) <= cap:
         return text
-    head = MAX_GUIDELINES_CHARS // 2
-    tail = MAX_GUIDELINES_CHARS - head
-    omitted = len(text) - head - tail
-    marker = f"\n\n[guidelines truncated: {omitted} chars omitted in the middle]\n\n"
+    template = "\n\n[guidelines truncated: {} chars omitted in the middle]\n\n"
+    omitted = len(text) - cap
+    for _ in range(8):
+        marker = template.format(omitted)
+        keep = cap - len(marker)
+        new_omitted = len(text) - keep
+        if new_omitted == omitted:
+            break
+        omitted = new_omitted
+    keep = max(cap - len(marker), 0)
+    head = keep // 2
+    tail = keep - head
     return text[:head] + marker + text[len(text) - tail:]
 
 
@@ -172,9 +197,15 @@ def load_guidelines(repo_root: str, diff: str = "") -> str:
     Every file that exists enters the doctrine under a ``## <path>`` heading,
     in the order ``GUIDELINE_FILENAMES`` declares and then the nested files the
     diff names. A file that is not there is simply not doctrine. Each file is
-    truncated on its own to ``MAX_GUIDELINES_CHARS``, and once their combined
-    size reaches ``MAX_TOTAL_GUIDELINES_CHARS`` a file that would not fit is
+    truncated on its own so that its whole section (heading included) fits
+    ``MAX_GUIDELINES_CHARS``, and once the combined size of the sections
+    reaches ``MAX_TOTAL_GUIDELINES_CHARS`` a file that would not fit is
     omitted under a marker naming it; the diff is never shortened for this.
+
+    The per-file cap covers the whole section, heading included, so two files
+    at ``MAX_GUIDELINES_CHARS`` fit ``MAX_TOTAL_GUIDELINES_CHARS`` exactly
+    rather than overrunning it by their headings. The separator between
+    sections is likewise taken out of each file's allowance.
 
     All of it is read from ``repo_root``, which the workflow has checked out at
     the BASE revision: the pull request contributes a diff to read, not files
@@ -187,6 +218,7 @@ def load_guidelines(repo_root: str, diff: str = "") -> str:
             seen.add(name)
             names.append(name)
 
+    separator = "\n\n"
     sections: list[str] = []
     total = 0
     for name in names:
@@ -194,14 +226,18 @@ def load_guidelines(repo_root: str, diff: str = "") -> str:
         if not os.path.isfile(path):
             continue
         with open(path, encoding="utf-8") as f:
-            text = _truncate_guidelines(f.read())
-        if total + len(text) > MAX_TOTAL_GUIDELINES_CHARS:
+            raw = f.read()
+        prefix = f"## {name}\n\n"
+        cap = MAX_GUIDELINES_CHARS - len(prefix) - len(separator)
+        section = prefix + _truncate_guidelines(raw, max(cap, 0))
+        extra = len(separator) if sections else 0
+        if total + extra + len(section) > MAX_TOTAL_GUIDELINES_CHARS:
             sections.append(
                 f"## {name}\n\n[guidelines omitted: {name} (total budget)]"
             )
             continue
-        total += len(text)
-        sections.append(f"## {name}\n\n{text}")
+        total += extra + len(section)
+        sections.append(section)
 
     if not sections:
         return (
