@@ -65,6 +65,22 @@ def _require_safe_key(name: str) -> None:
     if not _is_safe_member_name(name):
         raise ValueError(f"unsafe evidence member name: {name!r}")
 
+def _archive_name_issues(names: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return duplicate and unsafe member names under one package policy."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    duplicate_reported: set[str] = set()
+    unsafe: list[str] = []
+    for name in names:
+        if name in seen and name not in duplicate_reported:
+            duplicates.append(name)
+            duplicate_reported.add(name)
+        seen.add(name)
+        if not _is_safe_member_name(name):
+            unsafe.append(name)
+    return tuple(duplicates), tuple(unsafe)
+
+
 
 class _MemberReadError(Exception):
     """A ZIP member could not be read safely; the member name is retained."""
@@ -163,10 +179,11 @@ def pack(
         if begin.get("run_id") != run_id:
             raise ValueError(
                 f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
-        # Preserve the original pack(bundle, log=...) semantics: that path
-        # intentionally lets the verifier report an unfinished receipt beside
-        # a completed trace. The stronger construction-time binding applies
-        # only when a caller explicitly selects an execution coordinate.
+        # Segment membership and run_id binding apply on both paths. Preserve
+        # the legacy pack(bundle, log=...) behavior only for the stronger root
+        # check: that path intentionally lets the verifier report an unfinished
+        # receipt beside a completed trace. Explicit coordinate selection must
+        # instead prove that the selected END, when present, binds this root.
         if execution_ref is not None:
             trace_root = bundle.trace.root
             if trace_root is not None:
@@ -262,9 +279,10 @@ def _receipt_from_package(data: bytes) -> dict[str, Any]:
         raise ValueError("evidence package is not a zip file") from None
     try:
         names = archive.namelist()
-        if len(names) != len(set(names)):
+        duplicate_names, unsafe = _archive_name_issues(names)
+        if duplicate_names:
             raise ValueError("evidence package has duplicate member names")
-        if any(not _is_safe_member_name(name) for name in names):
+        if unsafe:
             raise ValueError("evidence package has unsafe member names")
         if "core/receipt.json" not in names:
             raise ValueError("evidence package has no core/receipt.json")
@@ -303,21 +321,13 @@ def verify_package(data: bytes) -> PackageVerdict:
                               ("<trace unavailable: not a zip file>",))
     try:
         names = archive.namelist()
-        seen_names: set[str] = set()
-        duplicate_reported: set[str] = set()
-        duplicate_names: list[str] = []
-        for name in names:
-            if name in seen_names and name not in duplicate_reported:
-                duplicate_names.append(name)
-                duplicate_reported.add(name)
-            seen_names.add(name)
+        duplicate_names, unsafe = _archive_name_issues(names)
         if duplicate_names:
             return PackageVerdict(
                 None, False,
                 tuple(f"<duplicate member>: {name}" for name in duplicate_names),
                 ("<trace unavailable: duplicate physical member name>",),
             )
-        unsafe = [name for name in names if not _is_safe_member_name(name)]
         if unsafe:
             return PackageVerdict(
                 None, False,
