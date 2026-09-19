@@ -71,6 +71,18 @@ def test_execution_ref_is_the_only_lookup_key_and_is_checked_before_source():
     assert source.calls == []
 
 
+def test_source_cannot_swap_a_different_execution_under_the_requested_ref():
+    source = _Source(receipt={
+        "execution": {
+            "ref": "acme/w1/9",
+            "fingerprint": "sha256:" + "b" * 64,
+            "run_id": "other",
+        }
+    })
+    api = EvidenceAPI(source)
+    with pytest.raises(ValueError, match="does not bind"):
+        api.receipt_for("acme/w1/0")
+
 def test_receipt_is_a_copy_so_a_bridge_cannot_mutate_source_evidence():
     source = _Source()
     api = EvidenceAPI(source)
