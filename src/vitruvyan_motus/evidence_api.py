@@ -89,9 +89,28 @@ class EvidenceAPI:
         and the verified artifact are necessarily the same object.
         """
         ref = _canonical_ref(execution_ref)
-        bound = (self._bound_package(ref, package) if package is not None
-                 else self.package_for(ref))
-        return verify_package(bound)
+        raw = package if package is not None else self._source.package_for(ref)
+        if not isinstance(raw, bytes):
+            raise TypeError("evidence source package_for must return bytes")
+
+        # Verification gets first refusal rights over hostile storage bytes.
+        # A malformed/truncated package must remain a fail-closed
+        # PackageVerdict, not be promoted into an application exception merely
+        # because the consumer API also enforces execution identity.
+        verdict = verify_package(raw)
+        try:
+            receipt = _receipt_from_package(raw)
+        except ValueError:
+            return verdict
+
+        # Once a receipt is readable, identity substitution is a different
+        # class from malformed evidence: refuse a valid package for execution
+        # B when the caller asked for A, even if B verifies perfectly.
+        if receipt_segment_for_execution_ref(receipt, ref) is None:
+            raise ValueError(
+                "evidence source returned a package that does not bind the "
+                f"requested execution_ref {ref!r}")
+        return verdict
 
 
 class LiveEvidenceSource:
