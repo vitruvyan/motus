@@ -81,7 +81,6 @@ def _archive_name_issues(names: Iterable[str]) -> tuple[tuple[str, ...], tuple[s
     return tuple(duplicates), tuple(unsafe)
 
 
-
 class _MemberReadError(Exception):
     """A ZIP member could not be read safely; the member name is retained."""
 
@@ -171,36 +170,37 @@ def pack(
                         else log.find_execution_ref(run_id))
         receipt = log.receipt_for(selected_ref, anchors=anchors,
                                   attestations=attestations)
-        selected_segment = receipt_segment_for_execution_ref(receipt, selected_ref)
-        if selected_segment is None:
-            raise ValueError(
-                f"receipt does not contain requested execution {selected_ref!r}")
-
-        # A receipt requested by any included BEGIN names the whole resumed
-        # chain. The TraceBundle belongs to the terminal segment, not
-        # necessarily to the BEGIN the caller used to locate that chain.
-        segments = receipt.get("segments")
-        terminal_segment = (segments[-1] if isinstance(segments, list) and segments
-                            else None)
-        terminal_begin = (terminal_segment.get("begin")
-                          if isinstance(terminal_segment, dict) else None)
-        terminal_commitment = (terminal_begin.get("commitment")
-                               if isinstance(terminal_begin, dict) else None)
-        if (not isinstance(terminal_commitment, dict)
-                or terminal_commitment.get("run_id") != run_id):
-            raise ValueError(
-                f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
-
-        # Segment/run binding applies on both paths. Preserve legacy
-        # pack(bundle, log=...) behavior only for the stronger root check:
-        # explicit coordinate selection must prove the terminal END binds this
-        # trace root.
         if execution_ref is not None:
+            selected_segment = receipt_segment_for_execution_ref(receipt, selected_ref)
+            if selected_segment is None:
+                raise ValueError(
+                    f"receipt does not contain requested execution {selected_ref!r}")
+
+            # A receipt requested by any included BEGIN names the whole resumed
+            # chain. The TraceBundle belongs to the terminal segment, not
+            # necessarily to the BEGIN the caller used to locate that chain.
+            segments = receipt.get("segments")
+            terminal_segment = (
+                segments[-1] if isinstance(segments, list) and segments else None
+            )
+            terminal_begin = (terminal_segment.get("begin")
+                              if isinstance(terminal_segment, dict) else None)
+            terminal_commitment = (terminal_begin.get("commitment")
+                                   if isinstance(terminal_begin, dict) else None)
+            if (not isinstance(terminal_commitment, dict)
+                    or terminal_commitment.get("run_id") != run_id):
+                raise ValueError(
+                    f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
+
+            # The explicit coordinate is the new ADR-034 path. It must prove
+            # the terminal END binds this trace root. The legacy
+            # pack(bundle, log=...) path retains its pre-ADR-034 behavior and
+            # leaves mismatch reporting to verify_package().
             trace_root = bundle.trace.root
             if trace_root is not None:
-                end = terminal_segment.get("end")
-                end_commitment = (end.get("commitment")
-                                  if isinstance(end, dict) else None)
+                end_entry = terminal_segment.get("end")
+                end_commitment = (end_entry.get("commitment")
+                                  if isinstance(end_entry, dict) else None)
                 if (not isinstance(end_commitment, dict)
                         or end_commitment.get("root") != trace_root):
                     raise ValueError(
@@ -215,7 +215,7 @@ def pack(
                 if (
                     not isinstance(terminal_tenant, str)
                     or not isinstance(terminal_writer, str)
-                    or not isinstance(terminal_sequence, int)
+                    or type(terminal_sequence) is not int
                 ):
                     raise ValueError(
                         f"execution_ref {selected_ref!r} has malformed terminal BEGIN identity")
