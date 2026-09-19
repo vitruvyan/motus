@@ -9,8 +9,10 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
-from vitruvyan_motus._execution_ref import parse_execution_ref
-from vitruvyan_motus.evidence import PackageVerdict, pack, verify_package
+from vitruvyan_motus._execution_ref import (parse_execution_ref,
+                                              receipt_segment_for_execution_ref)
+from vitruvyan_motus.evidence import (_receipt_from_package, PackageVerdict,
+                                      pack, verify_package)
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
@@ -55,8 +57,7 @@ class EvidenceAPI:
         receipt = self._source.receipt_for(ref)
         if not isinstance(receipt, dict):
             raise TypeError("evidence source receipt_for must return dict")
-        execution = receipt.get("execution")
-        if not isinstance(execution, dict) or execution.get("ref") != ref:
+        if receipt_segment_for_execution_ref(receipt, ref) is None:
             raise ValueError(
                 "evidence source returned a receipt that does not bind the "
                 f"requested execution_ref {ref!r}")
@@ -64,16 +65,33 @@ class EvidenceAPI:
         # able to mutate a source-owned cached receipt by accident.
         return copy.deepcopy(receipt)
 
-    def package_for(self, execution_ref: str) -> bytes:
-        ref = _canonical_ref(execution_ref)
-        package = self._source.package_for(ref)
+    def _bound_package(self, ref: str, package: bytes) -> bytes:
         if not isinstance(package, bytes):
             raise TypeError("evidence source package_for must return bytes")
+        receipt = _receipt_from_package(package)
+        if receipt_segment_for_execution_ref(receipt, ref) is None:
+            raise ValueError(
+                "evidence source returned a package that does not bind the "
+                f"requested execution_ref {ref!r}")
         return package
 
-    def verify(self, execution_ref: str) -> PackageVerdict:
-        """Run the real Motus package verifier for this execution."""
-        return verify_package(self.package_for(execution_ref))
+    def package_for(self, execution_ref: str) -> bytes:
+        ref = _canonical_ref(execution_ref)
+        return self._bound_package(ref, self._source.package_for(ref))
+
+    def verify(
+        self, execution_ref: str, *, package: bytes | None = None,
+    ) -> PackageVerdict:
+        """Run the real Motus verifier over the exact package bytes supplied.
+
+        If ``package`` is omitted the source is fetched once. A bridge that has
+        already retrieved bytes should pass them here so the displayed artifact
+        and the verified artifact are necessarily the same object.
+        """
+        ref = _canonical_ref(execution_ref)
+        bound = (self._bound_package(ref, package) if package is not None
+                 else self.package_for(ref))
+        return verify_package(bound)
 
 
 class LiveEvidenceSource:
