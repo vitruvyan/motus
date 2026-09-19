@@ -46,6 +46,7 @@ pipeline {
                 sh '''
                     set -eu
                     test -n "$CHANGE_TARGET"
+                    git config --global --add safe.directory "$WORKSPACE"
                     git fetch --no-tags origin "$CHANGE_TARGET"
                     BASE_SHA="$(git rev-parse "origin/$CHANGE_TARGET")"
                     HEAD_SHA="$(git rev-parse HEAD)"
