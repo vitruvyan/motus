@@ -209,10 +209,18 @@ def pack(
                 # An unfinished trace has no root. If its terminal run_id is
                 # repeated, nothing in the trace can distinguish which BEGIN
                 # it belongs to; refuse rather than let the caller choose.
+                terminal_tenant = terminal_commitment.get("tenant")
+                terminal_writer = terminal_commitment.get("writer_id")
+                terminal_sequence = terminal_commitment.get("sequence")
+                if (
+                    not isinstance(terminal_tenant, str)
+                    or not isinstance(terminal_writer, str)
+                    or not isinstance(terminal_sequence, int)
+                ):
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} has malformed terminal BEGIN identity")
                 terminal_ref = (
-                    f"{terminal_commitment[\"tenant\"]}/"
-                    f"{terminal_commitment[\"writer_id\"]}/"
-                    f"{terminal_commitment[\"sequence\"]}"
+                    f"{terminal_tenant}/{terminal_writer}/{terminal_sequence}"
                 )
                 if log.find_execution_ref(run_id) != terminal_ref:
                     raise ValueError(
