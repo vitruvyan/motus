@@ -237,6 +237,23 @@ def test_manifest_identity_cannot_disagree_with_valid_receipt(tmp_path):
         api.verify(ref)
 
 
+def test_malformed_manifest_is_rejected_by_retrieval_but_verified_fail_closed(tmp_path):
+    ref, package = _logged_package(tmp_path)
+    manifest = json.loads(_members(package)["manifest.json"])
+    manifest.pop("files")
+    manifest["execution"]["run_id"] = "forged-manifest-run"
+    malformed = _replace_json_member_and_rehash(
+        package, "manifest.json", manifest)
+    api = EvidenceAPI(_Source(package=malformed))
+
+    with pytest.raises(ValueError, match="malformed manifest: missing file list"):
+        api.package_for(ref)
+
+    verdict = api.verify(ref, package=malformed)
+    assert verdict.transport_ok is False
+    assert any("manifest.json: no file list" in item for item in verdict.damaged)
+
+
 def test_verify_schema_invalid_receipt_preserves_fail_closed_verdict(tmp_path):
     ref, package = _logged_package(tmp_path)
     malformed = _replace_json_member_and_rehash(package, "core/receipt.json", {})
