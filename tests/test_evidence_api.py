@@ -160,6 +160,16 @@ def test_source_cannot_swap_a_different_package_under_the_requested_ref(tmp_path
         api.verify(first_ref)
 
 
+def test_verify_malformed_package_returns_fail_closed_verdict_not_exception():
+    source = _Source(package=b"not a zip file")
+    api = EvidenceAPI(source)
+    verdict = api.verify("acme/w1/0")
+    assert verdict.transport_ok is False
+    assert verdict.verdict is None
+    assert verdict.damaged == ("<not a zip file>",)
+    assert source.calls == [("package", "acme/w1/0")]
+
+
 def test_verify_runs_real_verifier_not_receipt_presence(tmp_path):
     ref, package = _logged_package(tmp_path)
     tampered = _tamper_trace_but_recompute_manifest(package)
