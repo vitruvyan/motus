@@ -163,21 +163,28 @@ def pack(
         if begin.get("run_id") != run_id:
             raise ValueError(
                 f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
-        trace_root = bundle.trace.root
-        if trace_root is not None:
-            end = selected_segment.get("end")
-            end_commitment = (end.get("commitment")
-                              if isinstance(end, dict) else None)
-            if not isinstance(end_commitment, dict) or end_commitment.get("root") != trace_root:
-                raise ValueError(
-                    f"execution_ref {selected_ref!r} does not bind bundle root {trace_root!r}")
-        elif execution_ref is not None:
-            # An unfinished trace has no root. If the run_id is repeated,
-            # nothing in the trace can distinguish which BEGIN it belongs to;
-            # refuse rather than let the caller choose a history by coordinate.
-            if log.find_execution_ref(run_id) != selected_ref:
-                raise ValueError(
-                    f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
+        # Preserve the original pack(bundle, log=...) semantics: that path
+        # intentionally lets the verifier report an unfinished receipt beside
+        # a completed trace. The stronger construction-time binding applies
+        # only when a caller explicitly selects an execution coordinate.
+        if execution_ref is not None:
+            trace_root = bundle.trace.root
+            if trace_root is not None:
+                end = selected_segment.get("end")
+                end_commitment = (end.get("commitment")
+                                  if isinstance(end, dict) else None)
+                if (not isinstance(end_commitment, dict)
+                        or end_commitment.get("root") != trace_root):
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} does not bind bundle root {trace_root!r}")
+            else:
+                # An unfinished trace has no root. If the run_id is repeated,
+                # nothing in the trace can distinguish which BEGIN it belongs
+                # to; refuse rather than let the caller choose a history by
+                # coordinate.
+                if log.find_execution_ref(run_id) != selected_ref:
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
         execution = dict(receipt["execution"])
     else:
         if execution_ref is not None:
