@@ -130,6 +130,7 @@ def pack(
     bundle: TraceBundle,
     *,
     log: CommitmentLog | None = None,
+    execution_ref: str | None = None,
     anchors: Iterable[AnchorReceipt] = (),
     attestations: Iterable[Attestation] = (),
     proofs: Mapping[str, bytes] = {},
@@ -138,7 +139,9 @@ def pack(
     """Pack a bundle into the fixed evidence layout.
 
     A commitment log must have sealed the execution window first. When no log
-    is supplied the package honestly contains no receipt.
+    is supplied the package honestly contains no receipt. When ``execution_ref``
+    is supplied it selects the exact sealed BEGIN rather than resolving the run
+    through ``run_id``; ADR-027 requires that distinction for retried ids.
     """
     from vitruvyan_motus.trace import _canonical_bytes
     trace_dict = bundle.trace.to_dict()
@@ -146,11 +149,14 @@ def pack(
     if log is not None:
         from vitruvyan_motus.commitlog import CommitmentLog  # type: ignore[import-not-found]
         run_id = trace_dict["run"]["run_id"]
-        execution_ref = log.find_execution_ref(run_id)
-        receipt = log.receipt_for(execution_ref, anchors=anchors,
+        selected_ref = (execution_ref if execution_ref is not None
+                        else log.find_execution_ref(run_id))
+        receipt = log.receipt_for(selected_ref, anchors=anchors,
                                   attestations=attestations)
         execution = dict(receipt["execution"])
     else:
+        if execution_ref is not None:
+            raise ValueError("execution_ref requires a commitment log")
         receipt = None
         execution = {
             "ref": None,
