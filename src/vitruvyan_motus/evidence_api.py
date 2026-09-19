@@ -248,6 +248,15 @@ class EvidenceAPI:
         if not _receipt_is_contract_valid(receipt):
             return verify_package(raw)
 
+        # A contract-valid receipt can still carry derived identity metadata
+        # that disagrees with its own authoritative commitments. That is a
+        # corrupt artifact, not evidence that the source substituted another
+        # execution. Preserve the shipped verifier's fail-closed result for
+        # corruption; reserve source-substitution errors for internally
+        # coherent evidence that binds a different execution.
+        if _receipt_execution_issue(receipt) is not None:
+            return verify_package(raw)
+
         issue = _identity_binding_issue(manifest, receipt, ref)
         if issue is not None:
             raise ValueError(f"evidence source returned an unbound package: {issue}")
