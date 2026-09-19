@@ -1,3 +1,4 @@
+// Jenkins webhook bootstrap validated against GitHub App events.
 pipeline {
     agent {
         docker {
