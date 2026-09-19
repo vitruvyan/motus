@@ -9,8 +9,10 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol
 
-from vitruvyan_motus._execution_ref import (parse_execution_ref,
-                                              receipt_segment_for_execution_ref)
+from vitruvyan_motus._execution_ref import (
+    parse_execution_ref, receipt_original_segment,
+    receipt_segment_for_execution_ref, receipt_terminal_segment,
+)
 from vitruvyan_motus.evidence import (_identity_documents_from_package,
                                       PackageVerdict, pack, verify_package)
 
@@ -113,17 +115,18 @@ def _manifest_structure_issue(manifest: dict[str, Any]) -> str | None:
 def _receipt_execution_issue(receipt: dict[str, Any]) -> str | None:
     """Return why the receipt's derived execution identity is inconsistent."""
     execution = receipt.get("execution")
-    segments = receipt.get("segments")
     if not isinstance(execution, dict):
         return "receipt does not carry canonical execution identity"
-    if not isinstance(segments, list) or not segments:
+
+    original = receipt_original_segment(receipt)
+    terminal = receipt_terminal_segment(receipt)
+    if original is None or terminal is None:
         return "receipt has no execution segments"
 
-    first = segments[0].get("begin") if isinstance(segments[0], dict) else None
+    first = original.get("begin")
     first_commitment = (first.get("commitment")
                         if isinstance(first, dict) else None)
-    terminal = segments[-1] if isinstance(segments[-1], dict) else None
-    if not isinstance(first_commitment, dict) or not isinstance(terminal, dict):
+    if not isinstance(first_commitment, dict):
         return "receipt segments do not carry canonical commitments"
 
     tenant = first_commitment.get("tenant")
