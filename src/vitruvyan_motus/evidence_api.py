@@ -7,7 +7,7 @@ verify; it is not an HTTP API and it contains no product-specific vocabulary.
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol
 
 from vitruvyan_motus._execution_ref import (parse_execution_ref,
                                               receipt_segment_for_execution_ref)
@@ -16,6 +16,7 @@ from vitruvyan_motus.evidence import (_receipt_from_package, PackageVerdict,
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
+    from vitruvyan_motus.commitments import AnchorReceipt, Attestation
     from vitruvyan_motus.replay import TraceBundle
 
 __all__ = ["EvidenceAPI", "EvidenceSource", "LiveEvidenceSource"]
@@ -117,7 +118,9 @@ class LiveEvidenceSource:
     """Reference source for an embedder that owns a live CommitmentLog.
 
     This adapter is intentionally small: ``receipt_for`` delegates to the
-    commitment log and ``package_for`` delegates to ``pack``.  A deployment
+    commitment log and ``package_for`` delegates to ``pack``. Optional provider
+    callbacks carry already-produced anchors and attestations into that package
+    without teaching the Evidence API how they were obtained. A deployment
     that persists receipts/packages elsewhere implements ``EvidenceSource``
     instead; the Evidence API does not change.
     """
@@ -126,9 +129,14 @@ class LiveEvidenceSource:
         self,
         log: "CommitmentLog",
         bundle_for: Callable[[str], "TraceBundle"],
+        *,
+        anchors_for: Callable[[str], Iterable["AnchorReceipt"]] | None = None,
+        attestations_for: Callable[[str], Iterable["Attestation"]] | None = None,
     ) -> None:
         self._log = log
         self._bundle_for = bundle_for
+        self._anchors_for = anchors_for
+        self._attestations_for = attestations_for
 
     def receipt_for(self, execution_ref: str) -> dict[str, Any]:
         ref = _canonical_ref(execution_ref)
@@ -137,4 +145,11 @@ class LiveEvidenceSource:
     def package_for(self, execution_ref: str) -> bytes:
         ref = _canonical_ref(execution_ref)
         bundle = self._bundle_for(ref)
-        return pack(bundle, log=self._log, execution_ref=ref)
+        anchors = (() if self._anchors_for is None
+                   else tuple(self._anchors_for(ref)))
+        attestations = (() if self._attestations_for is None
+                        else tuple(self._attestations_for(ref)))
+        return pack(
+            bundle, log=self._log, execution_ref=ref,
+            anchors=anchors, attestations=attestations,
+        )
