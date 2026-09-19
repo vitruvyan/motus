@@ -973,11 +973,17 @@ verdict = evidence.verify(execution_ref, package=package)
 ```
 
 Every lookup takes the ADR-027 `execution_ref` (`tenant/writer/sequence`),
-never `run_id`. Retrieving a receipt is not verification: `verify()` runs the
-shipped package verifier over the actual bytes returned by the configured
-`EvidenceSource`. If the bridge already holds the package bytes, it passes them
-back to `verify(..., package=package)` so the verdict necessarily describes the
-same artifact it displays. A UI that displays “verified” must therefore display
+never `run_id`. `package_for()` is strict retrieval: it returns only a readable
+package whose contract-valid receipt contains the requested execution and whose
+manifest execution identity agrees with that receipt. `verify()` has a
+different hostile-input duty: malformed or schema-invalid stored evidence is
+returned as the shipped verifier’s fail-closed `PackageVerdict`, while a
+readable, contract-valid package for a different execution is refused as source
+substitution. Retrieving a receipt or package is not verification.
+
+If the bridge already holds the package bytes, it passes them back to
+`verify(..., package=package)` so the verdict necessarily describes the same
+artifact it displays. A UI that displays “verified” must therefore display
 that verdict, not infer it from a fingerprint or from receipt presence.
 
 `LiveEvidenceSource` is the local reference adapter for an embedder that owns a
