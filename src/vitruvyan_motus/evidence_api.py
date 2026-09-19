@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol
 
 from vitruvyan_motus._execution_ref import (parse_execution_ref,
                                               receipt_segment_for_execution_ref)
-from vitruvyan_motus.evidence import (_receipt_from_package, PackageVerdict,
-                                      pack, verify_package)
+from vitruvyan_motus.evidence import (_identity_documents_from_package,
+                                      PackageVerdict, pack, verify_package)
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
@@ -42,6 +42,39 @@ def _canonical_ref(value: object) -> str:
     tenant, writer_id, sequence = parse_execution_ref(value)
     return f"{tenant}/{writer_id}/{sequence}"
 
+def _receipt_is_contract_valid(receipt: dict[str, Any]) -> bool:
+    """Use the shipped receipt validator before trusting identity fields."""
+    # Deliberately lazy: importing the kernel must not pull jsonschema.
+    from vitruvyan_motus.contract.validate import validate_receipt
+
+    try:
+        return not validate_receipt(receipt)
+    except Exception:
+        # The Evidence API is a hostile-storage boundary. A validator failure
+        # makes the receipt unusable for identity binding, never trustworthy.
+        return False
+
+
+def _receipt_binds(receipt: dict[str, Any], ref: str) -> bool:
+    """One predicate for the ADR-027 coordinate carried by receipt segments."""
+    return receipt_segment_for_execution_ref(receipt, ref) is not None
+
+
+def _identity_binding_issue(
+    manifest: dict[str, Any], receipt: dict[str, Any], ref: str,
+) -> str | None:
+    """Return why readable, contract-valid evidence cannot bind ``ref``."""
+    if not _receipt_binds(receipt, ref):
+        return f"receipt does not contain requested execution_ref {ref!r}"
+
+    manifest_execution = manifest.get("execution")
+    receipt_execution = receipt.get("execution")
+    if not isinstance(manifest_execution, dict) or not isinstance(receipt_execution, dict):
+        return "manifest/receipt do not carry canonical execution identity"
+    if manifest_execution != receipt_execution:
+        return "manifest execution identity disagrees with receipt execution identity"
+    return None
+
 
 class EvidenceAPI:
     """Canonical read-only boundary consumed by Motus bridges.
@@ -58,7 +91,9 @@ class EvidenceAPI:
         receipt = self._source.receipt_for(ref)
         if not isinstance(receipt, dict):
             raise TypeError("evidence source receipt_for must return dict")
-        if receipt_segment_for_execution_ref(receipt, ref) is None:
+        if not _receipt_is_contract_valid(receipt):
+            raise ValueError("evidence source returned a schema-invalid receipt")
+        if not _receipt_binds(receipt, ref):
             raise ValueError(
                 "evidence source returned a receipt that does not bind the "
                 f"requested execution_ref {ref!r}")
@@ -67,13 +102,15 @@ class EvidenceAPI:
         return copy.deepcopy(receipt)
 
     def _bound_package(self, ref: str, package: bytes) -> bytes:
+        """Strict retrieval: return only a usable, identity-bound artifact."""
         if not isinstance(package, bytes):
             raise TypeError("evidence source package_for must return bytes")
-        receipt = _receipt_from_package(package)
-        if receipt_segment_for_execution_ref(receipt, ref) is None:
-            raise ValueError(
-                "evidence source returned a package that does not bind the "
-                f"requested execution_ref {ref!r}")
+        manifest, receipt = _identity_documents_from_package(package)
+        if not _receipt_is_contract_valid(receipt):
+            raise ValueError("evidence source package has a schema-invalid receipt")
+        issue = _identity_binding_issue(manifest, receipt, ref)
+        if issue is not None:
+            raise ValueError(f"evidence source returned an unbound package: {issue}")
         return package
 
     def package_for(self, execution_ref: str) -> bytes:
@@ -83,36 +120,33 @@ class EvidenceAPI:
     def verify(
         self, execution_ref: str, *, package: bytes | None = None,
     ) -> PackageVerdict:
-        """Run the real Motus verifier over the exact package bytes supplied.
+        """Verify exactly the supplied bytes, preserving fail-closed results.
 
-        If ``package`` is omitted the source is fetched once. A bridge that has
-        already retrieved bytes should pass them here so the displayed artifact
-        and the verified artifact are necessarily the same object.
+        Malformed or schema-invalid stored evidence is verifier input, so the
+        shipped ``verify_package`` result is returned rather than converted
+        into an application exception. A readable, contract-valid package for
+        a *different* execution is source substitution and is refused before
+        a bridge can associate that verdict with the requested execution.
         """
         ref = _canonical_ref(execution_ref)
         raw = package if package is not None else self._source.package_for(ref)
         if not isinstance(raw, bytes):
             raise TypeError("evidence source package_for must return bytes")
 
-        # Verification gets first refusal rights over hostile storage bytes.
-        # A malformed/truncated package must remain a fail-closed
-        # PackageVerdict, not be promoted into an application exception merely
-        # because the consumer API also enforces execution identity.
-        verdict = verify_package(raw)
         try:
-            receipt = _receipt_from_package(raw)
+            manifest, receipt = _identity_documents_from_package(raw)
         except ValueError:
-            return verdict
+            return verify_package(raw)
 
-        # Once a receipt is readable, identity substitution is a different
-        # class from malformed evidence: refuse a valid package for execution
-        # B when the caller asked for A, even if B verifies perfectly.
-        if receipt_segment_for_execution_ref(receipt, ref) is None:
-            raise ValueError(
-                "evidence source returned a package that does not bind the "
-                f"requested execution_ref {ref!r}")
-        return verdict
+        if not _receipt_is_contract_valid(receipt):
+            return verify_package(raw)
 
+        issue = _identity_binding_issue(manifest, receipt, ref)
+        if issue is not None:
+            raise ValueError(f"evidence source returned an unbound package: {issue}")
+
+        # Run the shipped verifier exactly once, over the bytes the bridge has.
+        return verify_package(raw)
 
 class LiveEvidenceSource:
     """Reference source for an embedder that owns a live CommitmentLog.
