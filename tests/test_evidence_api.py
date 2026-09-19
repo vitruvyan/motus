@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+import vitruvyan_motus.commitlog as commitlog_module
+import vitruvyan_motus.evidence as evidence_module
 import vitruvyan_motus.evidence_api as evidence_api_module
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State, TraceBundle
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
@@ -252,6 +254,29 @@ def test_malformed_manifest_is_rejected_by_retrieval_but_verified_fail_closed(tm
     verdict = api.verify(ref, package=malformed)
     assert verdict.transport_ok is False
     assert any("manifest.json: no file list" in item for item in verdict.damaged)
+
+
+@pytest.mark.parametrize(
+    "digest",
+    [
+        "sha256:+" + "a" * 63,
+        "sha256:" + "a" * 31 + "_" + "a" * 32,
+        "sha256:" + "A" * 64,
+    ],
+)
+def test_manifest_digest_requires_canonical_lowercase_sha256(tmp_path, digest):
+    ref, package = _logged_package(tmp_path)
+    manifest = json.loads(_members(package)["manifest.json"])
+    manifest["files"][0]["sha256"] = digest
+    malformed = _replace_json_member_and_rehash(
+        package, "manifest.json", manifest)
+    api = EvidenceAPI(_Source(package=malformed))
+
+    with pytest.raises(ValueError, match="malformed sha256"):
+        api.package_for(ref)
+
+    verdict = api.verify(ref, package=malformed)
+    assert verdict.transport_ok is False
 
 
 def test_verify_schema_invalid_receipt_preserves_fail_closed_verdict(tmp_path):
@@ -517,7 +542,10 @@ def test_canonical_surface_has_only_generic_parameters():
         assert list(inspect.signature(getattr(owner, name)).parameters) == parameters
 
 
-def test_canonical_module_contains_no_consumer_product_model():
-    source = inspect.getsource(evidence_api_module).casefold()
+def test_evidence_boundary_contains_no_consumer_product_model():
+    source = "\n".join(
+        inspect.getsource(module)
+        for module in (evidence_api_module, evidence_module, commitlog_module)
+    ).casefold()
     for forbidden in ("orbis", "limen", "customer_id", "provider_id", "vertical_id"):
         assert forbidden not in source
