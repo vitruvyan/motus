@@ -973,7 +973,9 @@ verdict = evidence.verify(execution_ref, package=package)
 ```
 
 Every lookup takes the ADR-027 `execution_ref` (`tenant/writer/sequence`),
-never `run_id`. `package_for()` is strict retrieval: it returns only a readable
+never `run_id`. `receipt_for()` performs contract and internal-identity
+validation before exposing a receipt; that is document validation, not
+execution verification. `package_for()` is strict retrieval: it returns only a readable
 package whose contract-valid receipt contains the requested execution and whose
 manifest execution identity agrees with that receipt. `verify()` has a
 different hostile-input duty: malformed or schema-invalid stored evidence is
