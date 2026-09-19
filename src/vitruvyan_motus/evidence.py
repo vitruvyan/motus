@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
+from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
+
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
     from vitruvyan_motus.commitments import AnchorReceipt, Attestation
@@ -153,6 +155,29 @@ def pack(
                         else log.find_execution_ref(run_id))
         receipt = log.receipt_for(selected_ref, anchors=anchors,
                                   attestations=attestations)
+        selected_segment = receipt_segment_for_execution_ref(receipt, selected_ref)
+        if selected_segment is None:
+            raise ValueError(
+                f"receipt does not contain requested execution {selected_ref!r}")
+        begin = selected_segment["begin"]["commitment"]
+        if begin.get("run_id") != run_id:
+            raise ValueError(
+                f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
+        trace_root = bundle.trace.root
+        if trace_root is not None:
+            end = selected_segment.get("end")
+            end_commitment = (end.get("commitment")
+                              if isinstance(end, dict) else None)
+            if not isinstance(end_commitment, dict) or end_commitment.get("root") != trace_root:
+                raise ValueError(
+                    f"execution_ref {selected_ref!r} does not bind bundle root {trace_root!r}")
+        elif execution_ref is not None:
+            # An unfinished trace has no root. If the run_id is repeated,
+            # nothing in the trace can distinguish which BEGIN it belongs to;
+            # refuse rather than let the caller choose a history by coordinate.
+            if log.find_execution_ref(run_id) != selected_ref:
+                raise ValueError(
+                    f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
         execution = dict(receipt["execution"])
     else:
         if execution_ref is not None:
@@ -214,6 +239,41 @@ def pack(
             archive.writestr(info, payload)
     return buffer.getvalue()
 
+
+def _receipt_from_package(data: bytes) -> dict[str, Any]:
+    """Strictly read ``core/receipt.json`` for execution-identity binding.
+
+    This is intentionally narrower than ``verify_package``: it establishes
+    which execution a package claims to contain, not whether the package is
+    valid. The same fixed-member bounds and strict JSON loader are reused.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError("package data must be bytes")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except (zipfile.BadZipFile, ValueError):
+        raise ValueError("evidence package is not a zip file") from None
+    try:
+        names = archive.namelist()
+        if len(names) != len(set(names)):
+            raise ValueError("evidence package has duplicate member names")
+        if any(not _is_safe_member_name(name) for name in names):
+            raise ValueError("evidence package has unsafe member names")
+        if "core/receipt.json" not in names:
+            raise ValueError("evidence package has no core/receipt.json")
+        from vitruvyan_motus.contract.validate import _loads_strict
+        try:
+            receipt = _loads_strict(
+                _read_member(
+                    archive, "core/receipt.json", limit=_FIXED_MEMBER_MAX_BYTES
+                ).decode("utf-8"))
+        except (_MemberReadError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+            raise ValueError("evidence package receipt is not readable strict JSON") from exc
+        if not isinstance(receipt, dict):
+            raise ValueError("evidence package receipt is not a JSON object")
+        return receipt
+    finally:
+        archive.close()
 
 def verify_package(data: bytes) -> PackageVerdict:
     """Verify a package using only its bytes; malformed input becomes a result.
