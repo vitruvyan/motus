@@ -175,19 +175,30 @@ def pack(
         if selected_segment is None:
             raise ValueError(
                 f"receipt does not contain requested execution {selected_ref!r}")
-        begin = selected_segment["begin"]["commitment"]
-        if begin.get("run_id") != run_id:
+
+        # A receipt requested by any included BEGIN names the whole resumed
+        # chain. The TraceBundle belongs to the terminal segment, not
+        # necessarily to the BEGIN the caller used to locate that chain.
+        segments = receipt.get("segments")
+        terminal_segment = (segments[-1] if isinstance(segments, list) and segments
+                            else None)
+        terminal_begin = (terminal_segment.get("begin")
+                          if isinstance(terminal_segment, dict) else None)
+        terminal_commitment = (terminal_begin.get("commitment")
+                               if isinstance(terminal_begin, dict) else None)
+        if (not isinstance(terminal_commitment, dict)
+                or terminal_commitment.get("run_id") != run_id):
             raise ValueError(
                 f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
-        # Segment membership and run_id binding apply on both paths. Preserve
-        # the legacy pack(bundle, log=...) behavior only for the stronger root
-        # check: that path intentionally lets the verifier report an unfinished
-        # receipt beside a completed trace. Explicit coordinate selection must
-        # instead prove that the selected END, when present, binds this root.
+
+        # Segment/run binding applies on both paths. Preserve legacy
+        # pack(bundle, log=...) behavior only for the stronger root check:
+        # explicit coordinate selection must prove the terminal END binds this
+        # trace root.
         if execution_ref is not None:
             trace_root = bundle.trace.root
             if trace_root is not None:
-                end = selected_segment.get("end")
+                end = terminal_segment.get("end")
                 end_commitment = (end.get("commitment")
                                   if isinstance(end, dict) else None)
                 if (not isinstance(end_commitment, dict)
@@ -195,11 +206,15 @@ def pack(
                     raise ValueError(
                         f"execution_ref {selected_ref!r} does not bind bundle root {trace_root!r}")
             else:
-                # An unfinished trace has no root. If the run_id is repeated,
-                # nothing in the trace can distinguish which BEGIN it belongs
-                # to; refuse rather than let the caller choose a history by
-                # coordinate.
-                if log.find_execution_ref(run_id) != selected_ref:
+                # An unfinished trace has no root. If its terminal run_id is
+                # repeated, nothing in the trace can distinguish which BEGIN
+                # it belongs to; refuse rather than let the caller choose.
+                terminal_ref = (
+                    f"{terminal_commitment[\"tenant\"]}/"
+                    f"{terminal_commitment[\"writer_id\"]}/"
+                    f"{terminal_commitment[\"sequence\"]}"
+                )
+                if log.find_execution_ref(run_id) != terminal_ref:
                     raise ValueError(
                         f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
         execution = dict(receipt["execution"])
