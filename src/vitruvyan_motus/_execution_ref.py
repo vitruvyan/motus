@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["parse_execution_ref"]
+__all__ = [
+    "parse_execution_ref",
+    "receipt_segment_for_execution_ref",
+    "receipt_original_segment",
+    "receipt_terminal_segment",
+]
 
 
 def parse_execution_ref(execution_ref: object) -> tuple[str, str, int]:
@@ -41,6 +46,30 @@ def parse_execution_ref(execution_ref: object) -> tuple[str, str, int]:
     return tenant, writer_id, sequence
 
 
+def _receipt_segments(receipt: object) -> list[object] | None:
+    """Return the receipt segment list without interpreting its contents."""
+    if not isinstance(receipt, dict):
+        return None
+    segments = receipt.get("segments")
+    return segments if isinstance(segments, list) else None
+
+
+def receipt_original_segment(receipt: object) -> dict[str, Any] | None:
+    """Return the first receipt segment when it has the expected object shape."""
+    segments = _receipt_segments(receipt)
+    if not segments or not isinstance(segments[0], dict):
+        return None
+    return segments[0]
+
+
+def receipt_terminal_segment(receipt: object) -> dict[str, Any] | None:
+    """Return the last receipt segment when it has the expected object shape."""
+    segments = _receipt_segments(receipt)
+    if not segments or not isinstance(segments[-1], dict):
+        return None
+    return segments[-1]
+
+
 def receipt_segment_for_execution_ref(
     receipt: object, execution_ref: object,
 ) -> dict[str, Any] | None:
@@ -52,10 +81,8 @@ def receipt_segment_for_execution_ref(
     semantics and still refuses substitution with another execution.
     """
     tenant, writer_id, sequence = parse_execution_ref(execution_ref)
-    if not isinstance(receipt, dict):
-        return None
-    segments = receipt.get("segments")
-    if not isinstance(segments, list):
+    segments = _receipt_segments(receipt)
+    if segments is None:
         return None
     for segment in segments:
         if not isinstance(segment, dict):
