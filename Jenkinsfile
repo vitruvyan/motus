@@ -47,12 +47,11 @@ pipeline {
                     set -eu
                     test -n "$CHANGE_TARGET"
                     git config --global --add safe.directory "$WORKSPACE"
-                    printf 'BRANCH_NAME=%s\n' "${BRANCH_NAME:-}"
-                    printf 'CHANGE_ID=%s\n' "${CHANGE_ID:-}"
-                    printf 'CHANGE_TARGET=%s\n' "${CHANGE_TARGET:-}"
-                    printf 'CHANGE_BRANCH=%s\n' "${CHANGE_BRANCH:-}"
-                    printf 'GIT_COMMIT=%s\n' "${GIT_COMMIT:-}"
-                    echo "Frozen contract audit temporarily diagnostic-only; exact base SHA wiring pending."
+                    test -n "${CHANGE_TARGET:-}"
+                    test -n "${CHANGE_ID:-}"
+                    test -n "${GIT_COMMIT:-}"
+                    git cat-file -e "${GIT_COMMIT}^{commit}"
+                    echo "Jenkins PR metadata available: PR #${CHANGE_ID}, target=${CHANGE_TARGET}, head=${GIT_COMMIT}"
                 '''
             }
         }
