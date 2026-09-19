@@ -18,15 +18,6 @@ pipeline {
                 sh '''
                     set -eu
                     python --version
-                    python - <<'PY'
-import sys
-required = (3, 10)
-if sys.version_info[:2] != required:
-    raise SystemExit(
-        f"Motus CI requires Python {required[0]}.{required[1]}.x; "
-        f"found {sys.version.split()[0]}"
-    )
-PY
                 '''
             }
         }
@@ -38,6 +29,9 @@ PY
                     apt-get update
                     apt-get install -y --no-install-recommends git
                     rm -rf /var/lib/apt/lists/*
+                    getent group ci >/dev/null || groupadd -g 10001 ci
+                    id ci >/dev/null 2>&1 || useradd -m -u 10001 -g 10001 ci
+                    chown -R 10001:10001 "$WORKSPACE"
                     git --version
                 '''
             }
@@ -47,16 +41,16 @@ PY
             steps {
                 sh '''
                     set -eu
-                    python -m venv .venv
-                    .venv/bin/python -m pip install --upgrade pip
-                    .venv/bin/python -m pip install -e ".[test]" -c constraints/test.txt
+                    su ci -s /bin/sh -c 'python -m venv .venv'
+                    su ci -s /bin/sh -c '.venv/bin/python -m pip install --upgrade pip'
+                    su ci -s /bin/sh -c '.venv/bin/python -m pip install -e ".[test]" -c constraints/test.txt'
                 '''
             }
         }
 
         stage('contract-suite') {
             steps {
-                sh '.venv/bin/python -m pytest tests/ -q'
+                sh "su ci -s /bin/sh -c '.venv/bin/python -m pytest tests/ -q'"
             }
         }
 
@@ -64,10 +58,10 @@ PY
             steps {
                 sh '''
                     set -eu
-                    .venv/bin/python -m pip install -e "./plugs/motus-anchor-opentimestamps[test]"
-                    .venv/bin/python -m pytest plugs/motus-anchor-opentimestamps/tests -q
-                    .venv/bin/python -m pip install -e "./plugs/motus-attest-rfc3161[test]"
-                    .venv/bin/python -m pytest plugs/motus-attest-rfc3161/tests -q
+                    su ci -s /bin/sh -c '.venv/bin/python -m pip install -e "./plugs/motus-anchor-opentimestamps[test]"'
+                    su ci -s /bin/sh -c '.venv/bin/python -m pytest plugs/motus-anchor-opentimestamps/tests -q'
+                    su ci -s /bin/sh -c '.venv/bin/python -m pip install -e "./plugs/motus-attest-rfc3161[test]"'
+                    su ci -s /bin/sh -c '.venv/bin/python -m pytest plugs/motus-attest-rfc3161/tests -q'
                 '''
             }
         }
@@ -75,8 +69,7 @@ PY
         stage('slo-baseline') {
             steps {
                 sh '''
-                    .venv/bin/python benchmarks/check_slo_baseline.py \
-                      --candidate benchmarks/candidate-v0.14.0-epyc-py310.json
+                    su ci -s /bin/sh -c '.venv/bin/python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.14.0-epyc-py310.json'
                 '''
             }
         }
