@@ -969,14 +969,16 @@ evidence = EvidenceAPI(source)
 
 receipt = evidence.receipt_for(execution_ref)
 package = evidence.package_for(execution_ref)
-verdict = evidence.verify(execution_ref)
+verdict = evidence.verify(execution_ref, package=package)
 ```
 
 Every lookup takes the ADR-027 `execution_ref` (`tenant/writer/sequence`),
 never `run_id`. Retrieving a receipt is not verification: `verify()` runs the
 shipped package verifier over the actual bytes returned by the configured
-`EvidenceSource`. A UI that displays “verified” must therefore display that
-verdict, not infer it from a fingerprint or from the presence of a receipt.
+`EvidenceSource`. If the bridge already holds the package bytes, it passes them
+back to `verify(..., package=package)` so the verdict necessarily describes the
+same artifact it displays. A UI that displays “verified” must therefore display
+that verdict, not infer it from a fingerprint or from receipt presence.
 
 `LiveEvidenceSource` is the local reference adapter for an embedder that owns a
 live `CommitmentLog` and can resolve the corresponding `TraceBundle`. A
