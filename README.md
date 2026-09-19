@@ -981,9 +981,12 @@ same artifact it displays. A UI that displays “verified” must therefore disp
 that verdict, not infer it from a fingerprint or from receipt presence.
 
 `LiveEvidenceSource` is the local reference adapter for an embedder that owns a
-live `CommitmentLog` and can resolve the corresponding `TraceBundle`. A
-deployment using a database, object store or evidence service implements the
-same `EvidenceSource` protocol; storage layout is not part of the public API.
+live `CommitmentLog` and can resolve the corresponding `TraceBundle`. Optional
+`anchors_for` and `attestations_for` callbacks let it carry already-produced
+proof artifacts into the package; the Evidence API does not create or interpret
+those proofs. A deployment using a database, object store or evidence service
+implements the same `EvidenceSource` protocol; storage layout is not part of
+the public API.
 
 `Trace.from_json` is the loader to prefer when the document's **text** is in
 reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken
