@@ -2,7 +2,7 @@
 
 Branch: `feat/regulatory-evidence-profile-v1`.
 
-Read first: `AGENTS.md`, ADR-020, ADR-021, ADR-027, proposed ADR-034, `src/vitruvyan_motus/evidence.py`, `src/vitruvyan_motus/commitlog.py`, `src/vitruvyan_motus/replay.py`, and the public-surface section of `README.md`.
+Read first: `AGENTS.md`, ADR-020, ADR-021, ADR-027, accepted ADR-034, `src/vitruvyan_motus/evidence.py`, `src/vitruvyan_motus/commitlog.py`, `src/vitruvyan_motus/replay.py`, and the public-surface section of `README.md`.
 
 ## Goal
 
