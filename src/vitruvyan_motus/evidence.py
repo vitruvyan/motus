@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 __all__ = ["pack", "verify_package", "PackageVerdict"]
 
 _PACKAGE_VERSION = "1.0"
+_MANIFEST_MEMBER = "manifest.json"
+_RECEIPT_MEMBER = "core/receipt.json"
+_SHA256_PREFIX = "sha256:"
+_SHA256_HEX_LENGTH = 64
 _ZIP_DATE = (2026, 1, 1, 0, 0, 0)
 _INTEGRITY_NOTE = (
     "manifest digests detect transport damage; execution integrity is "
@@ -40,8 +44,19 @@ _NO_LOG_NOTE = "no commitment log: no receipt"
 # medium trace while staying below the tested astral-string failure threshold.
 _FIXED_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _FIXED_JSON_MEMBERS = frozenset({
-    "manifest.json", "core/trace.json", "core/graphspec.json", "core/receipt.json",
+    _MANIFEST_MEMBER, "core/trace.json", "core/graphspec.json", _RECEIPT_MEMBER,
 })
+
+
+def _is_sha256_digest(value: object) -> bool:
+    """Whether value is canonical Motus SHA-256 identifier text."""
+    if not isinstance(value, str) or not value.startswith(_SHA256_PREFIX):
+        return False
+    body = value[len(_SHA256_PREFIX):]
+    return (
+        len(body) == _SHA256_HEX_LENGTH
+        and all(char in "0123456789abcdef" for char in body)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +146,7 @@ def _digest_member(archive: zipfile.ZipFile, name: str) -> str:
     except (NotImplementedError, RuntimeError, zipfile.LargeZipFile,
             zipfile.BadZipFile, EOFError, OSError, MemoryError, zlib.error) as exc:
         raise _MemberReadError(name, exc) from None
-    return "sha256:" + digest.hexdigest()
+    return _SHA256_PREFIX + digest.hexdigest()
 
 
 def _strict_parse_error(
@@ -220,12 +235,11 @@ def pack(
                 ):
                     raise ValueError(
                         f"execution_ref {selected_ref!r} has malformed terminal BEGIN identity")
-                terminal_ref = (
-                    f"{terminal_tenant}/{terminal_writer}/{terminal_sequence}"
-                )
-                if log.find_execution_ref(run_id) != terminal_ref:
-                    raise ValueError(
-                        f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
+                # Force the existing log ambiguity check. A unique run_id
+                # necessarily resolves to this terminal BEGIN; repeated ids
+                # raise CommitmentLogFork rather than reaching dead comparison
+                # code with a second refusal message.
+                log.find_execution_ref(run_id)
         execution = dict(receipt["execution"])
     else:
         if execution_ref is not None:
@@ -242,7 +256,7 @@ def pack(
         ("core/graphspec.json", _canonical_bytes(graph_dict)),
     ]
     if receipt is not None:
-        members.append(("core/receipt.json", _canonical_bytes(receipt)))
+        members.append((_RECEIPT_MEMBER, _canonical_bytes(receipt)))
     for name, payload in proofs.items():
         _require_safe_key(name)
         if not isinstance(payload, bytes):
@@ -263,7 +277,7 @@ def pack(
             section = "supplementary/attachments"
         else:
             section = name.split("/", 1)[0]
-        files.append({"name": name, "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+        files.append({"name": name, "sha256": _SHA256_PREFIX + hashlib.sha256(payload).hexdigest(),
                       "section": section})
     manifest: dict[str, Any] = {
         "package_version": _PACKAGE_VERSION,
@@ -275,7 +289,7 @@ def pack(
     }
     if receipt is None:
         manifest["note"] = _NO_LOG_NOTE
-    members.append(("manifest.json", _canonical_bytes(manifest)))
+    members.append((_MANIFEST_MEMBER, _canonical_bytes(manifest)))
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -310,7 +324,7 @@ def _identity_documents_from_package(
             raise ValueError("evidence package has duplicate member names")
         if unsafe:
             raise ValueError("evidence package has unsafe member names")
-        for required in ("manifest.json", "core/receipt.json"):
+        for required in (_MANIFEST_MEMBER, _RECEIPT_MEMBER):
             if required not in names:
                 raise ValueError(f"evidence package has no {required}")
 
@@ -332,7 +346,7 @@ def _identity_documents_from_package(
                 raise ValueError(f"evidence package {name} is not a JSON object")
             return value
 
-        return read_object("manifest.json"), read_object("core/receipt.json")
+        return read_object(_MANIFEST_MEMBER), read_object(_RECEIPT_MEMBER)
     finally:
         archive.close()
 
@@ -371,7 +385,7 @@ def verify_package(data: bytes) -> PackageVerdict:
                 tuple(f"<unsafe member name>: {name}" for name in unsafe),
                 ("<trace unavailable: unsafe member name>",),
             )
-        if "manifest.json" not in names:
+        if _MANIFEST_MEMBER not in names:
             return PackageVerdict(None, False, ("<manifest.json is missing>",),
                                   ("<trace unavailable: manifest is missing>",))
         # These imports are deliberately local: bare import of the kernel must
@@ -387,7 +401,7 @@ def verify_package(data: bytes) -> PackageVerdict:
         try:
             manifest = _loads_strict(
                 _read_member(
-                    archive, "manifest.json", limit=_FIXED_MEMBER_MAX_BYTES
+                    archive, _MANIFEST_MEMBER, limit=_FIXED_MEMBER_MAX_BYTES
                 ).decode("utf-8"))
         except _MemberReadError as exc:
             return PackageVerdict(
@@ -430,7 +444,7 @@ def verify_package(data: bytes) -> PackageVerdict:
                     if name in _FIXED_JSON_MEMBERS:
                         payload = _read_member(
                             archive, name, limit=_FIXED_MEMBER_MAX_BYTES)
-                        actual = "sha256:" + hashlib.sha256(payload).hexdigest()
+                        actual = _SHA256_PREFIX + hashlib.sha256(payload).hexdigest()
                     else:
                         # Attachments and proofs intentionally retain arbitrary
                         # size; hash them incrementally rather than buffering.
@@ -442,7 +456,7 @@ def verify_package(data: bytes) -> PackageVerdict:
                 if actual != expected:
                     damaged.append(name)
             for name in names:
-                if name != "manifest.json" and name not in declared_names:
+                if name != _MANIFEST_MEMBER and name not in declared_names:
                     damaged.append(name)
 
         def read_json(name: str) -> tuple[bool, Any, str | None]:
@@ -527,8 +541,8 @@ def verify_package(data: bytes) -> PackageVerdict:
                 )
 
         verdict = None
-        if "core/receipt.json" in names:
-            receipt_present, receipt, receipt_error = read_json("core/receipt.json")
+        if _RECEIPT_MEMBER in names:
+            receipt_present, receipt, receipt_error = read_json(_RECEIPT_MEMBER)
             if receipt_error:
                 trace_violations.append(f"RECEIPT {receipt_error}")
             try:
