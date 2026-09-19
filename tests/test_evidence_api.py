@@ -159,6 +159,22 @@ def test_receipt_for_rejects_schema_invalid_bound_receipt():
     with pytest.raises(ValueError, match="schema-invalid receipt"):
         api.receipt_for("acme/w1/0")
 
+def test_validator_failure_is_not_mislabeled_as_invalid_evidence(
+    tmp_path, monkeypatch,
+):
+    from vitruvyan_motus.contract import validate as contract_validate
+
+    ref, package = _logged_package(tmp_path)
+    receipt = json.loads(_members(package)["core/receipt.json"])
+    api = EvidenceAPI(_Source(receipt=receipt))
+
+    def fail_validator(document):
+        raise RuntimeError("validator unavailable")
+
+    monkeypatch.setattr(contract_validate, "validate_receipt", fail_validator)
+    with pytest.raises(RuntimeError, match="validator unavailable"):
+        api.receipt_for(ref)
+
 
 @pytest.mark.parametrize(
     ("field", "forged"),
