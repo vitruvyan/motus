@@ -48,12 +48,10 @@ def _receipt_is_contract_valid(receipt: dict[str, Any]) -> bool:
     # Deliberately lazy: importing the kernel must not pull jsonschema.
     from vitruvyan_motus.contract.validate import validate_receipt
 
-    try:
-        return not validate_receipt(receipt)
-    except Exception:
-        # The Evidence API is a hostile-storage boundary. A validator failure
-        # makes the receipt unusable for identity binding, never trustworthy.
-        return False
+    # Invalid evidence is reported by the validator as violations. Operational
+    # or programming failures in the validator are different: they must
+    # propagate instead of being mislabeled as defects in the evidence.
+    return not validate_receipt(receipt)
 
 
 def _receipt_binds(receipt: dict[str, Any], ref: str) -> bool:
