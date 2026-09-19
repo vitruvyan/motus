@@ -1,7 +1,8 @@
 # ADR-034 — Motus owns evidence; bridges only expose it
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-19
+- **Accepted:** 2026-09-19, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-020 (trust model), ADR-021 (witness/anchor), ADR-027 (execution identity), ADR-032/033 (distribution boundaries).
 - **Amends:** no wire contract yet. This ADR adds a public integration boundary for evidence consumers without changing trace, commitment, checkpoint, receipt, or evidence-package formats.
