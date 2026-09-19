@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import inspect
 import io
@@ -11,6 +12,7 @@ import pytest
 
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State, TraceBundle
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
+from vitruvyan_motus.commitments import AnchorReceipt, Attestation
 from vitruvyan_motus.evidence import pack
 from vitruvyan_motus.evidence_api import EvidenceAPI, EvidenceSource, LiveEvidenceSource
 
@@ -180,6 +182,60 @@ def test_verify_runs_real_verifier_not_receipt_presence(tmp_path):
     assert verdict.trace_violations
     assert verdict.verdict is not None
     assert verdict.verdict.status_of("INTEGRITY") != "established"
+
+
+def test_verify_no_receipt_package_is_transport_clean_but_establishes_no_verdict():
+    spec = _spec()
+    result = Runtime(spec, {"a": _node}).run(State.empty("x"), run_id="r")
+    package = pack(TraceBundle(spec, result.trace))
+    api = EvidenceAPI(_Source(package=package))
+    verdict = api.verify("acme/w1/0")
+    assert verdict.transport_ok is True
+    assert verdict.damaged == ()
+    assert verdict.verdict is None
+
+
+def test_live_source_carries_anchor_and_attestation_providers_into_package(tmp_path):
+    spec = _spec()
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    result = Runtime(spec, {"a": _node}, commitments=log).run(
+        State.empty("seed"), run_id="run-1")
+    checkpoint = log.seal("2026-01-01T00:00:01Z")
+    ref = log.find_execution_ref("run-1")
+    bundle = TraceBundle(spec, result.trace)
+    root = result.trace.root
+    assert root is not None
+    anchor = AnchorReceipt(
+        "anchor-1", "tron:nile", checkpoint.digest, "pending", proof={})
+    imprint = hashlib.sha256(bytes.fromhex(root.split(":", 1)[1])).hexdigest()
+    attestation = Attestation(
+        "tsa-1", "rfc3161_timestamp", "tsa.example", root,
+        "2026-01-01T00:00:02Z", "sha256",
+        {"token_der": base64.b64encode(b"\\x00" * 96).decode("ascii"),
+         "tsa_url": "https://tsa.example/timestamp",
+         "message_imprint": imprint},
+    )
+    calls = []
+
+    def anchors_for(execution_ref):
+        calls.append(("anchors", execution_ref))
+        return (anchor,)
+
+    def attestations_for(execution_ref):
+        calls.append(("attestations", execution_ref))
+        return (attestation,)
+
+    api = EvidenceAPI(LiveEvidenceSource(
+        log, {ref: bundle}.__getitem__,
+        anchors_for=anchors_for, attestations_for=attestations_for,
+    ))
+    package = api.package_for(ref)
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        receipt = json.loads(archive.read("core/receipt.json"))
+    assert receipt["anchors"] == [anchor.to_dict()]
+    assert receipt["attestations"] == [attestation.to_dict()]
+    assert calls == [("anchors", ref), ("attestations", ref)]
+    log.close()
 
 
 def test_live_source_retrieval_is_read_only_and_verifies_exact_bytes(tmp_path):
