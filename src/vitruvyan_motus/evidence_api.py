@@ -55,6 +55,11 @@ class EvidenceAPI:
         receipt = self._source.receipt_for(ref)
         if not isinstance(receipt, dict):
             raise TypeError("evidence source receipt_for must return dict")
+        execution = receipt.get("execution")
+        if not isinstance(execution, dict) or execution.get("ref") != ref:
+            raise ValueError(
+                "evidence source returned a receipt that does not bind the "
+                f"requested execution_ref {ref!r}")
         # A bridge may reshape its own copy for presentation. It must never be
         # able to mutate a source-owned cached receipt by accident.
         return copy.deepcopy(receipt)
