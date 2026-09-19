@@ -65,7 +65,7 @@ def _identity_binding_issue(
 ) -> str | None:
     """Return why readable, contract-valid evidence cannot bind ``ref``."""
     if not _receipt_binds(receipt, ref):
-        return f"receipt does not contain requested execution_ref {ref!r}"
+        return f"receipt does not bind requested execution_ref {ref!r}"
 
     manifest_execution = manifest.get("execution")
     receipt_execution = receipt.get("execution")
@@ -91,8 +91,6 @@ class EvidenceAPI:
         receipt = self._source.receipt_for(ref)
         if not isinstance(receipt, dict):
             raise TypeError("evidence source receipt_for must return dict")
-        if not _receipt_is_contract_valid(receipt):
-            raise ValueError("evidence source returned a schema-invalid receipt")
         if not _receipt_binds(receipt, ref):
             raise ValueError(
                 "evidence source returned a receipt that does not bind the "
