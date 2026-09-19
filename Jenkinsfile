@@ -38,6 +38,23 @@ pipeline {
             }
         }
 
+        stage('frozen-contract-paths') {
+            when {
+                changeRequest target: 'main'
+            }
+            steps {
+                sh '''
+                    set -eu
+                    test -n "$CHANGE_TARGET"
+                    git fetch --no-tags origin "$CHANGE_TARGET"
+                    BASE_SHA="$(git rev-parse "origin/$CHANGE_TARGET")"
+                    HEAD_SHA="$(git rev-parse HEAD)"
+                    echo "Frozen contract audit: $BASE_SHA..$HEAD_SHA"
+                    su ci -s /bin/sh -c "python tools/check_frozen_paths.py '$BASE_SHA' '$HEAD_SHA'"
+                '''
+            }
+        }
+
         stage('Install test environment') {
             steps {
                 sh '''
