@@ -58,6 +58,58 @@ def _receipt_binds(receipt: dict[str, Any], ref: str) -> bool:
     """One predicate for the ADR-027 coordinate carried by receipt segments."""
     return receipt_segment_for_execution_ref(receipt, ref) is not None
 
+def _manifest_structure_issue(manifest: dict[str, Any]) -> str | None:
+    """Return why a package manifest is unusable as an envelope descriptor.
+
+    Task 005 deliberately made the manifest transport metadata, not evidence.
+    This check therefore validates only the fixed envelope shape needed by
+    ``EvidenceAPI``; it never treats manifest claims as execution truth.
+    """
+    if manifest.get("package_version") != "1.0":
+        return "unsupported or missing package_version"
+    if not isinstance(manifest.get("motus_version"), str):
+        return "missing motus_version"
+    if not isinstance(manifest.get("execution"), dict):
+        return "missing execution identity"
+    if not isinstance(manifest.get("packed_at"), str):
+        return "missing packed_at"
+    if not isinstance(manifest.get("integrity"), str):
+        return "missing integrity note"
+
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        return "missing file list"
+
+    seen: set[str] = set()
+    for index, entry in enumerate(files):
+        if not isinstance(entry, dict):
+            return f"file entry {index} is not an object"
+        name = entry.get("name")
+        digest = entry.get("sha256")
+        section = entry.get("section")
+        if not isinstance(name, str) or not name:
+            return f"file entry {index} has no name"
+        if name in seen:
+            return f"duplicate file entry {name!r}"
+        seen.add(name)
+        if (
+            not isinstance(digest, str)
+            or not digest.startswith("sha256:")
+            or len(digest) != 71
+        ):
+            return f"file entry {name!r} has malformed sha256"
+        try:
+            int(digest[7:], 16)
+        except ValueError:
+            return f"file entry {name!r} has malformed sha256"
+        if not isinstance(section, str) or not section:
+            return f"file entry {name!r} has no section"
+
+    note = manifest.get("note")
+    if note is not None and not isinstance(note, str):
+        return "note is not a string"
+    return None
+
 def _receipt_execution_issue(receipt: dict[str, Any]) -> str | None:
     """Return why the receipt's derived execution identity is inconsistent."""
     execution = receipt.get("execution")
@@ -154,6 +206,10 @@ class EvidenceAPI:
         if not isinstance(package, bytes):
             raise TypeError("evidence source package_for must return bytes")
         manifest, receipt = _identity_documents_from_package(package)
+        manifest_issue = _manifest_structure_issue(manifest)
+        if manifest_issue is not None:
+            raise ValueError(
+                f"evidence source package has a malformed manifest: {manifest_issue}")
         if not _receipt_is_contract_valid(receipt):
             raise ValueError("evidence source package has a schema-invalid receipt")
         issue = _identity_binding_issue(manifest, receipt, ref)
@@ -184,6 +240,9 @@ class EvidenceAPI:
         try:
             manifest, receipt = _identity_documents_from_package(raw)
         except ValueError:
+            return verify_package(raw)
+
+        if _manifest_structure_issue(manifest) is not None:
             return verify_package(raw)
 
         if not _receipt_is_contract_valid(receipt):
