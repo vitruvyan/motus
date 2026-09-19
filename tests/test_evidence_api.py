@@ -108,6 +108,7 @@ def _replace_json_member_and_rehash(data, name, value):
             manifest, separators=(",", ":")).encode()
     return _rebuilt(values)
 
+
 def _logged_package(path, *, run_id="run-1", writer_id="w1"):
     spec = _spec()
     log = CommitmentLog(path, tenant="acme", writer_id=writer_id, fsync=False)
@@ -153,10 +154,36 @@ def test_source_cannot_swap_a_different_receipt_under_the_requested_ref():
         api.receipt_for("acme/w1/0")
 
 
-def test_receipt_is_a_copy_so_a_bridge_cannot_mutate_source_evidence():
-    source = _Source()
+def test_receipt_for_rejects_schema_invalid_bound_receipt():
+    api = EvidenceAPI(_Source(receipt=_minimal_receipt()))
+    with pytest.raises(ValueError, match="schema-invalid receipt"):
+        api.receipt_for("acme/w1/0")
+
+
+@pytest.mark.parametrize(
+    ("field", "forged"),
+    [
+        ("run_id", "forged-run"),
+        ("fingerprint", "sha256:" + "b" * 64),
+    ],
+)
+def test_receipt_for_refuses_forged_derived_execution_identity(
+    tmp_path, field, forged,
+):
+    ref, package = _logged_package(tmp_path)
+    receipt = json.loads(_members(package)["core/receipt.json"])
+    receipt["execution"][field] = forged
+    api = EvidenceAPI(_Source(receipt=receipt))
+    with pytest.raises(ValueError, match=f"execution\\.{field}"):
+        api.receipt_for(ref)
+
+
+def test_receipt_is_a_copy_so_a_bridge_cannot_mutate_source_evidence(tmp_path):
+    ref, package = _logged_package(tmp_path)
+    receipt = json.loads(_members(package)["core/receipt.json"])
+    source = _Source(receipt=receipt)
     api = EvidenceAPI(source)
-    returned = api.receipt_for("acme/w1/0")
+    returned = api.receipt_for(ref)
     returned["execution"]["run_id"] = "changed-by-renderer"
     assert source.receipt["execution"]["run_id"] == "run-1"
 
