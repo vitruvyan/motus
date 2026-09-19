@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
+from vitruvyan_motus._execution_ref import (
+    receipt_segment_for_execution_ref, receipt_terminal_segment,
+)
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
@@ -181,10 +183,7 @@ def pack(
             # A receipt requested by any included BEGIN names the whole resumed
             # chain. The TraceBundle belongs to the terminal segment, not
             # necessarily to the BEGIN the caller used to locate that chain.
-            segments = receipt.get("segments")
-            terminal_segment = (
-                segments[-1] if isinstance(segments, list) and segments else None
-            )
+            terminal_segment = receipt_terminal_segment(receipt)
             terminal_begin = (terminal_segment.get("begin")
                               if isinstance(terminal_segment, dict) else None)
             terminal_commitment = (terminal_begin.get("commitment")
