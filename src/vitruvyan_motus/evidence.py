@@ -279,12 +279,14 @@ def pack(
     return buffer.getvalue()
 
 
-def _receipt_from_package(data: bytes) -> dict[str, Any]:
-    """Strictly read ``core/receipt.json`` for execution-identity binding.
+def _identity_documents_from_package(
+    data: bytes,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Strictly read manifest and receipt for consumer identity binding.
 
-    This is intentionally narrower than ``verify_package``: it establishes
-    which execution a package claims to contain, not whether the package is
-    valid. The same fixed-member bounds and strict JSON loader are reused.
+    This is narrower than ``verify_package``: it establishes what execution
+    the package *labels* and what execution its receipt *contains*. It does
+    not decide whether either artifact is valid.
     """
     if not isinstance(data, bytes):
         raise TypeError("package data must be bytes")
@@ -299,21 +301,37 @@ def _receipt_from_package(data: bytes) -> dict[str, Any]:
             raise ValueError("evidence package has duplicate member names")
         if unsafe:
             raise ValueError("evidence package has unsafe member names")
-        if "core/receipt.json" not in names:
-            raise ValueError("evidence package has no core/receipt.json")
+        for required in ("manifest.json", "core/receipt.json"):
+            if required not in names:
+                raise ValueError(f"evidence package has no {required}")
+
         from vitruvyan_motus.contract.validate import _loads_strict
-        try:
-            receipt = _loads_strict(
-                _read_member(
-                    archive, "core/receipt.json", limit=_FIXED_MEMBER_MAX_BYTES
-                ).decode("utf-8"))
-        except (_MemberReadError, UnicodeDecodeError, ValueError, RecursionError) as exc:
-            raise ValueError("evidence package receipt is not readable strict JSON") from exc
-        if not isinstance(receipt, dict):
-            raise ValueError("evidence package receipt is not a JSON object")
-        return receipt
+
+        def read_object(name: str) -> dict[str, Any]:
+            try:
+                value = _loads_strict(
+                    _read_member(
+                        archive, name, limit=_FIXED_MEMBER_MAX_BYTES
+                    ).decode("utf-8"))
+            except (
+                _MemberReadError, UnicodeDecodeError, ValueError, RecursionError
+            ) as exc:
+                raise ValueError(
+                    f"evidence package {name} is not readable strict JSON"
+                ) from exc
+            if not isinstance(value, dict):
+                raise ValueError(f"evidence package {name} is not a JSON object")
+            return value
+
+        return read_object("manifest.json"), read_object("core/receipt.json")
     finally:
         archive.close()
+
+
+def _receipt_from_package(data: bytes) -> dict[str, Any]:
+    """Strictly read ``core/receipt.json`` for execution-identity binding."""
+    _, receipt = _identity_documents_from_package(data)
+    return receipt
 
 def verify_package(data: bytes) -> PackageVerdict:
     """Verify a package using only its bytes; malformed input becomes a result.
