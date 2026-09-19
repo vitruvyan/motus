@@ -40,6 +40,7 @@ def parse_execution_ref(execution_ref: object) -> tuple[str, str, int]:
         raise ValueError(f"invalid execution reference {execution_ref!r}")
     return tenant, writer_id, sequence
 
+
 def receipt_segment_for_execution_ref(
     receipt: object, execution_ref: object,
 ) -> dict[str, Any] | None:
