@@ -10,10 +10,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+import vitruvyan_motus.evidence_api as evidence_api_module
 from vitruvyan_motus import Fact, GraphSpec, Runtime, State, TraceBundle
 from vitruvyan_motus.commitlog import CommitmentLog, CommitmentLogFork
 from vitruvyan_motus.commitments import AnchorReceipt, Attestation
-from vitruvyan_motus.evidence import pack
+from vitruvyan_motus.evidence import pack, verify_package
 from vitruvyan_motus.evidence_api import EvidenceAPI, EvidenceSource, LiveEvidenceSource
 
 
@@ -96,6 +97,17 @@ def _tamper_trace_but_recompute_manifest(data):
     return _rebuilt(values)
 
 
+def _replace_json_member_and_rehash(data, name, value):
+    values = _members(data)
+    values[name] = json.dumps(value, separators=(",", ":")).encode()
+    if name != "manifest.json":
+        manifest = json.loads(values["manifest.json"])
+        entry = next(item for item in manifest["files"] if item["name"] == name)
+        entry["sha256"] = "sha256:" + hashlib.sha256(values[name]).hexdigest()
+        values["manifest.json"] = json.dumps(
+            manifest, separators=(",", ":")).encode()
+    return _rebuilt(values)
+
 def _logged_package(path, *, run_id="run-1", writer_id="w1"):
     spec = _spec()
     log = CommitmentLog(path, tenant="acme", writer_id=writer_id, fsync=False)
@@ -160,6 +172,39 @@ def test_source_cannot_swap_a_different_package_under_the_requested_ref(tmp_path
         api.package_for(first_ref)
     with pytest.raises(ValueError, match="does not bind"):
         api.verify(first_ref)
+
+
+def test_manifest_identity_cannot_disagree_with_valid_receipt(tmp_path):
+    ref, package = _logged_package(tmp_path)
+    values = _members(package)
+    manifest = json.loads(values["manifest.json"])
+    manifest["execution"]["run_id"] = "forged-manifest-run"
+    tampered = _replace_json_member_and_rehash(package, "manifest.json", manifest)
+
+    # The underlying evidence still verifies: this test is specifically the
+    # consumer-boundary identity substitution ADR-034 requires Motus to catch.
+    raw_verdict = verify_package(tampered)
+    assert raw_verdict.verdict is not None
+    assert raw_verdict.verdict.status_of("INTEGRITY") == "established"
+
+    api = EvidenceAPI(_Source(package=tampered))
+    with pytest.raises(ValueError, match="manifest execution identity disagrees"):
+        api.package_for(ref)
+    with pytest.raises(ValueError, match="manifest execution identity disagrees"):
+        api.verify(ref)
+
+
+def test_verify_schema_invalid_receipt_preserves_fail_closed_verdict(tmp_path):
+    ref, package = _logged_package(tmp_path)
+    malformed = _replace_json_member_and_rehash(package, "core/receipt.json", {})
+    api = EvidenceAPI(_Source(package=malformed))
+
+    verdict = api.verify(ref)
+    assert verdict.transport_ok is True
+    assert verdict.verdict is not None
+    assert verdict.verdict.violations or verdict.verdict.refused
+    with pytest.raises(ValueError, match="schema-invalid receipt"):
+        api.package_for(ref)
 
 
 def test_verify_malformed_package_returns_fail_closed_verdict_not_exception():
@@ -337,14 +382,36 @@ def test_resumed_receipt_accepts_continuation_ref_not_only_top_level_ref(tmp_pat
     log.seal("2026-01-01T00:00:01Z")
     continuation_ref = log.find_execution_ref("seg-2")
     bundle = TraceBundle(SPEC_CHAIN, resumed.trace)
-    api = EvidenceAPI(
-        LiveEvidenceSource(log, {continuation_ref: bundle}.__getitem__))
+    raw_receipt = log.receipt_for(continuation_ref)
+    original_ref = raw_receipt["execution"]["ref"]
+    assert original_ref != continuation_ref
+    api = EvidenceAPI(LiveEvidenceSource(
+        log, {original_ref: bundle, continuation_ref: bundle}.__getitem__))
 
     receipt = api.receipt_for(continuation_ref)
-    assert receipt["execution"]["ref"] != continuation_ref
-    package = api.package_for(continuation_ref)
-    verdict = api.verify(continuation_ref, package=package)
+    assert receipt["execution"]["ref"] == original_ref
+    for ref in (original_ref, continuation_ref):
+        package = api.package_for(ref)
+        verdict = api.verify(ref, package=package)
+        assert verdict.verdict is not None
+        assert verdict.verdict.status_of("INTEGRITY") == "established"
+    log.close()
+
+
+def test_legacy_pack_without_explicit_ref_keeps_verifier_driven_mismatch_behavior(tmp_path):
+    spec = _spec()
+    log = CommitmentLog(tmp_path, tenant="acme", writer_id="w1", fsync=False)
+    log.begin("legacy", at="2026-01-01T00:00:00Z", nonce="n0")
+    log.seal("2026-01-01T00:00:01Z")
+    result = Runtime(spec, {"a": _node}).run(State.empty("x"), run_id="legacy")
+
+    # Before ADR-034, pack(bundle, log=...) produced bytes and left the
+    # unfinished/completed mismatch to the verifier. The new explicit-ref path
+    # must not turn that legacy call into a construction-time exception.
+    package = pack(TraceBundle(spec, result.trace), log=log)
+    verdict = verify_package(package)
     assert verdict.verdict is not None
+    assert verdict.verdict.status_of("INTEGRITY") != "established"
     log.close()
 
 
@@ -355,7 +422,7 @@ def test_pack_refuses_an_execution_ref_without_a_commitment_log():
         pack(TraceBundle(spec, result.trace), execution_ref="acme/w1/0")
 
 
-def test_canonical_surface_has_no_product_specific_parameters():
+def test_canonical_surface_has_only_generic_parameters():
     expected = {
         (EvidenceAPI, "receipt_for"): ["self", "execution_ref"],
         (EvidenceAPI, "package_for"): ["self", "execution_ref"],
@@ -365,3 +432,9 @@ def test_canonical_surface_has_no_product_specific_parameters():
     }
     for (owner, name), parameters in expected.items():
         assert list(inspect.signature(getattr(owner, name)).parameters) == parameters
+
+
+def test_canonical_module_contains_no_consumer_product_model():
+    source = inspect.getsource(evidence_api_module).casefold()
+    for forbidden in ("orbis", "limen", "customer_id", "provider_id", "vertical_id"):
+        assert forbidden not in source
