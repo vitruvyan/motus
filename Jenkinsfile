@@ -47,7 +47,12 @@ pipeline {
                     set -eu
                     test -n "$CHANGE_TARGET"
                     git config --global --add safe.directory "$WORKSPACE"
-                    BASE_SHA="$(git merge-base HEAD HEAD^)"
+                    HEAD_SHA="$(git rev-parse HEAD)"
+                    BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+                    while [ "$(git rev-parse "$HEAD_SHA^")" != "$BASE_SHA" ]; do
+                        HEAD_SHA="$(git rev-parse "$HEAD_SHA^")"
+                    done
+                    BASE_SHA="$(git rev-parse "$HEAD_SHA^")"
                     HEAD_SHA="$(git rev-parse HEAD)"
                     git cat-file -e "$BASE_SHA^{commit}"
                     echo "Frozen contract audit: $BASE_SHA..$HEAD_SHA"
