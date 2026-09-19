@@ -942,6 +942,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
+- evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -951,6 +952,36 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+### Evidence API for bridges
+
+ADR-034 separates evidence ownership from presentation. Motus owns the receipt,
+package and verification result; Orbis, Limen or another application may expose
+them through a bridge without rebuilding or reinterpreting them.
+
+The canonical boundary is Python and transport-neutral:
+
+```python
+from vitruvyan_motus import EvidenceAPI, LiveEvidenceSource
+
+source = LiveEvidenceSource(commitment_log, bundle_for_execution_ref)
+evidence = EvidenceAPI(source)
+
+receipt = evidence.receipt_for(execution_ref)
+package = evidence.package_for(execution_ref)
+verdict = evidence.verify(execution_ref)
+```
+
+Every lookup takes the ADR-027 `execution_ref` (`tenant/writer/sequence`),
+never `run_id`. Retrieving a receipt is not verification: `verify()` runs the
+shipped package verifier over the actual bytes returned by the configured
+`EvidenceSource`. A UI that displays “verified” must therefore display that
+verdict, not infer it from a fingerprint or from the presence of a receipt.
+
+`LiveEvidenceSource` is the local reference adapter for an embedder that owns a
+live `CommitmentLog` and can resolve the corresponding `TraceBundle`. A
+deployment using a database, object store or evidence service implements the
+same `EvidenceSource` protocol; storage layout is not part of the public API.
 
 `Trace.from_json` is the loader to prefer when the document's **text** is in
 reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken
