@@ -64,6 +64,7 @@ from vitruvyan_motus.commitments import (
     Checkpoint, Commitment, CommitmentKind, CommitmentWindow, Witness,
     WitnessAck, AnchorReceipt, Attestation, merkle_path, merkle_root,
 )
+from vitruvyan_motus._execution_ref import parse_execution_ref
 from vitruvyan_motus.errors import MotusError
 from vitruvyan_motus.trace import _canonical_bytes
 
@@ -1013,20 +1014,9 @@ class CommitmentLog:
         can be proved; an unsealed BEGIN is therefore reported as not found.
         """
         # Validate before touching the store: this is an API boundary, not a
-        # filesystem query.  Slashes are separators and sequence is canonical.
-        parts = execution_ref.split("/") if isinstance(execution_ref, str) else []
-        malformed = (len(parts) != 3 or any(not part for part in parts)
-                     or not parts[2].isdigit())
-        if malformed:
-            raise ValueError(f"invalid execution reference {execution_ref!r}")
-        tenant, writer_id, raw_sequence = parts
-        try:
-            sequence = int(raw_sequence)
-        except ValueError:
-            raise ValueError(
-                f"invalid execution reference {execution_ref!r}") from None
-        if str(sequence) != raw_sequence:
-            raise ValueError(f"invalid execution reference {execution_ref!r}")
+        # filesystem query. ADR-034 makes the same key public to evidence
+        # consumers, so the parser is single-sourced rather than duplicated.
+        tenant, writer_id, sequence = parse_execution_ref(execution_ref)
         if "/" in self.tenant or "/" in self.writer_id:
             raise ValueError(
                 f"cannot produce receipt.v1 for {execution_ref!r}: the log's "

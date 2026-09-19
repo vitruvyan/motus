@@ -942,6 +942,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
+- evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -951,6 +952,52 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+### Evidence API for bridges
+
+ADR-034 separates evidence ownership from presentation. Motus owns the receipt,
+package and verification result; Orbis, Limen or another application may expose
+them through a bridge without rebuilding or reinterpreting them.
+
+The canonical boundary is Python and transport-neutral:
+
+```python
+from vitruvyan_motus import EvidenceAPI, LiveEvidenceSource
+
+source = LiveEvidenceSource(commitment_log, bundle_for_execution_ref)
+evidence = EvidenceAPI(source)
+
+receipt = evidence.receipt_for(execution_ref)
+package = evidence.package_for(execution_ref)
+verdict = evidence.verify(execution_ref, package=package)
+```
+
+Every lookup takes the ADR-027 `execution_ref` (`tenant/writer/sequence`),
+never `run_id`. `receipt_for()` performs contract and internal-identity
+validation before exposing a receipt; that is document validation, not
+execution verification. `package_for()` is strict retrieval: it returns only a
+readable package whose manifest has the fixed envelope shape defined by the
+evidence-package format, whose contract-valid receipt contains the requested
+execution, and whose manifest execution identity agrees with that receipt. The
+manifest remains transport metadata, not evidence and not a source of
+execution validity. `verify()` has a
+different hostile-input duty: malformed or schema-invalid stored evidence is
+returned as the shipped verifier’s fail-closed `PackageVerdict`, while a
+readable, contract-valid package for a different execution is refused as source
+substitution. Retrieving a receipt or package is not verification.
+
+If the bridge already holds the package bytes, it passes them back to
+`verify(..., package=package)` so the verdict necessarily describes the same
+artifact it displays. A UI that displays “verified” must therefore display
+that verdict, not infer it from a fingerprint or from receipt presence.
+
+`LiveEvidenceSource` is the local reference adapter for an embedder that owns a
+live `CommitmentLog` and can resolve the corresponding `TraceBundle`. Optional
+`anchors_for` and `attestations_for` callbacks let it carry already-produced
+proof artifacts into the package; the Evidence API does not create or interpret
+those proofs. A deployment using a database, object store or evidence service
+implements the same `EvidenceSource` protocol; storage layout is not part of
+the public API.
 
 `Trace.from_json` is the loader to prefer when the document's **text** is in
 reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken

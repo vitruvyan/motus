@@ -17,6 +17,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
+from vitruvyan_motus._execution_ref import (
+    receipt_segment_for_execution_ref, receipt_terminal_segment,
+)
+
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
     from vitruvyan_motus.commitments import AnchorReceipt, Attestation
@@ -62,6 +66,23 @@ def _is_safe_member_name(name: str) -> bool:
 def _require_safe_key(name: str) -> None:
     if not _is_safe_member_name(name):
         raise ValueError(f"unsafe evidence member name: {name!r}")
+
+def _archive_name_issues(
+    names: Iterable[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return duplicate and unsafe member names under one package policy."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    duplicate_reported: set[str] = set()
+    unsafe: list[str] = []
+    for name in names:
+        if name in seen and name not in duplicate_reported:
+            duplicates.append(name)
+            duplicate_reported.add(name)
+        seen.add(name)
+        if not _is_safe_member_name(name):
+            unsafe.append(name)
+    return tuple(duplicates), tuple(unsafe)
 
 
 class _MemberReadError(Exception):
@@ -130,6 +151,7 @@ def pack(
     bundle: TraceBundle,
     *,
     log: CommitmentLog | None = None,
+    execution_ref: str | None = None,
     anchors: Iterable[AnchorReceipt] = (),
     attestations: Iterable[Attestation] = (),
     proofs: Mapping[str, bytes] = {},
@@ -138,7 +160,9 @@ def pack(
     """Pack a bundle into the fixed evidence layout.
 
     A commitment log must have sealed the execution window first. When no log
-    is supplied the package honestly contains no receipt.
+    is supplied the package honestly contains no receipt. When ``execution_ref``
+    is supplied it selects the exact sealed BEGIN rather than resolving the run
+    through ``run_id``; ADR-027 requires that distinction for retried ids.
     """
     from vitruvyan_motus.trace import _canonical_bytes
     trace_dict = bundle.trace.to_dict()
@@ -146,11 +170,66 @@ def pack(
     if log is not None:
         from vitruvyan_motus.commitlog import CommitmentLog  # type: ignore[import-not-found]
         run_id = trace_dict["run"]["run_id"]
-        execution_ref = log.find_execution_ref(run_id)
-        receipt = log.receipt_for(execution_ref, anchors=anchors,
+        selected_ref = (execution_ref if execution_ref is not None
+                        else log.find_execution_ref(run_id))
+        receipt = log.receipt_for(selected_ref, anchors=anchors,
                                   attestations=attestations)
+        if execution_ref is not None:
+            selected_segment = receipt_segment_for_execution_ref(receipt, selected_ref)
+            if selected_segment is None:
+                raise ValueError(
+                    f"receipt does not contain requested execution {selected_ref!r}")
+
+            # A receipt requested by any included BEGIN names the whole resumed
+            # chain. The TraceBundle belongs to the terminal segment, not
+            # necessarily to the BEGIN the caller used to locate that chain.
+            terminal_segment = receipt_terminal_segment(receipt)
+            terminal_begin = (terminal_segment.get("begin")
+                              if isinstance(terminal_segment, dict) else None)
+            terminal_commitment = (terminal_begin.get("commitment")
+                                   if isinstance(terminal_begin, dict) else None)
+            if (not isinstance(terminal_commitment, dict)
+                    or terminal_commitment.get("run_id") != run_id):
+                raise ValueError(
+                    f"execution_ref {selected_ref!r} does not bind bundle run_id {run_id!r}")
+
+            # The explicit coordinate is the new ADR-034 path. It must prove
+            # the terminal END binds this trace root. The legacy
+            # pack(bundle, log=...) path retains its pre-ADR-034 behavior and
+            # leaves mismatch reporting to verify_package().
+            trace_root = bundle.trace.root
+            if trace_root is not None:
+                end_entry = terminal_segment.get("end")
+                end_commitment = (end_entry.get("commitment")
+                                  if isinstance(end_entry, dict) else None)
+                if (not isinstance(end_commitment, dict)
+                        or end_commitment.get("root") != trace_root):
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} does not bind bundle root {trace_root!r}")
+            else:
+                # An unfinished trace has no root. If its terminal run_id is
+                # repeated, nothing in the trace can distinguish which BEGIN
+                # it belongs to; refuse rather than let the caller choose.
+                terminal_tenant = terminal_commitment.get("tenant")
+                terminal_writer = terminal_commitment.get("writer_id")
+                terminal_sequence = terminal_commitment.get("sequence")
+                if (
+                    not isinstance(terminal_tenant, str)
+                    or not isinstance(terminal_writer, str)
+                    or type(terminal_sequence) is not int
+                ):
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} has malformed terminal BEGIN identity")
+                terminal_ref = (
+                    f"{terminal_tenant}/{terminal_writer}/{terminal_sequence}"
+                )
+                if log.find_execution_ref(run_id) != terminal_ref:
+                    raise ValueError(
+                        f"execution_ref {selected_ref!r} does not uniquely bind unfinished run {run_id!r}")
         execution = dict(receipt["execution"])
     else:
+        if execution_ref is not None:
+            raise ValueError("execution_ref requires a commitment log")
         receipt = None
         execution = {
             "ref": None,
@@ -209,6 +288,55 @@ def pack(
     return buffer.getvalue()
 
 
+def _identity_documents_from_package(
+    data: bytes,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Strictly read manifest and receipt for consumer identity binding.
+
+    This is narrower than ``verify_package``: it establishes what execution
+    the package *labels* and what execution its receipt *contains*. It does
+    not decide whether either artifact is valid.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError("package data must be bytes")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except (zipfile.BadZipFile, ValueError):
+        raise ValueError("evidence package is not a zip file") from None
+    try:
+        names = archive.namelist()
+        duplicate_names, unsafe = _archive_name_issues(names)
+        if duplicate_names:
+            raise ValueError("evidence package has duplicate member names")
+        if unsafe:
+            raise ValueError("evidence package has unsafe member names")
+        for required in ("manifest.json", "core/receipt.json"):
+            if required not in names:
+                raise ValueError(f"evidence package has no {required}")
+
+        from vitruvyan_motus.contract.validate import _loads_strict
+
+        def read_object(name: str) -> dict[str, Any]:
+            try:
+                value = _loads_strict(
+                    _read_member(
+                        archive, name, limit=_FIXED_MEMBER_MAX_BYTES
+                    ).decode("utf-8"))
+            except (
+                _MemberReadError, UnicodeDecodeError, ValueError, RecursionError
+            ) as exc:
+                raise ValueError(
+                    f"evidence package {name} is not readable strict JSON"
+                ) from exc
+            if not isinstance(value, dict):
+                raise ValueError(f"evidence package {name} is not a JSON object")
+            return value
+
+        return read_object("manifest.json"), read_object("core/receipt.json")
+    finally:
+        archive.close()
+
+
 def verify_package(data: bytes) -> PackageVerdict:
     """Verify a package using only its bytes; malformed input becomes a result.
 
@@ -230,21 +358,13 @@ def verify_package(data: bytes) -> PackageVerdict:
                               ("<trace unavailable: not a zip file>",))
     try:
         names = archive.namelist()
-        seen_names: set[str] = set()
-        duplicate_reported: set[str] = set()
-        duplicate_names: list[str] = []
-        for name in names:
-            if name in seen_names and name not in duplicate_reported:
-                duplicate_names.append(name)
-                duplicate_reported.add(name)
-            seen_names.add(name)
+        duplicate_names, unsafe = _archive_name_issues(names)
         if duplicate_names:
             return PackageVerdict(
                 None, False,
                 tuple(f"<duplicate member>: {name}" for name in duplicate_names),
                 ("<trace unavailable: duplicate physical member name>",),
             )
-        unsafe = [name for name in names if not _is_safe_member_name(name)]
         if unsafe:
             return PackageVerdict(
                 None, False,
