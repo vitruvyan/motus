@@ -13,8 +13,10 @@ from vitruvyan_motus._execution_ref import (
     parse_execution_ref, receipt_original_segment,
     receipt_segment_for_execution_ref, receipt_terminal_segment,
 )
-from vitruvyan_motus.evidence import (_identity_documents_from_package,
-                                      PackageVerdict, pack, verify_package)
+from vitruvyan_motus.evidence import (
+    _identity_documents_from_package, _is_sha256_digest, _PACKAGE_VERSION,
+    PackageVerdict, pack, verify_package,
+)
 
 if TYPE_CHECKING:
     from vitruvyan_motus.commitlog import CommitmentLog
@@ -67,7 +69,7 @@ def _manifest_structure_issue(manifest: dict[str, Any]) -> str | None:
     This check therefore validates only the fixed envelope shape needed by
     ``EvidenceAPI``; it never treats manifest claims as execution truth.
     """
-    if manifest.get("package_version") != "1.0":
+    if manifest.get("package_version") != _PACKAGE_VERSION:
         return "unsupported or missing package_version"
     if not isinstance(manifest.get("motus_version"), str):
         return "missing motus_version"
@@ -94,15 +96,7 @@ def _manifest_structure_issue(manifest: dict[str, Any]) -> str | None:
         if name in seen:
             return f"duplicate file entry {name!r}"
         seen.add(name)
-        if (
-            not isinstance(digest, str)
-            or not digest.startswith("sha256:")
-            or len(digest) != 71
-        ):
-            return f"file entry {name!r} has malformed sha256"
-        try:
-            int(digest[7:], 16)
-        except ValueError:
+        if not _is_sha256_digest(digest):
             return f"file entry {name!r} has malformed sha256"
         if not isinstance(section, str) or not section:
             return f"file entry {name!r} has no section"
