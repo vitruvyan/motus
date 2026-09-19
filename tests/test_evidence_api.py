@@ -286,7 +286,7 @@ def test_verify_inconsistent_receipt_identity_is_corruption_not_substitution(tmp
     # preserve the shipped verifier result, not misclassify it as a package
     # substituted from a different execution.
     assert api.verify(ref, package=corrupted) == expected
-    with pytest.raises(ValueError, match="inconsistent receipt"):
+    with pytest.raises(ValueError, match=r"execution\.run_id"):
         api.package_for(ref)
 
 
