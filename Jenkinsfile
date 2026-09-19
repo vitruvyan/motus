@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10.12-slim'
+            reuseNode true
+        }
+    }
 
     options {
         disableConcurrentBuilds(abortPrevious: true)
@@ -12,8 +17,8 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    python3 --version
-                    python3 - <<'PY'
+                    python --version
+                    python - <<'PY'
 import sys
 required = (3, 10)
 if sys.version_info[:2] != required:
@@ -30,7 +35,7 @@ PY
             steps {
                 sh '''
                     set -eu
-                    python3 -m venv .venv
+                    python -m venv .venv
                     .venv/bin/python -m pip install --upgrade pip
                     .venv/bin/python -m pip install -e ".[test]" -c constraints/test.txt
                 '''
