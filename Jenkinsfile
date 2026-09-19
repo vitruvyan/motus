@@ -1,0 +1,73 @@
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds(abortPrevious: true)
+        timeout(time: 20, unit: 'MINUTES')
+        timestamps()
+    }
+
+    stages {
+        stage('Environment') {
+            steps {
+                sh '''
+                    set -eu
+                    python3 --version
+                    python3 - <<'PY'
+import sys
+required = (3, 10)
+if sys.version_info[:2] != required:
+    raise SystemExit(
+        f"Motus CI requires Python {required[0]}.{required[1]}.x; "
+        f"found {sys.version.split()[0]}"
+    )
+PY
+                '''
+            }
+        }
+
+        stage('Install test environment') {
+            steps {
+                sh '''
+                    set -eu
+                    python3 -m venv .venv
+                    .venv/bin/python -m pip install --upgrade pip
+                    .venv/bin/python -m pip install -e ".[test]" -c constraints/test.txt
+                '''
+            }
+        }
+
+        stage('contract-suite') {
+            steps {
+                sh '.venv/bin/python -m pytest tests/ -q'
+            }
+        }
+
+        stage('anchor-plugs') {
+            steps {
+                sh '''
+                    set -eu
+                    .venv/bin/python -m pip install -e "./plugs/motus-anchor-opentimestamps[test]"
+                    .venv/bin/python -m pytest plugs/motus-anchor-opentimestamps/tests -q
+                    .venv/bin/python -m pip install -e "./plugs/motus-attest-rfc3161[test]"
+                    .venv/bin/python -m pytest plugs/motus-attest-rfc3161/tests -q
+                '''
+            }
+        }
+
+        stage('slo-baseline') {
+            steps {
+                sh '''
+                    .venv/bin/python benchmarks/check_slo_baseline.py \
+                      --candidate benchmarks/candidate-v0.14.0-epyc-py310.json
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+    }
+}
