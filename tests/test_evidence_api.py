@@ -267,6 +267,29 @@ def test_verify_schema_invalid_receipt_preserves_fail_closed_verdict(tmp_path):
         api.package_for(ref)
 
 
+def test_verify_inconsistent_receipt_identity_is_corruption_not_substitution(tmp_path):
+    ref, package = _logged_package(tmp_path)
+    receipt = json.loads(_members(package)["core/receipt.json"])
+    receipt["execution"]["run_id"] = "forged-run"
+    corrupted = _replace_json_member_and_rehash(
+        package, "core/receipt.json", receipt)
+
+    manifest = json.loads(_members(corrupted)["manifest.json"])
+    manifest["execution"]["run_id"] = "forged-run"
+    corrupted = _replace_json_member_and_rehash(
+        corrupted, "manifest.json", manifest)
+
+    expected = verify_package(corrupted)
+    api = EvidenceAPI(_Source(package=corrupted))
+
+    # Internal identity drift is corruption of this artifact. verify() must
+    # preserve the shipped verifier result, not misclassify it as a package
+    # substituted from a different execution.
+    assert api.verify(ref, package=corrupted) == expected
+    with pytest.raises(ValueError, match="inconsistent receipt"):
+        api.package_for(ref)
+
+
 def test_verify_malformed_package_returns_fail_closed_verdict_not_exception():
     source = _Source(package=b"not a zip file")
     api = EvidenceAPI(source)
