@@ -42,6 +42,7 @@ def _canonical_ref(value: object) -> str:
     tenant, writer_id, sequence = parse_execution_ref(value)
     return f"{tenant}/{writer_id}/{sequence}"
 
+
 def _receipt_is_contract_valid(receipt: dict[str, Any]) -> bool:
     """Use the shipped receipt validator before trusting identity fields."""
     # Deliberately lazy: importing the kernel must not pull jsonschema.
@@ -59,11 +60,54 @@ def _receipt_binds(receipt: dict[str, Any], ref: str) -> bool:
     """One predicate for the ADR-027 coordinate carried by receipt segments."""
     return receipt_segment_for_execution_ref(receipt, ref) is not None
 
+def _receipt_execution_issue(receipt: dict[str, Any]) -> str | None:
+    """Return why the receipt's derived execution identity is inconsistent."""
+    execution = receipt.get("execution")
+    segments = receipt.get("segments")
+    if not isinstance(execution, dict):
+        return "receipt does not carry canonical execution identity"
+    if not isinstance(segments, list) or not segments:
+        return "receipt has no execution segments"
+
+    first = segments[0].get("begin") if isinstance(segments[0], dict) else None
+    first_commitment = (first.get("commitment")
+                        if isinstance(first, dict) else None)
+    terminal = segments[-1] if isinstance(segments[-1], dict) else None
+    if not isinstance(first_commitment, dict) or not isinstance(terminal, dict):
+        return "receipt segments do not carry canonical commitments"
+
+    tenant = first_commitment.get("tenant")
+    writer_id = first_commitment.get("writer_id")
+    sequence = first_commitment.get("sequence")
+    if not isinstance(tenant, str) or not isinstance(writer_id, str) or type(sequence) is not int:
+        return "receipt original BEGIN has malformed execution identity"
+    expected_ref = f"{tenant}/{writer_id}/{sequence}"
+    if execution.get("ref") != expected_ref:
+        return "receipt execution.ref disagrees with its original BEGIN"
+    if execution.get("run_id") != first_commitment.get("run_id"):
+        return "receipt execution.run_id disagrees with its original BEGIN"
+
+    terminal_end = terminal.get("end")
+    if terminal_end is None:
+        expected_fingerprint = None
+    else:
+        terminal_commitment = (terminal_end.get("commitment")
+                               if isinstance(terminal_end, dict) else None)
+        if not isinstance(terminal_commitment, dict):
+            return "receipt terminal END has no canonical commitment"
+        expected_fingerprint = terminal_commitment.get("root")
+    if execution.get("fingerprint") != expected_fingerprint:
+        return "receipt execution.fingerprint disagrees with its terminal END"
+    return None
+
 
 def _identity_binding_issue(
     manifest: dict[str, Any], receipt: dict[str, Any], ref: str,
 ) -> str | None:
     """Return why readable, contract-valid evidence cannot bind ``ref``."""
+    receipt_issue = _receipt_execution_issue(receipt)
+    if receipt_issue is not None:
+        return receipt_issue
     if not _receipt_binds(receipt, ref):
         return f"receipt does not bind requested execution_ref {ref!r}"
 
@@ -95,6 +139,14 @@ class EvidenceAPI:
             raise ValueError(
                 "evidence source returned a receipt that does not bind the "
                 f"requested execution_ref {ref!r}")
+        if not _receipt_is_contract_valid(receipt):
+            raise ValueError("evidence source returned a schema-invalid receipt")
+        receipt_issue = _receipt_execution_issue(receipt)
+        if receipt_issue is not None:
+            raise ValueError(
+                f"evidence source returned an inconsistent receipt: {receipt_issue}")
+        # Contract validation and internal identity binding are document
+        # validation, not execution verification. The latter remains verify().
         # A bridge may reshape its own copy for presentation. It must never be
         # able to mutate a source-owned cached receipt by accident.
         return copy.deepcopy(receipt)
@@ -145,6 +197,7 @@ class EvidenceAPI:
 
         # Run the shipped verifier exactly once, over the bytes the bridge has.
         return verify_package(raw)
+
 
 class LiveEvidenceSource:
     """Reference source for an embedder that owns a live CommitmentLog.
