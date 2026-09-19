@@ -65,7 +65,9 @@ def _require_safe_key(name: str) -> None:
     if not _is_safe_member_name(name):
         raise ValueError(f"unsafe evidence member name: {name!r}")
 
-def _archive_name_issues(names: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _archive_name_issues(
+    names: Iterable[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Return duplicate and unsafe member names under one package policy."""
     seen: set[str] = set()
     duplicates: list[str] = []
@@ -335,11 +337,6 @@ def _identity_documents_from_package(
     finally:
         archive.close()
 
-
-def _receipt_from_package(data: bytes) -> dict[str, Any]:
-    """Strictly read ``core/receipt.json`` for execution-identity binding."""
-    _, receipt = _identity_documents_from_package(data)
-    return receipt
 
 def verify_package(data: bytes) -> PackageVerdict:
     """Verify a package using only its bytes; malformed input becomes a result.
