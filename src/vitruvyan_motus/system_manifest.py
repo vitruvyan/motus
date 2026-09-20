@@ -36,7 +36,7 @@ class SystemManifestBindingFinding:
     path: str
     status: Literal["matched", "mismatched", "not verified"]
     expected: str | None
-    observed: str | None
+    observed: str | tuple[str, ...] | None
     reason: str
 
 
@@ -122,13 +122,19 @@ def _trace_snapshots(
     traces: Iterable[Trace],
     validate,
 ) -> tuple[dict[str, Any], ...]:
-    """Snapshot and contract-validate every supplied Trace exactly once."""
+    """Snapshot and contract-validate every supplied Trace exactly once.
+
+    A trace may legitimately be in flight or crash-recovered. Completion is
+    unrelated to the graph identity used for a System Manifest binding, so the
+    validator accepts incomplete evidence while retaining every other trace
+    contract check.
+    """
     out: list[dict[str, Any]] = []
     for trace in traces:
         if not isinstance(trace, Trace):
             raise TypeError("traces entries must be validated Trace objects")
         document = trace.to_dict()
-        violations = validate.validate_trace(document)
+        violations = validate.validate_trace(document, expect_complete=False)
         if violations:
             detail = "; ".join(
                 f"{item.rule} {item.path}: {item.message}"
@@ -266,8 +272,11 @@ def verify_system_manifest_bindings(
             ))
         else:
             findings.append(SystemManifestBindingFinding(
-                f"{prefix}.code_fingerprint", _NOT_VERIFIED, graph["code_fingerprint"], None,
-                "matching supplied traces carry multiple distinct code_fingerprint values; verifier refuses to choose one",
+                f"{prefix}.code_fingerprint", _MISMATCHED,
+                graph["code_fingerprint"], code_values,
+                "matching supplied traces carry conflicting code_fingerprint values; "
+                "at least one contradicts the manifest declaration, so the binding "
+                "is a mismatch rather than missing evidence",
             ))
 
     return SystemManifestBindingVerdict(fingerprint, (), tuple(findings))
