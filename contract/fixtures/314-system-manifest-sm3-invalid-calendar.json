@@ -30,5 +30,7 @@
       }
     },
     "created_at": "2026-02-31T17:00:00Z"
-  }
+  },
+  "spec": null,
+  "layer": "semantic"
 }
