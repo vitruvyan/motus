@@ -98,12 +98,16 @@ def _trace_graph(trace: Trace) -> dict[str, Any]:
     return graph if isinstance(graph, dict) else {}
 
 
-def _matching_trace_code_fingerprints(traces: Iterable[Trace], graph_binding: dict[str, Any]) -> tuple[str, ...]:
+def _matching_trace_code_fingerprints(
+    traces: Iterable[Trace], graph_binding: dict[str, Any], trace_schema_version: str,
+) -> tuple[str, ...]:
     observed: set[str] = set()
     for trace in traces:
-        graph = _trace_graph(trace)
+        document = trace.to_dict()
+        graph = document.get("run", {}).get("graph", {})
         if (
-            graph.get("name") == graph_binding["name"]
+            document.get("schema_version") == trace_schema_version
+            and graph.get("name") == graph_binding["name"]
             and graph.get("version") == graph_binding["version"]
             and graph.get("spec_schema_version") == graph_binding["spec_schema_version"]
             and graph.get("graph_fingerprint") == graph_binding["graph_fingerprint"]
@@ -200,7 +204,9 @@ def verify_system_manifest_bindings(
                     f"{len(candidates)} supplied GraphSpecs share identity {graph['name']!r}/{graph['version']!r}; verifier refuses to choose one",
                 ))
 
-        code_values = _matching_trace_code_fingerprints(trace_items, graph)
+        code_values = _matching_trace_code_fingerprints(
+            trace_items, graph, motus["trace_schema_version"]
+        )
         if len(code_values) == 1:
             findings.append(_finding(
                 f"{prefix}.code_fingerprint", graph["code_fingerprint"], code_values[0],
