@@ -1085,12 +1085,12 @@ side is scoped by nothing. If you need to carry bytes that are not Unicode —
 a filename a filesystem handed over — encode them explicitly rather than
 smuggling them through a string.
 
-Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the five
+Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the six
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),
 not copied. `validate_trace`, `validate_graphspec`, `validate_jsonl`,
-`validate_commitment`, `validate_checkpoint` and `validate_receipt` are
-importable directly for a consumer who would rather check in-process than
-shell out.
+`validate_commitment`, `validate_checkpoint`, `validate_receipt` and
+`validate_system_manifest` are importable directly for a consumer who would
+rather check in-process than shell out.
 
 The native and legacy decision types are deliberately unambiguous:
 
