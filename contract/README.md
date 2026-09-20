@@ -111,12 +111,14 @@ where `canonical_json` is the same UTF-8, sorted-key, no-insignificant-
 whitespace form used elsewhere in this contract. The digest is **not stored in
 the document**. `system_manifest_fingerprint(document)` computes it.
 
-**What this step does not do:** it does not compare
-`bindings.motus.runtime_version` to an installed runtime, does not recompute a
-declared `graph_fingerprint` from a GraphSpec, and does not compare
-`code_fingerprint` to a trace/runtime identity. ADR-035 requires those checks
-to be a separate binding-verification operation so that "well-formed
-declaration" can never be reported as "verified system".
+**Binding verification is separate:** `validate_system_manifest()` stops at
+the declaration boundary. The public `verify_system_manifest_bindings()`
+operation then compares runtime and trace-schema versions with the Motus
+distribution executing the verifier, recomputes `graph_fingerprint` from
+supplied validated GraphSpecs, and compares `code_fingerprint` only with
+matching validated Motus trace evidence. Missing evidence reports `not
+verified`; it never becomes a match. This separation is what prevents
+"well-formed declaration" from being reported as "verified system".
 
 A valid manifest establishes none of ADR-020's seven trust levels. A signature
 over a manifest could later establish who signed that declaration; it still
