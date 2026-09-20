@@ -2,7 +2,7 @@
 
 Branch: `feat/risk-control-v1`.
 
-Status: architecture gate. No contract/runtime implementation until ADR-036 is accepted by the founder.
+Status: ADR-036 accepted by the founder on 2026-09-21. Contract-first implementation proceeds one independently verified micro-step at a time.
 
 Read first: `AGENTS.md`, ADR-001, ADR-020, ADR-027, ADR-034, ADR-035, `contract/README.md`, `contract/system-manifest.v1.schema.json`, and `src/vitruvyan_motus/system_manifest.py`.
 
@@ -12,10 +12,8 @@ Define the canonical boundary between declarative Risk & Control Registry data a
 
 ## Gate
 
-1. ADR-036 is PROPOSED only.
-2. Founder reviews/accepts or requests changes.
-3. No schema, runtime API, storage, UI, HTTP, MCP, Orbis or Limen implementation before acceptance.
-4. After acceptance, split implementation into contract-first micro-steps:
+1. ADR-036 was accepted by the founder on 2026-09-21.
+2. Split implementation into contract-first micro-steps:
    - registry schema + semantic invariants;
    - ControlApplication schema + semantic invariants;
    - canonical derived fingerprints;
@@ -25,5 +23,7 @@ Define the canonical boundary between declarative Risk & Control Registry data a
    - adversarial review;
    - Jenkins green;
    - merge.
+3. Do not combine a later micro-step into the registry-contract change merely because the ADR now permits it.
+4. No storage, UI, HTTP, MCP, Orbis or Limen implementation in the contract micro-steps.
 5. No edits to `tests/contract/` or `tests/compat/`.
 6. No new runtime dependencies.

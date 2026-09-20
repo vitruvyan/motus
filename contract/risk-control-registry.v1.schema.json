@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/risk-control-registry.v1.schema.json",
+  "title": "Vitruvyan Motus Risk & Control Registry, v1",
+  "description": "ADR-036. A jurisdiction-agnostic declaration of risks, controls, and their relationships. Registry validity proves only that the declaration is well formed; it does not prove that a risk exists, that a control ran or is effective, or that any compliance obligation is satisfied.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "registry",
+    "risks",
+    "controls",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "registry": {
+      "$ref": "#/$defs/RegistryIdentity"
+    },
+    "system": {
+      "$ref": "#/$defs/SystemBinding",
+      "description": "Optional declaration of the exact system-manifest revision to which this registry applies. This edge does not prove deployment, approval, or control application."
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Risk"
+      },
+      "description": "Declared risks. An empty array is valid and is not a claim that the system has no risks."
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Control"
+      },
+      "description": "Declared controls. Presence here is never evidence that a control ran or was effective."
+    },
+    "created_at": {
+      "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp",
+      "description": "When this registry revision was created. RCR3 validates the calendar value; this is not assessment time, approval time, or legal time."
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "$ref": "commitment.v1.schema.json#/$defs/Digest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional fingerprint of the registry revision this document declares it supersedes. This lineage claim does not rewrite historical evidence."
+    }
+  },
+  "$defs": {
+    "RegistryIdentity": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Operator-assigned stable registry identity across revisions."
+        },
+        "version": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Operator-assigned revision label. It is metadata, not the cryptographic identity of this document."
+        }
+      }
+    },
+    "SystemBinding": {
+      "type": "object",
+      "required": [
+        "system_id",
+        "manifest_fingerprint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "system_id": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+        },
+        "manifest_fingerprint": {
+          "$ref": "commitment.v1.schema.json#/$defs/Digest",
+          "description": "Derived fingerprint of the exact System Manifest revision. Registry validation checks shape only and does not retrieve or verify the manifest."
+        }
+      }
+    },
+    "Risk": {
+      "type": "object",
+      "required": [
+        "risk_id",
+        "title"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "risk_id": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+        },
+        "title": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+        },
+        "description": {
+          "$ref": "#/$defs/Text"
+        },
+        "category": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Operator-defined neutral category. Motus assigns no legal or regulatory meaning to this value."
+        },
+        "likelihood": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Optional operator declaration on an operator-defined scale; not a Motus assessment."
+        },
+        "impact": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Optional operator declaration on an operator-defined scale; not a Motus assessment."
+        },
+        "treatment": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Optional operator-declared treatment label with no built-in legal meaning."
+        },
+        "references": {
+          "$ref": "#/$defs/References"
+        }
+      }
+    },
+    "Control": {
+      "type": "object",
+      "required": [
+        "control_id",
+        "title",
+        "risk_refs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "control_id": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+        },
+        "title": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+        },
+        "description": {
+          "$ref": "#/$defs/Text"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Reference",
+          "description": "Opaque reference to an operator-owned policy. Registry validation does not retrieve or approve it."
+        },
+        "enforcement_point": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Neutral operator-declared point where the control is intended to be enforced; not evidence that it ran."
+        },
+        "control_type": {
+          "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+          "description": "Operator-defined neutral classification with no built-in regulatory meaning."
+        },
+        "references": {
+          "$ref": "#/$defs/References"
+        },
+        "risk_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+          },
+          "description": "Explicit many-to-many edges to risks declared in this registry. RCR2 requires every identifier to resolve locally; an empty array is valid."
+        }
+      }
+    },
+    "References": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/Reference"
+      }
+    },
+    "Reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "Text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  }
+}

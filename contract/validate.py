@@ -108,6 +108,7 @@ _COMMITMENT_SCHEMA_FILE = "commitment.v1.schema.json"
 _CHECKPOINT_SCHEMA_FILE = "checkpoint.v1.schema.json"
 _RECEIPT_SCHEMA_FILE = "receipt.v1.schema.json"
 _SYSTEM_MANIFEST_SCHEMA_FILE = "system-manifest.v1.schema.json"
+_RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -773,6 +774,7 @@ def load_trace_schema() -> dict:
 _VALIDATORS: dict[str, Draft202012Validator] = {}
 _COMMITMENT_REGISTRY: Registry | None = None
 _SYSTEM_MANIFEST_REGISTRY: Registry | None = None
+_RISK_CONTROL_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -807,6 +809,11 @@ def load_receipt_schema() -> dict:
 def load_system_manifest_schema() -> dict:
     """The System Manifest v1 schema, loaded relative to this file."""
     return _load(_SYSTEM_MANIFEST_SCHEMA_FILE)
+
+
+def load_risk_control_registry_schema() -> dict:
+    """The Risk & Control Registry v1 schema, loaded relative to this file."""
+    return _load(_RISK_CONTROL_REGISTRY_SCHEMA_FILE)
 
 
 
@@ -876,6 +883,37 @@ def _system_manifest_validator() -> Draft202012Validator:
             registry=_system_manifest_registry(),
         )
     return _VALIDATORS["system-manifest"]
+
+
+def _risk_control_schema_registry() -> Registry:
+    """Schemas needed to resolve Risk & Control Registry references.
+
+    The registry reuses the canonical Identifier and Digest definitions from
+    the commitment contract and the UTC timestamp grammar from System Manifest
+    rather than creating new spellings for those facts.
+    """
+    global _RISK_CONTROL_SCHEMA_REGISTRY
+    if _RISK_CONTROL_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _RISK_CONTROL_REGISTRY_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _RISK_CONTROL_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _RISK_CONTROL_SCHEMA_REGISTRY
+
+
+def _risk_control_registry_validator() -> Draft202012Validator:
+    if "risk-control-registry" not in _VALIDATORS:
+        _VALIDATORS["risk-control-registry"] = Draft202012Validator(
+            load_risk_control_registry_schema(),
+            format_checker=FormatChecker(),
+            registry=_risk_control_schema_registry(),
+        )
+    return _VALIDATORS["risk-control-registry"]
 
 
 
@@ -1375,6 +1413,70 @@ def validate_system_manifest(document: dict) -> list[Violation]:
     if not _calendar_valid_utc(document["created_at"]):
         violations.append(Violation(
             "SM3",
+            "$.created_at",
+            f"{document['created_at']!r} has the RFC 3339 UTC shape but is not "
+            "a calendar-valid UTC instant",
+        ))
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Risk & Control Registry semantics — ADR-036 rules RCR1-RCR3                #
+# --------------------------------------------------------------------------- #
+
+
+def validate_risk_control_registry(document: dict) -> list[Violation]:
+    """Validate one declarative Risk & Control Registry revision.
+
+    This operation establishes only structural and internal referential
+    validity. It does not establish that a declared risk exists, that a
+    control was applied or effective, or that any compliance obligation is
+    satisfied. ControlApplication evidence is a separate ADR-036 surface.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_risk_control_registry_schema()
+    violations += _schema_violations(
+        schema, _risk_control_registry_validator(), document
+    )
+    if violations:
+        return violations
+
+    # RCR1 — each local identity names exactly one declaration in this
+    # revision. Risk and control namespaces are independent of one another.
+    for collection, field in (("risks", "risk_id"), ("controls", "control_id")):
+        seen: set[str] = set()
+        for index, item in enumerate(document[collection]):
+            identifier = item[field]
+            if identifier in seen:
+                violations.append(Violation(
+                    "RCR1",
+                    f"$.{collection}[{index}].{field}",
+                    f"{field} {identifier!r} is declared more than once; "
+                    "identifiers are unique within one registry revision",
+                ))
+            seen.add(identifier)
+
+    # RCR2 — risk_refs is a local, machine-checkable edge. External mappings
+    # and framework profiles belong in references or later profile contracts.
+    risk_ids = {risk["risk_id"] for risk in document["risks"]}
+    for control_index, control in enumerate(document["controls"]):
+        for ref_index, risk_ref in enumerate(control["risk_refs"]):
+            if risk_ref not in risk_ids:
+                violations.append(Violation(
+                    "RCR2",
+                    f"$.controls[{control_index}].risk_refs[{ref_index}]",
+                    f"control names risk_ref {risk_ref!r}, but no risk with "
+                    "that risk_id is declared in this registry revision",
+                ))
+
+    # RCR3 — the schema owns timestamp shape; calendar truth needs arithmetic.
+    if not _calendar_valid_utc(document["created_at"]):
+        violations.append(Violation(
+            "RCR3",
             "$.created_at",
             f"{document['created_at']!r} has the RFC 3339 UTC shape but is not "
             "a calendar-valid UTC instant",

@@ -27,6 +27,7 @@ enforcement point.
 | 4 | Guarantees | `guarantees.md` | Operators and auditors | Executable: the conformance suite in `tests/contract/` and the CI benchmark gate. A release that violates either does not ship |
 | 5 | Commitment | `commitment.v1.schema.json`, `checkpoint.v1.schema.json`, `receipt.v1.schema.json` | A third party holding a receipt, who has none of our code running and no reason to trust us | `validate.py`'s C, K and P rules, which **recompute** every digest rather than reading it back. The three schemas travel in the wheel for the same reason `trace.v1` does: a verifier somebody has to clone a repository to obtain is a verifier most of them will not run |
 | 6 | System Manifest | `system-manifest.v1.schema.json` | An auditor, regulator-facing profile, or integration that needs one stable identity for the declared AI system configuration | `validate_system_manifest()` applies schema + SM1-SM3. It validates the declaration only; binding values are **not** verified merely by being present. ADR-035 requires a separate binding-verification operation before any runtime/graph value may be called matched |
+| 7 | Risk & Control Registry | `risk-control-registry.v1.schema.json` | An auditor, governance system, or later regulatory profile that needs one exact revision of the operator's declared risks and controls | `validate_risk_control_registry()` applies schema + RCR1-RCR3. It validates shape, local identity and references only; it never reports that a risk exists, a control ran, a control is effective, or an obligation is satisfied |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
@@ -124,6 +125,37 @@ A valid manifest establishes none of ADR-020's seven trust levels. A signature
 over a manifest could later establish who signed that declaration; it still
 would not establish that the declared configuration was deployed or that a
 declared control executed.
+
+### Risk & Control Registry rules — governance intent is not execution evidence
+
+ADR-036 adds a seventh contract surface for declarative governance state. A
+registry revision says which risks and controls an operator has declared and
+how they are related. It is not a ControlApplication, an assessment result, an
+effectiveness claim, or a compliance verdict.
+
+The core vocabulary is deliberately jurisdiction-agnostic. `category`,
+`likelihood`, `impact`, `treatment`, and `control_type` are opaque
+operator-defined labels. External profiles may map the same neutral registry
+revision to laws or standards without changing its identity. The core schema
+therefore contains no article numbers, framework control numbers,
+certification status, legal risk class, or conformity result.
+
+| Rule | What it refuses |
+|---|---|
+| `RCR1` | Duplicate `risk_id` or `control_id` values inside one registry revision. Risk and control identifiers occupy independent namespaces, but one identifier cannot name two declarations in the same namespace |
+| `RCR2` | A control whose `risk_refs` entry names no risk declared in the same revision. The edge is local and machine-checkable; external mappings belong in `references` or later profile contracts |
+| `RCR3` | A `created_at` value that has the required UTC timestamp shape but is not a real calendar instant |
+
+An empty risk list, an empty control list, and an unaddressed risk are valid
+declarations. None means "there is no risk" or "the governance state is
+acceptable"; those conclusions require an authority outside this structural
+contract. Likewise, a control may address many risks and a risk may be
+addressed by many controls, but those edges make no effectiveness claim.
+
+`registry_fingerprint` is forbidden inside the document: canonical identity
+must be derived from the complete validated revision rather than asserted by
+the revision itself. Its derivation helper is a separate ADR-036 micro-step.
+ControlApplication is also a separate surface and is not embedded here.
 
 ### What the verifier will not tell you
 

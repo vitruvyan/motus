@@ -1,0 +1,27 @@
+{
+  "artifact": "risk-control-registry",
+  "expect": "invalid",
+  "rule": "RCR1",
+  "reason_contains": "declared more than once",
+  "instance": {
+    "schema_version": "1.0.0",
+    "registry": {
+      "id": "acme/ai-governance",
+      "version": "2026.09.21-1"
+    },
+    "risks": [
+      {
+        "risk_id": "R-001",
+        "title": "First declaration"
+      },
+      {
+        "risk_id": "R-001",
+        "title": "Conflicting declaration"
+      }
+    ],
+    "controls": [],
+    "created_at": "2026-09-21T00:30:00Z"
+  },
+  "spec": null,
+  "layer": "semantic"
+}
