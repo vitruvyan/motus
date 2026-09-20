@@ -1,7 +1,8 @@
 # ADR-035 — A system manifest describes the system; execution evidence proves what it did
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-20
+- **Accepted:** 2026-09-20, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust model), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it).
 - **Amends on acceptance:** adds a new `contract/system-manifest.v1.schema.json` contract surface and the corresponding contract documentation/validator rules. It does **not** amend `trace.v1`, `graphspec.v1`, `commitment.v1`, `checkpoint.v1`, `receipt.v1`, or the evidence-package wire format.
