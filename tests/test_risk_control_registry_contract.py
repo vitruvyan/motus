@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -151,3 +152,23 @@ def test_rfc3339_real_leap_second_is_valid():
     document["created_at"] = "2016-12-31T23:59:60Z"
 
     assert validate.validate_risk_control_registry(document) == []
+
+
+def test_cli_accepts_a_valid_registry(tmp_path):
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(_registry()), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CONTRACT_DIR / "validate.py"),
+            "risk-control-registry",
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout == ""

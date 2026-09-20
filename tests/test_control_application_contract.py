@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -123,3 +124,23 @@ def test_unbounded_execution_sequence_is_ca1_not_validator_crash():
     violations = validate.validate_control_application(document)
 
     assert {item.rule for item in violations} == {"CA1"}
+
+
+def test_cli_accepts_a_valid_control_application(tmp_path):
+    path = tmp_path / "application.json"
+    path.write_text(json.dumps(_application()), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CONTRACT_DIR / "validate.py"),
+            "control-application",
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout == ""

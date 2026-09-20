@@ -4702,7 +4702,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
-            "P-rules, System Manifest SM-rules, JSON document and JSONL "
+            "P-rules, System Manifest SM-rules, Risk & Control Registry "
+            "RCR-rules, ControlApplication CA-rules, JSON document and JSONL "
             "stream forms."
         ),
         epilog=(
@@ -4715,7 +4716,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
-                 "receipt", "system-manifest", "package"],
+                 "receipt", "system-manifest", "risk-control-registry",
+                 "control-application", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -4850,6 +4852,10 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_checkpoint(doc)
         elif args.artifact == "system-manifest":
             violations = validate_system_manifest(doc)
+        elif args.artifact == "risk-control-registry":
+            violations = validate_risk_control_registry(doc)
+        elif args.artifact == "control-application":
+            violations = validate_control_application(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:
