@@ -437,7 +437,7 @@ def test_a_rename_cannot_move_frozen_evidence_outside_the_guard(tmp_path, monkey
 
 
 def test_pr_cannot_weaken_the_checker_that_judges_its_frozen_edits(tmp_path):
-    """Jenkins must run the checker blob from base, never the PR replacement."""
+    """The trusted judge must run a non-PR checker, never the PR replacement."""
     checker = tmp_path / "tools" / "check_frozen_paths.py"
     checker.parent.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "tools" / "check_frozen_paths.py", checker)
@@ -478,3 +478,20 @@ def test_pr_cannot_weaken_the_checker_that_judges_its_frozen_edits(tmp_path):
 
     assert judged.returncode == 1
     assert "tests/contract/proof.py" in judged.stderr
+
+def test_jenkins_cutover_preserves_the_external_frozen_guard_boundary():
+    """Repository contracts document the independently administered judge."""
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    documentation = (REPO_ROOT / "docs" / "JENKINS.md").read_text(encoding="utf-8")
+    adr = (
+        REPO_ROOT
+        / "adr"
+        / "ADR-032-the-open-half-ships-on-pypi-the-sold-half-through-the-installer.md"
+    ).read_text(encoding="utf-8")
+
+    assert "continuous-integration/jenkins/frozen-contract" not in jenkinsfile
+    assert "controller-owned Pipeline job" in documentation
+    assert "current `origin/main` tip" in documentation
+    assert "merge base for the diff boundary" in documentation
+    assert "PR checkout solely as untrusted data" in adr
+    assert "publication stays on GitHub Actions" in adr

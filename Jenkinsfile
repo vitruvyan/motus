@@ -38,35 +38,6 @@ pipeline {
             }
         }
 
-        stage('trusted frozen-contract-paths') {
-            when {
-                changeRequest target: 'main'
-            }
-            steps {
-                sh '''
-                    set -eu
-                    test -n "$CHANGE_TARGET"
-                    git config --global --add safe.directory "$WORKSPACE"
-                    test -n "${CHANGE_TARGET:-}"
-                    test -n "${CHANGE_ID:-}"
-                    test -n "${GIT_COMMIT:-}"
-                    HEAD_SHA="$(git rev-parse HEAD)"
-                    BASE_SHA="$(git merge-base "origin/${CHANGE_TARGET}" "$HEAD_SHA")"
-                    test "$HEAD_SHA" = "$GIT_COMMIT"
-                    git cat-file -e "$BASE_SHA^{commit}"
-                    git cat-file -e "$HEAD_SHA^{commit}"
-                    echo "Frozen contract audit: $BASE_SHA..$HEAD_SHA"
-                    TRUSTED_DIR="$(mktemp -d)"
-                    trap 'rm -rf "$TRUSTED_DIR"' EXIT HUP INT TERM
-                    TRUSTED_CHECKER="$TRUSTED_DIR/check_frozen_paths.py"
-                    git show "$BASE_SHA:tools/check_frozen_paths.py" > "$TRUSTED_CHECKER"
-                    chmod 0755 "$TRUSTED_DIR"
-                    chmod 0555 "$TRUSTED_CHECKER"
-                    su ci -s /bin/sh -c "python '$TRUSTED_CHECKER' '$BASE_SHA' '$HEAD_SHA'"
-                '''
-            }
-        }
-
         stage('Install test environment') {
             steps {
                 sh '''

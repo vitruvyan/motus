@@ -436,41 +436,14 @@ def test_review_file_carries_model_marker_and_reviewed_commit(review_mod, tmp_pa
     assert review_mod.REVIEW_MARKER in text
 
 
-def _trusted_frozen_stage() -> str:
+
+def test_repository_pipeline_cannot_claim_authoritative_frozen_status():
+    """The PR-owned Jenkinsfile is deliberately outside the trust boundary."""
     jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    marker = "stage('trusted frozen-contract-paths')"
-    assert jenkinsfile.count(marker) == 1
-    return jenkinsfile.split(marker, 1)[1].split(
-        "stage('Install test environment')", 1
-    )[0]
+    documentation = (REPO_ROOT / "docs" / "JENKINS.md").read_text(encoding="utf-8")
 
-
-def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
-    """Missing or ambiguous PR refs must abort the trusted Jenkins judge."""
-    stage = _trusted_frozen_stage()
-    assert "set -eu" in stage
-    for required in ("CHANGE_TARGET", "CHANGE_ID", "GIT_COMMIT"):
-        assert f'test -n "${{{required}:-}}"' in stage
-    assert 'git merge-base "origin/${CHANGE_TARGET}" "$HEAD_SHA"' in stage
-    assert 'git cat-file -e "$BASE_SHA^{commit}"' in stage
-    assert 'git cat-file -e "$HEAD_SHA^{commit}"' in stage
-    assert 'test "$HEAD_SHA" = "$GIT_COMMIT"' in stage
-
-
-def test_the_comment_lookup_is_restricted_to_the_bot_and_the_marker(review_mod):
-    """The retired comment mechanism is replaced by a base-owned judge."""
-    stage = _trusted_frozen_stage()
-    assert (
-        'git show "$BASE_SHA:tools/check_frozen_paths.py"'
-        ' > "$TRUSTED_CHECKER"'
-    ) in stage
-    assert "python tools/check_frozen_paths.py" not in stage
-    assert "python '$TRUSTED_CHECKER' '$BASE_SHA' '$HEAD_SHA'" in stage
-
-
-def test_the_marker_is_exactly_the_workflow_marker(review_mod):
-    """The Jenkins stage name is the unique status/audit marker."""
-    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    marker = "stage('trusted frozen-contract-paths')"
-    assert jenkinsfile.count(marker) == 1
-    assert "stage('frozen-contract-paths')" not in jenkinsfile
+    assert "trusted frozen-contract-paths" not in jenkinsfile
+    assert "continuous-integration/jenkins/frozen-contract" in documentation
+    assert "controller-owned Pipeline job" in documentation
+    assert "current `origin/main` tip" in documentation
+    assert "merge base for the diff boundary" in documentation
