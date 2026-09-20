@@ -220,6 +220,8 @@ ADVERTISED_RULES = {
     # Commitments, checkpoints and receipts (ADR-020, ADR-021, ADR-023)
     "C1", "K1", "K2", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8",
     "P9", "P10",
+    # System Manifest declaration semantics (ADR-035)
+    "SM1", "SM2", "SM3",
     # A number commits to the characters it was written as (ADR-024)
     "J2",
 }
@@ -241,7 +243,7 @@ def test_corpus_minimums_and_wrapper_shape():
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {
             "graphspec", "trace", "jsonl", "commitment", "checkpoint", "receipt",
-            "text",
+            "system-manifest", "text",
         }, path.name
         if wrapper["artifact"] == "text":
             assert isinstance(wrapper["raw"], str) and wrapper["raw"], path.name
