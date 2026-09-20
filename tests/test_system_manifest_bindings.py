@@ -304,3 +304,22 @@ def test_code_evidence_from_another_trace_schema_does_not_match():
     verdict = verify_system_manifest_bindings(manifest, traces=[old_trace])
 
     assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == NOT_VERIFIED
+
+
+def test_wrong_graphspec_does_not_invalidate_independent_trace_evidence():
+    spec = _spec("review")
+    trace = _trace(spec, "run-independent-sources")
+    manifest = _manifest_for([(spec, trace)])
+
+    wrong_document = spec.to_dict()
+    wrong_document["requires_motus"] = ">=0"
+    wrong_spec = GraphSpec.from_dict(wrong_document)
+    assert wrong_spec.graph_fingerprint != spec.graph_fingerprint
+
+    verdict = verify_system_manifest_bindings(
+        manifest, graph_specs=[wrong_spec], traces=[trace]
+    )
+    findings = _by_path(verdict)
+
+    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == MISMATCHED
+    assert findings["$.bindings.graphs[0].code_fingerprint"].status == MATCHED
