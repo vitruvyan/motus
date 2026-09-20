@@ -946,7 +946,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
 - system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
-  `SystemManifestBindingFinding`, `MATCHED`, `MISMATCHED`, `NOT_VERIFIED`;
+  `SystemManifestBindingFinding`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -975,7 +975,7 @@ verdict = verify_system_manifest_bindings(
     traces=[trace],
 )
 
-if verdict.complete:
+if verdict.bindings_complete:
     ...
 ```
 
@@ -984,7 +984,7 @@ The status vocabulary is deliberately narrow: `matched`, `mismatched`, and
 recomputed from the supplied GraphSpec. `code_fingerprint` is only compared
 with the value carried by a matching validated Motus trace; that establishes
 agreement with execution evidence and does not independently recompute node code
-identity. `complete` therefore means only that every v1 binding this verifier
+identity. `bindings_complete` therefore means only that every v1 binding this verifier
 knows how to compare matched the supplied Motus artifacts. It does not mean
 compliant, certified, approved or deployed.
 
