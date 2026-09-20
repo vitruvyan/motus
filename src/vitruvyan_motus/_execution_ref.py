@@ -26,10 +26,16 @@ def parse_execution_ref(execution_ref: object) -> tuple[str, str, int]:
     canonical decimal integer: ``01`` is refused rather than silently
     normalised to ``1``.
     """
-    parts = execution_ref.split("/") if isinstance(execution_ref, str) else []
+    parts = (
+        execution_ref.split("/")
+        if isinstance(execution_ref, str) and len(execution_ref) <= 8192
+        else []
+    )
     malformed = (
         len(parts) != 3
         or any(not part.strip() for part in parts)
+        or len(parts[0]) > 200
+        or len(parts[1]) > 200
         or not parts[2].isdigit()
     )
     if malformed:

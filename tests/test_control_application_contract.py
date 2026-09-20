@@ -135,6 +135,19 @@ def test_execution_ref_rejects_blank_identity_components():
     assert {item.rule for item in violations} == {"CA1"}
 
 
+def test_execution_ref_bounds_identifier_components_and_total_input():
+    overlong_identity = _application()
+    overlong_identity["execution_ref"] = "x" * 201 + "/writer-1/42"
+    huge_locator = _application()
+    huge_locator["execution_ref"] = "x" * 1_000_000 + "/writer-1/42"
+
+    identity_violations = validate.validate_control_application(overlong_identity)
+    huge_violations = validate.validate_control_application(huge_locator)
+
+    assert {item.rule for item in identity_violations} == {"CA1"}
+    assert {item.rule for item in huge_violations} == {"SCHEMA"}
+
+
 def test_cli_accepts_a_valid_control_application(tmp_path):
     path = tmp_path / "application.json"
     path.write_text(json.dumps(_application()), encoding="utf-8")

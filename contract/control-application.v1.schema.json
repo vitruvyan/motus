@@ -29,6 +29,7 @@
     "execution_ref": {
       "type": "string",
       "minLength": 1,
+      "maxLength": 8192,
       "description": "Canonical ADR-027 tenant/writer/sequence locator. CA1 checks its semantic grammar. The locator is not proof that the execution exists."
     },
     "manifest_fingerprint": {

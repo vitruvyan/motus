@@ -1388,10 +1388,14 @@ def _canonical_execution_ref_parts(
     decimal digits accepted by ``int``; an overlong sequence must be a normal
     semantic violation rather than an exception escaping the validator.
     """
-    parts = value.split("/") if isinstance(value, str) else []
+    if not isinstance(value, str) or len(value) > 8192:
+        return None
+    parts = value.split("/")
     if (
         len(parts) != 3
         or any(not part.strip() for part in parts)
+        or len(parts[0]) > 200
+        or len(parts[1]) > 200
         or not parts[2].isdigit()
     ):
         return None

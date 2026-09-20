@@ -183,7 +183,7 @@ which it could claim otherwise.
 
 | Rule | What it refuses |
 |---|---|
-| `CA1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate. Empty or whitespace-only identity components and leading-zero or unbounded decimal sequences are refused as violations, never normalised or allowed to crash the validator |
+| `CA1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate. Tenant and writer follow the shared 200-character Identifier bound; the complete locator is capped at 8,192 characters. Empty or whitespace-only components and leading-zero or unbounded decimal sequences are refused as violations, never normalised or allowed to crash the validator |
 | `CA2` | An `observed_at` value that has the required UTC timestamp shape but is not a real calendar instant |
 
 `registry_fingerprint` is required because a control identifier without its
