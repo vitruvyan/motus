@@ -802,6 +802,8 @@ def load_checkpoint_schema() -> dict:
 def load_receipt_schema() -> dict:
     """The receipt schema, loaded relative to this file."""
     return _load(_RECEIPT_SCHEMA_FILE)
+
+
 def load_system_manifest_schema() -> dict:
     """The System Manifest v1 schema, loaded relative to this file."""
     return _load(_SYSTEM_MANIFEST_SCHEMA_FILE)
@@ -847,6 +849,8 @@ def _checkpoint_validator() -> Draft202012Validator:
 
 def _receipt_validator() -> Draft202012Validator:
     return _registry_validator("receipt", load_receipt_schema())
+
+
 def _system_manifest_registry() -> Registry:
     """Schemas needed to resolve System Manifest references.
 
@@ -1399,9 +1403,10 @@ def _json_equal(a, b) -> bool:
 
 
 def _calendar_valid_utc(value: str) -> bool:
-    """T9 — is ``value`` a calendar-valid RFC 3339 UTC instant (Z form)?
+    """Is ``value`` a calendar-valid RFC 3339 UTC instant (Z form)?
 
-    The schema's regex pins the shape but admits month 13 and hour 99;
+    Trace T9 and System Manifest SM3 share this calendar arithmetic. The
+    schema's regex pins the shape but admits month 13 and hour 99;
     ``datetime.strptime`` supplies the calendar arithmetic without any
     third-party date parser (``%f`` accepts the schema's 1–6 fraction digits).
     """
