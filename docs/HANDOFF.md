@@ -179,8 +179,8 @@ deliverable, and it is about to be frozen.
    held in memory and refuses to start on a dirty tree. A surviving mutant is
    explained in the source or killed — never left silent.
 5. **Never weaken, skip or delete an assertion to make something pass.**
-6. **Never edit `tests/contract/` or `tests/compat/`.** CI enforces it from the
-   trusted base branch.
+6. **Never edit `tests/contract/` or `tests/compat/`.** The controller-owned Jenkins guard loads its checker from the current
+   trusted `main` tip; the merge base is only the diff boundary.
 7. **No new runtime dependencies in the kernel.** Checked against a built wheel.
    Plugs are separate distributions precisely so they cannot change it.
 8. **Unconfigured, Motus is bit-for-bit the last release.** A subprocess test

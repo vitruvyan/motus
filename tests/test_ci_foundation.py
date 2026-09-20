@@ -107,12 +107,9 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     profile" from 0.6.1 until 0.14.0 -- nine candidate profiles later -- and
     printed the matching command underneath.
 
-    So the property is not about agents.  It is: **a file that tells anyone to
-    run the gate against a named candidate must be one the release act
-    retargets.**  ``ci.yml`` names its candidate and is retargeted by step 2 of
-    the ``release`` skill, so it is exempt -- and the exemption is checked
-    against reality below, because an exemption for a file that stopped naming
-    a candidate is an exemption nobody would notice had died.
+    So the property is: a file that tells anyone to run the gate against a
+    named candidate must be one the release act retargets. Jenkins invokes the
+    CLI without one, so the release act updates only ``DEFAULT_CANDIDATE``.
 
     Scoped to the invocation, not the file: prose recording this history is not
     the defect.  A mention of ``check_slo_baseline.py`` followed by a
@@ -125,8 +122,14 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     the same rule.  Closing it means giving that script a default too; until
     then, that line goes stale at each release like the ones above did.
     """
-    # Retargeted at every release by `.claude/skills/release/SKILL.md` step 2.
-    exempt = {".github/workflows/ci.yml"}
+    exempt: set[str] = set()
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    slo_stage = (
+        jenkinsfile.split("stage('slo-baseline')", 1)[1].split("stage(", 1)[0]
+    )
+    assert "benchmarks/check_slo_baseline.py" in slo_stage
+    assert "--candidate" not in slo_stage
+    assert "candidate-v" not in slo_stage
     # None of these is an instruction to run the gate today: this file is about
     # the rule, and `audit/` and `adr/` are dated records of commands that were
     # run in the past, where naming the candidate of the day is the point.
@@ -149,7 +152,7 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
             body = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        # Not line by line: `ci.yml` writes the invocation as a folded YAML
+        # Not line by line: A caller may write the invocation as a folded YAML
         # scalar, so the script and its `--candidate` land on separate lines --
         # and so could a real offender. Collapse whitespace and look at what
         # follows each mention of the script.
@@ -431,3 +434,75 @@ def test_a_rename_cannot_move_frozen_evidence_outside_the_guard(tmp_path, monkey
 
     assert "tests/contract/proof.py" in paths
     assert any(is_frozen_path(path) for path in paths)
+
+
+def test_pr_cannot_weaken_the_checker_that_judges_its_frozen_edits(tmp_path):
+    """The trusted judge must run a non-PR checker, never the PR replacement."""
+    checker = tmp_path / "tools" / "check_frozen_paths.py"
+    checker.parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "tools" / "check_frozen_paths.py", checker)
+    frozen = tmp_path / "tests" / "contract" / "proof.py"
+    frozen.parent.mkdir(parents=True)
+    frozen.write_text("evidence = True\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    commit = [
+        "git", "-c", "user.name=Motus CI",
+        "-c", "user.email=ci@invalid.example", "commit", "-qm",
+    ]
+    subprocess.run([*commit, "trusted base"], cwd=tmp_path, check=True)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+
+    frozen.write_text("evidence = False\n", encoding="utf-8")
+    checker.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run([*commit, "malicious PR"], cwd=tmp_path, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+
+    trusted = tmp_path / "trusted-checker.py"
+    blob = subprocess.run(
+        ["git", "show", f"{base}:tools/check_frozen_paths.py"],
+        cwd=tmp_path, check=True, capture_output=True,
+    ).stdout
+    trusted.write_bytes(blob)
+    judged = subprocess.run(
+        [sys.executable, str(trusted), base, head],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+
+    assert judged.returncode == 1
+    assert "tests/contract/proof.py" in judged.stderr
+
+def test_jenkins_cutover_preserves_the_external_frozen_guard_boundary():
+    """Repository contracts document the independently administered judge."""
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    documentation = (REPO_ROOT / "docs" / "JENKINS.md").read_text(encoding="utf-8")
+    adr = (
+        REPO_ROOT
+        / "adr"
+        / "ADR-032-the-open-half-ships-on-pypi-the-sold-half-through-the-installer.md"
+    ).read_text(encoding="utf-8")
+
+    assert "continuous-integration/jenkins/frozen-contract" not in jenkinsfile
+    assert "controller-owned Pipeline job" in documentation
+    assert "current `origin/main` tip" in documentation
+    assert "merge base for the diff boundary" in documentation
+    assert "PR checkout solely as untrusted data" in adr
+    assert "publication stays on GitHub Actions" in adr
+    checker_source = (REPO_ROOT / "tools" / "check_frozen_paths.py").read_text(
+        encoding="utf-8"
+    )
+    assert "current trusted `main` tip" in checker_source
+    assert "base commit by the Jenkins" not in checker_source
+    contract_readme = (REPO_ROOT / "contract" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "controller-owned Jenkins job" in contract_readme
+    assert "current trusted `main` tip" in contract_readme
+    assert "exact trusted base SHA" not in contract_readme

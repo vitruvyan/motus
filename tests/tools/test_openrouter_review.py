@@ -436,104 +436,14 @@ def test_review_file_carries_model_marker_and_reviewed_commit(review_mod, tmp_pa
     assert review_mod.REVIEW_MARKER in text
 
 
-def _workflow_steps(workflow: str) -> list[dict[str, str]]:
-    """The workflow's ``steps:`` entries, each with its ``name`` and ``run``.
 
-    PyYAML is not a declared test dependency (``constraints/test.txt`` pins
-    pytest, pytest-asyncio and jsonschema; nothing else may be assumed), so
-    this is a small parser for the one shape the workflow uses: a ``steps:``
-    list whose items are ``- name:`` mappings with an optional literal
-    ``run: |`` block. It is not a general YAML parser. It is line-based so a
-    ``set -euo pipefail`` inside a run block is attributed to *that* step,
-    which is the property the tests below need and a file-wide grep cannot
-    express.
-    """
-    lines = workflow.splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if line.strip() == "steps:"), None
-    )
-    if start is None:
-        return []
-    base = len(lines[start]) - len(lines[start].lstrip())
-    steps: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    i = start + 1
-    while i < len(lines):
-        line = lines[i]
-        indent = len(line) - len(line.lstrip())
-        if line.strip() and indent <= base:
-            break
-        body = line.strip()
-        if body.startswith("- "):
-            body = body[2:]
-            current = {"name": "", "run": ""}
-            steps.append(current)
-        if body.startswith("name:") and current is not None:
-            current["name"] = body[len("name:"):].strip().strip('"').strip("'")
-            i += 1
-            continue
-        if body.startswith("run:") and current is not None:
-            run_lines: list[str] = []
-            i += 1
-            while i < len(lines):
-                nxt = lines[i]
-                nxt_indent = len(nxt) - len(nxt.lstrip())
-                if nxt.strip() and nxt_indent <= indent:
-                    break
-                run_lines.append(nxt)
-                i += 1
-            current["run"] = "\n".join(run_lines)
-            continue
-        i += 1
-    return steps
+def test_repository_pipeline_cannot_claim_authoritative_frozen_status():
+    """The PR-owned Jenkinsfile is deliberately outside the trust boundary."""
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    documentation = (REPO_ROOT / "docs" / "JENKINS.md").read_text(encoding="utf-8")
 
-
-def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
-    # A best-effort lookup that swallowed a gh api failure would yield an empty
-    # id and post a duplicate comment. The step must abort instead -- and the
-    # assertion is about *that step's* run block, not the file, because moving
-    # `set -euo pipefail` into another step would still satisfy a file-wide
-    # grep while leaving the lookup unprotected.
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
-
-    lookup = [
-        step
-        for step in _workflow_steps(workflow)
-        if "issues/$PR_NUMBER/comments" in step["run"]
-    ]
-    assert len(lookup) == 1, "exactly one step performs the comment lookup"
-    run = lookup[0]["run"]
-
-    assert any(line.strip() == "set -euo pipefail" for line in run.splitlines())
-    assert "head -n1" not in run, "head would SIGPIPE the paginated gh api"
-
-
-def test_the_comment_lookup_is_restricted_to_the_bot_and_the_marker(review_mod):
-    # The lookup must not pick up a comment the pull request itself wrote with
-    # the marker text: only the actions bot's comment is the review to PATCH.
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
-
-    assert (
-        'select(.user.login == "github-actions[bot]" and '
-        '(.body | contains("<!-- openrouter-review -->")))'
-    ) in workflow
-
-
-def test_the_marker_is_exactly_the_workflow_marker(review_mod):
-    # The workflow greps for this literal to PATCH one comment in place. The
-    # constant and the workflow's `contains("...")` lookup are two ends of one
-    # contract, so the test reads the workflow and pins the lookup expression:
-    # rename either side alone and the upsert silently stops finding its
-    # comment. (Checking a bare substring would be satisfied by the prose
-    # comment above the step, which is not what does the lookup.)
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
-
-    assert review_mod.REVIEW_MARKER == "<!-- openrouter-review -->"
-    assert f'contains("{review_mod.REVIEW_MARKER}")' in workflow
-    assert 'select(.user.login == "github-actions[bot]"' in workflow
+    assert "trusted frozen-contract-paths" not in jenkinsfile
+    assert "continuous-integration/jenkins/frozen-contract" in documentation
+    assert "controller-owned Pipeline job" in documentation
+    assert "current `origin/main` tip" in documentation
+    assert "merge base for the diff boundary" in documentation

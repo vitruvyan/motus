@@ -215,15 +215,7 @@ def report(documents: list[dict]) -> int:
         )
     print()
 
-    if len(documents) < MIN_JOBS:
-        print(
-            f"Relative baseline gate: FAIL\n  {len(documents)} job(s); "
-            f"at least {MIN_JOBS} independent dispatches are required before a "
-            "release figure is canonical",
-            file=sys.stderr,
-        )
-        return 1
-
+    insufficient_jobs = len(documents) < MIN_JOBS
     failures: list[str] = []
 
     def section(which: str, budget: float, title: str) -> None:
@@ -307,6 +299,13 @@ def report(documents: list[dict]) -> int:
             print(f"    {why}")
 
     print()
+    if insufficient_jobs:
+        print(
+            f"Relative baseline gate: ADVISORY\n  {len(documents)} job(s); "
+            f"at least {MIN_JOBS} independent dispatches are required before a "
+            "release figure is canonical"
+        )
+        return 1
     if failures:
         print("Relative baseline gate: FAIL")
         for failure in failures:

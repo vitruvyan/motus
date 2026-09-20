@@ -6,9 +6,8 @@ name: Motus relative characterization
 # measured 29% slower than the EPYC 9V74 the ceiling came from. A gate that
 # answers differently on identical code is measuring the runner, not the code.
 #
-# `schedule` is the cumulative arm: the same comparison against the declared
-# anchor release, run periodically, so per-release regressions that each fit
-# inside the budget cannot accumulate unremarked.
+# Scheduled execution moved to Jenkins. This GitHub workflow is retained only
+# as a manual fallback so it cannot consume hosted-runner minutes automatically.
 
 on:
   workflow_dispatch:
@@ -25,9 +24,6 @@ on:
         description: Interleaved measurement rounds per subject (>= 5)
         required: false
         default: "5"
-  schedule:
-    # Monday 04:17 UTC. Off the hour, because shared runners are busiest there.
-    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
@@ -56,11 +52,8 @@ jobs:
           BASELINE="$BASELINE_REF"
           ANCHOR="$ANCHOR_REF"
           PAIRS="$PAIRS_IN"
-          # The scheduled arm takes no inputs, so it declares its own subjects.
           [ -z "$BASELINE" ] && BASELINE=v0.6.1
           [ -z "$PAIRS" ] && PAIRS=5
-          # The cumulative anchor is declared by ADR-012 and moves only by ADR.
-          if [ "$EVENT_NAME" = "schedule" ]; then ANCHOR=v0.6.1; fi
           echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
           echo "anchor=$ANCHOR"     >> "$GITHUB_OUTPUT"
           echo "pairs=$PAIRS"       >> "$GITHUB_OUTPUT"
