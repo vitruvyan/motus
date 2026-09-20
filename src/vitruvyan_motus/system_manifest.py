@@ -139,9 +139,30 @@ def verify_system_manifest_bindings(
     specs = tuple(graph_specs)
     trace_items = tuple(traces)
     spec_by_identity = _spec_index(specs)
+
+    # A Trace instance alone is not proof of contract validity: Trace.from_dict
+    # intentionally performs only the dependency-free reader checks and does
+    # not reimplement the full executable contract. Refuse invalid evidence
+    # here before any of its graph fields can produce a successful binding.
     for trace in trace_items:
         if not isinstance(trace, Trace):
             raise TypeError("traces entries must be validated Trace objects")
+        graph = _trace_graph(trace)
+        candidates = spec_by_identity.get(
+            (graph.get("name"), graph.get("version")), []
+        )
+        spec_document = candidates[0].to_dict() if len(candidates) == 1 else None
+        trace_violations = validate.validate_trace(
+            trace.to_dict(), spec=spec_document
+        )
+        if trace_violations:
+            detail = "; ".join(
+                f"{item.rule} {item.path}: {item.message}"
+                for item in trace_violations[:3]
+            )
+            raise ValueError(
+                "trace evidence does not satisfy the Motus contract: " + detail
+            )
 
     findings: list[SystemManifestBindingFinding] = []
     motus = manifest["bindings"]["motus"]
