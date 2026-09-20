@@ -1307,15 +1307,20 @@ def validate_system_manifest(document: dict) -> list[Violation]:
     verification a separate operation so schema validity can never be mistaken
     for operational evidence.
     """
+    # J1 must run before JSON Schema for the in-process API path. A tuple,
+    # set, non-string mapping key or arbitrary Python object is not a JSON
+    # value at all; reporting it as merely SCHEMA would give this surface a
+    # weaker strict-RFC-8259 boundary than the other contract entry points.
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
     schema = load_system_manifest_schema()
-    schema_violations = _schema_violations(
+    violations += _schema_violations(
         schema, _system_manifest_validator(), document
     )
-    if schema_violations:
-        return schema_violations
-
-    j1_violations, _structural = _j1_violations(document)
-    violations: list[Violation] = list(j1_violations)
+    if violations:
+        return violations
 
     # SM1 — identifiers that name one member of a manifest namespace are unique.
     graphs = document["bindings"]["graphs"]
