@@ -360,8 +360,8 @@ python -m venv .venv
 
 On Windows, use `.venv\Scripts\python.exe` in place of
 `.venv/bin/python`. The wheel contains `vitruvyan_motus`, `py.typed`, and the
-contract validator with the five schemas it checks against — trace, graphspec,
-commitment, checkpoint and receipt.
+contract validator with the six schemas it checks against — trace, graphspec,
+commitment, checkpoint, receipt and system manifest.
 
 Two claims about dependencies, and they are not the same claim:
 
@@ -865,6 +865,8 @@ The normative surfaces live in [`contract/`](contract/):
 
 - `graphspec.v1.schema.json` and rules R1-R12;
 - `trace.v1.schema.json` and the T/E/SB/H/J/JSONL rules;
+- `system-manifest.v1.schema.json` and rules SM1-SM3 — a versioned system
+  declaration whose binding verification remains explicitly separate;
 - `commitment.v1.schema.json` (rule `C1`) and `checkpoint.v1.schema.json`
   (rules `K1`, `K2`) — the commitment log's BEGIN/END and the sealed windows
   over them;
@@ -943,6 +945,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
+- system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
+  `SystemManifestBindingFinding`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -952,6 +956,37 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+### System Manifest binding verification
+
+ADR-035 keeps document validity and binding verification separate. A valid
+System Manifest is a well-formed declaration; it is not proof that the declared
+runtime, graph, code, policy or control was used.
+
+The public verifier compares the manifest with the Motus distribution executing
+the check and with validated Motus artifacts supplied by the caller:
+
+```python
+from vitruvyan_motus import verify_system_manifest_bindings
+
+verdict = verify_system_manifest_bindings(
+    manifest,
+    graph_specs=[spec],
+    traces=[trace],
+)
+
+if verdict.bindings_complete:
+    ...
+```
+
+The status vocabulary is deliberately narrow: `matched`, `mismatched`, and
+`not verified`. Missing evidence is never a match. `graph_fingerprint` is
+recomputed from the supplied GraphSpec. `code_fingerprint` is only compared
+with the value carried by a matching validated Motus trace; that establishes
+agreement with execution evidence and does not independently recompute node code
+identity. `bindings_complete` therefore means only that every v1 binding this verifier
+knows how to compare matched the supplied Motus artifacts. It does not mean
+compliant, certified, approved or deployed.
 
 ### Evidence API for bridges
 
@@ -1050,12 +1085,12 @@ side is scoped by nothing. If you need to carry bytes that are not Unicode —
 a filename a filesystem handed over — encode them explicitly rather than
 smuggling them through a string.
 
-Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the five
+Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the six
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),
 not copied. `validate_trace`, `validate_graphspec`, `validate_jsonl`,
-`validate_commitment`, `validate_checkpoint` and `validate_receipt` are
-importable directly for a consumer who would rather check in-process than
-shell out.
+`validate_commitment`, `validate_checkpoint`, `validate_receipt` and
+`validate_system_manifest` are importable directly for a consumer who would
+rather check in-process than shell out.
 
 The native and legacy decision types are deliberately unambiguous:
 

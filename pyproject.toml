@@ -75,7 +75,7 @@ mcp = ["mcp>=2,<3"]
 # kernel; `contract/` is mapped in as `vitruvyan_motus.contract` so that
 # installing Motus installs the means to check what it produced. The contract
 # directory keeps its place in the tree — it is the authority (ADR-001), not a
-# copy — and only the validator and the two schemas travel: the prose and the
+# copy — and only the validator and the declared contract schemas travel: the prose and the
 # frozen fixtures stay on GitHub, where the reader who needs them already is.
 # ADR-022 decision 1 extends this list. The MCP's reader is an agent inside a
 # virtualenv, so "the reader who needs the prose is already on GitHub" — true

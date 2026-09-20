@@ -56,6 +56,10 @@ from vitruvyan_motus.sinks import JsonlTraceSink
 from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.evidence import PackageVerdict, pack, verify_package
 from vitruvyan_motus.evidence_api import EvidenceAPI, EvidenceSource, LiveEvidenceSource
+from vitruvyan_motus.system_manifest import (
+    SystemManifestBindingFinding, SystemManifestBindingVerdict,
+    verify_system_manifest_bindings,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -78,6 +82,8 @@ __all__ = [
     "TraceBundle", "ReplayResult", "ReplayEngine",
     "pack", "verify_package", "PackageVerdict",
     "EvidenceAPI", "EvidenceSource", "LiveEvidenceSource",
+    "SystemManifestBindingFinding", "SystemManifestBindingVerdict",
+    "verify_system_manifest_bindings",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]
