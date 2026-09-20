@@ -106,6 +106,35 @@ def test_registry_schema_forbids_self_identity_and_operational_verdicts():
     assert schema["$defs"]["Control"]["additionalProperties"] is False
 
 
+def test_registry_fingerprint_is_derived_and_object_key_order_independent():
+    document = _registry()
+    reordered = {
+        "supersedes": document["supersedes"],
+        "created_at": document["created_at"],
+        "controls": document["controls"],
+        "risks": document["risks"],
+        "system": document["system"],
+        "registry": document["registry"],
+        "schema_version": document["schema_version"],
+    }
+
+    expected = validate.risk_control_registry_fingerprint(document)
+    assert expected.startswith("sha256:")
+    assert len(expected) == len("sha256:") + 64
+    assert validate.risk_control_registry_fingerprint(reordered) == expected
+
+
+def test_registry_fingerprint_changes_when_a_declaration_changes():
+    document = _registry()
+    changed = json.loads(json.dumps(document))
+    changed["controls"][0]["title"] = "A different declaration"
+
+    assert (
+        validate.risk_control_registry_fingerprint(changed)
+        != validate.risk_control_registry_fingerprint(document)
+    )
+
+
 def test_in_process_non_json_registry_value_is_j1_not_schema():
     document = _registry()
     document["risks"][0]["description"] = ("not", "json")

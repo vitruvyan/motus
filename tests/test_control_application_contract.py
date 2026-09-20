@@ -67,6 +67,37 @@ def test_schema_closes_outcome_vocabulary_and_forbids_verdict_fields():
     assert schema["additionalProperties"] is False
 
 
+def test_application_fingerprint_is_derived_and_object_key_order_independent():
+    document = _application()
+    reordered = {
+        "evidence": document["evidence"],
+        "observed_at": document["observed_at"],
+        "outcome": document["outcome"],
+        "enforcement_point": document["enforcement_point"],
+        "manifest_fingerprint": document["manifest_fingerprint"],
+        "execution_ref": document["execution_ref"],
+        "control_id": document["control_id"],
+        "registry_fingerprint": document["registry_fingerprint"],
+        "schema_version": document["schema_version"],
+    }
+
+    expected = validate.control_application_fingerprint(document)
+    assert expected.startswith("sha256:")
+    assert len(expected) == len("sha256:") + 64
+    assert validate.control_application_fingerprint(reordered) == expected
+
+
+def test_application_fingerprint_changes_when_the_event_changes():
+    document = _application()
+    changed = json.loads(json.dumps(document))
+    changed["outcome"] = "allowed"
+
+    assert (
+        validate.control_application_fingerprint(changed)
+        != validate.control_application_fingerprint(document)
+    )
+
+
 def test_in_process_non_json_application_value_is_j1_not_schema():
     document = _application()
     document["evidence"]["kind"] = ("not", "json")

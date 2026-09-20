@@ -747,6 +747,16 @@ def system_manifest_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def risk_control_registry_fingerprint(document: Any) -> str:
+    """ADR-036 identity of one complete Registry revision."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def control_application_fingerprint(document: Any) -> str:
+    """ADR-036 identity of one complete ControlApplication event."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 
 # --------------------------------------------------------------------------- #
 # Schema loading and JSON Schema validation                                   #

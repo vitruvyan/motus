@@ -154,9 +154,10 @@ contract. Likewise, a control may address many risks and a risk may be
 addressed by many controls, but those edges make no effectiveness claim.
 
 `registry_fingerprint` is forbidden inside the document: canonical identity
-must be derived from the complete validated revision rather than asserted by
-the revision itself. Its derivation helper is a separate ADR-036 micro-step.
-ControlApplication is also a separate surface and is not embedded here.
+is derived from the complete validated revision rather than asserted by the
+revision itself. `risk_control_registry_fingerprint(document)` computes
+`sha256:<hex of SHA-256(canonical_json(complete registry))>`. ControlApplication
+is also a separate surface and is not embedded here.
 
 ### ControlApplication rules — one event is not control effectiveness
 
@@ -184,6 +185,11 @@ system binding; the public verifier reports whether the binding is matched,
 mismatched, or not verifiable from the supplied documents. The required
 `evidence.kind: motus_execution` and `execution_ref` make v1 execution-scoped;
 organizational evidence remains outside this surface as ADR-036 requires.
+
+`application_fingerprint` is likewise never embedded. The exact event identity
+is `control_application_fingerprint(document)`, the same SHA-256 over the
+canonical JSON of the complete ControlApplication document. Changing the
+outcome, timestamp, binding, or any other field therefore changes its identity.
 
 ### What the verifier will not tell you
 
