@@ -10,6 +10,7 @@ pulls no third-party module.
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Literal
 
@@ -66,6 +67,18 @@ class SystemManifestBindingVerdict:
 
 def _contract_validate():
     return importlib.import_module("vitruvyan_motus.contract.validate")
+
+
+def _plain_snapshot(validate, document: dict[str, Any]) -> dict[str, Any]:
+    """Isolate one JSON value from the canonical bytes fingerprints use.
+
+    Caller-provided iterables may execute arbitrary Python while they are
+    consumed. Reading the caller's mutable manifest again after that point
+    could otherwise pair the fingerprint of document A with findings about
+    document B.
+    """
+    canonical = validate.canonical_json(document)
+    return json.loads(canonical.decode("utf-8"))
 
 
 def _finding(path: str, expected: str | None, observed: str | None, *, source: str, missing: bool = False) -> SystemManifestBindingFinding:
