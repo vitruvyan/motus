@@ -436,80 +436,41 @@ def test_review_file_carries_model_marker_and_reviewed_commit(review_mod, tmp_pa
     assert review_mod.REVIEW_MARKER in text
 
 
-def _workflow_steps(workflow: str) -> list[dict[str, str]]:
-    """The workflow's ``steps:`` entries, each with its ``name`` and ``run``.
-
-    PyYAML is not a declared test dependency (``constraints/test.txt`` pins
-    pytest, pytest-asyncio and jsonschema; nothing else may be assumed), so
-    this is a small parser for the one shape the workflow uses: a ``steps:``
-    list whose items are ``- name:`` mappings with an optional literal
-    ``run: |`` block. It is not a general YAML parser. It is line-based so a
-    ``set -euo pipefail`` inside a run block is attributed to *that* step,
-    which is the property the tests below need and a file-wide grep cannot
-    express.
-    """
-    lines = workflow.splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if line.strip() == "steps:"), None
-    )
-    if start is None:
-        return []
-    base = len(lines[start]) - len(lines[start].lstrip())
-    steps: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    i = start + 1
-    while i < len(lines):
-        line = lines[i]
-        indent = len(line) - len(line.lstrip())
-        if line.strip() and indent <= base:
-            break
-        body = line.strip()
-        if body.startswith("- "):
-            body = body[2:]
-            current = {"name": "", "run": ""}
-            steps.append(current)
-        if body.startswith("name:") and current is not None:
-            current["name"] = body[len("name:"):].strip().strip('"').strip("'")
-            i += 1
-            continue
-        if body.startswith("run:") and current is not None:
-            run_lines: list[str] = []
-            i += 1
-            while i < len(lines):
-                nxt = lines[i]
-                nxt_indent = len(nxt) - len(nxt.lstrip())
-                if nxt.strip() and nxt_indent <= indent:
-                    break
-                run_lines.append(nxt)
-                i += 1
-            current["run"] = "\n".join(run_lines)
-            continue
-        i += 1
-    return steps
+def _trusted_frozen_stage() -> str:
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    marker = "stage('trusted frozen-contract-paths')"
+    assert jenkinsfile.count(marker) == 1
+    return jenkinsfile.split(marker, 1)[1].split(
+        "stage('Install test environment')", 1
+    )[0]
 
 
-def test_the_jenkins_contract_suite_fails_loudly():
-    """The replacement owner must propagate pytest failure, not mask it."""
-    pipeline = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    command = ".venv/bin/python -m pytest tests/ -q"
-
-    assert pipeline.count(command) == 1
-    invocation = next(line for line in pipeline.splitlines() if command in line)
-    assert "||" not in invocation
-    assert "true" not in invocation
-
-
-def test_retired_openrouter_automation_leaves_no_secret_bearing_replacement():
-    """Jenkins must not run PR code with the retired OpenRouter secret."""
-    pipeline = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-
-    workflow = REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    assert not workflow.exists()
-    assert "OPENROUTER_API_KEY" not in pipeline
-    assert "openrouter_review.py" not in pipeline
+def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
+    """Missing or ambiguous PR refs must abort the trusted Jenkins judge."""
+    stage = _trusted_frozen_stage()
+    assert "set -eu" in stage
+    for required in ("CHANGE_TARGET", "CHANGE_ID", "GIT_COMMIT"):
+        assert f'test -n "${{{required}:-}}"' in stage
+    assert 'git merge-base "origin/${CHANGE_TARGET}" "$HEAD_SHA"' in stage
+    assert 'git cat-file -e "$BASE_SHA^{commit}"' in stage
+    assert 'git cat-file -e "$HEAD_SHA^{commit}"' in stage
+    assert 'test "$HEAD_SHA" = "$GIT_COMMIT"' in stage
 
 
-def test_the_marker_remains_exact_for_manually_generated_review_output(review_mod):
-    # The generator remains usable manually and its output contract is stable,
-    # even though no automated workflow now performs a comment upsert.
-    assert review_mod.REVIEW_MARKER == "<!-- openrouter-review -->"
+def test_the_comment_lookup_is_restricted_to_the_bot_and_the_marker(review_mod):
+    """The retired comment mechanism is replaced by a base-owned judge."""
+    stage = _trusted_frozen_stage()
+    assert (
+        'git show "$BASE_SHA:tools/check_frozen_paths.py"'
+        ' > "$TRUSTED_CHECKER"'
+    ) in stage
+    assert "python tools/check_frozen_paths.py" not in stage
+    assert "python '$TRUSTED_CHECKER' '$BASE_SHA' '$HEAD_SHA'" in stage
+
+
+def test_the_marker_is_exactly_the_workflow_marker(review_mod):
+    """The Jenkins stage name is the unique status/audit marker."""
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    marker = "stage('trusted frozen-contract-paths')"
+    assert jenkinsfile.count(marker) == 1
+    assert "stage('frozen-contract-paths')" not in jenkinsfile

@@ -38,7 +38,7 @@ pipeline {
             }
         }
 
-        stage('frozen-contract-paths') {
+        stage('trusted frozen-contract-paths') {
             when {
                 changeRequest target: 'main'
             }
@@ -50,16 +50,18 @@ pipeline {
                     test -n "${CHANGE_TARGET:-}"
                     test -n "${CHANGE_ID:-}"
                     test -n "${GIT_COMMIT:-}"
-                    BASE_SHA="$(git rev-parse "origin/${CHANGE_TARGET}")"
                     HEAD_SHA="$(git rev-parse HEAD)"
+                    BASE_SHA="$(git merge-base "origin/${CHANGE_TARGET}" "$HEAD_SHA")"
                     test "$HEAD_SHA" = "$GIT_COMMIT"
                     git cat-file -e "$BASE_SHA^{commit}"
                     git cat-file -e "$HEAD_SHA^{commit}"
-                    TRUSTED_CHECKER="$(mktemp)"
-                    trap 'rm -f "$TRUSTED_CHECKER"' EXIT
-                    git show "${BASE_SHA}:tools/check_frozen_paths.py" > "$TRUSTED_CHECKER"
-                    chmod 0444 "$TRUSTED_CHECKER"
                     echo "Frozen contract audit: $BASE_SHA..$HEAD_SHA"
+                    TRUSTED_DIR="$(mktemp -d)"
+                    trap 'rm -rf "$TRUSTED_DIR"' EXIT HUP INT TERM
+                    TRUSTED_CHECKER="$TRUSTED_DIR/check_frozen_paths.py"
+                    git show "$BASE_SHA:tools/check_frozen_paths.py" > "$TRUSTED_CHECKER"
+                    chmod 0755 "$TRUSTED_DIR"
+                    chmod 0555 "$TRUSTED_CHECKER"
                     su ci -s /bin/sh -c "python '$TRUSTED_CHECKER' '$BASE_SHA' '$HEAD_SHA'"
                 '''
             }
@@ -82,12 +84,20 @@ pipeline {
             }
         }
 
-        stage('anchor-plugs') {
+        stage('anchor plug tests') {
             steps {
                 sh '''
                     set -eu
                     su ci -s /bin/sh -c '.venv/bin/python -m pip install -e "./plugs/motus-anchor-opentimestamps[test]"'
                     su ci -s /bin/sh -c '.venv/bin/python -m pytest plugs/motus-anchor-opentimestamps/tests -q'
+                '''
+            }
+        }
+
+        stage('RFC3161 plug tests') {
+            steps {
+                sh '''
+                    set -eu
                     su ci -s /bin/sh -c '.venv/bin/python -m pip install -e "./plugs/motus-attest-rfc3161[test]"'
                     su ci -s /bin/sh -c '.venv/bin/python -m pytest plugs/motus-attest-rfc3161/tests -q'
                 '''

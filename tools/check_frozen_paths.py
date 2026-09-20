@@ -1,7 +1,7 @@
 """Reject changes to the frozen contract corpora.
 
 This program is intentionally stdlib-only.  In CI it is executed from the
-base branch by a ``pull_request_target`` workflow; code in the pull request
+base commit by the Jenkins trusted frozen-contract stage; pull-request code
 cannot weaken the check that judges that same pull request.
 """
 

@@ -1,0 +1,90 @@
+/* Dedicated weekly ADR-012 characterization job; not a PR multibranch job. */
+pipeline {
+    agent {
+        docker {
+            image 'python:3.10.12-slim'
+            reuseNode true
+        }
+    }
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds(abortPrevious: true)
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(
+            daysToKeepStr: '90', numToKeepStr: '20',
+            artifactDaysToKeepStr: '90', artifactNumToKeepStr: '20'
+        ))
+        timestamps()
+    }
+    triggers {
+        // Monday 04:17 UTC, preserving ADR-012's off-hour weekly arm.
+        cron('TZ=UTC\n17 4 * * 1')
+    }
+    stages {
+        stage('Install Git') {
+            steps {
+                sh '''
+                    set -eu
+                    apt-get update
+                    apt-get install -y --no-install-recommends git
+                    rm -rf /var/lib/apt/lists/*
+                '''
+            }
+        }
+        stage('Checkout trusted main and anchor') {
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: 'refs/heads/main']],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [[
+                        $class: 'CloneOption', depth: 1, noTags: false,
+                        shallow: true, timeout: 10
+                    ]],
+                    userRemoteConfigs: [[
+                        credentialsId: 'github-vitruvyan-jenkins-app',
+                        refspec: '+refs/heads/main:refs/remotes/origin/main +refs/tags/v0.6.1:refs/tags/v0.6.1',
+                        url: 'https://github.com/vitruvyan/motus.git'
+                    ]]
+                ])
+            }
+        }
+        stage('Interleaved cumulative characterization') {
+            steps {
+                sh '''
+                    set -eu
+                    BASELINE_REF=v0.6.1
+                    BASELINE_DIR="$WORKSPACE/.ci/relative-baseline"
+                    ANCHOR_DIR="$WORKSPACE/.ci/relative-anchor"
+                    cleanup() {
+                        git worktree remove --force "$BASELINE_DIR" >/dev/null 2>&1 || true
+                        git worktree remove --force "$ANCHOR_DIR" >/dev/null 2>&1 || true
+                    }
+                    trap cleanup EXIT HUP INT TERM
+                    cleanup
+                    mkdir -p "$WORKSPACE/.ci" "$WORKSPACE/reports"
+                    git worktree add --detach "$BASELINE_DIR" "refs/tags/$BASELINE_REF"
+                    git worktree add --detach "$ANCHOR_DIR" "refs/tags/$BASELINE_REF"
+                    python benchmarks/collect_relative_baseline.py \
+                        --baseline-src "$BASELINE_DIR/src" \
+                        --baseline-ref "$BASELINE_REF" \
+                        --candidate-src src \
+                        --candidate-ref "$(git rev-parse HEAD)" \
+                        --anchor-src "$ANCHOR_DIR/src" \
+                        --anchor-ref "$BASELINE_REF" \
+                        --pairs 5 \
+                        > "$WORKSPACE/reports/motus-relative-latest.json"
+                    python benchmarks/check_relative_baseline.py \
+                        --advisory "$WORKSPACE/reports/motus-relative-latest.json"
+                '''
+            }
+        }
+    }
+    post {
+        always {
+            archiveArtifacts allowEmptyArchive: false,
+                artifacts: 'reports/motus-relative-latest.json'
+            deleteDir()
+        }
+    }
+}

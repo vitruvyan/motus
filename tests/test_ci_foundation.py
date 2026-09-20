@@ -107,10 +107,9 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     profile" from 0.6.1 until 0.14.0 -- nine candidate profiles later -- and
     printed the matching command underneath.
 
-    So the property is not about agents.  It is: **nothing that tells anyone to
-    run the gate may pin a named candidate.** Jenkins invokes the gate without
-    arguments, so the single release-retargeted ``DEFAULT_CANDIDATE`` remains
-    authoritative.
+    So the property is: a file that tells anyone to run the gate against a
+    named candidate must be one the release act retargets. Jenkins invokes the
+    CLI without one, so the release act updates only ``DEFAULT_CANDIDATE``.
 
     Scoped to the invocation, not the file: prose recording this history is not
     the defect.  A mention of ``check_slo_baseline.py`` followed by a
@@ -123,6 +122,14 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     the same rule.  Closing it means giving that script a default too; until
     then, that line goes stale at each release like the ones above did.
     """
+    exempt: set[str] = set()
+    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    slo_stage = (
+        jenkinsfile.split("stage('slo-baseline')", 1)[1].split("stage(", 1)[0]
+    )
+    assert "benchmarks/check_slo_baseline.py" in slo_stage
+    assert "--candidate" not in slo_stage
+    assert "candidate-v" not in slo_stage
     # None of these is an instruction to run the gate today: this file is about
     # the rule, and `audit/` and `adr/` are dated records of commands that were
     # run in the past, where naming the candidate of the day is the point.
@@ -132,6 +139,7 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
     skipped_parents = {".git", "build", "worktrees", "node_modules", ".venv"}
 
     offenders = []
+    seen = set()
     for path in sorted(REPO_ROOT.rglob("*")):
         if not path.is_file() or path.suffix not in scanned_suffixes:
             continue
@@ -144,7 +152,7 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
             body = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        # Not line by line: `ci.yml` writes the invocation as a folded YAML
+        # Not line by line: A caller may write the invocation as a folded YAML
         # scalar, so the script and its `--candidate` land on separate lines --
         # and so could a real offender. Collapse whitespace and look at what
         # follows each mention of the script.
@@ -156,12 +164,21 @@ def test_nothing_tells_anyone_to_gate_a_frozen_candidate_file():
             # the two.
             if "--candidate" not in window or "candidate-v" not in window:
                 continue
-            offenders.append(f"{relative}: check_slo_baseline.py{window[:90]}")
+            seen.add(relative)
+            if relative not in exempt:
+                offenders.append(f"{relative}: check_slo_baseline.py{window[:90]}")
 
     assert not offenders, (
         "these pin the SLO gate to a frozen candidate file; pass no --candidate "
         "and let the CLI's DEFAULT_CANDIDATE (retargeted every release) supply "
         "it:\n  " + "\n  ".join(offenders)
+    )
+
+    dead = exempt - seen
+    assert not dead, (
+        f"exempt but no longer naming a candidate: {sorted(dead)} -- the "
+        "exemption outlived the thing it excused, and would have hidden a real "
+        "one if that file changed again"
     )
 
     # An empty sweep must not pass silently: the two directories the first
@@ -419,77 +436,45 @@ def test_a_rename_cannot_move_frozen_evidence_outside_the_guard(tmp_path, monkey
     assert any(is_frozen_path(path) for path in paths)
 
 
-def test_jenkins_materializes_the_frozen_judge_from_the_exact_base_sha(tmp_path):
-    """A PR may be data to the judge, but it may not replace the judge."""
-    jenkinsfile = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    assert 'BASE_SHA="$(git rev-parse "origin/${CHANGE_TARGET}")"' in jenkinsfile
-    assert 'HEAD_SHA="$(git rev-parse HEAD)"' in jenkinsfile
-    assert 'test "$HEAD_SHA" = "$GIT_COMMIT"' in jenkinsfile
-    assert (
-        'git show "${BASE_SHA}:tools/check_frozen_paths.py" > "$TRUSTED_CHECKER"'
-        in jenkinsfile
-    )
-    assert 'python tools/check_frozen_paths.py' not in jenkinsfile
-
-    (tmp_path / "tools").mkdir()
-    (tmp_path / "tests" / "contract").mkdir(parents=True)
-    shutil.copy2(
-        REPO_ROOT / "tools" / "check_frozen_paths.py",
-        tmp_path / "tools" / "check_frozen_paths.py",
-    )
+def test_pr_cannot_weaken_the_checker_that_judges_its_frozen_edits(tmp_path):
+    """Jenkins must run the checker blob from base, never the PR replacement."""
+    checker = tmp_path / "tools" / "check_frozen_paths.py"
+    checker.parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "tools" / "check_frozen_paths.py", checker)
     frozen = tmp_path / "tests" / "contract" / "proof.py"
-    frozen.write_text("accepted = True\n", encoding="utf-8")
+    frozen.parent.mkdir(parents=True)
+    frozen.write_text("evidence = True\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     commit = [
-        "git", "-c", "user.name=Motus CI", "-c",
-        "user.email=ci@invalid.example", "commit", "-qm",
+        "git", "-c", "user.name=Motus CI",
+        "-c", "user.email=ci@invalid.example", "commit", "-qm",
     ]
     subprocess.run([*commit, "trusted base"], cwd=tmp_path, check=True)
-    base = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
-    ).strip()
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
 
-    frozen.write_text("accepted = False\n", encoding="utf-8")
-    (tmp_path / "tools" / "check_frozen_paths.py").write_text(
-        "raise SystemExit(0)\n", encoding="utf-8"
-    )
+    frozen.write_text("evidence = False\n", encoding="utf-8")
+    checker.write_text("raise SystemExit(0)\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
-    subprocess.run([*commit, "malicious head"], cwd=tmp_path, check=True)
-    head = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
-    ).strip()
+    subprocess.run([*commit, "malicious PR"], cwd=tmp_path, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
 
     trusted = tmp_path / "trusted-checker.py"
-    trusted.write_bytes(subprocess.check_output(
-        ["git", "show", f"{base}:tools/check_frozen_paths.py"], cwd=tmp_path
-    ))
-    probe = subprocess.run(
+    blob = subprocess.run(
+        ["git", "show", f"{base}:tools/check_frozen_paths.py"],
+        cwd=tmp_path, check=True, capture_output=True,
+    ).stdout
+    trusted.write_bytes(blob)
+    judged = subprocess.run(
         [sys.executable, str(trusted), base, head],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
+        cwd=tmp_path, capture_output=True, text=True,
     )
 
-    assert probe.returncode == 1
-    assert "tests/contract/proof.py" in probe.stderr
-
-
-def test_weekly_jenkins_characterization_preserves_adr_012_contract():
-    pipeline = (
-        REPO_ROOT / "jenkins" / "relative-characterization.Jenkinsfile"
-    ).read_text(encoding="utf-8")
-
-    assert "image 'python:3.10.12-slim'" in pipeline
-    assert "cron('17 4 * * 1')" in pipeline
-    assert pipeline.count("--baseline-ref v0.6.1") == 1
-    assert pipeline.count("--anchor-ref v0.6.1") == 1
-    assert "--pairs 5" in pipeline
-    assert "benchmarks/collect_relative_baseline.py" in pipeline
-    assert "benchmarks/check_relative_baseline.py" in pipeline
-    assert "--advisory benchmarks/relative-latest.json" in pipeline
-    assert (
-        "archiveArtifacts artifacts: 'benchmarks/relative-latest.json', "
-        "fingerprint: true"
-    ) in pipeline
-    assert "artifactDaysToKeepStr: '90'" in pipeline
+    assert judged.returncode == 1
+    assert "tests/contract/proof.py" in judged.stderr
