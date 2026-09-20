@@ -13,9 +13,6 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import (
-    MATCHED,
-    MISMATCHED,
-    NOT_VERIFIED,
     TRACE_SCHEMA_VERSION,
     GraphSpec,
     Trace,
@@ -97,10 +94,10 @@ def test_exact_bindings_match_and_complete():
 
     assert verdict.manifest_violations == ()
     assert verdict.manifest_fingerprint.startswith("sha256:")
-    assert verdict.complete is True
+    assert verdict.bindings_complete is True
     assert verdict.has_mismatch is False
     assert verdict.has_unverified is False
-    assert {finding.status for finding in verdict.findings} == {MATCHED}
+    assert {finding.status for finding in verdict.findings} == {"matched"}
 
 
 def test_runtime_version_mismatch_is_not_a_match():
@@ -114,9 +111,9 @@ def test_runtime_version_mismatch_is_not_a_match():
     )
     finding = _by_path(verdict)["$.bindings.motus.runtime_version"]
 
-    assert finding.status == MISMATCHED
+    assert finding.status == "mismatched"
     assert finding.observed == __version__
-    assert verdict.complete is False
+    assert verdict.bindings_complete is False
     assert verdict.has_mismatch is True
 
 
@@ -130,7 +127,7 @@ def test_trace_schema_version_mismatch_is_not_a_match():
         manifest, graph_specs=[spec], traces=[trace]
     )
 
-    assert _by_path(verdict)["$.bindings.motus.trace_schema_version"].status == MISMATCHED
+    assert _by_path(verdict)["$.bindings.motus.trace_schema_version"].status == "mismatched"
 
 
 def test_missing_graphspec_is_explicitly_not_verified_but_trace_code_can_match():
@@ -141,10 +138,10 @@ def test_missing_graphspec_is_explicitly_not_verified_but_trace_code_can_match()
     verdict = verify_system_manifest_bindings(manifest, traces=[trace])
     findings = _by_path(verdict)
 
-    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == NOT_VERIFIED
-    assert findings["$.bindings.graphs[0].code_fingerprint"].status == MATCHED
+    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == "not verified"
+    assert findings["$.bindings.graphs[0].code_fingerprint"].status == "matched"
     assert verdict.has_unverified is True
-    assert verdict.complete is False
+    assert verdict.bindings_complete is False
 
 
 def test_graph_fingerprint_mismatch_is_detected():
@@ -160,9 +157,9 @@ def test_graph_fingerprint_mismatch_is_detected():
     )
     findings = _by_path(verdict)
 
-    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == MISMATCHED
-    assert findings["$.bindings.graphs[0].code_fingerprint"].status == NOT_VERIFIED
-    assert verdict.complete is False
+    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == "mismatched"
+    assert findings["$.bindings.graphs[0].code_fingerprint"].status == "not verified"
+    assert verdict.bindings_complete is False
 
 
 def test_missing_trace_leaves_code_fingerprint_not_verified():
@@ -172,7 +169,7 @@ def test_missing_trace_leaves_code_fingerprint_not_verified():
 
     verdict = verify_system_manifest_bindings(manifest, graph_specs=[spec])
 
-    assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == NOT_VERIFIED
+    assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == "not verified"
     assert verdict.has_unverified is True
 
 
@@ -189,7 +186,7 @@ def test_code_fingerprint_mismatch_is_detected_against_matching_trace():
     )
 
     finding = _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"]
-    assert finding.status == MISMATCHED
+    assert finding.status == "mismatched"
     assert "trace evidence" in finding.reason
     assert verdict.has_mismatch is True
 
@@ -207,7 +204,7 @@ def test_invalid_manifest_gets_no_successful_binding_findings():
     assert verdict.manifest_violations
     assert verdict.manifest_fingerprint is None
     assert verdict.findings == ()
-    assert verdict.complete is False
+    assert verdict.bindings_complete is False
 
 
 def test_multiple_graphs_bind_independently():
@@ -223,9 +220,9 @@ def test_multiple_graphs_bind_independently():
         traces=[first_trace, second_trace],
     )
 
-    assert verdict.complete is True
+    assert verdict.bindings_complete is True
     assert len(verdict.findings) == 12
-    assert all(item.status == MATCHED for item in verdict.findings)
+    assert all(item.status == "matched" for item in verdict.findings)
 
 
 def test_verification_does_not_mutate_inputs():
@@ -254,8 +251,8 @@ def test_ambiguous_duplicate_graphspec_evidence_is_not_silently_chosen():
         manifest, graph_specs=[spec, spec], traces=[trace]
     )
 
-    assert _by_path(verdict)["$.bindings.graphs[0].graph_fingerprint"].status == NOT_VERIFIED
-    assert verdict.complete is False
+    assert _by_path(verdict)["$.bindings.graphs[0].graph_fingerprint"].status == "not verified"
+    assert verdict.bindings_complete is False
 
 
 def test_forged_trace_object_is_refused_before_it_can_match_code_binding():
@@ -303,7 +300,7 @@ def test_code_evidence_from_another_trace_schema_does_not_match():
 
     verdict = verify_system_manifest_bindings(manifest, traces=[old_trace])
 
-    assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == NOT_VERIFIED
+    assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == "not verified"
 
 
 def test_wrong_graphspec_does_not_invalidate_independent_trace_evidence():
@@ -321,5 +318,5 @@ def test_wrong_graphspec_does_not_invalidate_independent_trace_evidence():
     )
     findings = _by_path(verdict)
 
-    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == MISMATCHED
-    assert findings["$.bindings.graphs[0].code_fingerprint"].status == MATCHED
+    assert findings["$.bindings.graphs[0].graph_fingerprint"].status == "mismatched"
+    assert findings["$.bindings.graphs[0].code_fingerprint"].status == "matched"
