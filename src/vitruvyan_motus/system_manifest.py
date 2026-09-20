@@ -94,29 +94,62 @@ def _finding(path: str, expected: str | None, observed: str | None, *, source: s
     )
 
 
-def _spec_index(specs: Iterable[GraphSpec]) -> dict[tuple[str, str], list[GraphSpec]]:
-    out: dict[tuple[str, str], list[GraphSpec]] = {}
+def _spec_index(
+    specs: Iterable[GraphSpec],
+    validate,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Snapshot and independently validate every supplied GraphSpec once."""
+    out: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for spec in specs:
         if not isinstance(spec, GraphSpec):
             raise TypeError("graph_specs entries must be validated GraphSpec objects")
-        out.setdefault((spec.name, spec.version), []).append(spec)
+        document = spec.to_dict()
+        violations = validate.validate_graphspec(document)
+        if violations:
+            detail = "; ".join(
+                f"{item.rule} {item.path}: {item.message}"
+                for item in violations[:3]
+            )
+            raise ValueError(
+                "GraphSpec evidence does not satisfy the Motus contract: " + detail
+            )
+        snapshot = _plain_snapshot(validate, document)
+        out.setdefault((snapshot["name"], snapshot["version"]), []).append(snapshot)
     return out
 
 
-def _trace_graph(trace: Trace) -> dict[str, Any]:
-    if not isinstance(trace, Trace):
-        raise TypeError("traces entries must be validated Trace objects")
-    graph = trace.run.get("graph")
-    return graph if isinstance(graph, dict) else {}
+def _trace_snapshots(
+    traces: Iterable[Trace],
+    validate,
+) -> tuple[dict[str, Any], ...]:
+    """Snapshot and contract-validate every supplied Trace exactly once."""
+    out: list[dict[str, Any]] = []
+    for trace in traces:
+        if not isinstance(trace, Trace):
+            raise TypeError("traces entries must be validated Trace objects")
+        document = trace.to_dict()
+        violations = validate.validate_trace(document)
+        if violations:
+            detail = "; ".join(
+                f"{item.rule} {item.path}: {item.message}"
+                for item in violations[:3]
+            )
+            raise ValueError(
+                "trace evidence does not satisfy the Motus contract: " + detail
+            )
+        out.append(_plain_snapshot(validate, document))
+    return tuple(out)
 
 
 def _matching_trace_code_fingerprints(
-    traces: Iterable[Trace], graph_binding: dict[str, Any], trace_schema_version: str,
+    traces: Iterable[dict[str, Any]], graph_binding: dict[str, Any], trace_schema_version: str,
 ) -> tuple[str, ...]:
     observed: set[str] = set()
-    for trace in traces:
-        document = trace.to_dict()
-        graph = document.get("run", {}).get("graph", {})
+    for document in traces:
+        run = document.get("run")
+        graph = run.get("graph") if isinstance(run, dict) else None
+        if not isinstance(graph, dict):
+            continue
         if (
             document.get("schema_version") == trace_schema_version
             and graph.get("name") == graph_binding["name"]
