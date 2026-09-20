@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 from vitruvyan_motus import (
     MATCHED,
     MISMATCHED,
     NOT_VERIFIED,
     TRACE_SCHEMA_VERSION,
     GraphSpec,
+    Trace,
     Runtime,
     State,
     __version__,
@@ -248,3 +251,20 @@ def test_ambiguous_duplicate_graphspec_evidence_is_not_silently_chosen():
 
     assert _by_path(verdict)["$.bindings.graphs[0].graph_fingerprint"].status == NOT_VERIFIED
     assert verdict.complete is False
+
+
+def test_forged_trace_object_is_refused_before_it_can_match_code_binding():
+    spec = _spec("review")
+    trace = _trace(spec, "run-forged")
+    manifest = _manifest_for([(spec, trace)])
+
+    forged_document = trace.to_dict()
+    forged_document["run"]["graph"]["code_fingerprint"] = (
+        "code:sha256:" + "a" * 64
+    )
+    forged = Trace.from_dict(forged_document)
+
+    with pytest.raises(ValueError, match="does not satisfy the Motus contract"):
+        verify_system_manifest_bindings(
+            manifest, graph_specs=[spec], traces=[forged]
+        )
