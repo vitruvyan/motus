@@ -500,3 +500,9 @@ def test_jenkins_cutover_preserves_the_external_frozen_guard_boundary():
     )
     assert "current trusted `main` tip" in checker_source
     assert "base commit by the Jenkins" not in checker_source
+    contract_readme = (REPO_ROOT / "contract" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "controller-owned Jenkins job" in contract_readme
+    assert "current trusted `main` tip" in contract_readme
+    assert "exact trusted base SHA" not in contract_readme
