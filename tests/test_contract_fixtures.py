@@ -104,6 +104,8 @@ def _run_fixture(wrapper: dict):
         return validate.validate_checkpoint(wrapper["instance"])
     if artifact == "receipt":
         return validate.validate_receipt(wrapper["instance"])
+    if artifact == "system-manifest":
+        return validate.validate_system_manifest(wrapper["instance"])
     if artifact == "jsonl":
         text = "\n".join(wrapper["lines"]) + "\n"
         violations, _doc = validate.validate_jsonl(
@@ -124,7 +126,7 @@ def _run_fixture(wrapper: dict):
     "schema_file",
     ["graphspec.v1.schema.json", "trace.v1.schema.json",
      "commitment.v1.schema.json", "checkpoint.v1.schema.json",
-     "receipt.v1.schema.json"],
+     "receipt.v1.schema.json", "system-manifest.v1.schema.json"],
 )
 def test_schema_passes_metaschema(schema_file):
     schema = _read(CONTRACT_DIR / schema_file)
