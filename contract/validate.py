@@ -107,6 +107,7 @@ _TRACE_SCHEMA_FILE = "trace.v1.schema.json"
 _COMMITMENT_SCHEMA_FILE = "commitment.v1.schema.json"
 _CHECKPOINT_SCHEMA_FILE = "checkpoint.v1.schema.json"
 _RECEIPT_SCHEMA_FILE = "receipt.v1.schema.json"
+_SYSTEM_MANIFEST_SCHEMA_FILE = "system-manifest.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -735,6 +736,14 @@ def fingerprint(kind: str, obj: Any) -> str:
     fingerprint is TRUE, never decorative.
     """
     return f"{kind}:sha256:{hashlib.sha256(canonical_json(obj)).hexdigest()}"
+def system_manifest_fingerprint(document: Any) -> str:
+    """ADR-035 manifest identity over the complete canonical document.
+
+    The digest is deliberately not embedded in the manifest. A caller validates
+    the document, then derives this value from the exact object it is holding.
+    """
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
 
 
 # --------------------------------------------------------------------------- #
@@ -763,6 +772,7 @@ def load_trace_schema() -> dict:
 
 _VALIDATORS: dict[str, Draft202012Validator] = {}
 _COMMITMENT_REGISTRY: Registry | None = None
+_SYSTEM_MANIFEST_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -792,6 +802,10 @@ def load_checkpoint_schema() -> dict:
 def load_receipt_schema() -> dict:
     """The receipt schema, loaded relative to this file."""
     return _load(_RECEIPT_SCHEMA_FILE)
+def load_system_manifest_schema() -> dict:
+    """The System Manifest v1 schema, loaded relative to this file."""
+    return _load(_SYSTEM_MANIFEST_SCHEMA_FILE)
+
 
 
 def _commitment_registry() -> Registry:
@@ -833,6 +847,32 @@ def _checkpoint_validator() -> Draft202012Validator:
 
 def _receipt_validator() -> Draft202012Validator:
     return _registry_validator("receipt", load_receipt_schema())
+def _system_manifest_registry() -> Registry:
+    """Schemas needed to resolve System Manifest references.
+
+    System Manifest reuses the commitment contract's opaque Identifier and
+    canonical sha256 Digest definitions instead of creating a second spelling
+    for either fact.
+    """
+    global _SYSTEM_MANIFEST_REGISTRY
+    if _SYSTEM_MANIFEST_REGISTRY is None:
+        resources = []
+        for name in (_COMMITMENT_SCHEMA_FILE, _SYSTEM_MANIFEST_SCHEMA_FILE):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _SYSTEM_MANIFEST_REGISTRY = Registry().with_resources(resources)
+    return _SYSTEM_MANIFEST_REGISTRY
+
+
+def _system_manifest_validator() -> Draft202012Validator:
+    if "system-manifest" not in _VALIDATORS:
+        _VALIDATORS["system-manifest"] = Draft202012Validator(
+            load_system_manifest_schema(),
+            format_checker=FormatChecker(),
+            registry=_system_manifest_registry(),
+        )
+    return _VALIDATORS["system-manifest"]
+
 
 
 def _pointer_validator(key: str, root: dict, pointer: str) -> Draft202012Validator:
@@ -1247,6 +1287,91 @@ def validate_graphspec(spec: dict) -> list[Violation]:
         )
 
     return v
+
+
+# --------------------------------------------------------------------------- #
+# System Manifest semantics — ADR-035 rules SM1-SM3                           #
+# --------------------------------------------------------------------------- #
+
+
+def validate_system_manifest(document: dict) -> list[Violation]:
+    """Validate one System Manifest declaration.
+
+    This validates the document only. It does NOT verify that a declared
+    runtime, graph fingerprint, code fingerprint, policy or control was
+    actually present or effective in a deployment. ADR-035 makes binding
+    verification a separate operation so schema validity can never be mistaken
+    for operational evidence.
+    """
+    schema = load_system_manifest_schema()
+    schema_violations = _schema_violations(
+        schema, _system_manifest_validator(), document
+    )
+    if schema_violations:
+        return schema_violations
+
+    j1_violations, _structural = _j1_violations(document)
+    violations: list[Violation] = list(j1_violations)
+
+    # SM1 — identifiers that name one member of a manifest namespace are unique.
+    graphs = document["bindings"]["graphs"]
+    seen_graphs: set[tuple[str, str]] = set()
+    for index, graph in enumerate(graphs):
+        key = (graph["name"], graph["version"])
+        if key in seen_graphs:
+            violations.append(Violation(
+                "SM1",
+                f"$.bindings.graphs[{index}]",
+                f"graph identity {key[0]!r} version {key[1]!r} is declared "
+                "more than once; one manifest cannot bind one logical graph "
+                "identity to multiple entries",
+            ))
+        seen_graphs.add(key)
+
+    declarations = document["declarations"]
+    namespaces = (
+        ("components", "component_id"),
+        ("policies", "policy_id"),
+        ("controls", "control_id"),
+    )
+    for collection, field in namespaces:
+        seen: set[str] = set()
+        for index, item in enumerate(declarations.get(collection) or []):
+            identifier = item[field]
+            if identifier in seen:
+                violations.append(Violation(
+                    "SM1",
+                    f"$.declarations.{collection}[{index}].{field}",
+                    f"{field} {identifier!r} is declared more than once; "
+                    "identifiers are unique within one manifest namespace",
+                ))
+            seen.add(identifier)
+
+    # SM2 — policy_ref is a local machine-checkable edge. External policy
+    # documents belong in `reference`; a local id must resolve locally.
+    policy_ids = {
+        item["policy_id"] for item in declarations.get("policies") or []
+    }
+    for index, control in enumerate(declarations.get("controls") or []):
+        policy_ref = control.get("policy_ref")
+        if policy_ref is not None and policy_ref not in policy_ids:
+            violations.append(Violation(
+                "SM2",
+                f"$.declarations.controls[{index}].policy_ref",
+                f"control names policy_ref {policy_ref!r}, but no policy with "
+                "that policy_id is declared in this manifest",
+            ))
+
+    # SM3 — shape is schema work; calendar truth needs date arithmetic.
+    if not _calendar_valid_utc(document["created_at"]):
+        violations.append(Violation(
+            "SM3",
+            "$.created_at",
+            f"{document['created_at']!r} has the RFC 3339 UTC shape but is not "
+            "a calendar-valid UTC instant",
+        ))
+
+    return violations
 
 
 # --------------------------------------------------------------------------- #
@@ -4338,7 +4463,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
-            "P-rules, JSON document and JSONL stream forms."
+            "P-rules, System Manifest SM-rules, JSON document and JSONL "
+            "stream forms."
         ),
         epilog=(
             "Prints one line per violation ('RULE path: message') and exits 0 "
@@ -4350,7 +4476,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
-                 "receipt", "package"],
+                 "receipt", "system-manifest", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -4483,6 +4609,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_commitment(doc)
         elif args.artifact == "checkpoint":
             violations = validate_checkpoint(doc)
+        elif args.artifact == "system-manifest":
+            violations = validate_system_manifest(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:
