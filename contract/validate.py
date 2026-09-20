@@ -1411,14 +1411,16 @@ def _calendar_valid_utc(value: str) -> bool:
     """Is ``value`` a calendar-valid RFC 3339 UTC instant (Z form)?
 
     Trace T9 and System Manifest SM3 share this calendar arithmetic. The
-    schema's regex pins the shape but admits month 13 and hour 99;
-    ``datetime.strptime`` supplies the calendar arithmetic without any
-    third-party date parser (``%f`` accepts the schema's 1–6 fraction digits).
+    schema pins the timestamp grammar; this function supplies calendar truth.
+    Fractional seconds are decimal precision, so their length is not limited
+    by Python's microsecond-only ``%f`` parser.
     """
     body = value[:-1] if value.endswith("Z") else value
-    layout = "%Y-%m-%dT%H:%M:%S.%f" if "." in body else "%Y-%m-%dT%H:%M:%S"
+    whole, separator, fraction = body.partition(".")
+    if separator and (not fraction or not fraction.isdigit()):
+        return False
     try:
-        datetime.strptime(body, layout)
+        datetime.strptime(whole, "%Y-%m-%dT%H:%M:%S")
     except ValueError:
         return False
     return True
