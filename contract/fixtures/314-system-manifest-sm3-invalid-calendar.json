@@ -1,0 +1,34 @@
+{
+  "artifact": "system-manifest",
+  "expect": "invalid",
+  "rule": "SM3",
+  "reason_contains": "not a calendar-valid UTC instant",
+  "instance": {
+    "schema_version": "1.0.0",
+    "system": {
+      "id": "acme/credit-ai",
+      "manifest_version": "2026.09.20-1"
+    },
+    "bindings": {
+      "motus": {
+        "runtime_version": "0.14.0",
+        "trace_schema_version": "3.2.0"
+      },
+      "graphs": [
+        {
+          "name": "credit_review",
+          "version": "1.0.0",
+          "spec_schema_version": "1.0.0",
+          "graph_fingerprint": "graph:sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "code_fingerprint": "code:sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ]
+    },
+    "declarations": {
+      "operator": {
+        "id": "acme-bank"
+      }
+    },
+    "created_at": "2026-02-31T17:00:00Z"
+  }
+}
