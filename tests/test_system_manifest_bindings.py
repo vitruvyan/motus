@@ -7,6 +7,8 @@ suite catches it.
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 
 import pytest
 
@@ -79,6 +81,9 @@ def _manifest_for(pairs):
 
 def _by_path(verdict):
     return {finding.path: finding for finding in verdict.findings}
+
+
+FIXTURES_DIR = Path(__file__).resolve().parent.parent / "contract" / "fixtures"
 
 
 def test_exact_bindings_match_and_complete():
@@ -268,3 +273,34 @@ def test_forged_trace_object_is_refused_before_it_can_match_code_binding():
         verify_system_manifest_bindings(
             manifest, graph_specs=[spec], traces=[forged]
         )
+
+
+def test_code_evidence_from_another_trace_schema_does_not_match():
+    wrapper = json.loads(
+        (FIXTURES_DIR / "309-trace-3-1-float-loads.json").read_text("utf-8")
+    )
+    old_trace = Trace.from_dict(wrapper["instance"])
+    graph = old_trace.run["graph"]
+    manifest = {
+        "schema_version": "1.0.0",
+        "system": {"id": "acme/ai-system", "manifest_version": "current"},
+        "bindings": {
+            "motus": {
+                "runtime_version": __version__,
+                "trace_schema_version": TRACE_SCHEMA_VERSION,
+            },
+            "graphs": [{
+                "name": graph["name"],
+                "version": graph["version"],
+                "spec_schema_version": graph["spec_schema_version"],
+                "graph_fingerprint": graph["graph_fingerprint"],
+                "code_fingerprint": graph["code_fingerprint"],
+            }],
+        },
+        "declarations": {"operator": {"id": "acme"}},
+        "created_at": "2026-09-20T18:00:00Z",
+    }
+
+    verdict = verify_system_manifest_bindings(manifest, traces=[old_trace])
+
+    assert _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"].status == NOT_VERIFIED
