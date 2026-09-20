@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from vitruvyan_motus import TRACE_SCHEMA_VERSION, __version__
 from vitruvyan_motus.graph import GraphSpec
@@ -21,20 +21,19 @@ if TYPE_CHECKING:
     from vitruvyan_motus.contract.validate import Violation
 
 __all__ = [
-    "MATCHED", "MISMATCHED", "NOT_VERIFIED",
     "SystemManifestBindingFinding", "SystemManifestBindingVerdict",
     "verify_system_manifest_bindings",
 ]
 
-MATCHED = "matched"
-MISMATCHED = "mismatched"
-NOT_VERIFIED = "not verified"
+_MATCHED = "matched"
+_MISMATCHED = "mismatched"
+_NOT_VERIFIED = "not verified"
 
 
 @dataclass(frozen=True, slots=True)
 class SystemManifestBindingFinding:
     path: str
-    status: str
+    status: Literal["matched", "mismatched", "not verified"]
     expected: str | None
     observed: str | None
     reason: str
@@ -42,27 +41,27 @@ class SystemManifestBindingFinding:
 
 @dataclass(frozen=True, slots=True)
 class SystemManifestBindingVerdict:
-    """Binding result; complete is not a compliance or certification verdict."""
+    """Binding result; bindings_complete is not a compliance or certification verdict."""
 
     manifest_fingerprint: str | None
     manifest_violations: tuple["Violation", ...]
     findings: tuple[SystemManifestBindingFinding, ...]
 
     @property
-    def complete(self) -> bool:
+    def bindings_complete(self) -> bool:
         return (
             not self.manifest_violations
             and bool(self.findings)
-            and all(item.status == MATCHED for item in self.findings)
+            and all(item.status == _MATCHED for item in self.findings)
         )
 
     @property
     def has_mismatch(self) -> bool:
-        return any(item.status == MISMATCHED for item in self.findings)
+        return any(item.status == _MISMATCHED for item in self.findings)
 
     @property
     def has_unverified(self) -> bool:
-        return any(item.status == NOT_VERIFIED for item in self.findings)
+        return any(item.status == _NOT_VERIFIED for item in self.findings)
 
 
 def _contract_validate():
@@ -72,11 +71,11 @@ def _contract_validate():
 def _finding(path: str, expected: str | None, observed: str | None, *, source: str, missing: bool = False) -> SystemManifestBindingFinding:
     if missing:
         return SystemManifestBindingFinding(
-            path, NOT_VERIFIED, expected, None,
+            path, _NOT_VERIFIED, expected, None,
             f"no {source} was supplied that can settle this binding",
         )
-    status = MATCHED if expected == observed else MISMATCHED
-    verb = "matches" if status == MATCHED else "does not match"
+    status = _MATCHED if expected == observed else _MISMATCHED
+    verb = "matches" if status == _MATCHED else "does not match"
     return SystemManifestBindingFinding(
         path, status, expected, observed, f"manifest value {verb} {source}",
     )
@@ -196,7 +195,7 @@ def verify_system_manifest_bindings(
         else:
             for field in ("name", "version", "spec_schema_version", "graph_fingerprint"):
                 findings.append(SystemManifestBindingFinding(
-                    f"{prefix}.{field}", NOT_VERIFIED, graph[field], None,
+                    f"{prefix}.{field}", _NOT_VERIFIED, graph[field], None,
                     f"{len(candidates)} supplied GraphSpecs share identity {graph['name']!r}/{graph['version']!r}; verifier refuses to choose one",
                 ))
 
@@ -215,7 +214,7 @@ def verify_system_manifest_bindings(
             ))
         else:
             findings.append(SystemManifestBindingFinding(
-                f"{prefix}.code_fingerprint", NOT_VERIFIED, graph["code_fingerprint"], None,
+                f"{prefix}.code_fingerprint", _NOT_VERIFIED, graph["code_fingerprint"], None,
                 "matching supplied traces carry multiple distinct code_fingerprint values; verifier refuses to choose one",
             ))
 
