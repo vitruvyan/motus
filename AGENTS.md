@@ -76,8 +76,8 @@ every model tier:
 
 - **Authority order**: ADR-001 → `contract/` → frozen corpora → implementation.
   When implementation and contract disagree, the implementation is wrong.
-- **Never edit** `tests/contract/` or `tests/compat/`. CI enforces this from
-  the trusted base branch.
+- **Never edit** `tests/contract/` or `tests/compat/`. The controller-owned Jenkins guard loads its checker from the current trusted
+  `main` tip; the merge base is only the diff boundary.
 - **Never weaken, skip or delete an assertion** to make something pass.
 - **A finding names an instance. Repair the class.** Before fixing what was
   reported, ask what *else* has the same shape, and go and look — the answer

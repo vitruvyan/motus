@@ -495,3 +495,8 @@ def test_jenkins_cutover_preserves_the_external_frozen_guard_boundary():
     assert "merge base for the diff boundary" in documentation
     assert "PR checkout solely as untrusted data" in adr
     assert "publication stays on GitHub Actions" in adr
+    checker_source = (REPO_ROOT / "tools" / "check_frozen_paths.py").read_text(
+        encoding="utf-8"
+    )
+    assert "current trusted `main` tip" in checker_source
+    assert "base commit by the Jenkins" not in checker_source

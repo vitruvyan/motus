@@ -1,8 +1,8 @@
 """Reject changes to the frozen contract corpora.
 
-This program is intentionally stdlib-only.  In CI it is executed from the
-base commit by the Jenkins trusted frozen-contract stage; pull-request code
-cannot weaken the check that judges that same pull request.
+This program is intentionally stdlib-only.  In CI the controller-owned Jenkins guard materializes this program from the
+current trusted `main` tip; the merge base is passed separately as the diff
+boundary, and pull-request code is only the untrusted head being judged.
 """
 
 from __future__ import annotations
