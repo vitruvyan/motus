@@ -945,6 +945,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
 - evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
+- system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
+  `SystemManifestBindingFinding`, `MATCHED`, `MISMATCHED`, `NOT_VERIFIED`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -954,6 +956,37 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - failures: `MotusError`, `NodeFailed`, `SinkFailed`, `UnsafeResume`,
   `ReplayError`, `ReplayMismatch`, `ReplayUnsupported`, `DeclarationViolation`,
   `GraphSpecViolation`, `GraphSpecValidationError`, `NodeConfigurationError`.
+
+### System Manifest binding verification
+
+ADR-035 keeps document validity and binding verification separate. A valid
+System Manifest is a well-formed declaration; it is not proof that the declared
+runtime, graph, code, policy or control was used.
+
+The public verifier compares the manifest with the Motus distribution executing
+the check and with validated Motus artifacts supplied by the caller:
+
+```python
+from vitruvyan_motus import verify_system_manifest_bindings
+
+verdict = verify_system_manifest_bindings(
+    manifest,
+    graph_specs=[spec],
+    traces=[trace],
+)
+
+if verdict.complete:
+    ...
+```
+
+The status vocabulary is deliberately narrow: `matched`, `mismatched`, and
+`not verified`. Missing evidence is never a match. `graph_fingerprint` is
+recomputed from the supplied GraphSpec. `code_fingerprint` is only compared
+with the value carried by a matching validated Motus trace; that establishes
+agreement with execution evidence and does not independently recompute node code
+identity. `complete` therefore means only that every v1 binding this verifier
+knows how to compare matched the supplied Motus artifacts. It does not mean
+compliant, certified, approved or deployed.
 
 ### Evidence API for bridges
 
