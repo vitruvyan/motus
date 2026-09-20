@@ -108,6 +108,8 @@ def _run_fixture(wrapper: dict):
         return validate.validate_system_manifest(wrapper["instance"])
     if artifact == "risk-control-registry":
         return validate.validate_risk_control_registry(wrapper["instance"])
+    if artifact == "control-application":
+        return validate.validate_control_application(wrapper["instance"])
     if artifact == "jsonl":
         text = "\n".join(wrapper["lines"]) + "\n"
         violations, _doc = validate.validate_jsonl(
@@ -129,7 +131,8 @@ def _run_fixture(wrapper: dict):
     ["graphspec.v1.schema.json", "trace.v1.schema.json",
      "commitment.v1.schema.json", "checkpoint.v1.schema.json",
      "receipt.v1.schema.json", "system-manifest.v1.schema.json",
-     "risk-control-registry.v1.schema.json"],
+     "risk-control-registry.v1.schema.json",
+     "control-application.v1.schema.json"],
 )
 def test_schema_passes_metaschema(schema_file):
     schema = _read(CONTRACT_DIR / schema_file)
@@ -227,6 +230,8 @@ ADVERTISED_RULES = {
     "SM1", "SM2", "SM3",
     # Risk & Control Registry declaration semantics (ADR-036)
     "RCR1", "RCR2", "RCR3",
+    # ControlApplication event semantics (ADR-036)
+    "CA1", "CA2",
     # A number commits to the characters it was written as (ADR-024)
     "J2",
 }
@@ -248,7 +253,8 @@ def test_corpus_minimums_and_wrapper_shape():
     for path, wrapper in FIXTURES:
         assert wrapper["artifact"] in {
             "graphspec", "trace", "jsonl", "commitment", "checkpoint", "receipt",
-            "system-manifest", "risk-control-registry", "text",
+            "system-manifest", "risk-control-registry", "control-application",
+            "text",
         }, path.name
         if wrapper["artifact"] == "text":
             assert isinstance(wrapper["raw"], str) and wrapper["raw"], path.name

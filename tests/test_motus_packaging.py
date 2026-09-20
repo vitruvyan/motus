@@ -444,6 +444,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         # not run.
         "vitruvyan_motus/contract/checkpoint.v1.schema.json",
         "vitruvyan_motus/contract/commitment.v1.schema.json",
+        "vitruvyan_motus/contract/control-application.v1.schema.json",
         "vitruvyan_motus/contract/graphspec.v1.schema.json",
         # The invariants. `durability_profile` is documented here and an
         # integrator arrives holding that word from their own trace header

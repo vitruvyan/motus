@@ -28,6 +28,7 @@ enforcement point.
 | 5 | Commitment | `commitment.v1.schema.json`, `checkpoint.v1.schema.json`, `receipt.v1.schema.json` | A third party holding a receipt, who has none of our code running and no reason to trust us | `validate.py`'s C, K and P rules, which **recompute** every digest rather than reading it back. The three schemas travel in the wheel for the same reason `trace.v1` does: a verifier somebody has to clone a repository to obtain is a verifier most of them will not run |
 | 6 | System Manifest | `system-manifest.v1.schema.json` | An auditor, regulator-facing profile, or integration that needs one stable identity for the declared AI system configuration | `validate_system_manifest()` applies schema + SM1-SM3. It validates the declaration only; binding values are **not** verified merely by being present. ADR-035 requires a separate binding-verification operation before any runtime/graph value may be called matched |
 | 7 | Risk & Control Registry | `risk-control-registry.v1.schema.json` | An auditor, governance system, or later regulatory profile that needs one exact revision of the operator's declared risks and controls | `validate_risk_control_registry()` applies schema + RCR1-RCR3. It validates shape, local identity and references only; it never reports that a risk exists, a control ran, a control is effective, or an obligation is satisfied |
+| 8 | ControlApplication | `control-application.v1.schema.json` | An evidence consumer that needs one neutral record of a declared control evaluated or applied at one Motus execution boundary | `validate_control_application()` applies schema + CA1-CA2. It validates the event document only; registry, manifest and execution bindings require the separate public verifier, and no outcome elevates an ADR-020 assurance level |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
@@ -156,6 +157,33 @@ addressed by many controls, but those edges make no effectiveness claim.
 must be derived from the complete validated revision rather than asserted by
 the revision itself. Its derivation helper is a separate ADR-036 micro-step.
 ControlApplication is also a separate surface and is not embedded here.
+
+### ControlApplication rules — one event is not control effectiveness
+
+A ControlApplication reports one evaluation or application of one declared
+control at one execution-scoped evidence boundary. It is separate from both
+the Registry and the System Manifest, has its own derived identity, and binds
+to the existing ADR-027 `execution_ref`; it does not invent another execution
+key.
+
+The closed `outcome` vocabulary is `applied`, `blocked`, `allowed`,
+`not_applicable`, and `error`. These are observations about one control event.
+None means effective, compliant, certified, or approved. A valid application
+establishes none of ADR-020's assurance levels, and the schema has no field by
+which it could claim otherwise.
+
+| Rule | What it refuses |
+|---|---|
+| `CA1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate. Leading-zero and unbounded decimal sequences are refused as violations, never normalised or allowed to crash the validator |
+| `CA2` | An `observed_at` value that has the required UTC timestamp shape but is not a real calendar instant |
+
+`registry_fingerprint` is required because a control identifier without its
+registry revision is ambiguous historical evidence. `manifest_fingerprint` is
+optional at the document boundary because not every registry declares a
+system binding; the public verifier reports whether the binding is matched,
+mismatched, or not verifiable from the supplied documents. The required
+`evidence.kind: motus_execution` and `execution_ref` make v1 execution-scoped;
+organizational evidence remains outside this surface as ADR-036 requires.
 
 ### What the verifier will not tell you
 

@@ -1,0 +1,20 @@
+{
+  "artifact": "control-application",
+  "expect": "invalid",
+  "rule": "CA1",
+  "reason_contains": "canonical tenant/writer/sequence",
+  "instance": {
+    "schema_version": "1.0.0",
+    "registry_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "control_id": "C-001",
+    "execution_ref": "acme/writer-1/042",
+    "enforcement_point": "tool_dispatch",
+    "outcome": "blocked",
+    "observed_at": "2026-09-21T01:15:00Z",
+    "evidence": {
+      "kind": "motus_execution"
+    }
+  },
+  "spec": null,
+  "layer": "semantic"
+}

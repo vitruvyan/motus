@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/control-application.v1.schema.json",
+  "title": "Vitruvyan Motus ControlApplication, v1",
+  "description": "ADR-036. Evidence that one declared control was evaluated or applied at one execution-scoped evidence boundary. A valid document reports one control event; it is not a control-effectiveness, certification, conformity, or compliance verdict and cannot elevate an ADR-020 assurance level.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "registry_fingerprint",
+    "control_id",
+    "execution_ref",
+    "enforcement_point",
+    "outcome",
+    "observed_at",
+    "evidence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "registry_fingerprint": {
+      "$ref": "commitment.v1.schema.json#/$defs/Digest",
+      "description": "Derived fingerprint of the exact Risk & Control Registry revision that declared this control. Validation checks shape; binding verification recomputes the value from the supplied registry."
+    },
+    "control_id": {
+      "$ref": "commitment.v1.schema.json#/$defs/Identifier"
+    },
+    "execution_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical ADR-027 tenant/writer/sequence locator. CA1 checks its semantic grammar. The locator is not proof that the execution exists."
+    },
+    "manifest_fingerprint": {
+      "$ref": "commitment.v1.schema.json#/$defs/Digest",
+      "description": "Optional derived fingerprint of the exact System Manifest revision under which the control event was observed."
+    },
+    "enforcement_point": {
+      "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+      "description": "Neutral name of the point at which this control event was observed."
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "blocked",
+        "allowed",
+        "not_applicable",
+        "error"
+      ],
+      "description": "Closed neutral event vocabulary. These values do not state effectiveness, conformity, or compliance."
+    },
+    "observed_at": {
+      "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp",
+      "description": "When the control event was observed. CA2 validates the calendar value; this is not legal time."
+    },
+    "evidence": {
+      "$ref": "#/$defs/EvidenceBinding"
+    }
+  },
+  "$defs": {
+    "EvidenceBinding": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "motus_execution",
+          "description": "The application is scoped to the Motus execution located by execution_ref. Retrieval and document validity do not verify that execution evidence."
+        }
+      }
+    }
+  }
+}
