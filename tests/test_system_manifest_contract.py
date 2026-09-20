@@ -147,3 +147,19 @@ def test_in_process_non_json_manifest_value_is_j1_not_schema():
     assert violations
     assert {item.rule for item in violations} == {"J1"}
     assert any("tuple is not a JSON value" in item.message for item in violations)
+
+
+def test_rfc3339_real_leap_second_is_valid():
+    document = _manifest()
+    document["created_at"] = "2016-12-31T23:59:60Z"
+
+    assert validate.validate_system_manifest(document) == []
+
+
+def test_rfc3339_spurious_leap_second_is_sm3():
+    document = _manifest()
+    document["created_at"] = "2016-12-30T23:59:60Z"
+
+    violations = validate.validate_system_manifest(document)
+
+    assert {item.rule for item in violations} == {"SM3"}

@@ -367,3 +367,28 @@ def test_wrong_graphspec_does_not_invalidate_independent_trace_evidence():
 
     assert findings["$.bindings.graphs[0].graph_fingerprint"].status == "mismatched"
     assert findings["$.bindings.graphs[0].code_fingerprint"].status == "matched"
+
+
+def test_conflicting_graphspec_fingerprints_are_explicit_mismatch():
+    first = _spec("review")
+    first_trace = _trace(first, "run-graph-conflict")
+    manifest = _manifest_for([(first, first_trace)])
+
+    second_document = first.to_dict()
+    second_document["requires_motus"] = ">=0"
+    second = GraphSpec.from_dict(second_document)
+    assert first.graph_fingerprint != second.graph_fingerprint
+
+    verdict = verify_system_manifest_bindings(
+        manifest, graph_specs=[first, second], traces=[first_trace]
+    )
+
+    finding = _by_path(verdict)["$.bindings.graphs[0].graph_fingerprint"]
+    assert finding.status == "mismatched"
+    assert isinstance(finding.observed, tuple)
+    assert set(finding.observed) == {
+        first.graph_fingerprint,
+        second.graph_fingerprint,
+    }
+    assert verdict.has_mismatch is True
+    assert verdict.bindings_complete is False

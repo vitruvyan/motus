@@ -251,10 +251,30 @@ def verify_system_manifest_bindings(
                     missing=True,
                 ))
         else:
-            for field in ("name", "version", "spec_schema_version", "graph_fingerprint"):
+            for field in ("name", "version", "spec_schema_version"):
                 findings.append(SystemManifestBindingFinding(
                     f"{prefix}.{field}", _NOT_VERIFIED, graph[field], None,
                     f"{len(candidates)} supplied GraphSpecs share identity {graph['name']!r}/{graph['version']!r}; verifier refuses to choose one",
+                ))
+            graph_fingerprints = tuple(sorted({
+                validate.fingerprint("graph", candidate)
+                for candidate in candidates
+            }))
+            if len(graph_fingerprints) == 1:
+                findings.append(SystemManifestBindingFinding(
+                    f"{prefix}.graph_fingerprint", _NOT_VERIFIED,
+                    graph["graph_fingerprint"], None,
+                    f"{len(candidates)} supplied GraphSpecs are duplicate evidence "
+                    f"for identity {graph['name']!r}/{graph['version']!r}; "
+                    "verifier refuses to choose one",
+                ))
+            else:
+                findings.append(SystemManifestBindingFinding(
+                    f"{prefix}.graph_fingerprint", _MISMATCHED,
+                    graph["graph_fingerprint"], graph_fingerprints,
+                    "supplied GraphSpecs with the same name/version carry "
+                    "conflicting canonical fingerprints; at least one "
+                    "contradicts the manifest declaration",
                 ))
 
         code_values = _matching_trace_code_fingerprints(

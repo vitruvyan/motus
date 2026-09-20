@@ -1407,18 +1407,41 @@ def _json_equal(a, b) -> bool:
     return a == b
 
 
+_RFC3339_LEAP_SECOND_DATES = frozenset({
+    "1972-06-30", "1972-12-31", "1973-12-31", "1974-12-31",
+    "1975-12-31", "1976-12-31", "1977-12-31", "1978-12-31",
+    "1979-12-31", "1981-06-30", "1982-06-30", "1983-06-30",
+    "1985-06-30", "1987-12-31", "1989-12-31", "1990-12-31",
+    "1992-06-30", "1993-06-30", "1994-06-30", "1995-12-31",
+    "1997-06-30", "1998-12-31", "2005-12-31", "2008-12-31",
+    "2012-06-30", "2015-06-30", "2016-12-31",
+})
+
+
 def _calendar_valid_utc(value: str) -> bool:
     """Is ``value`` a calendar-valid RFC 3339 UTC instant (Z form)?
 
     Trace T9 and System Manifest SM3 share this calendar arithmetic. The
     schema pins the timestamp grammar; this function supplies calendar truth.
     Fractional seconds are decimal precision, so their length is not limited
-    by Python's microsecond-only ``%f`` parser.
+    by Python's microsecond-only ``%f`` parser. Leap-second notation is
+    valid only for an actual historical UTC leap second.
     """
     body = value[:-1] if value.endswith("Z") else value
     whole, separator, fraction = body.partition(".")
     if separator and (not fraction or not fraction.isdigit()):
         return False
+
+    if whole.endswith(":60"):
+        date_text, _, time_text = whole.partition("T")
+        if time_text != "23:59:60" or date_text not in _RFC3339_LEAP_SECOND_DATES:
+            return False
+        try:
+            datetime.strptime(date_text, "%Y-%m-%d")
+        except ValueError:
+            return False
+        return True
+
     try:
         datetime.strptime(whole, "%Y-%m-%dT%H:%M:%S")
     except ValueError:

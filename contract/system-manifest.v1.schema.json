@@ -271,8 +271,8 @@
     },
     "UtcTimestamp": {
       "type": "string",
-      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$",
-      "description": "RFC 3339 UTC Z-form timestamp shape. Fractional seconds may carry any positive number of digits, as RFC 3339 permits. SM3 supplies the calendar-validity check because a regex cannot know that 2026-02-31 is not a date."
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\\.[0-9]+)?Z$",
+      "description": "RFC 3339 UTC Z-form timestamp shape. Fractional seconds may carry any positive number of digits and second 60 is admitted for leap-second instants. SM3 supplies calendar and leap-second validity."
     }
   }
 }
