@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The five surfaces
+## The six surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -26,6 +26,7 @@ enforcement point.
 | 3 | Graph | `graphspec.v1.schema.json` | The declaration/execution boundary | Static validation at construction. An invalid graph refuses to exist — it does not start-and-warn |
 | 4 | Guarantees | `guarantees.md` | Operators and auditors | Executable: the conformance suite in `tests/contract/` and the CI benchmark gate. A release that violates either does not ship |
 | 5 | Commitment | `commitment.v1.schema.json`, `checkpoint.v1.schema.json`, `receipt.v1.schema.json` | A third party holding a receipt, who has none of our code running and no reason to trust us | `validate.py`'s C, K and P rules, which **recompute** every digest rather than reading it back. The three schemas travel in the wheel for the same reason `trace.v1` does: a verifier somebody has to clone a repository to obtain is a verifier most of them will not run |
+| 6 | System Manifest | `system-manifest.v1.schema.json` | An auditor, regulator-facing profile, or integration that needs one stable identity for the declared AI system configuration | `validate_system_manifest()` applies schema + SM1-SM3. It validates the declaration only; binding values are **not** verified merely by being present. ADR-035 requires a separate binding-verification operation before any runtime/graph value may be called matched |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
@@ -74,6 +75,53 @@ in both places, and a positive fixture fails the moment they disagree.
 | `P8` | A completed receipt whose `execution.fingerprint` disagrees with the root derived from the paired trace. An unfinished receipt has no END and legitimately carries `null`. |
 | `P9` | An attestation whose `subject` is not a checkpoint digest or the run root of this receipt. An assertion about a digest that is not here says nothing about this run |
 | `P10` | An attestation outside the known type set, an algorithm its type does not admit (`rfc3161_timestamp` admits `sha256`), or a `proof` whose MATERIAL this validator will not trust — `token_der` that does not decode as base64 or decodes too short or too long, or a `message_imprint` that is not `sha256(subject)`. A violation AND a refusal — *unreadable cryptography must never sit on the same footing as checked cryptography*. A `proof` MISSING a required key is SCHEMA, not P10 — the schema already requires it, and P10's proof limb is about what a present key contains, never about its absence |
+
+
+### System Manifest rules — declaration is not proof
+
+ADR-035 adds the System Manifest as a sixth contract surface. It answers
+**which system configuration the operator declares**, not whether that system
+actually ran, whether a control was effective, or whether any legal,
+certification or regulatory requirement is satisfied.
+
+The document deliberately separates `bindings` from `declarations`.
+Bindings carry values for which Motus defines an independent verification
+recipe; declarations carry operator-supplied context. **Schema validity changes
+neither category into proof.** The first contract step validates only what the
+document itself can prove:
+
+| Rule | What it refuses |
+|---|---|
+| `SM1` | Ambiguous identity inside one manifest: duplicate graph `(name, version)`, `component_id`, `policy_id`, or `control_id`. Two different entries under one local identity are a configuration a reader cannot address unambiguously |
+| `SM2` | A control whose local `policy_ref` names no policy declared in the same manifest. External policy documents belong in `reference`; `policy_ref` is the local machine-checkable edge |
+| `SM3` | A `created_at` value that has the required UTC timestamp shape but is not a real calendar instant. A regular expression is not a calendar |
+
+Everything the JSON Schema can express — required fields, the closed component
+kind vocabulary, canonical fingerprint shapes, rejection of undeclared fields,
+and the absence of self-asserted fields such as `manifest_fingerprint` or
+`compliant` — is reported as `SCHEMA`, not duplicated as an SM rule.
+
+`manifest_fingerprint` is derived as:
+
+```
+sha256:<hex of SHA-256(canonical_json(complete manifest))>
+```
+
+where `canonical_json` is the same UTF-8, sorted-key, no-insignificant-
+whitespace form used elsewhere in this contract. The digest is **not stored in
+the document**. `system_manifest_fingerprint(document)` computes it.
+
+**What this step does not do:** it does not compare
+`bindings.motus.runtime_version` to an installed runtime, does not recompute a
+declared `graph_fingerprint` from a GraphSpec, and does not compare
+`code_fingerprint` to a trace/runtime identity. ADR-035 requires those checks
+to be a separate binding-verification operation so that "well-formed
+declaration" can never be reported as "verified system".
+
+A valid manifest establishes none of ADR-020's seven trust levels. A signature
+over a manifest could later establish who signed that declaration; it still
+would not establish that the declared configuration was deployed or that a
+declared control executed.
 
 ### What the verifier will not tell you
 
