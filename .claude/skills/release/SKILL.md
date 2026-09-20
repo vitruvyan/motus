@@ -20,7 +20,7 @@ thing to ask for.
 
 1. **Branch** `release/X.Y.Z` from `main`.
 2. **Bump** `__version__`, and retarget every reference to the candidate
-   evidence filename: `check_slo_baseline.py` `DEFAULT_CANDIDATE`, `ci.yml`,
+   evidence filename: `check_slo_baseline.py` `DEFAULT_CANDIDATE`,
    and `motus-characterize.yml` (both the output path and the artifact name).
    The tree is deliberately red between here and step 4 — say so.
 3. **Characterize** by dispatching `motus-characterize-relative.yml` against
