@@ -127,3 +127,17 @@ def test_cli_accepts_a_valid_system_manifest(tmp_path):
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout == ""
+
+
+
+def test_in_process_non_json_manifest_value_is_j1_not_schema():
+    document = _manifest()
+    document["declarations"]["components"] = [
+        {"component_id": "bad", "kind": "other", "name": ("not", "json")}
+    ]
+
+    violations = validate.validate_system_manifest(document)
+
+    assert violations
+    assert {item.rule for item in violations} == {"J1"}
+    assert any("tuple is not a JSON value" in item.message for item in violations)
