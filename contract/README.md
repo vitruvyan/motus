@@ -302,7 +302,8 @@ The golden in `tests/compat/terraveler/golden/` is a real row lifted out of
 `ingestion_runs` — six top-level keys, no `metadata`, naive timestamps inside
 its events. It is evidence precisely because nobody wrote it for a test.
 
-Mechanical protection is provided by the Jenkins `frozen-contract-paths` stage
+Mechanical protection is provided by the Jenkins
+`trusted frozen-contract-paths` stage
 and `tools/check_frozen_paths.py`. Jenkins materializes the checker from the
 exact trusted base SHA and compares it with the exact pull-request head; code
 in a pull request is data and cannot weaken the checker that judges it. The
