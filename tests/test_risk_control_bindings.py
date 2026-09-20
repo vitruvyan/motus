@@ -196,6 +196,21 @@ def test_invalid_supplied_receipt_is_refused_before_binding():
         )
 
 
+@pytest.mark.parametrize("field", ["run_id", "fingerprint"])
+def test_receipt_derived_execution_identity_must_be_consistent(field):
+    registry = _registry()
+    application = _application(registry)
+    receipt = _receipt()
+    receipt["execution"][field] = (
+        "sha256:" + "e" * 64 if field == "fingerprint" else "tampered"
+    )
+
+    with pytest.raises(ValueError, match="inconsistent derived execution identity"):
+        verify_control_application_bindings(
+            application, registry=registry, receipt=receipt
+        )
+
+
 def test_system_manifest_binding_requires_the_actual_manifest_document():
     manifest = _manifest()
     registry = _registry(manifest=manifest)
@@ -208,7 +223,9 @@ def test_system_manifest_binding_requires_the_actual_manifest_document():
         application, registry=registry, manifest=manifest, receipt=_receipt()
     )
 
-    assert _by_path(without_manifest)["$.manifest_fingerprint"].status == (
+    assert _by_path(without_manifest)[
+        "$.manifest_fingerprint:manifest"
+    ].status == (
         "not verified"
     )
     assert complete.bindings_complete is True
@@ -231,7 +248,56 @@ def test_supplied_manifest_fingerprint_mismatch_is_detected():
         application, registry=registry, manifest=manifest, receipt=_receipt()
     )
 
-    assert _by_path(verdict)["$.manifest_fingerprint"].status == "mismatched"
+    assert _by_path(verdict)[
+        "$.manifest_fingerprint:manifest"
+    ].status == "mismatched"
+
+
+def test_manifest_edges_are_verified_independently_without_registry_system():
+    manifest = _manifest()
+    registry = _registry()
+    application = _application(registry, manifest=manifest)
+
+    verdict = verify_control_application_bindings(
+        application, registry=registry, manifest=manifest, receipt=_receipt()
+    )
+
+    assert _by_path(verdict)[
+        "$.manifest_fingerprint:manifest"
+    ].status == "matched"
+    assert verdict.bindings_complete is True
+
+
+def test_application_registry_manifest_contradiction_is_a_mismatch():
+    manifest = _manifest()
+    registry = _registry(manifest=manifest)
+    application = _application(registry, manifest=manifest)
+    application["manifest_fingerprint"] = "sha256:" + "e" * 64
+
+    verdict = verify_control_application_bindings(
+        application, registry=registry, receipt=_receipt()
+    )
+
+    assert _by_path(verdict)[
+        "$.manifest_fingerprint:registry"
+    ].status == "mismatched"
+    assert verdict.has_mismatch is True
+
+
+def test_registry_manifest_edges_are_checked_without_application_binding():
+    manifest = _manifest()
+    registry = _registry(manifest=manifest)
+    registry["system"]["system_id"] = "wrong-system"
+    application = _application(registry)
+
+    verdict = verify_control_application_bindings(
+        application, registry=registry, manifest=manifest, receipt=_receipt()
+    )
+
+    assert _by_path(verdict)["$.manifest_fingerprint"].status == "not verified"
+    assert _by_path(verdict)[
+        "registry:$.system.system_id"
+    ].status == "mismatched"
 
 
 def test_queries_preserve_registry_order_and_return_detached_documents():

@@ -107,6 +107,22 @@ def test_registry_schema_forbids_self_identity_and_operational_verdicts():
     assert schema["$defs"]["Control"]["additionalProperties"] is False
 
 
+def test_registry_contract_bounds_exchange_document_resources():
+    schema = json.loads(
+        (CONTRACT_DIR / "risk-control-registry.v1.schema.json").read_text("utf-8")
+    )
+    assert schema["properties"]["risks"]["maxItems"] == 1000
+    assert schema["properties"]["controls"]["maxItems"] == 1000
+    assert schema["$defs"]["Control"]["properties"]["risk_refs"]["maxItems"] == 100
+    assert schema["$defs"]["References"]["maxItems"] == 100
+    assert schema["$defs"]["Text"]["maxLength"] == 8192
+
+    oversized = _registry()
+    oversized["risks"][0]["description"] = "x" * 8193
+    violations = validate.validate_risk_control_registry(oversized)
+    assert {item.rule for item in violations} == {"SCHEMA"}
+
+
 def test_registry_fingerprint_is_derived_and_object_key_order_independent():
     document = _registry()
     reordered = {

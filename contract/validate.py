@@ -1389,7 +1389,11 @@ def _canonical_execution_ref_parts(
     semantic violation rather than an exception escaping the validator.
     """
     parts = value.split("/") if isinstance(value, str) else []
-    if len(parts) != 3 or any(not part for part in parts) or not parts[2].isdigit():
+    if (
+        len(parts) != 3
+        or any(not part.strip() for part in parts)
+        or not parts[2].isdigit()
+    ):
         return None
     try:
         sequence = int(parts[2])

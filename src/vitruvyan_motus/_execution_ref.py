@@ -11,6 +11,7 @@ from typing import Any
 
 __all__ = [
     "parse_execution_ref",
+    "receipt_execution_issue",
     "receipt_segment_for_execution_ref",
     "receipt_original_segment",
     "receipt_terminal_segment",
@@ -28,7 +29,7 @@ def parse_execution_ref(execution_ref: object) -> tuple[str, str, int]:
     parts = execution_ref.split("/") if isinstance(execution_ref, str) else []
     malformed = (
         len(parts) != 3
-        or any(not part for part in parts)
+        or any(not part.strip() for part in parts)
         or not parts[2].isdigit()
     )
     if malformed:
@@ -100,4 +101,53 @@ def receipt_segment_for_execution_ref(
             and commitment.get("sequence") == sequence
         ):
             return segment
+    return None
+
+
+def receipt_execution_issue(receipt: dict[str, Any]) -> str | None:
+    """Return why the receipt's derived execution identity is inconsistent."""
+    execution = receipt.get("execution")
+    if not isinstance(execution, dict):
+        return "receipt does not carry canonical execution identity"
+
+    original = receipt_original_segment(receipt)
+    terminal = receipt_terminal_segment(receipt)
+    if original is None or terminal is None:
+        return "receipt has no execution segments"
+
+    first = original.get("begin")
+    first_commitment = (
+        first.get("commitment") if isinstance(first, dict) else None
+    )
+    if not isinstance(first_commitment, dict):
+        return "receipt segments do not carry canonical commitments"
+
+    tenant = first_commitment.get("tenant")
+    writer_id = first_commitment.get("writer_id")
+    sequence = first_commitment.get("sequence")
+    if (
+        not isinstance(tenant, str)
+        or not isinstance(writer_id, str)
+        or type(sequence) is not int
+    ):
+        return "receipt original BEGIN has malformed execution identity"
+    expected_ref = f"{tenant}/{writer_id}/{sequence}"
+    if execution.get("ref") != expected_ref:
+        return "receipt execution.ref disagrees with its original BEGIN"
+    if execution.get("run_id") != first_commitment.get("run_id"):
+        return "receipt execution.run_id disagrees with its original BEGIN"
+
+    terminal_end = terminal.get("end")
+    if terminal_end is None:
+        expected_fingerprint = None
+    else:
+        terminal_commitment = (
+            terminal_end.get("commitment")
+            if isinstance(terminal_end, dict) else None
+        )
+        if not isinstance(terminal_commitment, dict):
+            return "receipt terminal END has no canonical commitment"
+        expected_fingerprint = terminal_commitment.get("root")
+    if execution.get("fingerprint") != expected_fingerprint:
+        return "receipt execution.fingerprint disagrees with its terminal END"
     return None

@@ -126,6 +126,15 @@ def test_unbounded_execution_sequence_is_ca1_not_validator_crash():
     assert {item.rule for item in violations} == {"CA1"}
 
 
+def test_execution_ref_rejects_blank_identity_components():
+    document = _application()
+    document["execution_ref"] = "   /writer-1/42"
+
+    violations = validate.validate_control_application(document)
+
+    assert {item.rule for item in violations} == {"CA1"}
+
+
 def test_cli_accepts_a_valid_control_application(tmp_path):
     path = tmp_path / "application.json"
     path.write_text(json.dumps(_application()), encoding="utf-8")

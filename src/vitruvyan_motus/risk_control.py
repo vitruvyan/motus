@@ -15,7 +15,10 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
+from vitruvyan_motus._execution_ref import (
+    receipt_execution_issue,
+    receipt_segment_for_execution_ref,
+)
 
 if TYPE_CHECKING:
     from vitruvyan_motus.contract.validate import Violation
@@ -219,6 +222,12 @@ def verify_control_application_bindings(
                 "receipt does not satisfy the Motus contract: " + detail
             )
         receipt_document = _plain_snapshot(validate, receipt)
+        receipt_issue = receipt_execution_issue(receipt_document)
+        if receipt_issue is not None:
+            raise ValueError(
+                "receipt has inconsistent derived execution identity: "
+                + receipt_issue
+            )
 
     findings: list[ControlApplicationBindingFinding] = []
     findings.append(_matched_or_mismatched(
@@ -260,33 +269,53 @@ def verify_control_application_bindings(
         if isinstance(registry_system, dict) else None
     )
     application_manifest = application_document.get("manifest_fingerprint")
-    if registry_manifest is not None:
-        if application_manifest is None:
+    if application_manifest is None:
+        if registry_manifest is not None or manifest_fingerprint is not None:
             findings.append(ControlApplicationBindingFinding(
                 "$.manifest_fingerprint", _NOT_VERIFIED,
-                registry_manifest, None,
-                "the registry binds a System Manifest but the application "
-                "does not carry its fingerprint",
+                registry_manifest or manifest_fingerprint, None,
+                "the application does not carry the optional System Manifest "
+                "fingerprint needed to bind it to the supplied declaration",
             ))
-        elif manifest_fingerprint is None:
+    else:
+        if registry_manifest is not None:
+            findings.append(_matched_or_mismatched(
+                "$.manifest_fingerprint:registry",
+                application_manifest,
+                registry_manifest,
+                "application fingerprint compared with the registry declaration",
+            ))
+        if manifest_fingerprint is None:
             findings.append(ControlApplicationBindingFinding(
-                "$.manifest_fingerprint", _NOT_VERIFIED,
-                application_manifest, registry_manifest,
-                "application and registry values can be compared, but no "
-                "System Manifest document was supplied for independent derivation",
+                "$.manifest_fingerprint:manifest", _NOT_VERIFIED,
+                application_manifest, None,
+                "no System Manifest document was supplied for independent "
+                "fingerprint derivation",
             ))
         else:
-            observed = tuple((registry_manifest, manifest_fingerprint))
-            status = (
-                _MATCHED
-                if application_manifest == registry_manifest == manifest_fingerprint
-                else _MISMATCHED
-            )
+            findings.append(_matched_or_mismatched(
+                "$.manifest_fingerprint:manifest",
+                application_manifest,
+                manifest_fingerprint,
+                "application value compared with the fingerprint independently "
+                "derived from the supplied System Manifest",
+            ))
+
+    if registry_manifest is not None:
+        if manifest_fingerprint is None:
             findings.append(ControlApplicationBindingFinding(
-                "$.manifest_fingerprint", status, application_manifest,
-                observed,
-                "application value compared with the registry binding and the "
-                "fingerprint independently derived from the supplied manifest",
+                "registry:$.system.manifest_fingerprint", _NOT_VERIFIED,
+                registry_manifest, None,
+                "no System Manifest document was supplied for independent "
+                "fingerprint derivation",
+            ))
+        else:
+            findings.append(_matched_or_mismatched(
+                "registry:$.system.manifest_fingerprint",
+                registry_manifest,
+                manifest_fingerprint,
+                "registry value compared with the fingerprint independently "
+                "derived from the supplied System Manifest",
             ))
             findings.append(_matched_or_mismatched(
                 "registry:$.system.system_id",
@@ -294,13 +323,6 @@ def verify_control_application_bindings(
                 manifest_document["system"]["id"],
                 "registry system_id compared with the supplied System Manifest",
             ))
-    elif application_manifest is not None:
-        findings.append(ControlApplicationBindingFinding(
-            "$.manifest_fingerprint", _NOT_VERIFIED,
-            application_manifest, manifest_fingerprint,
-            "the application carries a manifest fingerprint but the supplied "
-            "registry declares no system binding",
-        ))
 
     execution_ref = application_document["execution_ref"]
     if receipt_document is None:

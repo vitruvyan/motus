@@ -153,6 +153,14 @@ acceptable"; those conclusions require an authority outside this structural
 contract. Likewise, a control may address many risks and a risk may be
 addressed by many controls, but those edges make no effectiveness claim.
 
+The registry is an exchange document, not an unbounded database export. V1
+therefore caps each revision at 1,000 risk declarations and 1,000 control
+declarations, each declaration at 100 references, each control at 100 local
+risk edges, and free-text descriptions at 8,192 characters. These limits
+bound validation and query work; larger governance estates must be split into
+separately identified registry revisions rather than silently consuming
+unbounded verifier resources.
+
 `registry_fingerprint` is forbidden inside the document: canonical identity
 is derived from the complete validated revision rather than asserted by the
 revision itself. `risk_control_registry_fingerprint(document)` computes
@@ -175,7 +183,7 @@ which it could claim otherwise.
 
 | Rule | What it refuses |
 |---|---|
-| `CA1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate. Leading-zero and unbounded decimal sequences are refused as violations, never normalised or allowed to crash the validator |
+| `CA1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate. Empty or whitespace-only identity components and leading-zero or unbounded decimal sequences are refused as violations, never normalised or allowed to crash the validator |
 | `CA2` | An `observed_at` value that has the required UTC timestamp shape but is not a real calendar instant |
 
 `registry_fingerprint` is required because a control identifier without its
