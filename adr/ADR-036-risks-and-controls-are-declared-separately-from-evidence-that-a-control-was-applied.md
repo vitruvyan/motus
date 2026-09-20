@@ -1,7 +1,8 @@
 # ADR-036 — Risks and controls are declared separately from evidence that a control was applied
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-20
+- **Accepted:** 2026-09-21, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust model), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it), ADR-035 (System Manifest declaration != execution proof).
 - **Amends on acceptance:** adds canonical, jurisdiction-agnostic contract surfaces for a Risk & Control Registry and ControlApplication evidence. It does **not** amend trace.v1, graphspec.v1, commitment.v1, checkpoint.v1, receipt.v1, System Manifest v1, or the evidence-package wire format unless a later ADR explicitly does so.
