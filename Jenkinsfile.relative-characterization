@@ -35,7 +35,7 @@ pipeline {
             steps {
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: 'refs/heads/main']],
+                    branches: [[name: 'origin/main']],
                     doGenerateSubmoduleConfigurations: false,
                     extensions: [[
                         $class: 'CloneOption', depth: 1, noTags: false,
