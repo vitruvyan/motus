@@ -57,7 +57,6 @@ from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
 from vitruvyan_motus.evidence import PackageVerdict, pack, verify_package
 from vitruvyan_motus.evidence_api import EvidenceAPI, EvidenceSource, LiveEvidenceSource
 from vitruvyan_motus.system_manifest import (
-    MATCHED, MISMATCHED, NOT_VERIFIED,
     SystemManifestBindingFinding, SystemManifestBindingVerdict,
     verify_system_manifest_bindings,
 )
@@ -83,7 +82,6 @@ __all__ = [
     "TraceBundle", "ReplayResult", "ReplayEngine",
     "pack", "verify_package", "PackageVerdict",
     "EvidenceAPI", "EvidenceSource", "LiveEvidenceSource",
-    "MATCHED", "MISMATCHED", "NOT_VERIFIED",
     "SystemManifestBindingFinding", "SystemManifestBindingVerdict",
     "verify_system_manifest_bindings",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
