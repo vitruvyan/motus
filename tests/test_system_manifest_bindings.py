@@ -27,6 +27,11 @@ def _identity(state):
     return state
 
 
+def _identity_alternate(state):
+    same_state = state
+    return same_state
+
+
 def _spec(name: str, version: str = "1.0.0") -> GraphSpec:
     node = f"{name}_node"
     return GraphSpec.from_dict({
@@ -173,6 +178,24 @@ def test_missing_trace_leaves_code_fingerprint_not_verified():
     assert verdict.has_unverified is True
 
 
+def test_incomplete_contract_valid_trace_can_settle_code_binding():
+    spec = _spec("review")
+    complete = _trace(spec, "run-incomplete")
+    manifest = _manifest_for([(spec, complete)])
+    document = complete.to_dict()
+    assert document["records"][-1]["kind"] == "run_completed"
+    document["records"].pop()
+    incomplete = Trace.from_dict(document)
+
+    verdict = verify_system_manifest_bindings(
+        manifest, graph_specs=[spec], traces=[incomplete]
+    )
+
+    finding = _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"]
+    assert finding.status == "matched"
+    assert verdict.bindings_complete is True
+
+
 def test_code_fingerprint_mismatch_is_detected_against_matching_trace():
     spec = _spec("review")
     trace = _trace(spec, "run-code-mismatch")
@@ -189,6 +212,30 @@ def test_code_fingerprint_mismatch_is_detected_against_matching_trace():
     assert finding.status == "mismatched"
     assert "trace evidence" in finding.reason
     assert verdict.has_mismatch is True
+
+
+def test_conflicting_trace_code_fingerprints_are_explicit_mismatch():
+    spec = _spec("review")
+    first = _trace(spec, "run-code-first")
+    node = spec.nodes[0].name
+    second = Runtime(spec, {node: _identity_alternate}).run(
+        State.empty("manifest-binding"), run_id="run-code-second"
+    ).trace
+    first_code = first.run["graph"]["code_fingerprint"]
+    second_code = second.run["graph"]["code_fingerprint"]
+    assert first_code != second_code
+    manifest = _manifest_for([(spec, first)])
+
+    verdict = verify_system_manifest_bindings(
+        manifest, graph_specs=[spec], traces=[first, second]
+    )
+
+    finding = _by_path(verdict)["$.bindings.graphs[0].code_fingerprint"]
+    assert finding.status == "mismatched"
+    assert set(finding.observed) == {first_code, second_code}
+    assert verdict.has_mismatch is True
+    assert verdict.has_unverified is False
+    assert verdict.bindings_complete is False
 
 
 def test_invalid_manifest_gets_no_successful_binding_findings():
