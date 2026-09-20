@@ -60,6 +60,10 @@ from vitruvyan_motus.system_manifest import (
     SystemManifestBindingFinding, SystemManifestBindingVerdict,
     verify_system_manifest_bindings,
 )
+from vitruvyan_motus.risk_control import (
+    ControlApplicationBindingFinding, ControlApplicationBindingVerdict,
+    controls_for_risk, risks_for_control, verify_control_application_bindings,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -84,6 +88,9 @@ __all__ = [
     "EvidenceAPI", "EvidenceSource", "LiveEvidenceSource",
     "SystemManifestBindingFinding", "SystemManifestBindingVerdict",
     "verify_system_manifest_bindings",
+    "ControlApplicationBindingFinding", "ControlApplicationBindingVerdict",
+    "controls_for_risk", "risks_for_control",
+    "verify_control_application_bindings",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]
