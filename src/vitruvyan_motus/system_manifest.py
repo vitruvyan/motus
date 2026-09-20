@@ -184,33 +184,17 @@ def verify_system_manifest_bindings(
     if violations:
         return SystemManifestBindingVerdict(None, violations, ())
 
-    fingerprint = validate.system_manifest_fingerprint(manifest)
-    specs = tuple(graph_specs)
-    trace_items = tuple(traces)
-    spec_by_identity = _spec_index(specs)
+    # Freeze the exact declaration before consuming caller-provided iterables.
+    # The fingerprint and every expected value below therefore refer to one
+    # snapshot even if those iterables mutate the original manifest.
+    manifest_document = _plain_snapshot(validate, manifest)
+    fingerprint = validate.system_manifest_fingerprint(manifest_document)
 
-    # A Trace instance alone is not proof of contract validity: Trace.from_dict
-    # intentionally performs only the dependency-free reader checks and does
-    # not reimplement the full executable contract. Refuse invalid evidence
-    # here before any of its graph fields can produce a successful binding.
-    for trace in trace_items:
-        if not isinstance(trace, Trace):
-            raise TypeError("traces entries must be validated Trace objects")
-        # Validate the trace on its own terms. A separately supplied GraphSpec
-        # may disagree with it; that disagreement is a binding finding, not a
-        # reason to relabel otherwise-valid trace evidence as malformed.
-        trace_violations = validate.validate_trace(trace.to_dict())
-        if trace_violations:
-            detail = "; ".join(
-                f"{item.rule} {item.path}: {item.message}"
-                for item in trace_violations[:3]
-            )
-            raise ValueError(
-                "trace evidence does not satisfy the Motus contract: " + detail
-            )
+    spec_by_identity = _spec_index(tuple(graph_specs), validate)
+    trace_documents = _trace_snapshots(tuple(traces), validate)
 
     findings: list[SystemManifestBindingFinding] = []
-    motus = manifest["bindings"]["motus"]
+    motus = manifest_document["bindings"]["motus"]
     findings.append(_finding(
         "$.bindings.motus.runtime_version", motus["runtime_version"], __version__,
         source="the Motus distribution executing this verifier",
@@ -220,16 +204,38 @@ def verify_system_manifest_bindings(
         source="this Motus distribution's TRACE_SCHEMA_VERSION",
     ))
 
-    for index, graph in enumerate(manifest["bindings"]["graphs"]):
+    for index, graph in enumerate(manifest_document["bindings"]["graphs"]):
         prefix = f"$.bindings.graphs[{index}]"
         candidates = spec_by_identity.get((graph["name"], graph["version"]), [])
         if len(candidates) == 1:
-            spec = candidates[0]
+            spec_document = candidates[0]
+            recomputed_graph_fingerprint = validate.fingerprint(
+                "graph", spec_document
+            )
             findings.extend([
-                _finding(f"{prefix}.name", graph["name"], spec.name, source="the supplied GraphSpec name"),
-                _finding(f"{prefix}.version", graph["version"], spec.version, source="the supplied GraphSpec version"),
-                _finding(f"{prefix}.spec_schema_version", graph["spec_schema_version"], spec.schema_version, source="the supplied GraphSpec schema_version"),
-                _finding(f"{prefix}.graph_fingerprint", graph["graph_fingerprint"], spec.graph_fingerprint, source="the fingerprint recomputed from the supplied GraphSpec"),
+                _finding(
+                    f"{prefix}.name", graph["name"], spec_document["name"],
+                    source="the supplied GraphSpec name",
+                ),
+                _finding(
+                    f"{prefix}.version", graph["version"], spec_document["version"],
+                    source="the supplied GraphSpec version",
+                ),
+                _finding(
+                    f"{prefix}.spec_schema_version",
+                    graph["spec_schema_version"],
+                    spec_document["schema_version"],
+                    source="the supplied GraphSpec schema_version",
+                ),
+                _finding(
+                    f"{prefix}.graph_fingerprint",
+                    graph["graph_fingerprint"],
+                    recomputed_graph_fingerprint,
+                    source=(
+                        "the fingerprint independently recomputed by the "
+                        "contract from the supplied GraphSpec"
+                    ),
+                ),
             ])
         elif not candidates:
             for field in ("name", "version", "spec_schema_version", "graph_fingerprint"):
@@ -246,17 +252,17 @@ def verify_system_manifest_bindings(
                 ))
 
         code_values = _matching_trace_code_fingerprints(
-            trace_items, graph, motus["trace_schema_version"]
+            trace_documents, graph, motus["trace_schema_version"]
         )
         if len(code_values) == 1:
             findings.append(_finding(
                 f"{prefix}.code_fingerprint", graph["code_fingerprint"], code_values[0],
-                source="the code_fingerprint carried by matching validated Motus execution trace evidence",
+                source="the code_fingerprint carried by matching contract-valid Motus execution trace evidence",
             ))
         elif not code_values:
             findings.append(_finding(
                 f"{prefix}.code_fingerprint", graph["code_fingerprint"], None,
-                source="matching validated Motus execution trace evidence", missing=True,
+                source="matching contract-valid Motus execution trace evidence", missing=True,
             ))
         else:
             findings.append(SystemManifestBindingFinding(
