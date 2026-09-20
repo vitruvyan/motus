@@ -109,6 +109,13 @@ def test_manifest_schema_has_no_self_declared_fingerprint_or_compliance_flag():
     assert schema["additionalProperties"] is False
 
 
+def test_rfc3339_nanosecond_created_at_is_valid():
+    document = _manifest()
+    document["created_at"] = "2026-09-20T17:00:00.123456789Z"
+
+    assert validate.validate_system_manifest(document) == []
+
+
 def test_cli_accepts_a_valid_system_manifest(tmp_path):
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(_manifest()), encoding="utf-8")
@@ -127,7 +134,6 @@ def test_cli_accepts_a_valid_system_manifest(tmp_path):
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout == ""
-
 
 
 def test_in_process_non_json_manifest_value_is_j1_not_schema():
