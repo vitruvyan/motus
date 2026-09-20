@@ -151,14 +151,10 @@ def verify_system_manifest_bindings(
     for trace in trace_items:
         if not isinstance(trace, Trace):
             raise TypeError("traces entries must be validated Trace objects")
-        graph = _trace_graph(trace)
-        candidates = spec_by_identity.get(
-            (graph.get("name"), graph.get("version")), []
-        )
-        spec_document = candidates[0].to_dict() if len(candidates) == 1 else None
-        trace_violations = validate.validate_trace(
-            trace.to_dict(), spec=spec_document
-        )
+        # Validate the trace on its own terms. A separately supplied GraphSpec
+        # may disagree with it; that disagreement is a binding finding, not a
+        # reason to relabel otherwise-valid trace evidence as malformed.
+        trace_violations = validate.validate_trace(trace.to_dict())
         if trace_violations:
             detail = "; ".join(
                 f"{item.rule} {item.path}: {item.message}"
