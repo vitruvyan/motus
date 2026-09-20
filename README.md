@@ -360,8 +360,8 @@ python -m venv .venv
 
 On Windows, use `.venv\Scripts\python.exe` in place of
 `.venv/bin/python`. The wheel contains `vitruvyan_motus`, `py.typed`, and the
-contract validator with the five schemas it checks against — trace, graphspec,
-commitment, checkpoint and receipt.
+contract validator with the six schemas it checks against — trace, graphspec,
+commitment, checkpoint, receipt and system manifest.
 
 Two claims about dependencies, and they are not the same claim:
 
