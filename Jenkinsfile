@@ -51,11 +51,16 @@ pipeline {
                     test -n "${CHANGE_ID:-}"
                     test -n "${GIT_COMMIT:-}"
                     BASE_SHA="$(git rev-parse "origin/${CHANGE_TARGET}")"
-                    HEAD_SHA="${GIT_COMMIT}"
+                    HEAD_SHA="$(git rev-parse HEAD)"
+                    test "$HEAD_SHA" = "$GIT_COMMIT"
                     git cat-file -e "$BASE_SHA^{commit}"
                     git cat-file -e "$HEAD_SHA^{commit}"
+                    TRUSTED_CHECKER="$(mktemp)"
+                    trap 'rm -f "$TRUSTED_CHECKER"' EXIT
+                    git show "${BASE_SHA}:tools/check_frozen_paths.py" > "$TRUSTED_CHECKER"
+                    chmod 0444 "$TRUSTED_CHECKER"
                     echo "Frozen contract audit: $BASE_SHA..$HEAD_SHA"
-                    su ci -s /bin/sh -c "python tools/check_frozen_paths.py '$BASE_SHA' '$HEAD_SHA'"
+                    su ci -s /bin/sh -c "python '$TRUSTED_CHECKER' '$BASE_SHA' '$HEAD_SHA'"
                 '''
             }
         }
@@ -92,7 +97,7 @@ pipeline {
         stage('slo-baseline') {
             steps {
                 sh '''
-                    su ci -s /bin/sh -c '.venv/bin/python benchmarks/check_slo_baseline.py --candidate benchmarks/candidate-v0.14.0-epyc-py310.json'
+                    su ci -s /bin/sh -c '.venv/bin/python benchmarks/check_slo_baseline.py'
                 '''
             }
         }

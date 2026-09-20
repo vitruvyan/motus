@@ -283,7 +283,7 @@ the tree and executable; implementation remains subordinate to them.
 |---|---|
 | `tests/contract/` — the inherited Axis 0.4.0 conformance corpus (guarantees.md §5), ported without weakening | **present** |
 | `tests/compat/terraveler/` — the frozen Terraveler corpus (guarantees.md §4), golden included | **present** |
-| the CI job asserting guarantees.md §3 against the baseline in `benchmarks/` | **present** — `.github/workflows/ci.yml`, job `slo-baseline` |
+| the CI job asserting guarantees.md §3 against the baseline in `benchmarks/` | **present** — `Jenkinsfile`, stage `slo-baseline` |
 
 ### The frozen corpora, and the one file that may move
 
@@ -302,11 +302,11 @@ The golden in `tests/compat/terraveler/golden/` is a real row lifted out of
 `ingestion_runs` — six top-level keys, no `metadata`, naive timestamps inside
 its events. It is evidence precisely because nobody wrote it for a test.
 
-Mechanical protection is provided by `.github/workflows/frozen-contract.yml`
-and `tools/check_frozen_paths.py`. The workflow runs the checker from the
-trusted base revision under `pull_request_target`: code in a pull request
-cannot weaken the check that judges that same pull request. The sole exception
-is `tests/contract/kernel.py`, exactly as described above.
+Mechanical protection is provided by the Jenkins `frozen-contract-paths` stage
+and `tools/check_frozen_paths.py`. Jenkins materializes the checker from the
+exact trusted base SHA and compares it with the exact pull-request head; code
+in a pull request is data and cannot weaken the checker that judges it. The
+sole exception is `tests/contract/kernel.py`, exactly as described above.
 
 ## What lives where
 

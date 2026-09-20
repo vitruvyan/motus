@@ -20,8 +20,10 @@ thing to ask for.
 
 1. **Branch** `release/X.Y.Z` from `main`.
 2. **Bump** `__version__`, and retarget every reference to the candidate
-   evidence filename: `check_slo_baseline.py` `DEFAULT_CANDIDATE`, `ci.yml`,
-   and `motus-characterize.yml` (both the output path and the artifact name).
+   evidence filename: `check_slo_baseline.py` `DEFAULT_CANDIDATE` and
+   `motus-characterize.yml` (both the output path and the artifact name).
+   Jenkins deliberately calls `check_slo_baseline.py` without `--candidate`,
+   so it follows that single default and must never be retargeted separately.
    The tree is deliberately red between here and step 4 — say so.
 3. **Characterize** by dispatching `motus-characterize-relative.yml` against
    **this branch**, so the runs are stamped with the new version.

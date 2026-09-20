@@ -488,52 +488,28 @@ def _workflow_steps(workflow: str) -> list[dict[str, str]]:
     return steps
 
 
-def test_the_workflow_fails_loudly_when_the_lookup_fails(review_mod):
-    # A best-effort lookup that swallowed a gh api failure would yield an empty
-    # id and post a duplicate comment. The step must abort instead -- and the
-    # assertion is about *that step's* run block, not the file, because moving
-    # `set -euo pipefail` into another step would still satisfy a file-wide
-    # grep while leaving the lookup unprotected.
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
+def test_the_jenkins_contract_suite_fails_loudly():
+    """The replacement owner must propagate pytest failure, not mask it."""
+    pipeline = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    command = ".venv/bin/python -m pytest tests/ -q"
 
-    lookup = [
-        step
-        for step in _workflow_steps(workflow)
-        if "issues/$PR_NUMBER/comments" in step["run"]
-    ]
-    assert len(lookup) == 1, "exactly one step performs the comment lookup"
-    run = lookup[0]["run"]
-
-    assert any(line.strip() == "set -euo pipefail" for line in run.splitlines())
-    assert "head -n1" not in run, "head would SIGPIPE the paginated gh api"
+    assert pipeline.count(command) == 1
+    invocation = next(line for line in pipeline.splitlines() if command in line)
+    assert "||" not in invocation
+    assert "true" not in invocation
 
 
-def test_the_comment_lookup_is_restricted_to_the_bot_and_the_marker(review_mod):
-    # The lookup must not pick up a comment the pull request itself wrote with
-    # the marker text: only the actions bot's comment is the review to PATCH.
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
+def test_retired_openrouter_automation_leaves_no_secret_bearing_replacement():
+    """Jenkins must not run PR code with the retired OpenRouter secret."""
+    pipeline = (REPO_ROOT / "Jenkinsfile").read_text(encoding="utf-8")
 
-    assert (
-        'select(.user.login == "github-actions[bot]" and '
-        '(.body | contains("<!-- openrouter-review -->")))'
-    ) in workflow
+    workflow = REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
+    assert not workflow.exists()
+    assert "OPENROUTER_API_KEY" not in pipeline
+    assert "openrouter_review.py" not in pipeline
 
 
-def test_the_marker_is_exactly_the_workflow_marker(review_mod):
-    # The workflow greps for this literal to PATCH one comment in place. The
-    # constant and the workflow's `contains("...")` lookup are two ends of one
-    # contract, so the test reads the workflow and pins the lookup expression:
-    # rename either side alone and the upsert silently stops finding its
-    # comment. (Checking a bare substring would be satisfied by the prose
-    # comment above the step, which is not what does the lookup.)
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openrouter-review.yml"
-    ).read_text(encoding="utf-8")
-
+def test_the_marker_remains_exact_for_manually_generated_review_output(review_mod):
+    # The generator remains usable manually and its output contract is stable,
+    # even though no automated workflow now performs a comment upsert.
     assert review_mod.REVIEW_MARKER == "<!-- openrouter-review -->"
-    assert f'contains("{review_mod.REVIEW_MARKER}")' in workflow
-    assert 'select(.user.login == "github-actions[bot]"' in workflow
