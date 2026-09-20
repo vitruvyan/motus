@@ -865,6 +865,8 @@ The normative surfaces live in [`contract/`](contract/):
 
 - `graphspec.v1.schema.json` and rules R1-R12;
 - `trace.v1.schema.json` and the T/E/SB/H/J/JSONL rules;
+- `system-manifest.v1.schema.json` and rules SM1-SM3 — a versioned system
+  declaration whose binding verification remains explicitly separate;
 - `commitment.v1.schema.json` (rule `C1`) and `checkpoint.v1.schema.json`
   (rules `K1`, `K2`) — the commitment log's BEGIN/END and the sealed windows
   over them;
