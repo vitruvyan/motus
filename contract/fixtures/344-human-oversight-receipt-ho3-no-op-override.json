@@ -1,0 +1,18 @@
+{
+  "artifact": "human-oversight-receipt",
+  "expect": "invalid",
+  "rule": "HO3",
+  "reason_contains": "distinct from the prior disposition",
+  "layer": "semantic",
+  "instance": {
+    "schema_version": "1.0.0",
+    "execution_ref": "acme/writer-1/42",
+    "subject": { "kind": "decision_point", "decision_ref": "approval-gate" },
+    "actor": { "actor_ref": "operator-7" },
+    "action": "overridden",
+    "prior_disposition": "deny",
+    "recorded_disposition": "deny",
+    "observed_at": "2026-09-21T01:15:00Z"
+  },
+  "spec": null
+}

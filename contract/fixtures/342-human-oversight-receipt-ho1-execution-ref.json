@@ -1,0 +1,16 @@
+{
+  "artifact": "human-oversight-receipt",
+  "expect": "invalid",
+  "rule": "HO1",
+  "reason_contains": "canonical tenant/writer/sequence",
+  "layer": "semantic",
+  "instance": {
+    "schema_version": "1.0.0",
+    "execution_ref": "acme/writer-1/042",
+    "subject": { "kind": "execution" },
+    "actor": { "actor_ref": "operator-7" },
+    "action": "reviewed",
+    "observed_at": "2026-09-21T01:15:00Z"
+  },
+  "spec": null
+}

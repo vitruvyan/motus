@@ -56,7 +56,9 @@ and none of the figures above shifted, because nothing in `benchmarks/`
 measures reading. That is **#113**, still open: a gate that cannot see a
 change is not evidence the change was free. 0.15.0 adds the risk/control
 registry and ControlApplication evidence model; those contract surfaces are
-not directly exercised by the current three benchmark metrics either.
+not directly exercised by the current three benchmark metrics either. The
+0.16.0 contract work adds HumanOversightReceipt as another boundary-only
+validation surface; it likewise does not enter the measured execution path.
 
 **And against a real request it remains below the release ceiling.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement

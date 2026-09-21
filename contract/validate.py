@@ -110,6 +110,7 @@ _RECEIPT_SCHEMA_FILE = "receipt.v1.schema.json"
 _SYSTEM_MANIFEST_SCHEMA_FILE = "system-manifest.v1.schema.json"
 _RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
 _CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
+_HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -757,6 +758,11 @@ def control_application_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def human_oversight_receipt_fingerprint(document: Any) -> str:
+    """ADR-037 identity of one complete HumanOversightReceipt event."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 
 # --------------------------------------------------------------------------- #
 # Schema loading and JSON Schema validation                                   #
@@ -787,6 +793,7 @@ _COMMITMENT_REGISTRY: Registry | None = None
 _SYSTEM_MANIFEST_REGISTRY: Registry | None = None
 _RISK_CONTROL_SCHEMA_REGISTRY: Registry | None = None
 _CONTROL_APPLICATION_SCHEMA_REGISTRY: Registry | None = None
+_HUMAN_OVERSIGHT_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -831,6 +838,11 @@ def load_risk_control_registry_schema() -> dict:
 def load_control_application_schema() -> dict:
     """The ControlApplication v1 schema, loaded relative to this file."""
     return _load(_CONTROL_APPLICATION_SCHEMA_FILE)
+
+
+def load_human_oversight_receipt_schema() -> dict:
+    """The HumanOversightReceipt v1 schema, loaded relative to this file."""
+    return _load(_HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE)
 
 
 
@@ -957,6 +969,32 @@ def _control_application_validator() -> Draft202012Validator:
             registry=_control_application_schema_registry(),
         )
     return _VALIDATORS["control-application"]
+
+
+def _human_oversight_schema_registry() -> Registry:
+    """Schemas needed to resolve HumanOversightReceipt references."""
+    global _HUMAN_OVERSIGHT_SCHEMA_REGISTRY
+    if _HUMAN_OVERSIGHT_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _HUMAN_OVERSIGHT_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _HUMAN_OVERSIGHT_SCHEMA_REGISTRY
+
+
+def _human_oversight_receipt_validator() -> Draft202012Validator:
+    if "human-oversight-receipt" not in _VALIDATORS:
+        _VALIDATORS["human-oversight-receipt"] = Draft202012Validator(
+            load_human_oversight_receipt_schema(),
+            format_checker=FormatChecker(),
+            registry=_human_oversight_schema_registry(),
+        )
+    return _VALIDATORS["human-oversight-receipt"]
 
 
 
@@ -1603,6 +1641,76 @@ def validate_control_application(document: dict) -> list[Violation]:
             "$.observed_at",
             f"{document['observed_at']!r} has the RFC 3339 UTC shape but is not "
             "a calendar-valid UTC instant",
+        ))
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# HumanOversightReceipt semantics — ADR-037 rules HO1-HO4                    #
+# --------------------------------------------------------------------------- #
+
+
+def validate_human_oversight_receipt(document: dict) -> list[Violation]:
+    """Validate one execution-scoped claimed human oversight event.
+
+    A clean result establishes only a well-formed, internally coherent event
+    record. It does not establish that the actor is human, identified,
+    authorised, independent, or legally competent, and it elevates no ADR-020
+    assurance level.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_human_oversight_receipt_schema()
+    violations += _schema_violations(
+        schema, _human_oversight_receipt_validator(), document
+    )
+    if violations:
+        return violations
+
+    if _canonical_execution_ref_parts(document["execution_ref"]) is None:
+        violations.append(Violation(
+            "HO1",
+            "$.execution_ref",
+            "execution_ref must be a canonical tenant/writer/sequence "
+            "coordinate naming a Motus execution BEGIN",
+        ))
+
+    for field in ("observed_at", "recorded_at"):
+        if field in document and not _calendar_valid_utc(document[field]):
+            violations.append(Violation(
+                "HO2",
+                f"$.{field}",
+                f"{document[field]!r} has the RFC 3339 UTC shape but is not "
+                "a calendar-valid UTC instant",
+            ))
+
+    if (
+        document["action"] == "overridden"
+        and document["prior_disposition"] == document["recorded_disposition"]
+    ):
+        violations.append(Violation(
+            "HO3",
+            "$.recorded_disposition",
+            "an override must record a replacement disposition distinct from "
+            "the prior disposition",
+        ))
+
+    subject = document["subject"]
+    bindings = document.get("bindings", {})
+    if (
+        subject["kind"] == "control_application"
+        and "control_application_fingerprint" in bindings
+        and subject["control_application_fingerprint"]
+        != bindings["control_application_fingerprint"]
+    ):
+        violations.append(Violation(
+            "HO4",
+            "$.bindings.control_application_fingerprint",
+            "the subject and bindings must name the same ControlApplication "
+            "fingerprint when both carry it",
         ))
 
     return violations
@@ -4711,7 +4819,8 @@ def main(argv: list[str] | None = None) -> int:
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
             "P-rules, System Manifest SM-rules, Risk & Control Registry "
-            "RCR-rules, ControlApplication CA-rules, JSON document and JSONL "
+            "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
+            "HO-rules, JSON document and JSONL "
             "stream forms."
         ),
         epilog=(
@@ -4725,7 +4834,7 @@ def main(argv: list[str] | None = None) -> int:
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
                  "receipt", "system-manifest", "risk-control-registry",
-                 "control-application", "package"],
+                 "control-application", "human-oversight-receipt", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -4864,6 +4973,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_risk_control_registry(doc)
         elif args.artifact == "control-application":
             violations = validate_control_application(doc)
+        elif args.artifact == "human-oversight-receipt":
+            violations = validate_human_oversight_receipt(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:

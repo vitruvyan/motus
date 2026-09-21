@@ -1,0 +1,22 @@
+{
+  "artifact": "human-oversight-receipt",
+  "expect": "invalid",
+  "rule": "HO4",
+  "reason_contains": "same ControlApplication fingerprint",
+  "layer": "semantic",
+  "instance": {
+    "schema_version": "1.0.0",
+    "execution_ref": "acme/writer-1/42",
+    "subject": {
+      "kind": "control_application",
+      "control_application_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "actor": { "actor_ref": "operator-7" },
+    "action": "reviewed",
+    "observed_at": "2026-09-21T01:15:00Z",
+    "bindings": {
+      "control_application_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  },
+  "spec": null
+}
