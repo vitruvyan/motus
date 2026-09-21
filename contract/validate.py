@@ -108,6 +108,8 @@ _COMMITMENT_SCHEMA_FILE = "commitment.v1.schema.json"
 _CHECKPOINT_SCHEMA_FILE = "checkpoint.v1.schema.json"
 _RECEIPT_SCHEMA_FILE = "receipt.v1.schema.json"
 _SYSTEM_MANIFEST_SCHEMA_FILE = "system-manifest.v1.schema.json"
+_RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
+_CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -745,6 +747,16 @@ def system_manifest_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def risk_control_registry_fingerprint(document: Any) -> str:
+    """ADR-036 identity of one complete Registry revision."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def control_application_fingerprint(document: Any) -> str:
+    """ADR-036 identity of one complete ControlApplication event."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 
 # --------------------------------------------------------------------------- #
 # Schema loading and JSON Schema validation                                   #
@@ -773,6 +785,8 @@ def load_trace_schema() -> dict:
 _VALIDATORS: dict[str, Draft202012Validator] = {}
 _COMMITMENT_REGISTRY: Registry | None = None
 _SYSTEM_MANIFEST_REGISTRY: Registry | None = None
+_RISK_CONTROL_SCHEMA_REGISTRY: Registry | None = None
+_CONTROL_APPLICATION_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -807,6 +821,16 @@ def load_receipt_schema() -> dict:
 def load_system_manifest_schema() -> dict:
     """The System Manifest v1 schema, loaded relative to this file."""
     return _load(_SYSTEM_MANIFEST_SCHEMA_FILE)
+
+
+def load_risk_control_registry_schema() -> dict:
+    """The Risk & Control Registry v1 schema, loaded relative to this file."""
+    return _load(_RISK_CONTROL_REGISTRY_SCHEMA_FILE)
+
+
+def load_control_application_schema() -> dict:
+    """The ControlApplication v1 schema, loaded relative to this file."""
+    return _load(_CONTROL_APPLICATION_SCHEMA_FILE)
 
 
 
@@ -876,6 +900,63 @@ def _system_manifest_validator() -> Draft202012Validator:
             registry=_system_manifest_registry(),
         )
     return _VALIDATORS["system-manifest"]
+
+
+def _risk_control_schema_registry() -> Registry:
+    """Schemas needed to resolve Risk & Control Registry references.
+
+    The registry reuses the canonical Identifier and Digest definitions from
+    the commitment contract and the UTC timestamp grammar from System Manifest
+    rather than creating new spellings for those facts.
+    """
+    global _RISK_CONTROL_SCHEMA_REGISTRY
+    if _RISK_CONTROL_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _RISK_CONTROL_REGISTRY_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _RISK_CONTROL_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _RISK_CONTROL_SCHEMA_REGISTRY
+
+
+def _risk_control_registry_validator() -> Draft202012Validator:
+    if "risk-control-registry" not in _VALIDATORS:
+        _VALIDATORS["risk-control-registry"] = Draft202012Validator(
+            load_risk_control_registry_schema(),
+            format_checker=FormatChecker(),
+            registry=_risk_control_schema_registry(),
+        )
+    return _VALIDATORS["risk-control-registry"]
+
+
+def _control_application_schema_registry() -> Registry:
+    """Schemas needed to resolve ControlApplication references."""
+    global _CONTROL_APPLICATION_SCHEMA_REGISTRY
+    if _CONTROL_APPLICATION_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _CONTROL_APPLICATION_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _CONTROL_APPLICATION_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _CONTROL_APPLICATION_SCHEMA_REGISTRY
+
+
+def _control_application_validator() -> Draft202012Validator:
+    if "control-application" not in _VALIDATORS:
+        _VALIDATORS["control-application"] = Draft202012Validator(
+            load_control_application_schema(),
+            format_checker=FormatChecker(),
+            registry=_control_application_schema_registry(),
+        )
+    return _VALIDATORS["control-application"]
 
 
 
@@ -1294,6 +1375,40 @@ def validate_graphspec(spec: dict) -> list[Violation]:
 
 
 # --------------------------------------------------------------------------- #
+# Shared semantic identities                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def _canonical_execution_ref_parts(
+    value: object,
+) -> tuple[str, str, int] | None:
+    """Parse the one ADR-027 ``tenant/writer/sequence`` representation.
+
+    Contract input is untrusted. In particular, Python bounds the number of
+    decimal digits accepted by ``int``; an overlong sequence must be a normal
+    semantic violation rather than an exception escaping the validator.
+    """
+    if not isinstance(value, str) or len(value) > 8192:
+        return None
+    parts = value.split("/")
+    if (
+        len(parts) != 3
+        or any(not part.strip() for part in parts)
+        or len(parts[0]) > 200
+        or len(parts[1]) > 200
+        or not parts[2].isdigit()
+    ):
+        return None
+    try:
+        sequence = int(parts[2])
+    except ValueError:
+        return None
+    if str(sequence) != parts[2]:
+        return None
+    return parts[0], parts[1], sequence
+
+
+# --------------------------------------------------------------------------- #
 # System Manifest semantics — ADR-035 rules SM1-SM3                           #
 # --------------------------------------------------------------------------- #
 
@@ -1377,6 +1492,116 @@ def validate_system_manifest(document: dict) -> list[Violation]:
             "SM3",
             "$.created_at",
             f"{document['created_at']!r} has the RFC 3339 UTC shape but is not "
+            "a calendar-valid UTC instant",
+        ))
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Risk & Control Registry semantics — ADR-036 rules RCR1-RCR3                #
+# --------------------------------------------------------------------------- #
+
+
+def validate_risk_control_registry(document: dict) -> list[Violation]:
+    """Validate one declarative Risk & Control Registry revision.
+
+    This operation establishes only structural and internal referential
+    validity. It does not establish that a declared risk exists, that a
+    control was applied or effective, or that any compliance obligation is
+    satisfied. ControlApplication evidence is a separate ADR-036 surface.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_risk_control_registry_schema()
+    violations += _schema_violations(
+        schema, _risk_control_registry_validator(), document
+    )
+    if violations:
+        return violations
+
+    # RCR1 — each local identity names exactly one declaration in this
+    # revision. Risk and control namespaces are independent of one another.
+    for collection, field in (("risks", "risk_id"), ("controls", "control_id")):
+        seen: set[str] = set()
+        for index, item in enumerate(document[collection]):
+            identifier = item[field]
+            if identifier in seen:
+                violations.append(Violation(
+                    "RCR1",
+                    f"$.{collection}[{index}].{field}",
+                    f"{field} {identifier!r} is declared more than once; "
+                    "identifiers are unique within one registry revision",
+                ))
+            seen.add(identifier)
+
+    # RCR2 — risk_refs is a local, machine-checkable edge. External mappings
+    # and framework profiles belong in references or later profile contracts.
+    risk_ids = {risk["risk_id"] for risk in document["risks"]}
+    for control_index, control in enumerate(document["controls"]):
+        for ref_index, risk_ref in enumerate(control["risk_refs"]):
+            if risk_ref not in risk_ids:
+                violations.append(Violation(
+                    "RCR2",
+                    f"$.controls[{control_index}].risk_refs[{ref_index}]",
+                    f"control names risk_ref {risk_ref!r}, but no risk with "
+                    "that risk_id is declared in this registry revision",
+                ))
+
+    # RCR3 — the schema owns timestamp shape; calendar truth needs arithmetic.
+    if not _calendar_valid_utc(document["created_at"]):
+        violations.append(Violation(
+            "RCR3",
+            "$.created_at",
+            f"{document['created_at']!r} has the RFC 3339 UTC shape but is not "
+            "a calendar-valid UTC instant",
+        ))
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# ControlApplication semantics — ADR-036 rules CA1-CA2                       #
+# --------------------------------------------------------------------------- #
+
+
+def validate_control_application(document: dict) -> list[Violation]:
+    """Validate one execution-scoped ControlApplication event.
+
+    A clean result establishes only a well-formed, internally coherent event
+    record. It neither verifies the referenced execution nor elevates any
+    ADR-020 assurance level. Registry, manifest, and execution bindings are
+    settled by the separate public verification operation.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_control_application_schema()
+    violations += _schema_violations(
+        schema, _control_application_validator(), document
+    )
+    if violations:
+        return violations
+
+    # CA1 — one canonical spelling for the execution locator. This is the same
+    # parser used by receipt P7; ControlApplication does not invent an identity.
+    if _canonical_execution_ref_parts(document["execution_ref"]) is None:
+        violations.append(Violation(
+            "CA1",
+            "$.execution_ref",
+            "execution_ref must be a canonical tenant/writer/sequence "
+            "coordinate naming a Motus execution BEGIN",
+        ))
+
+    # CA2 — timestamp grammar is schema work; calendar truth is arithmetic.
+    if not _calendar_valid_utc(document["observed_at"]):
+        violations.append(Violation(
+            "CA2",
+            "$.observed_at",
+            f"{document['observed_at']!r} has the RFC 3339 UTC shape but is not "
             "a calendar-valid UTC instant",
         ))
 
@@ -3726,22 +3951,9 @@ def validate_receipt(document: dict) -> list[Violation]:
     execution = document.get("execution")
     if execution is not None:
         ref = execution["ref"]
-        parts = ref.split("/") if isinstance(ref, str) else []
-        malformed = (len(parts) != 3 or any(not part for part in parts)
-                     or not parts[2].isdigit())
-        sequence = None
-        if not malformed:
-            try:
-                sequence = int(parts[2])
-            except ValueError:
-                # Python bounds the number of decimal digits accepted by int;
-                # an execution ref is untrusted contract input and must become
-                # P7, never an exception escaping the validator.
-                malformed = True
-            else:
-                malformed = str(sequence) != parts[2]
+        coordinate = _canonical_execution_ref_parts(ref)
         first_commitment = segments[0]["begin"]["commitment"]
-        if malformed or (parts[0], parts[1], sequence) != (
+        if coordinate != (
                 first_commitment["tenant"], first_commitment["writer_id"],
                 first_commitment["sequence"]):
             violations.append(Violation(
@@ -4498,7 +4710,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Semantic validator for the Motus contract: GraphSpec R-rules, "
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
-            "P-rules, System Manifest SM-rules, JSON document and JSONL "
+            "P-rules, System Manifest SM-rules, Risk & Control Registry "
+            "RCR-rules, ControlApplication CA-rules, JSON document and JSONL "
             "stream forms."
         ),
         epilog=(
@@ -4511,7 +4724,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
-                 "receipt", "system-manifest", "package"],
+                 "receipt", "system-manifest", "risk-control-registry",
+                 "control-application", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -4646,6 +4860,10 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_checkpoint(doc)
         elif args.artifact == "system-manifest":
             violations = validate_system_manifest(doc)
+        elif args.artifact == "risk-control-registry":
+            violations = validate_risk_control_registry(doc)
+        elif args.artifact == "control-application":
+            violations = validate_control_application(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:

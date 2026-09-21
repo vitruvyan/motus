@@ -1,0 +1,55 @@
+{
+  "artifact": "risk-control-registry",
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "registry": {
+      "id": "acme/ai-governance",
+      "version": "2026.09.21-1"
+    },
+    "system": {
+      "system_id": "acme/credit-ai",
+      "manifest_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "risks": [
+      {
+        "risk_id": "R-001",
+        "title": "Untrusted instructions influence a tool request",
+        "category": "security",
+        "likelihood": "operator-scale-medium",
+        "impact": "operator-scale-high",
+        "treatment": "mitigate",
+        "references": [
+          "risk-catalogue://R-001"
+        ]
+      },
+      {
+        "risk_id": "R-002",
+        "title": "Sensitive data reaches an unintended destination"
+      }
+    ],
+    "controls": [
+      {
+        "control_id": "C-001",
+        "title": "Tool capability gate",
+        "policy_ref": "policy://tool-access/4",
+        "enforcement_point": "tool_dispatch",
+        "control_type": "preventive",
+        "risk_refs": [
+          "R-001",
+          "R-002"
+        ]
+      },
+      {
+        "control_id": "C-002",
+        "title": "Human review queue",
+        "risk_refs": [
+          "R-001"
+        ]
+      }
+    ],
+    "created_at": "2026-09-21T00:30:00Z",
+    "supersedes": null
+  },
+  "spec": null
+}

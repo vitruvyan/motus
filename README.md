@@ -947,6 +947,9 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
 - system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
   `SystemManifestBindingFinding`;
+- risk and control: `verify_control_application_bindings`,
+  `ControlApplicationBindingVerdict`, `ControlApplicationBindingFinding`,
+  `controls_for_risk`, `risks_for_control`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -987,6 +990,44 @@ agreement with execution evidence and does not independently recompute node code
 identity. `bindings_complete` therefore means only that every v1 binding this verifier
 knows how to compare matched the supplied Motus artifacts. It does not mean
 compliant, certified, approved or deployed.
+
+### Risk & Control Registry and ControlApplication binding
+
+ADR-036 keeps governance intent separate from evidence that a control was
+evaluated or applied. `controls_for_risk()` and `risks_for_control()` query one
+validated Registry revision and return detached declarations; they do not
+infer effectiveness, coverage sufficiency, or a regulatory conclusion.
+
+The public binding verifier joins one ControlApplication to the exact Registry
+revision and, when supplied, the System Manifest and Motus receipt:
+
+```python
+from vitruvyan_motus import verify_control_application_bindings
+
+verdict = verify_control_application_bindings(
+    application,
+    registry=registry,
+    manifest=manifest,
+    receipt=receipt,
+)
+
+if verdict.bindings_complete:
+    ...
+```
+
+The status vocabulary is the same narrow `matched`, `mismatched`, and `not
+verified`. The registry and application fingerprints are independently derived
+from canonical JSON. The control must exist in that exact registry revision;
+an operator-declared enforcement point, when present, must match; a registry
+System Manifest binding is checked against the supplied manifest; and the
+receipt must contain a BEGIN at the application's canonical ADR-027
+`execution_ref`.
+
+`bindings_complete` means only that those document and identity bindings
+matched. Receipt presence is not receipt verification, an `outcome` describes
+one event rather than global control effectiveness, and no ControlApplication
+raises EXISTENCE, RETENTION, IDENTITY, LEGAL_TIME, or another ADR-020 assurance
+level.
 
 ### Evidence API for bridges
 

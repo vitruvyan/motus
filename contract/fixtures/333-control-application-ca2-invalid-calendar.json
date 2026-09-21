@@ -1,0 +1,20 @@
+{
+  "artifact": "control-application",
+  "expect": "invalid",
+  "rule": "CA2",
+  "reason_contains": "not a calendar-valid UTC instant",
+  "instance": {
+    "schema_version": "1.0.0",
+    "registry_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "control_id": "C-001",
+    "execution_ref": "acme/writer-1/42",
+    "enforcement_point": "tool_dispatch",
+    "outcome": "error",
+    "observed_at": "2026-02-31T01:15:00Z",
+    "evidence": {
+      "kind": "motus_execution"
+    }
+  },
+  "spec": null,
+  "layer": "semantic"
+}

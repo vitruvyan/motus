@@ -1,0 +1,31 @@
+{
+  "artifact": "risk-control-registry",
+  "expect": "invalid",
+  "rule": "RCR2",
+  "reason_contains": "no risk with that risk_id",
+  "instance": {
+    "schema_version": "1.0.0",
+    "registry": {
+      "id": "acme/ai-governance",
+      "version": "2026.09.21-1"
+    },
+    "risks": [
+      {
+        "risk_id": "R-001",
+        "title": "Untrusted instructions influence a tool request"
+      }
+    ],
+    "controls": [
+      {
+        "control_id": "C-001",
+        "title": "Tool capability gate",
+        "risk_refs": [
+          "R-404"
+        ]
+      }
+    ],
+    "created_at": "2026-09-21T00:30:00Z"
+  },
+  "spec": null,
+  "layer": "semantic"
+}
