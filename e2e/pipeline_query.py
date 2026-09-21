@@ -70,14 +70,16 @@ def call_pipeline(state: State) -> State:
     with urllib.request.urlopen(request, timeout=180) as response:
         status = response.status
         body = json.loads(response.read())
-    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    # Trace schema 3.2 refuses floating-point values (ADR-030/J4). Preserve
+    # sub-millisecond precision at an explicit integer scale instead.
+    elapsed_us = round((time.perf_counter() - started) * 1_000_000)
 
     inner = json.loads(body.get("json", "{}"))
     answer = body.get("human", "") or ""
     return (
         state
         .with_fact(Fact("http_status", status, ENDPOINT, NOW()))
-        .with_fact(Fact("latency_ms", elapsed_ms, "clock", NOW()))
+        .with_fact(Fact("latency_us", elapsed_us, "clock", NOW()))
         .with_fact(Fact("route_taken", body.get("route_taken"), "api_graph", NOW()))
         .with_fact(Fact("orthodoxy_status", body.get("orthodoxy_status"), "api_graph", NOW()))
         .with_fact(Fact("babel_status", inner.get("babel_status"), "api_graph", NOW()))
@@ -170,7 +172,7 @@ print("    catena di integrita':", "presente" if result.trace.records[0]["integr
 print("    radice della catena :", (result.trace.root or "n/a")[:32], "...")
 print("    replay dichiarato   :", result.trace.records[-1]["replay"]["capability"])
 
-pipeline_ms = result.state.fact("latency_ms")
+pipeline_ms = result.state.fact("latency_us") / 1000
 motus_ms = wall_ms - pipeline_ms
 print("\nQUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):")
 print(f"    richiesta intera    : {wall_ms:9.1f} ms")

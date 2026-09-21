@@ -14,71 +14,68 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.14.0](https://github.com/vitruvyan/motus/releases/tag/v0.14.0)
+> **Current release:** [Motus 0.15.0](https://github.com/vitruvyan/motus/releases/tag/v0.15.0)
 >
 > Commitment window files written by releases through 0.13.0 use the legacy
 > envelope key `c`; releases from 0.14.0 write `commitment`.
-> · not on PyPI — build the wheel from a checkout
+> Install: `pip install vitruvyan-motus`
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.14.0 **still does not pass its own cumulative performance gate**, and ships
+0.15.0 **still does not pass its cumulative performance gate**, and ships
 under ADR-018 rather than by weakening it. Every failing ratio, measured
 against the v0.6.1 anchor across three independent dispatches:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+100.3 %** | +20 % |
-| 100-node no-op | **+131.5 %** | +20 % |
-| Trace materialization | **+23.9 %** | +20 % |
+| Per-node overhead | **+109.0 %** | +20 % |
+| 100-node no-op | **+129.0 %** | +20 % |
+| Trace materialization | **+23.0 %** | +20 % |
 
 The cost is the integrity chain (ADR-017, corrected by ADR-019), paid in 0.8.0.
 
-**This release added none of it, and the measurement cannot prove it added
-anything at all.** Against v0.13.0, in the same jobs on the same runners, the
-three figures are **+1.3 %, −0.8 % and −1.4 %** — inside the per-release budget
-with no exception declared, and every one of them *smaller than the paired
-spread of the measurement* (8.3 %, 93.2 %, 11.7 %). The honest report is that
-this release's effect is below what this instrument can resolve, which is not
-the same sentence as "there is no difference" and is not written as one.
+Against v0.14.0, in the same jobs on the same runner, the three canonical
+figures are **+5.3 %, −1.0 % and +0.9 %** — all inside the unchanged +10 %
+per-release budget. Across the three jobs they range from +2.4 to +6.1 %, −3.1
+to +3.3 %, and −3.5 to +3.5 %. The 100-node measurement remains noisy (the
+third dispatch reports an 87.3 % paired spread), so a small signed movement is
+not evidence of a matching code effect.
 
-**Read the two tables together and they disagree, and the disagreement is the
-instrument.** The cumulative per-node figure went from +80.9 % at 0.12.0 to
-+95.6 % here, while the same jobs say this release costs −0.2 % against
-0.12.0. Both cannot be about the code. The anchor arm re-measures v0.6.1 on
-whatever runners the three dispatches land on — this time an EPYC 7763, a
-Xeon Platinum 8573C and a Xeon 6973P, none of which ran the 0.12.0 jobs —
-and the 100-node no-op's paired spread is **93.2 %**, wider than the
-cumulative effect it is being used to measure. The checker says so in its own
-output. The per-release ratio is the number to trust, because it is the one
-where both arms ran interleaved on the same host; the cumulative one says the
-engine is roughly twice its v0.6.1 cost on nodes that do nothing, and no
-tighter than that.
+The per-release arm and the cumulative arm answer different questions. The
+former interleaves 0.14.0 and 0.15.0 on the same host and passes; the latter
+still records the integrity-era debt against v0.6.1 and fails at **+109.0 %,
++129.0 % and +23.0 %**. Those cumulative figures are disclosed under ADR-018,
+not waived, widened, or used to conceal a new release regression. The same
+ADR-018 paragraph records the independently re-taken real-workload share:
+**0.175 %** (18.8 ms worst Motus cost over the fastest 10.740 s request), below
+the pre-registered 1 % ceiling.
 
 **And there is a change this instrument cannot see at all.** 0.12.0 moved the
 READ path — `_loads_strict` 11–15 % faster, `Trace.from_json` 17–41 % slower —
 and none of the figures above shifted, because nothing in `benchmarks/`
 measures reading. That is **#113**, still open: a gate that cannot see a
-change is not evidence the change was free. 0.14.0 changed the commitment
-log's seal path (#129), the receipt producer (#118) and the evidence package
-(#120); none of them is measured by `benchmarks/` either.
+change is not evidence the change was free. 0.15.0 adds the risk/control
+registry and ControlApplication evidence model; those contract surfaces are
+not directly exercised by the current three benchmark metrics either.
 
-**And against a real request it is not visible.** ADR-012 pre-registered the
+**And against a real request it remains below the release ceiling.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
 existed, and ADR-018 §4 requires it re-taken for every release: a share
-measured against 0.13.0 says nothing about 0.14.0, and an inherited number is
-the same error as an inherited baseline. Measured on 2026-09-06 with Motus
-0.14.0 (`release/0.14.0` at `938b552`) against the live `api_graph` service
-(`orbis_graph`, `POST /run`, now answering on gpt-4.1) with five real Italian
-user queries, on an AMD EPYC Processor (with IBPB), Linux 6.8.0-139, CPython
-3.12.3, with the host under a load average between 2 and 3: **3.0, 3.4, 2.7,
-2.7 and 2.8 ms** of Motus against requests of 61.9 s, 28.4 s, 17.1 s, 18.6 s
-and 17.0 s. The honest share is the worst cost over the fastest response —
-3.4 ms of 17.0 s — which is **0.020 %**. That figure is an upper
-bound: it contains the consumer's own node code, not only Motus, and the
-host's load inflates both sides of the ratio. The trace of the run captured in
-full validated clean against the contract, schema 3.1.0, integrity chain
-present, with a derived root; the harness is `e2e/pipeline_query.py`.
+measured against 0.14.0 says nothing about 0.15.0, and an inherited number is
+the same error as an inherited baseline. Measured on 2026-09-21 with Motus
+0.15.0 (`release/0.15.0` at `0b3c39e`) against the live `orbis_graph` service
+(`POST /run`) with five fixed Italian queries, on an AMD EPYC Processor (with
+IBPB), Linux 6.8.0-139, CPython 3.12.3, with load average 7.75, 9.03, 8.41:
+**3.0, 18.8, 5.7, 2.7 and 7.2 ms** of Motus against requests of 20.055 s,
+29.620 s, 10.740 s, 26.735 s and 23.210 s. The conservative share is the worst
+cost over the fastest response — 18.8 ms of 10.740 s — which is **0.175 %**.
+That is an upper bound because it includes the consumer's node code. All five
+traces validated clean against trace schema 3.2.0 with integrity chains
+present. The deployed consumer omitted health metadata expected by the harness,
+so each run was honestly classified `degraded`; this is Motus overhead evidence,
+not evidence that the live Orbis response surface is healthy. The harness is
+`e2e/pipeline_query.py`; the complete output is committed as
+`benchmarks/real-workload-0.15.0.txt`.
 
 ### Trace schema 3.1 migration
 
@@ -332,14 +329,15 @@ chain rather than trusting the receipt's own copy of the payload — a local fil
 that certifies itself certifies nothing. Issue #51 is where that interface is
 being designed.
 
-## Install for development
+## Install
 
-**Motus is not on PyPI, and `pip install vitruvyan-motus` fails as written.**
-The index answers 404 for the name while every dependency named in this file
-answers 200. Publication is a separate, explicit release action and it has not
-happened — PR #72 carries the machinery and is held open deliberately.
+Install the released runtime and its validator from PyPI:
 
-What works is a build from a checkout, which needs no index:
+```console
+python -m pip install vitruvyan-motus
+```
+
+For development, install from a checkout:
 
 ```console
 python -m venv .venv
@@ -776,20 +774,19 @@ now read from the same fact, after the final flush, so they cannot disagree.
 on an absolute ceiling. Both halves are measured in the same CI job on the same
 host, interleaved, so machine speed cancels out (ADR-012).
 
-0.14.0 against v0.13.0 — three independent dispatches, canonical value is the
+0.15.0 against v0.14.0 — three independent Jenkins dispatches, canonical value is the
 median of the job ratios:
 
 | metric | canonical | across jobs | budget |
 |---|---:|---:|---:|
-| per-node overhead | **+1.3 %** | +0.6 … +1.4 % | +10 % |
-| 100-node no-op overhead | **−0.8 %** | −1.2 … −0.5 % | +10 % |
-| trace materialization | **−1.4 %** | −2.4 … +1.2 % | +10 % |
+| per-node overhead | **+5.3 %** | +2.4 … +6.1 % | +10 % |
+| 100-node no-op overhead | **−1.0 %** | −3.1 … +3.3 % | +10 % |
+| trace materialization | **+0.9 %** | −3.5 … +3.5 % | +10 % |
 
-The 100-node row's paired spread is **57.1 %** — wider than the effect it
-measures — and the checker prints that rather than letting the number stand
-alone. 0.13.0 against v0.12.0 read −0.2 %, −0.1 % and −1.8 % with the same
-caveat. *Within noise* is not *no difference*; it is the measurement saying it
-cannot answer.
+The third dispatch's 100-node paired spread is **87.3 %** — wider than the
+effect it measures — and the checker prints that rather than letting the number
+stand alone. *Within noise* is not *no difference*; it is the measurement saying
+it cannot resolve a change of that size.
 
 **And what this table does not contain is worth as much as what it does.**
 0.12.0 changed the READ path: `_loads_strict` got 11–15 % faster and
@@ -857,7 +854,7 @@ recorded here rather than left implicit. The relative gate had no such problem:
 it measures both versions on the same host in the same job, which is the point.
 
 See [`docs/MOTUS_PERFORMANCE_STATUS.md`](docs/MOTUS_PERFORMANCE_STATUS.md) and
-`benchmarks/relative-0.14.0/` for the committed observations.
+`benchmarks/relative-0.15.0/` for the committed observations.
 
 ## Contract and verification
 
@@ -884,7 +881,7 @@ Run the complete suite and contract validator with:
 python -m pytest tests/ -q
 python contract/validate.py trace path/to/trace.json --spec path/to/graph.json
 python benchmarks/check_slo_baseline.py
-python benchmarks/check_relative_baseline.py benchmarks/relative-0.14.0/*.json
+python benchmarks/check_relative_baseline.py benchmarks/relative-0.15.0/*.json
 ```
 
 **Verification is open and stays open.** A receipt is checked against the trace
@@ -1217,9 +1214,9 @@ requires its own ADR and executable tests.
 The predecessor runtime and its satellites — `axis/`, `orders/`, `poc/`,
 `examples/` and the Axis-era planning documents — were removed from the
 working tree by ADR-009. They are not lost: the tag `v0.6.1` holds them
-byte-identical, and the `vitruvyan-axis` 0.4.0 distribution remains
-independently pinnable for consumers who have not yet migrated to
-`vitruvyan_motus.compat` or the native API. The compatibility surface those
+byte-identical. Consumers that have not yet migrated can pin the `v0.6.1`
+source tag and use `vitruvyan_motus.compat` while they move to the native API.
+The compatibility surface those
 consumers depend on lives in `src/vitruvyan_motus/compat.py` and is exercised
 by the frozen corpora in `tests/compat/` and `tests/contract/`, which are
 unchanged.
