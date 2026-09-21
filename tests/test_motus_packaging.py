@@ -66,6 +66,7 @@ _NOT_SOURCE = {
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",
+    "tmp*",
 }
 
 
@@ -216,7 +217,8 @@ def _wheel_with_rewritten_metadata(source_wheel: Path, dest_path: Path, rewrite)
             n for n in source.namelist() if n.endswith(".dist-info/METADATA")
         )
         original = source.read(metadata_name).decode("utf-8")
-        header, separator, body = original.partition("\n\n")
+        newline = "\r\n" if "\r\n\r\n" in original else "\n"
+        header, separator, body = original.partition(newline * 2)
         assert separator, "METADATA has no blank line separating header from body"
         rewritten = f"{header}{separator}{rewrite(body)}"
 
@@ -252,24 +254,8 @@ def test_the_built_wheel_declares_project_urls_for_repository_contract_and_licen
     )
 
 
-def test_the_real_wheel_carries_exactly_the_claims_publication_has_yet_to_fix(
-    built_wheel,
-):
-    """The gate of ADR-033 decision 6, run against the wheel this repository
-    actually builds today -- not a synthetic stand-in.
-
-    It cannot assert that the wheel passes: ``README.md`` still carries the
-    sentences publication makes false, and correcting them is the commit the
-    release tag points at, not this one (ADR-033 decision 6 and its Amends
-    clause both say so).  A test left deliberately red would be a red on
-    ``main`` that everybody learns to ignore, which is worse than no test.
-
-    So it asserts the debt exactly instead: **these four claims and no
-    fifth.**  A new false sentence added to ``README.md`` fails this, and so
-    does fixing one -- which is the point, because the release commit that
-    corrects them must come here and say so in the same change rather than
-    leaving a stale count behind.
-    """
+def test_the_real_wheel_is_publishable(built_wheel):
+    """ADR-033 decision 6: the exact artifact headed for PyPI is honest."""
     script = REPO_ROOT / "tools" / "check_publishable_metadata.py"
     result = subprocess.run(
         [sys.executable, str(script), str(built_wheel)],
@@ -278,27 +264,9 @@ def test_the_real_wheel_carries_exactly_the_claims_publication_has_yet_to_fix(
         timeout=30,
     )
 
-    assert result.returncode != 0, (
-        "the real wheel now passes the gate -- README.md has been corrected. "
-        "Update this test to assert the wheel is publishable, and delete the "
-        "expected-claims list below."
-    )
-
-    reported = {
-        line.split("source ", 1)[1].split(" ", 1)[0].rstrip(":")
-        for line in result.stdout.splitlines() + result.stderr.splitlines()
-        if "forbidden claim shipped in METADATA" in line and "source " in line
-    }
-    assert reported == {
-        "README.md:21",
-        "README.md:337",
-        "README.md:339-340",
-        "README.md:1097-1098",
-    }, (
-        "the set of claims the built wheel still ships has changed; if one was "
-        "fixed, fix this list in the same commit, and if one was added, that is "
-        f"a new false promise heading for the index. Got: {sorted(reported)}\n"
-        f"{result.stdout}{result.stderr}"
+    assert result.returncode == 0, (
+        "the release wheel failed the publishable-metadata gate\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
 
 

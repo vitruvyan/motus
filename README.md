@@ -18,7 +18,7 @@ The trace is not reconstructed from logs after execution.
 >
 > Commitment window files written by releases through 0.13.0 use the legacy
 > envelope key `c`; releases from 0.14.0 write `commitment`.
-> · not on PyPI — build the wheel from a checkout
+> Install: `pip install vitruvyan-motus`
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
@@ -329,14 +329,15 @@ chain rather than trusting the receipt's own copy of the payload — a local fil
 that certifies itself certifies nothing. Issue #51 is where that interface is
 being designed.
 
-## Install for development
+## Install
 
-**Motus is not on PyPI, and `pip install vitruvyan-motus` fails as written.**
-The index answers 404 for the name while every dependency named in this file
-answers 200. Publication is a separate, explicit release action and it has not
-happened — PR #72 carries the machinery and is held open deliberately.
+Install the released runtime and its validator from PyPI:
 
-What works is a build from a checkout, which needs no index:
+```console
+python -m pip install vitruvyan-motus
+```
+
+For development, install from a checkout:
 
 ```console
 python -m venv .venv
@@ -1213,9 +1214,9 @@ requires its own ADR and executable tests.
 The predecessor runtime and its satellites — `axis/`, `orders/`, `poc/`,
 `examples/` and the Axis-era planning documents — were removed from the
 working tree by ADR-009. They are not lost: the tag `v0.6.1` holds them
-byte-identical, and the `vitruvyan-axis` 0.4.0 distribution remains
-independently pinnable for consumers who have not yet migrated to
-`vitruvyan_motus.compat` or the native API. The compatibility surface those
+byte-identical. Consumers that have not yet migrated can pin the `v0.6.1`
+source tag and use `vitruvyan_motus.compat` while they move to the native API.
+The compatibility surface those
 consumers depend on lives in `src/vitruvyan_motus/compat.py` and is exercised
 by the frozen corpora in `tests/compat/` and `tests/contract/`, which are
 unchanged.

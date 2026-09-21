@@ -1,0 +1,168 @@
+name: Build and publish Motus
+
+# ADR-032/ADR-033: a tag builds once and creates a draft Release. Publishing
+# that draft is the founder's approval and is the only event allowed to request
+# a PyPI Trusted Publishing token. There is deliberately no workflow_dispatch.
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: publish-motus-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'push'
+    name: build, verify, and draft the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+
+      - name: Bind the tag to reviewed main and committed evidence
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python tools/release_artifacts.py verify-tag "$RELEASE_TAG"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Install the hash-locked build environment
+        run: python -m pip install --require-hashes -r constraints/release-build.txt
+
+      - name: Build the wheel and sdist once
+        run: |
+          python -m build --no-isolation
+          python -m twine check dist/*
+          python tools/check_publishable_metadata.py dist/*.whl
+
+      - name: Execute the exact wheel and prove tamper refusal
+        run: |
+          python -m venv /tmp/motus-release-smoke
+          /tmp/motus-release-smoke/bin/python -m pip install \
+            -c constraints/test.txt dist/*.whl
+          /tmp/motus-release-smoke/bin/python tools/smoke_release_artifact.py
+
+      - name: Record the distribution hashes
+        run: |
+          python tools/release_artifacts.py write-manifest dist release-manifest.json
+          cp "docs/releases/${GITHUB_REF_NAME}.md" release-body.md
+          printf '\n## Distribution SHA-256\n\n' >> release-body.md
+          python tools/release_artifacts.py markdown release-manifest.json \
+            | tee -a release-body.md "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve the authenticated release artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: motus-release-${{ github.ref_name }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create the founder-reviewable draft Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "a GitHub Release already exists for $RELEASE_TAG; refusing to rewrite it" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --verify-tag \
+            --target "$GITHUB_SHA" \
+            --title "Motus ${RELEASE_TAG#v}" \
+            --notes-file release-body.md \
+            dist/*.whl dist/*.tar.gz release-manifest.json
+
+  publish:
+    if: github.event_name == 'release'
+    name: compare carried bytes and publish to PyPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: pypi
+      url: https://pypi.org/p/vitruvyan-motus
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.12"
+
+      - name: Locate the successful tag-build run
+        id: build-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish-motus.yml/runs?event=push&head_sha=${GITHUB_SHA}&status=completed&per_page=20" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | sort_by(.run_number) | .[-1].id // empty')
+          if [ -z "$RUN_ID" ]; then
+            echo "no successful authenticated build run exists for $GITHUB_SHA" >&2
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download the immutable workflow artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: motus-release-${{ github.event.release.tag_name }}
+          path: carried
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.build-run.outputs.run_id }}
+
+      - name: Download the published Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir released
+          gh release download "$RELEASE_TAG" \
+            --pattern '*.whl' --pattern '*.tar.gz' --dir released
+
+      - name: Refuse swapped assets and conflicting PyPI files
+        id: pypi
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python tools/release_artifacts.py compare carried/dist released
+          python tools/release_artifacts.py check-pypi \
+            carried/dist "${RELEASE_TAG#v}"
+
+      - name: Publish the carried bytes with Trusted Publishing
+        if: steps.pypi.outputs.publish == 'true'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: carried/dist/
+          attestations: true
+          skip-existing: true
+
+      - name: Verify the index exposes exactly the carried bytes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python tools/release_artifacts.py check-pypi \
+            carried/dist "${RELEASE_TAG#v}" --expect-present --attempts 12
