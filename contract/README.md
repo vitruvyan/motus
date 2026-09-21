@@ -244,6 +244,15 @@ work outside this core event.
 JSON of the complete receipt. Changing its actor, action, subject, timing,
 binding, rationale, or correction edge therefore changes its identity.
 
+**Binding verification is separate.**
+`verify_human_oversight_bindings()` independently derives the fingerprints of
+supplied System Manifest, Registry, and ControlApplication documents, checks a
+supplied Motus receipt for a BEGIN at `execution_ref`, and checks that a bound
+ControlApplication names the same execution. Every result is `matched`,
+`mismatched`, or `not verified`; missing source material never becomes a
+match. Even a complete set of matches proves neither the actor nor the event,
+authority, review quality, timeliness, legal sufficiency, or compliance.
+
 ### What the verifier will not tell you
 
 `motus-validate receipt <receipt> --trace <trace>` answers all seven ADR-020
