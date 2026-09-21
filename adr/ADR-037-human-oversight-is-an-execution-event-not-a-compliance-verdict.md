@@ -1,7 +1,8 @@
 # ADR-037 — Human oversight is an execution event, not a compliance verdict
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-21
+- **Accepted:** 2026-09-21, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust model), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it), ADR-035 (system declaration != execution proof), ADR-036 (control declaration != ControlApplication evidence).
 - **Amends on acceptance:** adds a canonical, jurisdiction-agnostic `HumanOversightReceipt` contract surface for recording one claimed human oversight event bound to Motus execution evidence. It does **not** amend trace.v1, graphspec.v1, commitment.v1, checkpoint.v1, receipt.v1, System Manifest v1, Risk & Control Registry v1, ControlApplication v1, or the evidence-package wire format unless a later ADR explicitly does so.
