@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from vitruvyan_motus import assess_evidence_profile
@@ -162,6 +164,27 @@ def test_assessment_is_bound_to_one_profile_snapshot(monkeypatch):
         "REQ-001",
         "REQ-002",
     ]
+
+
+def test_regulatory_profile_is_reachable_from_motus_validate(tmp_path):
+    profile = _profile("execution_receipt")
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps(profile), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "contract" / "validate.py"),
+            "regulatory-evidence-profile",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
 
 
 def test_invalid_profile_produces_no_fingerprint_or_findings():
