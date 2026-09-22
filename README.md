@@ -1078,6 +1078,12 @@ kernel, and a complete evidence mapping is not a compliance verdict. Profiles
 can be maintained and versioned independently by any Motus user; Orbis is one
 possible consumer, not an architectural dependency.
 
+Version 1 evaluates the candidate artifact set supplied by the caller. It does
+not discover which artifact among a collection is legally or semantically
+relevant to a requirement; `matched` therefore establishes neither relevance
+nor legal sufficiency. Richer selectors require a later ADR backed by a real
+integration need.
+
 ### Evidence API for bridges
 
 ADR-034 separates evidence ownership from presentation. Motus owns the receipt,
