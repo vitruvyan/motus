@@ -2,7 +2,7 @@
 
 Branch: feat/regulatory-profile-v1.
 
-Status: ADR-038 PROPOSED on 2026-09-22. **Do not implement the contract or runtime evaluator until the founder accepts ADR-038.**
+Status: ADR-038 ACCEPTED by the founder on 2026-09-22. Contract-first implementation proceeds one independently verified micro-step at a time.
 
 Read first: AGENTS.md, ADR-001, ADR-020, ADR-027, ADR-034, ADR-035, ADR-036, ADR-037, contract/README.md, src/vitruvyan_motus/evidence_api.py, src/vitruvyan_motus/system_manifest.py, src/vitruvyan_motus/risk_control.py, and src/vitruvyan_motus/human_oversight.py.
 
