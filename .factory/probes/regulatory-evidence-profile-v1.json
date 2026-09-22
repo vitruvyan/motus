@@ -47,5 +47,19 @@
     "from": "    if getattr(verdict, \"has_mismatch\", False):\\n        return _MISMATCHED, \"an existing Motus binding verifier reported a mismatch\"",
     "to": "    if getattr(verdict, \"has_mismatch\", False):\\n        return _MATCHED, \"an existing Motus binding verifier reported a mismatch\"",
     "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "System Manifest expectations use the existing binding verifier",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "            verdict = verify_system_manifest_bindings(\\n                system_manifest,",
+    "to": "            raise ValueError(\"mutation: bypass manifest verifier\")\\n            verdict = verify_system_manifest_bindings(\\n                system_manifest,",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "receipt verifier refusals remain not verified",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "        if verdict.refused:\\n            return (\\n                _NOT_VERIFIED,",
+    "to": "        if verdict.refused:\\n            return (\\n                _MISMATCHED,",
+    "tests": "tests/test_regulatory_profile.py"
   }
 ]
