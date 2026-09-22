@@ -11,6 +11,7 @@ not import the third-party jsonschema package.
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -197,9 +198,12 @@ def assess_evidence_profile(
     if violations:
         return RegulatoryEvidenceAssessment(None, violations, ())
 
-    profile_fingerprint = validate.regulatory_evidence_profile_fingerprint(profile)
+    profile_document = json.loads(validate.canonical_json(profile).decode("utf-8"))
+    profile_fingerprint = validate.regulatory_evidence_profile_fingerprint(
+        profile_document
+    )
     findings: list[RegulatoryEvidenceFinding] = []
-    for requirement in profile["requirements"]:
+    for requirement in profile_document["requirements"]:
         requirement_ref = requirement["requirement_ref"]
         for expectation in requirement["evidence"]:
             kind = expectation["kind"]
