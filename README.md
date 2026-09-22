@@ -951,6 +951,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `controls_for_risk`, `risks_for_control`;
 - human oversight: `verify_human_oversight_bindings`,
   `HumanOversightBindingVerdict`, `HumanOversightBindingFinding`;
+- regulatory evidence profiles: `assess_evidence_profile`,
+  `RegulatoryEvidenceAssessment`, `RegulatoryEvidenceFinding`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -1062,6 +1064,31 @@ and understood by this verifier matched the supplied documents. It does not
 prove that the actor is human, identified, authorised, independent, or legally
 competent; that the recorded event occurred; that the review was sufficient;
 or that any compliance or ADR-020 assurance level was reached.
+
+### Regulatory Evidence Profile assessment
+
+ADR-038 lets any Motus consumer map opaque external requirement references to
+evidence kinds Motus already owns. The public `assess_evidence_profile()`
+function reports only evidence states: `missing`, `not_verified`,
+`mismatched`, or `matched`.
+
+The mechanism is deliberately jurisdiction-neutral. Motus ships no AI Act,
+ISO 42001, NIS2, national-law, procurement, or customer-specific mapping in the
+kernel, and a complete evidence mapping is not a compliance verdict. Profiles
+can be maintained and versioned independently by any Motus user; Orbis is one
+possible consumer, not an architectural dependency.
+
+Version 1 evaluates the candidate artifact set supplied by the caller. It does
+not discover which artifact among a collection is legally or semantically
+relevant to a requirement; `matched` therefore establishes neither relevance
+nor legal sufficiency. Richer selectors require a later ADR backed by a real
+integration need.
+
+Where an evidence kind already has a Motus binding verifier, the assessment
+composes it rather than downgrading verification to schema validity. In
+particular, System Manifest reaches `matched` only when its supplied GraphSpec
+and trace bindings are complete; a receipt verifier refusal is reported as
+`not_verified`, not rewritten as a contradiction.
 
 ### Evidence API for bridges
 

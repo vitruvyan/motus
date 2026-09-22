@@ -1,0 +1,65 @@
+[
+  {
+    "name": "REP1 duplicate requirement references are refused",
+    "file": "contract/validate.py",
+    "from": "        if ref in seen:\n            violations.append(Violation(\n                \"REP1\",",
+    "to": "        if False:\n            violations.append(Violation(\n                \"REP1\",",
+    "tests": "tests/test_regulatory_profile.py tests/test_contract_fixtures.py"
+  },
+  {
+    "name": "regulatory profile fingerprint binds full mapping",
+    "file": "contract/validate.py",
+    "from": "def regulatory_evidence_profile_fingerprint(document: Any) -> str:\n    \"\"\"ADR-038 identity of one exact Regulatory Evidence Profile.\"\"\"\n    return \"sha256:\" + hashlib.sha256(canonical_json(document)).hexdigest()",
+    "to": "def regulatory_evidence_profile_fingerprint(document: Any) -> str:\n    \"\"\"ADR-038 identity of one exact Regulatory Evidence Profile.\"\"\"\n    return \"sha256:\" + \"0\" * 64",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "missing evidence never becomes matched",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "            return _MISSING, \"no execution receipt was supplied\"",
+    "to": "            return _MATCHED, \"no execution receipt was supplied\"",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "ControlApplication requires its Registry binding material",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "        if risk_control_registry is None:\n            return (\n                _NOT_VERIFIED,",
+    "to": "        if False:\n            return (\n                _NOT_VERIFIED,",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "HumanOversight uses existing binding verifier",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "            verdict = verify_human_oversight_bindings(",
+    "to": "            raise ValueError(\"mutation: bypass human oversight verifier\")\n            verdict = verify_human_oversight_bindings(",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "assessment uses the fingerprinted profile snapshot",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "    for requirement in profile_document[\"requirements\"]:",
+    "to": "    for requirement in profile[\"requirements\"]:",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "existing binding mismatches cannot be promoted",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "    if getattr(verdict, \"has_mismatch\", False):\n        return _MISMATCHED, \"an existing Motus binding verifier reported a mismatch\"",
+    "to": "    if getattr(verdict, \"has_mismatch\", False):\n        return _MATCHED, \"an existing Motus binding verifier reported a mismatch\"",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "System Manifest expectations use the existing binding verifier",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "            verdict = verify_system_manifest_bindings(\n                system_manifest,",
+    "to": "            raise ValueError(\"mutation: bypass manifest verifier\")\n            verdict = verify_system_manifest_bindings(\n                system_manifest,",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "receipt verifier refusals remain not verified",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "        if verdict.refused:\n            return (\n                _NOT_VERIFIED,",
+    "to": "        if verdict.refused:\n            return (\n                _MISMATCHED,",
+    "tests": "tests/test_regulatory_profile.py"
+  }
+]

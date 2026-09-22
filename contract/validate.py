@@ -111,6 +111,7 @@ _SYSTEM_MANIFEST_SCHEMA_FILE = "system-manifest.v1.schema.json"
 _RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
 _CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
 _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
+_REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -763,6 +764,11 @@ def human_oversight_receipt_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def regulatory_evidence_profile_fingerprint(document: Any) -> str:
+    """ADR-038 identity of one exact Regulatory Evidence Profile."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 
 # --------------------------------------------------------------------------- #
 # Schema loading and JSON Schema validation                                   #
@@ -843,6 +849,11 @@ def load_control_application_schema() -> dict:
 def load_human_oversight_receipt_schema() -> dict:
     """The HumanOversightReceipt v1 schema, loaded relative to this file."""
     return _load(_HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE)
+
+
+def load_regulatory_evidence_profile_schema() -> dict:
+    """The Regulatory Evidence Profile v1 schema, loaded relative to this file."""
+    return _load(_REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE)
 
 
 
@@ -995,6 +1006,12 @@ def _human_oversight_receipt_validator() -> Draft202012Validator:
             registry=_human_oversight_schema_registry(),
         )
     return _VALIDATORS["human-oversight-receipt"]
+
+
+def _regulatory_evidence_profile_validator() -> Draft202012Validator:
+    return _validator(
+        "regulatory-evidence-profile", load_regulatory_evidence_profile_schema()
+    )
 
 
 
@@ -1712,6 +1729,43 @@ def validate_human_oversight_receipt(document: dict) -> list[Violation]:
             "the subject and bindings must name the same ControlApplication "
             "fingerprint when both carry it",
         ))
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Regulatory Evidence Profile semantics — ADR-038 rule REP1                  #
+# --------------------------------------------------------------------------- #
+
+
+def validate_regulatory_evidence_profile(document: dict) -> list[Violation]:
+    """Validate one neutral mapping from requirements to Motus evidence kinds.
+
+    A clean result establishes only that the profile is well formed and locally
+    coherent. It does not establish that any mapped external requirement is
+    legally satisfied or correctly interpreted.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_regulatory_evidence_profile_schema()
+    violations += _schema_violations(
+        schema, _regulatory_evidence_profile_validator(), document
+    )
+    if violations:
+        return violations
+
+    seen: set[str] = set()
+    for index, requirement in enumerate(document["requirements"]):
+        ref = requirement["requirement_ref"]
+        if ref in seen:
+            violations.append(Violation(
+                "REP1",
+                f"$.requirements[{index}].requirement_ref",
+                "requirement_ref values must be unique within one profile",
+            ))
+        seen.add(ref)
 
     return violations
 
@@ -4820,7 +4874,7 @@ def main(argv: list[str] | None = None) -> int:
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
             "P-rules, System Manifest SM-rules, Risk & Control Registry "
             "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
-            "HO-rules, JSON document and JSONL "
+            "HO-rules, Regulatory Evidence Profile REP-rules, JSON document and JSONL "
             "stream forms."
         ),
         epilog=(
@@ -4834,7 +4888,8 @@ def main(argv: list[str] | None = None) -> int:
         "artifact",
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
                  "receipt", "system-manifest", "risk-control-registry",
-                 "control-application", "human-oversight-receipt", "package"],
+                 "control-application", "human-oversight-receipt",
+                 "regulatory-evidence-profile", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -4975,6 +5030,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_control_application(doc)
         elif args.artifact == "human-oversight-receipt":
             violations = validate_human_oversight_receipt(doc)
+        elif args.artifact == "regulatory-evidence-profile":
+            violations = validate_regulatory_evidence_profile(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:
