@@ -2,11 +2,19 @@ name: Build and publish Motus
 
 # ADR-032/ADR-033: a tag builds once and creates a draft Release. Publishing
 # that draft is the founder's approval and is the only event allowed to request
-# a PyPI Trusted Publishing token. There is deliberately no workflow_dispatch.
+# a PyPI Trusted Publishing token. There is deliberately no workflow_dispatch
+# (ADR-033 decision 1: a dispatch runs the workflow definition from the ref
+# being dispatched, so a guard an attacker can delete is not a guard) — that
+# reasoning is why this workflow is not given one now either.
+#
+# The `push: tags` trigger is removed: building the tag and drafting the
+# Release is moving to Jenkins as part of the Jenkins-only CI/CD migration.
+# Until that pipeline exists, a `v*` tag push builds nothing here and nothing
+# on Jenkins — releases are paused, not silently rerouted. `release: published`
+# is kept: it is a fail-closed no-op without a matching build run, so it adds
+# no automatic trigger and no new risk. Restoring the tag trigger is a one-line
+# revert if a release is needed before the Jenkins pipeline is ready.
 on:
-  push:
-    tags:
-      - "v*"
   release:
     types: [published]
 
