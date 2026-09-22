@@ -1084,6 +1084,12 @@ relevant to a requirement; `matched` therefore establishes neither relevance
 nor legal sufficiency. Richer selectors require a later ADR backed by a real
 integration need.
 
+Where an evidence kind already has a Motus binding verifier, the assessment
+composes it rather than downgrading verification to schema validity. In
+particular, System Manifest reaches `matched` only when its supplied GraphSpec
+and trace bindings are complete; a receipt verifier refusal is reported as
+`not_verified`, not rewritten as a contradiction.
+
 ### Evidence API for bridges
 
 ADR-034 separates evidence ownership from presentation. Motus owns the receipt,
