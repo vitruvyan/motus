@@ -40,5 +40,12 @@
     "from": "    for requirement in profile_document[\"requirements\"]:",
     "to": "    for requirement in profile[\"requirements\"]:",
     "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "existing binding mismatches cannot be promoted",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "    if getattr(verdict, \"has_mismatch\", False):\\n        return _MISMATCHED, \"an existing Motus binding verifier reported a mismatch\"",
+    "to": "    if getattr(verdict, \"has_mismatch\", False):\\n        return _MATCHED, \"an existing Motus binding verifier reported a mismatch\"",
+    "tests": "tests/test_regulatory_profile.py"
   }
 ]
