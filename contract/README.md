@@ -30,6 +30,30 @@ enforcement point.
 | 7 | Risk & Control Registry | `risk-control-registry.v1.schema.json` | An auditor, governance system, or later regulatory profile that needs one exact revision of the operator's declared risks and controls | `validate_risk_control_registry()` applies schema + RCR1-RCR3. It validates shape, local identity and references only; it never reports that a risk exists, a control ran, a control is effective, or an obligation is satisfied |
 | 8 | ControlApplication | `control-application.v1.schema.json` | An evidence consumer that needs one neutral record of a declared control evaluated or applied at one Motus execution boundary | `validate_control_application()` applies schema + CA1-CA2. It validates the event document only; registry, manifest and execution bindings require the separate public verifier, and no outcome elevates an ADR-020 assurance level |
 | 9 | HumanOversightReceipt | `human-oversight-receipt.v1.schema.json` | An evidence consumer that needs one bounded record of a claimed human review, decision, override, escalation, or abstention tied to a Motus execution | `validate_human_oversight_receipt()` applies schema + HO1-HO4. It validates the event document only; it does not prove humanity, identity, authority, independence, legal competence, or compliance, and no action elevates an ADR-020 assurance level |
+| 10 | Regulatory Evidence Profile | `regulatory-evidence-profile.v1.schema.json` | Any Motus consumer that needs to map opaque external requirement references to existing Motus evidence kinds | `validate_regulatory_evidence_profile()` applies schema + REP1. `assess_evidence_profile()` reports only evidence states (`missing`, `not_verified`, `mismatched`, `matched`); neither validity nor a complete evidence mapping is a compliance, conformity, certification, safety, or legal-sufficiency verdict |
+
+### Regulatory Evidence Profile v1
+
+ADR-038 adds a composition layer over evidence Motus already owns. A profile is
+mapping data, not execution evidence and not law: it names an opaque external
+requirement reference and lists the Motus evidence kinds that the profile
+author expects for it. The v1 vocabulary is deliberately closed and contains
+no predicates, expressions, scripts, legal prose, framework logic, or policy
+DSL.
+
+The public `assess_evidence_profile()` operation is local, deterministic and
+read-only. Declaration artifacts such as System Manifest and Risk & Control
+Registry match an expectation when they satisfy their existing Motus contract.
+Execution-scoped ControlApplication and HumanOversightReceipt expectations
+compose their existing binding verifiers and therefore preserve mismatched and
+not-verified states rather than manufacturing success.
+
+A profile may be wrong about a law or standard. Motus can validate and
+fingerprint the profile and evaluate exactly the mapping it declares; it does
+not certify the profile author's interpretation. Framework-specific profile
+content is intentionally external to the Motus kernel so that changing an
+external mapping does not change Motus evidence identity or require a runtime
+release.
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
