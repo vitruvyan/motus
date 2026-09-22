@@ -33,5 +33,12 @@
     "from": "            verdict = verify_human_oversight_bindings(",
     "to": "            raise ValueError(\"mutation: bypass human oversight verifier\")\n            verdict = verify_human_oversight_bindings(",
     "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "assessment uses the fingerprinted profile snapshot",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "    for requirement in profile_document[\"requirements\"]:",
+    "to": "    for requirement in profile[\"requirements\"]:",
+    "tests": "tests/test_regulatory_profile.py"
   }
 ]
