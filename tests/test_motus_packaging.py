@@ -420,6 +420,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/guarantees.md",
         "vitruvyan_motus/contract/human-oversight-receipt.v1.schema.json",
         "vitruvyan_motus/contract/node-protocol.md",
+        "vitruvyan_motus/contract/regulatory-evidence-profile.v1.schema.json",
         "vitruvyan_motus/contract/receipt.v1.schema.json",
         "vitruvyan_motus/contract/risk-control-registry.v1.schema.json",
         "vitruvyan_motus/contract/system-manifest.v1.schema.json",
