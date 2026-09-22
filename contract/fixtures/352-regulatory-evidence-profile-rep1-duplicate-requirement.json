@@ -1,0 +1,25 @@
+{
+  "artifact": "regulatory-evidence-profile",
+  "expect": "invalid",
+  "rule": "REP1",
+  "reason_contains": "must be unique",
+  "layer": "semantic",
+  "instance": {
+    "schema_version": "1.0.0",
+    "profile": {
+      "id": "example/framework",
+      "version": "2026-01"
+    },
+    "requirements": [
+      {
+        "requirement_ref": "REQ-001",
+        "evidence": [{"kind": "system_manifest"}]
+      },
+      {
+        "requirement_ref": "REQ-001",
+        "evidence": [{"kind": "risk_control_registry"}]
+      }
+    ]
+  },
+  "spec": null
+}
