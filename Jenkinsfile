@@ -55,6 +55,15 @@ pipeline {
             }
         }
 
+        stage('human oversight mutation proof') {
+            steps {
+                sh '''
+                    set -eu
+                    su ci -s /bin/sh -c '.venv/bin/python tools/mutation_probe.py .factory/probes/human-oversight-v1.json --python .venv/bin/python'
+                '''
+            }
+        }
+
         stage('anchor plug tests') {
             steps {
                 sh '''
