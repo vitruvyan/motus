@@ -56,7 +56,9 @@ and none of the figures above shifted, because nothing in `benchmarks/`
 measures reading. That is **#113**, still open: a gate that cannot see a
 change is not evidence the change was free. 0.15.0 adds the risk/control
 registry and ControlApplication evidence model; those contract surfaces are
-not directly exercised by the current three benchmark metrics either.
+not directly exercised by the current three benchmark metrics either. The
+0.16.0 contract work adds HumanOversightReceipt as another boundary-only
+validation surface; it likewise does not enter the measured execution path.
 
 **And against a real request it remains below the release ceiling.** ADR-012 pre-registered the
 test — executor share of run wall-clock, under 1 % — before any measurement
@@ -947,6 +949,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - risk and control: `verify_control_application_bindings`,
   `ControlApplicationBindingVerdict`, `ControlApplicationBindingFinding`,
   `controls_for_risk`, `risks_for_control`;
+- human oversight: `verify_human_oversight_bindings`,
+  `HumanOversightBindingVerdict`, `HumanOversightBindingFinding`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -1025,6 +1029,39 @@ matched. Receipt presence is not receipt verification, an `outcome` describes
 one event rather than global control effectiveness, and no ControlApplication
 raises EXISTENCE, RETENTION, IDENTITY, LEGAL_TIME, or another ADR-020 assurance
 level.
+
+### HumanOversightReceipt binding verification
+
+ADR-037 keeps a claimed human oversight event separate from evidence that its
+Motus artifact references agree. The public verifier compares only the
+contract-valid artifacts supplied by the caller:
+
+```python
+from vitruvyan_motus import verify_human_oversight_bindings
+
+verdict = verify_human_oversight_bindings(
+    oversight_receipt,
+    execution_receipt=execution_receipt,
+    manifest=manifest,
+    registry=registry,
+    control_application=application,
+)
+
+if verdict.bindings_complete:
+    ...
+```
+
+Manifest, Registry, and ControlApplication fingerprints are independently
+derived from canonical JSON. The execution receipt must contain a BEGIN at the
+oversight event's ADR-027 `execution_ref`; a supplied ControlApplication bound
+by the event must name that same execution. Missing source material is `not
+verified`, never matched.
+
+`bindings_complete` means only that every reference carried by this receipt
+and understood by this verifier matched the supplied documents. It does not
+prove that the actor is human, identified, authorised, independent, or legally
+competent; that the recorded event occurred; that the review was sufficient;
+or that any compliance or ADR-020 assurance level was reached.
 
 ### Evidence API for bridges
 

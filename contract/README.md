@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The six surfaces
+## The nine surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -29,6 +29,7 @@ enforcement point.
 | 6 | System Manifest | `system-manifest.v1.schema.json` | An auditor, regulator-facing profile, or integration that needs one stable identity for the declared AI system configuration | `validate_system_manifest()` applies schema + SM1-SM3. It validates the declaration only; binding values are **not** verified merely by being present. ADR-035 requires a separate binding-verification operation before any runtime/graph value may be called matched |
 | 7 | Risk & Control Registry | `risk-control-registry.v1.schema.json` | An auditor, governance system, or later regulatory profile that needs one exact revision of the operator's declared risks and controls | `validate_risk_control_registry()` applies schema + RCR1-RCR3. It validates shape, local identity and references only; it never reports that a risk exists, a control ran, a control is effective, or an obligation is satisfied |
 | 8 | ControlApplication | `control-application.v1.schema.json` | An evidence consumer that needs one neutral record of a declared control evaluated or applied at one Motus execution boundary | `validate_control_application()` applies schema + CA1-CA2. It validates the event document only; registry, manifest and execution bindings require the separate public verifier, and no outcome elevates an ADR-020 assurance level |
+| 9 | HumanOversightReceipt | `human-oversight-receipt.v1.schema.json` | An evidence consumer that needs one bounded record of a claimed human review, decision, override, escalation, or abstention tied to a Motus execution | `validate_human_oversight_receipt()` applies schema + HO1-HO4. It validates the event document only; it does not prove humanity, identity, authority, independence, legal competence, or compliance, and no action elevates an ADR-020 assurance level |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
@@ -198,6 +199,59 @@ organizational evidence remains outside this surface as ADR-036 requires.
 is `control_application_fingerprint(document)`, the same SHA-256 over the
 canonical JSON of the complete ControlApplication document. Changing the
 outcome, timestamp, binding, or any other field therefore changes its identity.
+
+### HumanOversightReceipt rules — an event is not human authority
+
+A HumanOversightReceipt records one claimed oversight event at one Motus
+execution boundary. It binds the event to the existing ADR-027
+`execution_ref`; it does not invent another execution identity. Its subject is
+exactly one execution, one bounded decision point, or one derived
+ControlApplication fingerprint. A valid receipt does not establish that the
+actor is human, identified, authorised, independent, or legally competent.
+
+The closed `action` vocabulary is `reviewed`, `approved`, `rejected`,
+`overridden`, `escalated`, and `abstained`. These values describe one event,
+not current approval state. Multiple receipts may address the same subject,
+and a later receipt does not erase an earlier one. A correction may name the
+derived fingerprint of the receipt it `supersedes`; consumers still retain
+both events.
+
+| Rule | What it refuses |
+|---|---|
+| `HO1` | An `execution_ref` that is not the canonical ADR-027 `tenant/writer/sequence` coordinate, with the same bounded identity and decimal sequence rules as CA1 |
+| `HO2` | An `observed_at` or present `recorded_at` value that has the required UTC shape but is not a real calendar instant |
+| `HO3` | An `overridden` event whose recorded replacement disposition is identical to its prior disposition. An override must preserve what it replaced and state a distinct replacement |
+| `HO4` | A ControlApplication subject and optional binding that name different derived application fingerprints. Two locations for the same fact may not disagree |
+
+Only `overridden` receipts carry `prior_disposition` and
+`recorded_disposition`, and both are required. An override must name a decision
+point or ControlApplication subject, never only the execution as a whole. Their values are opaque neutral
+labels: Motus preserves the transition but does not own an operator's decision
+vocabulary. `actor_ref`, optional `role`, and optional `authority_ref` are
+claims supplied by the producer. They are not authentication or delegation
+proofs. Optional manifest, registry, and ControlApplication fingerprints are
+also claims until separately verified.
+
+Free text and external references are bounded: rationale is at most 8,192
+characters and a receipt carries at most 100 unique references, each at most
+8,192 characters. The contract requires neither secrets nor unrestricted
+private deliberation. Jurisdiction-specific roles, obligations, article
+numbers, signatures, and current-state policies remain profile or integration
+work outside this core event.
+
+`oversight_fingerprint` is never embedded. The exact event identity is
+`human_oversight_receipt_fingerprint(document)`, SHA-256 over the canonical
+JSON of the complete receipt. Changing its actor, action, subject, timing,
+binding, rationale, or correction edge therefore changes its identity.
+
+**Binding verification is separate.**
+`verify_human_oversight_bindings()` independently derives the fingerprints of
+supplied System Manifest, Registry, and ControlApplication documents, checks a
+supplied Motus receipt for a BEGIN at `execution_ref`, and checks that a bound
+ControlApplication names the same execution. Every result is `matched`,
+`mismatched`, or `not verified`; missing source material never becomes a
+match. Even a complete set of matches proves neither the actor nor the event,
+authority, review quality, timeliness, legal sufficiency, or compliance.
 
 ### What the verifier will not tell you
 

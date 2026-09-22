@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/human-oversight-receipt.v1.schema.json",
+  "title": "Vitruvyan Motus HumanOversightReceipt, v1",
+  "description": "ADR-037. One claimed human oversight event bound to one Motus execution. Schema validity does not prove that the actor is human, identified, authorised, independent, or legally competent; it is not a compliance, conformity, or assurance verdict.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "execution_ref",
+    "subject",
+    "actor",
+    "action",
+    "observed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "execution_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "description": "Canonical ADR-027 tenant/writer/sequence locator. HO1 checks its semantic grammar; the locator is not proof that the execution exists."
+    },
+    "subject": { "$ref": "#/$defs/Subject" },
+    "actor": { "$ref": "#/$defs/Actor" },
+    "action": {
+      "enum": [
+        "reviewed",
+        "approved",
+        "rejected",
+        "overridden",
+        "escalated",
+        "abstained"
+      ],
+      "description": "Closed, neutral event vocabulary. None of these values establishes authority, effectiveness, conformity, or compliance."
+    },
+    "prior_disposition": {
+      "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+      "description": "Opaque disposition replaced by an overridden event. Required only for action=overridden."
+    },
+    "recorded_disposition": {
+      "$ref": "commitment.v1.schema.json#/$defs/Identifier",
+      "description": "Opaque replacement disposition recorded by an overridden event. Required only for action=overridden and distinct under HO3."
+    },
+    "observed_at": {
+      "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp",
+      "description": "When the oversight event was observed. HO2 validates the calendar value; this is not legal time."
+    },
+    "recorded_at": {
+      "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp",
+      "description": "Optional time at which the receipt was recorded. It is a claim and may differ from observed_at."
+    },
+    "bindings": { "$ref": "#/$defs/Bindings" },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "\\S",
+      "description": "Optional bounded rationale. Receipts must not require secrets or unrestricted private deliberation."
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/Reference" }
+    },
+    "supersedes": {
+      "$ref": "commitment.v1.schema.json#/$defs/Digest",
+      "description": "Optional derived fingerprint of an earlier receipt corrected by this event. The earlier receipt remains evidence."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action": { "const": "overridden" } },
+        "required": ["action"]
+      },
+      "then": { "required": ["prior_disposition", "recorded_disposition"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["prior_disposition"] },
+            { "required": ["recorded_disposition"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "action": { "const": "overridden" } },
+        "required": ["action"]
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "kind": { "enum": ["decision_point", "control_application"] }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Subject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "execution" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "decision_ref"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "decision_point" },
+            "decision_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "control_application_fingerprint"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "control_application" },
+            "control_application_fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+          }
+        }
+      ]
+    },
+    "Actor": {
+      "type": "object",
+      "required": ["actor_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "actor_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "role": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "authority_ref": { "$ref": "#/$defs/Reference" }
+      }
+    },
+    "Bindings": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "manifest_fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+        "registry_fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+        "control_application_fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+      },
+      "description": "Optional exact revisions associated with the event. Presence is a claim; separate verification is required."
+    },
+    "Reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "\\S"
+    }
+  }
+}

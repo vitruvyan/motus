@@ -1,0 +1,17 @@
+{
+  "artifact": "human-oversight-receipt",
+  "expect": "invalid",
+  "rule": "SCHEMA",
+  "reason_contains": "compliant",
+  "layer": "schema",
+  "instance": {
+    "schema_version": "1.0.0",
+    "execution_ref": "acme/writer-1/42",
+    "subject": { "kind": "execution" },
+    "actor": { "actor_ref": "operator-7" },
+    "action": "reviewed",
+    "observed_at": "2026-09-21T01:15:00Z",
+    "compliant": true
+  },
+  "spec": null
+}

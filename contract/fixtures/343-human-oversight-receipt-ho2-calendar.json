@@ -1,0 +1,16 @@
+{
+  "artifact": "human-oversight-receipt",
+  "expect": "invalid",
+  "rule": "HO2",
+  "reason_contains": "calendar-valid UTC instant",
+  "layer": "semantic",
+  "instance": {
+    "schema_version": "1.0.0",
+    "execution_ref": "acme/writer-1/42",
+    "subject": { "kind": "execution" },
+    "actor": { "actor_ref": "operator-7" },
+    "action": "reviewed",
+    "observed_at": "2026-02-30T01:15:00Z"
+  },
+  "spec": null
+}
