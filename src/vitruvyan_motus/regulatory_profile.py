@@ -136,7 +136,7 @@ def _evaluate_kind(
                 manifest=system_manifest,
                 receipt=execution_receipt,
             )
-        except (TypeError, ValueError) as exc:
+        except ValueError as exc:
             return _MISMATCHED, (
                 "ControlApplication binding verification refused the supplied "
                 "evidence: " + str(exc)
@@ -155,7 +155,7 @@ def _evaluate_kind(
                 registry=risk_control_registry,
                 control_application=control_application,
             )
-        except (TypeError, ValueError) as exc:
+        except ValueError as exc:
             return _MISMATCHED, (
                 "HumanOversightReceipt binding verification refused the supplied "
                 "evidence: " + str(exc)
