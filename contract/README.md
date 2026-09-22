@@ -42,11 +42,13 @@ no predicates, expressions, scripts, legal prose, framework logic, or policy
 DSL.
 
 The public `assess_evidence_profile()` operation is local, deterministic and
-read-only. Declaration artifacts such as System Manifest and Risk & Control
-Registry match an expectation when they satisfy their existing Motus contract.
-Execution-scoped ControlApplication and HumanOversightReceipt expectations
-compose their existing binding verifiers and therefore preserve mismatched and
-not-verified states rather than manufacturing success.
+read-only. Risk & Control Registry is declaration evidence and matches when the
+registry satisfies its existing Motus contract. System Manifest, execution
+receipts, ControlApplication and HumanOversightReceipt retain their existing
+verification boundaries: the profile layer composes those verifiers rather than
+replacing them with schema-only checks. Missing verification material therefore
+remains `not_verified`, and verifier refusals are never manufactured into
+matches.
 
 A profile may be wrong about a law or standard. Motus can validate and
 fingerprint the profile and evaluate exactly the mapping it declares; it does
