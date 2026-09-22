@@ -13,12 +13,14 @@ from __future__ import annotations
 import importlib
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from vitruvyan_motus._execution_ref import receipt_execution_issue
 
 if TYPE_CHECKING:
     from vitruvyan_motus.contract.validate import Violation
+    from vitruvyan_motus.graph import GraphSpec
+    from vitruvyan_motus.trace import Trace
 
 __all__ = [
     "RegulatoryEvidenceFinding",
@@ -90,28 +92,57 @@ def _evaluate_kind(
     risk_control_registry: dict[str, Any] | None,
     control_application: dict[str, Any] | None,
     human_oversight_receipt: dict[str, Any] | None,
+    graph_specs: tuple["GraphSpec", ...],
+    traces: tuple["Trace", ...],
 ) -> tuple[str, str]:
     validate = _contract_validate()
 
     if kind == "execution_receipt":
         if execution_receipt is None:
             return _MISSING, "no execution receipt was supplied"
-        status, reason = _validate_document(
-            execution_receipt, validate.validate_receipt
-        )
-        if status != _MATCHED:
-            return status, reason
+        verdict = validate.verify(execution_receipt)
+        if verdict.refused:
+            return (
+                _NOT_VERIFIED,
+                "the existing Motus receipt verifier refused to evaluate the supplied receipt",
+            )
+        if verdict.violations:
+            detail = "; ".join(
+                f"{item.rule} {item.path}: {item.message}"
+                for item in verdict.violations[:3]
+            )
+            return (
+                _MISMATCHED,
+                "the supplied receipt violates the Motus contract: " + detail,
+            )
         issue = receipt_execution_issue(execution_receipt)
         if issue is not None:
-            return _MISMATCHED, "execution receipt has inconsistent derived identity: " + issue
-        return status, reason
+            return (
+                _MISMATCHED,
+                "execution receipt has inconsistent derived identity: " + issue,
+            )
+        return (
+            _MATCHED,
+            "the existing Motus receipt verifier accepted the supplied receipt",
+        )
 
     if kind == "system_manifest":
         if system_manifest is None:
             return _MISSING, "no System Manifest was supplied"
-        return _validate_document(
-            system_manifest, validate.validate_system_manifest
-        )
+        from vitruvyan_motus.system_manifest import verify_system_manifest_bindings
+        try:
+            verdict = verify_system_manifest_bindings(
+                system_manifest,
+                graph_specs=graph_specs,
+                traces=traces,
+            )
+        except ValueError as exc:
+            return (
+                _MISMATCHED,
+                "System Manifest binding verification refused the supplied evidence: "
+                + str(exc),
+            )
+        return _binding_status(verdict)
 
     if kind == "risk_control_registry":
         if risk_control_registry is None:
@@ -174,6 +205,8 @@ def assess_evidence_profile(
     risk_control_registry: dict[str, Any] | None = None,
     control_application: dict[str, Any] | None = None,
     human_oversight_receipt: dict[str, Any] | None = None,
+    graph_specs: Iterable["GraphSpec"] = (),
+    traces: Iterable["Trace"] = (),
 ) -> RegulatoryEvidenceAssessment:
     """Assess supplied Motus evidence against one external mapping profile.
 
@@ -202,6 +235,8 @@ def assess_evidence_profile(
     profile_fingerprint = validate.regulatory_evidence_profile_fingerprint(
         profile_document
     )
+    spec_values = tuple(graph_specs)
+    trace_values = tuple(traces)
     findings: list[RegulatoryEvidenceFinding] = []
     for requirement in profile_document["requirements"]:
         requirement_ref = requirement["requirement_ref"]
@@ -214,6 +249,8 @@ def assess_evidence_profile(
                 risk_control_registry=risk_control_registry,
                 control_application=control_application,
                 human_oversight_receipt=human_oversight_receipt,
+                graph_specs=spec_values,
+                traces=trace_values,
             )
             findings.append(RegulatoryEvidenceFinding(
                 requirement_ref=requirement_ref,
