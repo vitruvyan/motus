@@ -75,6 +75,24 @@ Stop implementation and report rather than expanding scope if any of these becom
 
 A real integration that needs one of those is evidence for a later ADR.
 
+## Execution split
+
+This task is intentionally executed as four bounded micro-tasks so CI/proof/review
+cannot make the whole 0.17 line appear blocked:
+
+- **017A — core contract and API:** schema, semantic validator/CLI, derived
+  fingerprint, public deterministic assessment API, neutral fixtures, packaging
+  and documentation. Product changes stop when this slice is Jenkins-green.
+- **017B — mutation proof:** run only the permanent regulatory-profile mutation
+  probes against the committed 017A tree. No product changes are allowed merely
+  to make the proof run.
+- **017C — adversarial closure:** hostile review of the exact 017A tree plus any
+  verified fixes. Every fix needs its own regression test and mutation proof.
+  Final output is a Jenkins-green mergeable PR with no unresolved verified
+  finding.
+- **017D — release 0.17.0:** release preparation/build/tag work after 017C is
+  merged and main is Jenkins-green. It is not part of product implementation.
+
 ## Definition of done
 
 Point 5 / 0.17.0 mechanism work is complete only when:
