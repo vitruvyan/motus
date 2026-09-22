@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The nine surfaces
+## The ten surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -54,6 +54,12 @@ not certify the profile author's interpretation. Framework-specific profile
 content is intentionally external to the Motus kernel so that changing an
 external mapping does not change Motus evidence identity or require a runtime
 release.
+
+Profile v1 evaluates the candidate artifact set handed to the assessment call.
+It does not search a store or choose the legally relevant artifact among many.
+Artifact selection, cardinality, temporal predicates and semantic relevance are
+outside v1; adding them requires a later ADR rather than silently growing a
+policy language here.
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version
