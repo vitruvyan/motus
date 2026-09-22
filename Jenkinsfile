@@ -123,15 +123,14 @@ PY
                     fi
                     git commit -m "release: record 0.17.0 characterization job $JOB"
                 '''
-                withCredentials([gitUsernamePassword(
-                    credentialsId: 'github-vitruvyan-jenkins-app',
-                    gitToolName: 'Default'
-                )]) {
-                    sh '''
-                        set -eu
-                        git push origin HEAD:refs/heads/release/0.17.0
-                    '''
-                }
+                step([
+                    $class: 'GitPublisher',
+                    branchesToPush: [[
+                        branchName: 'release/0.17.0',
+                        targetRepoName: 'origin'
+                    ]],
+                    pushOnlyIfSuccess: true
+                ])
             }
         }
     }
