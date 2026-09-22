@@ -120,6 +120,54 @@ def _execution_refs(receipt: dict[str, Any]) -> tuple[str, ...]:
     return tuple(refs)
 
 
+def _append_control_application_chain_findings(
+    findings: list[HumanOversightBindingFinding],
+    *,
+    application: dict[str, Any],
+    registry: dict[str, Any] | None,
+    manifest: dict[str, Any] | None,
+    execution_receipt: dict[str, Any] | None,
+) -> None:
+    """Verify the outbound bindings of a ControlApplication used as a subject.
+
+    Matching the application's own fingerprint is not sufficient to call a
+    HumanOversightReceipt chain complete: the supplied application must also
+    agree with the Registry, optional Manifest, control declaration, and
+    execution evidence supplied alongside it. Otherwise a caller could pair an
+    exact application hash from one evidence chain with unrelated declarations
+    from another chain and receive only ``matched`` findings.
+    """
+    if registry is None:
+        findings.append(HumanOversightBindingFinding(
+            "control_application_binding:$.registry_fingerprint",
+            _NOT_VERIFIED,
+            application["registry_fingerprint"],
+            None,
+            "the oversight event binds a ControlApplication, but no Risk & "
+            "Control Registry was supplied to verify that application's "
+            "mandatory registry binding",
+        ))
+        return
+
+    # Imported here to preserve the package's lazy contract-loading boundary.
+    from vitruvyan_motus.risk_control import verify_control_application_bindings
+
+    chain = verify_control_application_bindings(
+        application,
+        registry=registry,
+        manifest=manifest,
+        receipt=execution_receipt,
+    )
+    for item in chain.findings:
+        findings.append(HumanOversightBindingFinding(
+            f"control_application_binding:{item.path}",
+            item.status,
+            item.expected,
+            item.observed,
+            "bound ControlApplication chain: " + item.reason,
+        ))
+
+
 def verify_human_oversight_bindings(
     oversight_receipt: dict[str, Any],
     *,
@@ -288,6 +336,13 @@ def verify_human_oversight_bindings(
             "ControlApplication and HumanOversightReceipt must bind the same "
             "canonical Motus execution",
         ))
+        _append_control_application_chain_findings(
+            findings,
+            application=application_document,
+            registry=registry_document,
+            manifest=manifest_document,
+            execution_receipt=execution,
+        )
 
     return HumanOversightBindingVerdict(
         oversight_fingerprint,
