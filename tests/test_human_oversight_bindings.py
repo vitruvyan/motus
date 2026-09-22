@@ -68,9 +68,18 @@ def _oversight(manifest: dict, registry: dict, application: dict) -> dict:
 def _documents():
     manifest = _manifest()
     registry = _registry()
+    registry["system"]["manifest_fingerprint"] = (
+        validate.system_manifest_fingerprint(manifest)
+    )
     application = _application(registry, manifest)
     oversight = _oversight(manifest, registry, application)
     return oversight, _execution_receipt(), manifest, registry, application
+
+
+def _rebind_application(oversight: dict, application: dict) -> None:
+    fingerprint = validate.control_application_fingerprint(application)
+    oversight["subject"]["control_application_fingerprint"] = fingerprint
+    oversight["bindings"]["control_application_fingerprint"] = fingerprint
 
 
 def _by_path(verdict):
@@ -97,6 +106,10 @@ def test_exact_supplied_artifacts_make_every_declared_binding_match():
     assert verdict.has_unverified is False
     assert {item.status for item in verdict.findings} == {"matched"}
     assert _by_path(verdict)["control_application:$.execution_ref"].status == "matched"
+    assert (
+        _by_path(verdict)["control_application_binding:$.registry_fingerprint"].status
+        == "matched"
+    )
 
 
 def test_missing_source_material_is_not_verified_never_matched():
@@ -138,9 +151,7 @@ def test_execution_receipt_for_another_execution_is_a_mismatch():
     oversight, execution, manifest, registry, application = _documents()
     oversight["execution_ref"] = "acme/other-writer/0"
     application["execution_ref"] = oversight["execution_ref"]
-    fingerprint = validate.control_application_fingerprint(application)
-    oversight["subject"]["control_application_fingerprint"] = fingerprint
-    oversight["bindings"]["control_application_fingerprint"] = fingerprint
+    _rebind_application(oversight, application)
 
     verdict = verify_human_oversight_bindings(
         oversight,
@@ -156,9 +167,7 @@ def test_execution_receipt_for_another_execution_is_a_mismatch():
 def test_control_application_must_name_the_same_execution():
     oversight, execution, _manifest_doc, _registry_doc, application = _documents()
     application["execution_ref"] = "acme/other-writer/0"
-    fingerprint = validate.control_application_fingerprint(application)
-    oversight["subject"]["control_application_fingerprint"] = fingerprint
-    oversight["bindings"]["control_application_fingerprint"] = fingerprint
+    _rebind_application(oversight, application)
 
     verdict = verify_human_oversight_bindings(
         oversight,
@@ -168,6 +177,128 @@ def test_control_application_must_name_the_same_execution():
 
     finding = _by_path(verdict)["control_application:$.execution_ref"]
     assert finding.status == "mismatched"
+    assert verdict.bindings_complete is False
+
+
+def test_bound_control_application_without_registry_is_not_complete():
+    oversight, execution, manifest, _registry_doc, application = _documents()
+
+    verdict = verify_human_oversight_bindings(
+        oversight,
+        execution_receipt=execution,
+        manifest=manifest,
+        control_application=application,
+    )
+
+    finding = _by_path(verdict)[
+        "control_application_binding:$.registry_fingerprint"
+    ]
+    assert finding.status == "not verified"
+    assert verdict.has_unverified is True
+    assert verdict.bindings_complete is False
+
+
+def test_control_application_chain_rejects_registry_substitution():
+    oversight, execution, manifest, registry, application = _documents()
+    substituted = copy.deepcopy(registry)
+    substituted["controls"][0]["title"] = "Substituted tool capability gate"
+    oversight["bindings"]["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(substituted)
+    )
+
+    verdict = verify_human_oversight_bindings(
+        oversight,
+        execution_receipt=execution,
+        manifest=manifest,
+        registry=substituted,
+        control_application=application,
+    )
+
+    findings = _by_path(verdict)
+    assert findings["$.bindings.registry_fingerprint"].status == "matched"
+    assert findings["$.bindings.control_application_fingerprint"].status == "matched"
+    assert (
+        findings["control_application_binding:$.registry_fingerprint"].status
+        == "mismatched"
+    )
+    assert verdict.has_mismatch is True
+    assert verdict.bindings_complete is False
+
+
+def test_control_application_chain_rejects_unknown_control_declaration():
+    oversight, execution, manifest, registry, application = _documents()
+    application["control_id"] = "C-404"
+    _rebind_application(oversight, application)
+
+    verdict = verify_human_oversight_bindings(
+        oversight,
+        execution_receipt=execution,
+        manifest=manifest,
+        registry=registry,
+        control_application=application,
+    )
+
+    finding = _by_path(verdict)["control_application_binding:$.control_id"]
+    assert finding.status == "mismatched"
+    assert verdict.bindings_complete is False
+
+
+def test_control_application_chain_rejects_enforcement_point_substitution():
+    oversight, execution, manifest, registry, application = _documents()
+    application["enforcement_point"] = "another_gate"
+    _rebind_application(oversight, application)
+
+    verdict = verify_human_oversight_bindings(
+        oversight,
+        execution_receipt=execution,
+        manifest=manifest,
+        registry=registry,
+        control_application=application,
+    )
+
+    finding = _by_path(verdict)[
+        "control_application_binding:$.enforcement_point"
+    ]
+    assert finding.status == "mismatched"
+    assert verdict.bindings_complete is False
+
+
+def test_control_application_chain_rejects_manifest_substitution():
+    oversight, execution, manifest, registry, application = _documents()
+    substituted_manifest = copy.deepcopy(manifest)
+    substituted_manifest["system"]["name"] = "Substituted Credit AI"
+    substituted_manifest_fingerprint = validate.system_manifest_fingerprint(
+        substituted_manifest
+    )
+    registry["system"]["manifest_fingerprint"] = substituted_manifest_fingerprint
+    application["registry_fingerprint"] = validate.risk_control_registry_fingerprint(
+        registry
+    )
+    # Deliberately retain the application's original manifest_fingerprint.
+    _rebind_application(oversight, application)
+    oversight["bindings"]["manifest_fingerprint"] = substituted_manifest_fingerprint
+    oversight["bindings"]["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry)
+    )
+
+    verdict = verify_human_oversight_bindings(
+        oversight,
+        execution_receipt=execution,
+        manifest=substituted_manifest,
+        registry=registry,
+        control_application=application,
+    )
+
+    findings = _by_path(verdict)
+    assert findings["$.bindings.manifest_fingerprint"].status == "matched"
+    assert findings["$.bindings.registry_fingerprint"].status == "matched"
+    assert (
+        findings[
+            "control_application_binding:$.manifest_fingerprint:manifest"
+        ].status
+        == "mismatched"
+    )
+    assert verdict.has_mismatch is True
     assert verdict.bindings_complete is False
 
 
