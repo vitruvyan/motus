@@ -1,7 +1,8 @@
 # ADR-038 — Regulatory profiles map requirements to evidence; they do not decide compliance
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-22
+- **Accepted:** 2026-09-22, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001, ADR-020, ADR-027, ADR-034, ADR-035, ADR-036, ADR-037.
 - **Amends on acceptance:** permits one canonical, jurisdiction-neutral Regulatory Evidence Profile contract and a deterministic read-only assessment surface that maps external requirement references to existing Motus evidence. It does not amend trace, GraphSpec, commitment, checkpoint, receipt, System Manifest, Risk & Control Registry, ControlApplication, HumanOversightReceipt, or evidence-package wire formats.
