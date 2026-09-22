@@ -120,6 +120,19 @@ def test_control_application_without_registry_is_not_verified():
     assert _by_kind(assessment)["control_application"].status == "not_verified"
 
 
+def test_real_control_application_binding_mismatch_stays_mismatched():
+    application = _fixture("330-control-application-valid.json")
+    registry = _fixture("320-risk-control-registry-valid.json")
+
+    assessment = assess_evidence_profile(
+        _profile("control_application"),
+        risk_control_registry=registry,
+        control_application=application,
+    )
+
+    assert _by_kind(assessment)["control_application"].status == "mismatched"
+
+
 def test_human_oversight_without_binding_material_is_not_verified():
     oversight = _fixture("340-human-oversight-receipt-valid.json")
     assessment = assess_evidence_profile(
