@@ -7,7 +7,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from vitruvyan_motus import assess_evidence_profile
+from vitruvyan_motus import (
+    TRACE_SCHEMA_VERSION,
+    GraphSpec,
+    Runtime,
+    State,
+    __version__,
+    assess_evidence_profile,
+)
 import vitruvyan_motus.regulatory_profile as regulatory_profile
 from vitruvyan_motus.contract import validate
 
@@ -34,6 +41,56 @@ def _profile(*kinds: str) -> dict:
 
 def _by_kind(assessment):
     return {finding.kind: finding for finding in assessment.findings}
+
+
+def _identity(state):
+    return state
+
+
+def _spec(name: str = "profile_review") -> GraphSpec:
+    node = f"{name}_node"
+    return GraphSpec.from_dict({
+        "schema_version": "1.0.0",
+        "name": name,
+        "version": "1.0.0",
+        "entry": node,
+        "nodes": [{"name": node, "effect_class": "pure"}],
+        "transitions": {node: {"kind": "terminal"}},
+    })
+
+
+def _trace(spec: GraphSpec):
+    node = spec.nodes[0].name
+    return Runtime(spec, {node: _identity}).run(
+        State.empty("regulatory-profile"), run_id="profile-run"
+    ).trace
+
+
+def _bound_manifest(spec: GraphSpec, trace) -> dict:
+    graph = trace.run["graph"]
+    return {
+        "schema_version": "1.0.0",
+        "system": {
+            "id": "example/system",
+            "manifest_version": "2026-09-22-1",
+        },
+        "bindings": {
+            "motus": {
+                "runtime_version": __version__,
+                "trace_schema_version": TRACE_SCHEMA_VERSION,
+            },
+            "graphs": [{
+                "name": spec.name,
+                "version": spec.version,
+                "spec_schema_version": spec.schema_version,
+                "graph_fingerprint": spec.graph_fingerprint,
+                "code_fingerprint": graph["code_fingerprint"],
+            }],
+        },
+        "declarations": {"operator": {"id": "example-operator"}},
+        "created_at": "2026-09-22T18:00:00Z",
+        "supersedes": None,
+    }
 
 
 def test_profile_fingerprint_binds_the_complete_mapping():
@@ -84,16 +141,41 @@ def test_missing_requested_evidence_is_not_promoted_to_success():
     assert {item.status for item in assessment.findings} == {"missing"}
 
 
-def test_contract_valid_declarations_match_as_declarations():
+def test_registry_matches_as_a_valid_declaration():
     assessment = assess_evidence_profile(
-        _profile("system_manifest", "risk_control_registry"),
-        system_manifest=_fixture("310-system-manifest-valid.json"),
+        _profile("risk_control_registry"),
         risk_control_registry=_fixture("320-risk-control-registry-valid.json"),
     )
 
-    findings = _by_kind(assessment)
-    assert findings["system_manifest"].status == "matched"
-    assert findings["risk_control_registry"].status == "matched"
+    assert _by_kind(assessment)["risk_control_registry"].status == "matched"
+
+
+def test_manifest_without_binding_material_is_not_verified():
+    spec = _spec()
+    trace = _trace(spec)
+    manifest = _bound_manifest(spec, trace)
+
+    assessment = assess_evidence_profile(
+        _profile("system_manifest"),
+        system_manifest=manifest,
+    )
+
+    assert _by_kind(assessment)["system_manifest"].status == "not_verified"
+
+
+def test_manifest_uses_existing_binding_verifier_to_reach_matched():
+    spec = _spec()
+    trace = _trace(spec)
+    manifest = _bound_manifest(spec, trace)
+
+    assessment = assess_evidence_profile(
+        _profile("system_manifest"),
+        system_manifest=manifest,
+        graph_specs=[spec],
+        traces=[trace],
+    )
+
+    assert _by_kind(assessment)["system_manifest"].status == "matched"
 
 
 def test_valid_execution_receipt_matches_and_identity_corruption_mismatches():
@@ -109,6 +191,17 @@ def test_valid_execution_receipt_matches_and_identity_corruption_mismatches():
         _profile("execution_receipt"), execution_receipt=corrupted
     )
     assert _by_kind(mismatched)["execution_receipt"].status == "mismatched"
+
+
+def test_receipt_verifier_refusal_is_not_verified_not_mismatched():
+    refused = _fixture("313-receipt-p10-unknown-type.json")
+
+    assessment = assess_evidence_profile(
+        _profile("execution_receipt"),
+        execution_receipt=refused,
+    )
+
+    assert _by_kind(assessment)["execution_receipt"].status == "not_verified"
 
 
 def test_control_application_without_registry_is_not_verified():
