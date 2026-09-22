@@ -1,0 +1,22 @@
+{
+  "artifact": "regulatory-evidence-profile",
+  "expect": "invalid",
+  "rule": "SCHEMA",
+  "reason_contains": "compliant",
+  "layer": "schema",
+  "instance": {
+    "schema_version": "1.0.0",
+    "profile": {
+      "id": "example/framework",
+      "version": "2026-01"
+    },
+    "requirements": [
+      {
+        "requirement_ref": "REQ-001",
+        "evidence": [{"kind": "system_manifest"}],
+        "compliant": true
+      }
+    ]
+  },
+  "spec": null
+}
