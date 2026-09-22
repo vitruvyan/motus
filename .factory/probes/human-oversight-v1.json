@@ -2,8 +2,8 @@
   {
     "name": "HO1 canonical execution_ref enforcement",
     "file": "contract/validate.py",
-    "from": "    if _canonical_execution_ref_parts(document[\"execution_ref\"]) is None:\\n        violations.append(Violation(\\n            \"HO1\",",
-    "to": "    if False:\\n        violations.append(Violation(\\n            \"HO1\",",
+    "from": "    if _canonical_execution_ref_parts(document[\"execution_ref\"]) is None:\n        violations.append(Violation(\n            \"HO1\",",
+    "to": "    if False:\n        violations.append(Violation(\n            \"HO1\",",
     "tests": "tests/test_human_oversight_contract.py tests/test_contract_fixtures.py"
   },
   {
@@ -16,22 +16,22 @@
   {
     "name": "HO3 override must change disposition",
     "file": "contract/validate.py",
-    "from": "        document[\"action\"] == \"overridden\"\\n        and document[\"prior_disposition\"] == document[\"recorded_disposition\"]",
+    "from": "        document[\"action\"] == \"overridden\"\n        and document[\"prior_disposition\"] == document[\"recorded_disposition\"]",
     "to": "        False",
     "tests": "tests/test_human_oversight_contract.py tests/test_contract_fixtures.py"
   },
   {
     "name": "HO4 duplicate ControlApplication bindings agree",
     "file": "contract/validate.py",
-    "from": "        subject[\"kind\"] == \"control_application\"\\n        and \"control_application_fingerprint\" in bindings\\n        and subject[\"control_application_fingerprint\"]\\n        != bindings[\"control_application_fingerprint\"]",
+    "from": "        subject[\"kind\"] == \"control_application\"\n        and \"control_application_fingerprint\" in bindings\n        and subject[\"control_application_fingerprint\"]\n        != bindings[\"control_application_fingerprint\"]",
     "to": "        False",
     "tests": "tests/test_human_oversight_contract.py tests/test_contract_fixtures.py"
   },
   {
     "name": "oversight fingerprint binds full event",
     "file": "contract/validate.py",
-    "from": "def human_oversight_receipt_fingerprint(document: Any) -> str:\\n    \"\"\"ADR-037 identity of one complete HumanOversightReceipt event.\"\"\"\\n    return \"sha256:\" + hashlib.sha256(canonical_json(document)).hexdigest()",
-    "to": "def human_oversight_receipt_fingerprint(document: Any) -> str:\\n    \"\"\"ADR-037 identity of one complete HumanOversightReceipt event.\"\"\"\\n    return \"sha256:\" + \"0\" * 64",
+    "from": "def human_oversight_receipt_fingerprint(document: Any) -> str:\n    \"\"\"ADR-037 identity of one complete HumanOversightReceipt event.\"\"\"\n    return \"sha256:\" + hashlib.sha256(canonical_json(document)).hexdigest()",
+    "to": "def human_oversight_receipt_fingerprint(document: Any) -> str:\n    \"\"\"ADR-037 identity of one complete HumanOversightReceipt event.\"\"\"\n    return \"sha256:\" + \"0\" * 64",
     "tests": "tests/test_human_oversight_contract.py tests/test_human_oversight_bindings.py"
   },
   {
