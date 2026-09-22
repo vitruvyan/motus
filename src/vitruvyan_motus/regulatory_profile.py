@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from vitruvyan_motus._execution_ref import receipt_execution_issue
 
 if TYPE_CHECKING:
     from vitruvyan_motus.contract.validate import Violation
-    from vitruvyan_motus.graph import GraphSpec
-    from vitruvyan_motus.trace import Trace
 
 __all__ = [
     "RegulatoryEvidenceFinding",
@@ -91,8 +89,6 @@ def _evaluate_kind(
     risk_control_registry: dict[str, Any] | None,
     control_application: dict[str, Any] | None,
     human_oversight_receipt: dict[str, Any] | None,
-    graph_specs: tuple["GraphSpec", ...],
-    traces: tuple["Trace", ...],
 ) -> tuple[str, str]:
     validate = _contract_validate()
 
@@ -177,8 +173,6 @@ def assess_evidence_profile(
     risk_control_registry: dict[str, Any] | None = None,
     control_application: dict[str, Any] | None = None,
     human_oversight_receipt: dict[str, Any] | None = None,
-    graph_specs: Iterable["GraphSpec"] = (),
-    traces: Iterable["Trace"] = (),
 ) -> RegulatoryEvidenceAssessment:
     """Assess supplied Motus evidence against one external mapping profile.
 
@@ -204,9 +198,6 @@ def assess_evidence_profile(
         return RegulatoryEvidenceAssessment(None, violations, ())
 
     profile_fingerprint = validate.regulatory_evidence_profile_fingerprint(profile)
-    specs = tuple(graph_specs)
-    trace_values = tuple(traces)
-
     findings: list[RegulatoryEvidenceFinding] = []
     for requirement in profile["requirements"]:
         requirement_ref = requirement["requirement_ref"]
@@ -219,8 +210,6 @@ def assess_evidence_profile(
                 risk_control_registry=risk_control_registry,
                 control_application=control_application,
                 human_oversight_receipt=human_oversight_receipt,
-                graph_specs=specs,
-                traces=trace_values,
             )
             findings.append(RegulatoryEvidenceFinding(
                 requirement_ref=requirement_ref,
