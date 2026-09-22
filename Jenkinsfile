@@ -55,6 +55,15 @@ pipeline {
             }
         }
 
+        stage('regulatory profile mutation proof') {
+            steps {
+                sh '''
+                    set -eu
+                    su ci -s /bin/sh -c '.venv/bin/python tools/mutation_probe.py .factory/probes/regulatory-evidence-profile-v1.json --python .venv/bin/python'
+                '''
+            }
+        }
+
         stage('anchor plug tests') {
             steps {
                 sh '''
