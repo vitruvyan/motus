@@ -68,6 +68,10 @@ from vitruvyan_motus.human_oversight import (
     HumanOversightBindingFinding, HumanOversightBindingVerdict,
     verify_human_oversight_bindings,
 )
+from vitruvyan_motus.regulatory_profile import (
+    RegulatoryEvidenceAssessment, RegulatoryEvidenceFinding,
+    assess_evidence_profile,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -97,6 +101,8 @@ __all__ = [
     "verify_control_application_bindings",
     "HumanOversightBindingFinding", "HumanOversightBindingVerdict",
     "verify_human_oversight_bindings",
+    "RegulatoryEvidenceAssessment", "RegulatoryEvidenceFinding",
+    "assess_evidence_profile",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]
