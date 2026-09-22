@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from vitruvyan_motus import assess_evidence_profile
+import vitruvyan_motus.regulatory_profile as regulatory_profile
 from vitruvyan_motus.contract import validate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -126,6 +127,41 @@ def test_human_oversight_without_binding_material_is_not_verified():
 
     finding = _by_kind(assessment)["human_oversight_receipt"]
     assert finding.status == "not_verified"
+
+
+def test_assessment_is_bound_to_one_profile_snapshot(monkeypatch):
+    profile = {
+        "schema_version": "1.0.0",
+        "profile": {"id": "example/framework", "version": "2026-01"},
+        "requirements": [
+            {
+                "requirement_ref": "REQ-001",
+                "evidence": [{"kind": "execution_receipt"}],
+            },
+            {
+                "requirement_ref": "REQ-002",
+                "evidence": [{"kind": "system_manifest"}],
+            },
+        ],
+    }
+
+    original = regulatory_profile._evaluate_kind
+    calls = 0
+
+    def mutating_evaluate(kind, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            profile["requirements"][1]["requirement_ref"] = "MUTATED"
+        return original(kind, **kwargs)
+
+    monkeypatch.setattr(regulatory_profile, "_evaluate_kind", mutating_evaluate)
+    assessment = assess_evidence_profile(profile)
+
+    assert [item.requirement_ref for item in assessment.findings] == [
+        "REQ-001",
+        "REQ-002",
+    ]
 
 
 def test_invalid_profile_produces_no_fingerprint_or_findings():
