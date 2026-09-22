@@ -56,7 +56,7 @@
     "tests": "tests/test_human_oversight_bindings.py"
   },
   {
-    "name": "bound ControlApplication outbound chain is verified",
+    "name": "bound ControlApplication outbound Registry/Manifest/control chain is verified",
     "file": "src/vitruvyan_motus/human_oversight.py",
     "from": "        _append_control_application_chain_findings(\n            findings,\n            application=application_document,\n            registry=registry_document,\n            manifest=manifest_document,\n            execution_receipt=execution,\n        )",
     "to": "        pass",
