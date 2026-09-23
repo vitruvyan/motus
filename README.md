@@ -1090,6 +1090,42 @@ particular, System Manifest reaches `matched` only when its supplied GraphSpec
 and trace bindings are complete; a receipt verifier refusal is reported as
 `not_verified`, not rewritten as a contradiction.
 
+### Incident / CAPA Ledger
+
+ADR-039 records immutable producer claims without turning Motus into incident
+case management. An `IncidentDeclaration` describes one observed or suspected
+incident; a `CAPAAction` describes one corrective or preventive action and
+names the exact incident revision it was created against. Neither a valid
+record nor the words `completed` and `closed` prove effectiveness, adequacy,
+reportability, compliance, or legal closure.
+
+```python
+from vitruvyan_motus import (
+    order_incident_capa_entries,
+    verify_incident_capa_ledger,
+)
+
+verdict = verify_incident_capa_ledger(
+    ledger,
+    execution_receipts=receipts,
+    manifests=manifests,
+    registries=registries,
+    control_applications=control_applications,
+    human_oversight_receipts=oversight_receipts,
+)
+ordered_entries = order_incident_capa_entries(ledger)
+```
+
+Corrections append a new exact revision through `supersedes`; they do not
+rewrite or delete the prior claim. Entry array order has no evidentiary
+meaning. Present parents are ordered before children and exact fingerprints
+break ties. Missing predecessors are `not verified`, while competing children
+are preserved as `conflict`; Motus chooses no winner.
+
+`bindings_complete` means only that every binding represented in the verifier's
+findings matched the supplied evidence. The verifier performs no network or
+database lookup and derives all exact fingerprints independently.
+
 ### Evidence API for bridges
 
 ADR-034 separates evidence ownership from presentation. Motus owns the receipt,
@@ -1187,7 +1223,7 @@ side is scoped by nothing. If you need to carry bytes that are not Unicode —
 a filename a filesystem handed over — encode them explicitly rather than
 smuggling them through a string.
 
-Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the six
+Alongside it, `vitruvyan_motus.contract` carries `validate.py` and the contract
 schemas — mapped in from `contract/`, which remains the authority (ADR-001),
 not copied. `validate_trace`, `validate_graphspec`, `validate_jsonl`,
 `validate_commitment`, `validate_checkpoint`, `validate_receipt` and

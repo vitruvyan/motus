@@ -1,0 +1,25 @@
+{
+  "artifact": "incident-declaration",
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "producer_namespace": "example/incidents",
+    "producer_ref": "operator-7",
+    "incident_id": "INC-001",
+    "lifecycle": "open",
+    "event_class": "reliability",
+    "title": "Execution did not reach its declared terminal",
+    "description": "The producer observed an incomplete execution and recorded the claim for review.",
+    "observed_at": "2026-09-23T09:55:00Z",
+    "declared_at": "2026-09-23T10:00:00Z",
+    "severity": {
+      "scale": "example/operational-severity",
+      "value": "moderate"
+    },
+    "evidence": [
+      {"kind": "execution", "execution_ref": "acme/w1/0"}
+    ],
+    "references": ["ticket://incident/INC-001"]
+  },
+  "spec": null
+}

@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The ten surfaces
+## The eleven surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -31,6 +31,7 @@ enforcement point.
 | 8 | ControlApplication | `control-application.v1.schema.json` | An evidence consumer that needs one neutral record of a declared control evaluated or applied at one Motus execution boundary | `validate_control_application()` applies schema + CA1-CA2. It validates the event document only; registry, manifest and execution bindings require the separate public verifier, and no outcome elevates an ADR-020 assurance level |
 | 9 | HumanOversightReceipt | `human-oversight-receipt.v1.schema.json` | An evidence consumer that needs one bounded record of a claimed human review, decision, override, escalation, or abstention tied to a Motus execution | `validate_human_oversight_receipt()` applies schema + HO1-HO4. It validates the event document only; it does not prove humanity, identity, authority, independence, legal competence, or compliance, and no action elevates an ADR-020 assurance level |
 | 10 | Regulatory Evidence Profile | `regulatory-evidence-profile.v1.schema.json` | Any Motus consumer that needs to map opaque external requirement references to existing Motus evidence kinds | `validate_regulatory_evidence_profile()` applies schema + REP1. `assess_evidence_profile()` reports only evidence states (`missing`, `not_verified`, `mismatched`, `matched`); neither validity nor a complete evidence mapping is a compliance, conformity, certification, safety, or legal-sufficiency verdict |
+| 11 | Incident / CAPA Ledger | `incident-declaration.v1.schema.json`, `capa-action.v1.schema.json`, `incident-capa-ledger.v1.schema.json` | An evidence consumer that needs immutable producer claims about incidents and corrective or preventive actions without importing a case-management or legal-classification system | The three validators apply schema plus INC1-INC2, CAPA1-CAPA2 and LEDGER1-LEDGER3. `verify_incident_capa_ledger()` derives exact identities, preserves amendment forks and reports only binding states; validity and `completed`/`closed` remain producer claims, never Motus verdicts |
 
 ### Regulatory Evidence Profile v1
 
@@ -62,6 +63,43 @@ It does not search a store or choose the legally relevant artifact among many.
 Artifact selection, cardinality, temporal predicates and semantic relevance are
 outside v1; adding them requires a later ADR rather than silently growing a
 policy language here.
+
+### Incident / CAPA Ledger v1
+
+ADR-039 adds three additive documents. `IncidentDeclaration` records one
+producer's bounded incident account; `CAPAAction` records one corrective or
+preventive action claim linked to an exact incident revision; and the ledger is
+a portable collection of those immutable records. It is not a mutable ticket,
+workflow engine, root-cause evaluator, regulatory classifier, or closure
+authority.
+
+`incident_id` and `action_id` are stable references inside a producer
+namespace. Exact revisions instead use fingerprints derived from canonical
+JSON and never embedded in the record. A correction is a new record whose
+`supersedes` names one exact immediate predecessor. The prior declaration
+remains evidence of what was declared before the correction.
+
+Ledger entry array order is transport-only. `order_incident_capa_entries()`
+places present parents before children and uses exact fingerprints as the only
+tie-breaker. `incident_capa_ledger_fingerprint()` normalises that transport
+order before hashing. A missing predecessor remains a valid partial view but
+is `not verified`; two children of the same predecessor remain a `conflict`.
+No timestamp, ingestion order, role or lifecycle value selects a winner.
+
+The public verifier binds CAPA actions to exact incident revisions and compares
+evidence references only with contract-valid documents supplied by the caller.
+Its `matched`, `mismatched`, `not verified` and `conflict` states describe
+identity and lineage only. They do not establish occurrence, blame,
+reportability, root cause, action effectiveness, legal sufficiency, or
+incident closure.
+
+| Rule | What it refuses |
+|---|---|
+| `INC1` / `CAPA1` | An execution evidence locator that is not the canonical ADR-027 `tenant/writer/sequence` coordinate |
+| `INC2` / `CAPA2` | A timestamp with the required UTC shape that is not a real calendar instant |
+| `LEDGER1` | The same exact record more than once in one portable view |
+| `LEDGER2` | A present predecessor of another kind, namespace or stable identifier, or an exact self-reference |
+| `LEDGER3` | A cycle in present supersession relationships; content-addressed revision identities make such a cycle infeasible without a digest collision, but the verifier still fails closed |
 
 Trace schema family v1 accepts the frozen 1.0 corpus and the additive 1.1
 receipt/resume form. `x-current-version` is the single source for the version

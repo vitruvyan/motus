@@ -114,6 +114,12 @@ def _run_fixture(wrapper: dict):
         return validate.validate_human_oversight_receipt(wrapper["instance"])
     if artifact == "regulatory-evidence-profile":
         return validate.validate_regulatory_evidence_profile(wrapper["instance"])
+    if artifact == "incident-declaration":
+        return validate.validate_incident_declaration(wrapper["instance"])
+    if artifact == "capa-action":
+        return validate.validate_capa_action(wrapper["instance"])
+    if artifact == "incident-capa-ledger":
+        return validate.validate_incident_capa_ledger(wrapper["instance"])
     if artifact == "jsonl":
         text = "\n".join(wrapper["lines"]) + "\n"
         violations, _doc = validate.validate_jsonl(
@@ -138,7 +144,9 @@ def _run_fixture(wrapper: dict):
      "risk-control-registry.v1.schema.json",
      "control-application.v1.schema.json",
      "human-oversight-receipt.v1.schema.json",
-     "regulatory-evidence-profile.v1.schema.json"],
+     "regulatory-evidence-profile.v1.schema.json",
+     "incident-declaration.v1.schema.json", "capa-action.v1.schema.json",
+     "incident-capa-ledger.v1.schema.json"],
 )
 def test_schema_passes_metaschema(schema_file):
     schema = _read(CONTRACT_DIR / schema_file)
@@ -264,7 +272,9 @@ def test_corpus_minimums_and_wrapper_shape():
         assert wrapper["artifact"] in {
             "graphspec", "trace", "jsonl", "commitment", "checkpoint", "receipt",
             "system-manifest", "risk-control-registry", "control-application",
-            "human-oversight-receipt", "regulatory-evidence-profile", "text",
+            "human-oversight-receipt", "regulatory-evidence-profile",
+            "incident-declaration", "capa-action", "incident-capa-ledger",
+            "text",
         }, path.name
         if wrapper["artifact"] == "text":
             assert isinstance(wrapper["raw"], str) and wrapper["raw"], path.name

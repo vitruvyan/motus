@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/incident-declaration.v1.schema.json",
+  "title": "Vitruvyan Motus IncidentDeclaration, v1",
+  "description": "ADR-039. One immutable, jurisdiction-neutral producer declaration about an observed or suspected incident. Validity does not establish occurrence, blame, reportability, cause, liability, remediation effectiveness, or compliance.",
+  "type": "object",
+  "required": [
+    "schema_version", "producer_namespace", "producer_ref", "incident_id",
+    "lifecycle", "event_class", "title", "description", "declared_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "producer_namespace": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "producer_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "incident_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "lifecycle": {
+      "enum": ["suspected", "open", "contained", "closed", "reopened"],
+      "description": "A producer-declared lifecycle observation. closed is not a Motus verdict about remediation or obligations."
+    },
+    "event_class": {
+      "enum": ["safety", "security", "privacy", "reliability", "integrity", "availability", "other"],
+      "description": "Neutral producer classification with no built-in legal meaning."
+    },
+    "title": { "$ref": "#/$defs/Text" },
+    "description": { "$ref": "#/$defs/Text" },
+    "observed_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "discovered_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "declared_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "severity": { "$ref": "#/$defs/DeclaredScaleValue" },
+    "impact": { "$ref": "#/$defs/DeclaredScaleValue" },
+    "suspected_cause": { "$ref": "#/$defs/Text" },
+    "containment": { "$ref": "#/$defs/Text" },
+    "actor_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "authority_ref": { "$ref": "#/$defs/Reference" },
+    "closure_rationale": { "$ref": "#/$defs/Text" },
+    "evidence": { "$ref": "#/$defs/EvidenceReferences" },
+    "references": { "$ref": "#/$defs/References" },
+    "supersedes": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "lifecycle": { "const": "closed" } }, "required": ["lifecycle"] },
+      "then": { "required": ["closure_rationale"] },
+      "else": { "not": { "required": ["closure_rationale"] } }
+    },
+    {
+      "if": { "properties": { "lifecycle": { "const": "reopened" } }, "required": ["lifecycle"] },
+      "then": { "required": ["supersedes"] }
+    }
+  ],
+  "$defs": {
+    "Text": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "\\S" },
+    "Reference": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" },
+    "References": {
+      "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/Reference" }
+    },
+    "DeclaredScaleValue": {
+      "type": "object", "required": ["scale", "value"], "additionalProperties": false,
+      "properties": {
+        "scale": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+        "value": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" }
+      },
+      "description": "Producer-declared value on a producer-identified scale; not a Motus assessment."
+    },
+    "EvidenceReferences": {
+      "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/EvidenceReference" }
+    },
+    "EvidenceReference": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["kind", "execution_ref"], "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "execution" },
+            "execution_ref": { "type": "string", "minLength": 1, "maxLength": 8192 }
+          }
+        },
+        {
+          "type": "object", "required": ["kind", "fingerprint"], "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["system_manifest", "risk_control_registry", "control_application", "human_oversight_receipt"] },
+            "fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+          }
+        }
+      ]
+    }
+  }
+}
