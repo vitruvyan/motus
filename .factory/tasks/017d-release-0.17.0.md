@@ -6,7 +6,7 @@ Starts only after 017C is merged and main is Jenkins-green.
 
 Goal: prepare the 0.17.0 release using the repository release discipline.
 
-Status: RELEASE EVIDENCE COMPLETE. Release branch exists, runtime version is 0.17.0, DEFAULT_CANDIDATE points to candidate-v0.17.0-epyc-py310.json, and the required Jenkins characterization evidence is committed. Product work is closed; PR merge, post-merge verification, and the annotated source tag remain.
+Status: COMPLETE. PR #188 was merged as `bb50ebc8d89fd59f6550eb4d39255c6eb76738e4`; the reviewed release head and measured candidate are ancestors of that merge; Jenkins passed on the PR and on `main`; and annotated tag `v0.17.0` points to the merge commit. The release workflow built and verified the wheel and sdist and created a draft GitHub Release. Publishing that draft and publishing to PyPI remain separate founder actions and are not authorised.
 
 Do not:
 - move or recreate existing release tags;
