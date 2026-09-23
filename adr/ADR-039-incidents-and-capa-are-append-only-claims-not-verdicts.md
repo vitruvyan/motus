@@ -1,7 +1,8 @@
 # ADR-039 — Incident and CAPA records are append-only claims, not verdicts of blame, effectiveness, or closure
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-23
+- **Accepted:** 2026-09-23, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust model), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it), ADR-035 (system declaration != execution proof), ADR-036 (control declaration != ControlApplication evidence), ADR-037 (oversight event != compliance verdict), ADR-038 (profiles map evidence; they do not decide compliance).
 - **Amends on acceptance:** permits canonical, jurisdiction-neutral IncidentDeclaration, CAPAAction, and LedgerEntry contract surfaces plus deterministic structural and binding verification. It does **not** amend trace, GraphSpec, commitment, checkpoint, receipt, System Manifest, Risk & Control Registry, ControlApplication, HumanOversightReceipt, Regulatory Evidence Profile, or evidence-package wire formats unless a later ADR explicitly does so.
