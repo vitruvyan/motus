@@ -6,7 +6,7 @@ Starts only after 017C is merged and main is Jenkins-green.
 
 Goal: prepare the 0.17.0 release using the repository release discipline.
 
-Status: IN PROGRESS. Release branch exists, runtime version is 0.17.0, and DEFAULT_CANDIDATE points to candidate-v0.17.0-epyc-py310.json. Product work is closed. Remaining blocker is release evidence generation on Jenkins.
+Status: RELEASE EVIDENCE COMPLETE. Release branch exists, runtime version is 0.17.0, DEFAULT_CANDIDATE points to candidate-v0.17.0-epyc-py310.json, and the required Jenkins characterization evidence is committed. Product work is closed; PR merge, post-merge verification, and the annotated source tag remain.
 
 Do not:
 - move or recreate existing release tags;
