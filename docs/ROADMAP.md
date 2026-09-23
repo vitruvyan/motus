@@ -67,8 +67,13 @@ conditions belong in a founder-accepted ADR before product code changes.
 
 ### Existing Motus UI draft
 
-A Motus UI draft already exists at `vitruvyan.dev`. It is currently a UI only:
-it is not yet wired to Motus evidence retrieval or verification and must not be
+A Motus UI draft already exists at `vitruvyan.dev`. It is authenticated and
+partially wired to existing Motus continuity endpoints:
+Perpetuum overview,
+anchors, and retention use server-side proxies to query the Orbis graph
+backend. Most console sections remain placeholders, Continuum does not yet
+expose the full GraphSpec plus ordered trace contract, and the v0.14-v0.17
+regulatory surfaces are neither represented nor wired. The draft must not be
 treated as proof that the underlying capabilities are integrated.
 
 After the neutral verification/query interface is stable, the UI must be
@@ -88,7 +93,7 @@ run in parallel only after the relevant Motus public contract is stable.
 | Limen ↔ Motus evidence bridge | PLANNED | Limen consumes the same canonical evidence boundary without a private format |
 | SDK / adapters for third-party stacks | PLANNED | adapters translate transport and storage only; Motus remains semantic authority |
 | Orbis evidence UI | PLANNED | displays actual Motus evidence and binding results through the Orbis integration |
-| Motus UI wiring | BLOCKED ON STABLE QUERY API | replaces draft-only data paths with real Motus retrieval and verification |
+| Motus UI wiring | PARTIALLY WIRED; REGULATORY SURFACES BLOCKED ON STABLE QUERY API | extends the existing continuity paths with real regulatory evidence retrieval and verification |
 
 An integration being reachable, visually complete, or deployed does not prove
 that it is wired to the current Motus release. Qualification must separately
