@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/retention-trigger-occurrence.v1.schema.json",
+  "title": "Vitruvyan Motus RetentionTriggerOccurrence, v1",
+  "description": "ADR-040. Separately identified producer claim that a policy trigger occurred. Its timestamp is not trusted time.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "occurrence_id", "policy_fingerprint", "trigger", "subject", "occurred_at", "declared_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "occurrence_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "policy_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "trigger": {"enum": ["creation", "execution_completion", "incident_closure", "external_event"]},
+    "subject": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/ArtifactIdentity"},
+    "source": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/ArtifactIdentity"},
+    "external_event_ref": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/Reference"},
+    "occurred_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "declared_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  },
+  "allOf": [
+    {"if": {"properties": {"trigger": {"const": "external_event"}}, "required": ["trigger"]}, "then": {"required": ["external_event_ref"]}, "else": {"not": {"required": ["external_event_ref"]}}},
+    {"if": {"properties": {"trigger": {"enum": ["execution_completion", "incident_closure"]}}, "required": ["trigger"]}, "then": {"required": ["source"]}}
+  ]
+}

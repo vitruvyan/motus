@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/custody-observation.v1.schema.json",
+  "title": "Vitruvyan Motus CustodyObservation, v1",
+  "description": "ADR-040. One bounded observation claim. Validity does not establish continuing custody.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "observation_id", "observer_ref", "artifact", "method_ref", "result", "observed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "observation_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "observer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "artifact": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/ArtifactIdentity"},
+    "method_ref": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/Reference"},
+    "result": {"enum": ["retrievable", "not_retrievable", "absent", "indeterminate"]},
+    "observed_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "application_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "evidence": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/ArtifactIdentity"}},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/legal-hold-declaration.v1.schema.json",
+  "title": "Vitruvyan Motus LegalHoldDeclaration, v1",
+  "description": "ADR-040. One immutable producer hold-action claim. Validity does not establish an actor's authority or storage enforcement.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "hold_id", "action", "declared_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "hold_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "action": {"enum": ["placed", "amended", "released", "cancelled"]},
+    "scope": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/ScopeSelector"},
+    "reason_ref": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/Reference"},
+    "rationale": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/Text"},
+    "declared_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "effective_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "actor_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "authority_ref": {"$ref": "retention-policy-declaration.v1.schema.json#/$defs/Reference"},
+    "oversight_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  },
+  "allOf": [
+    {"if": {"properties": {"action": {"const": "placed"}}, "required": ["action"]}, "then": {"required": ["scope", "reason_ref"], "not": {"required": ["supersedes"]}}},
+    {"if": {"properties": {"action": {"const": "amended"}}, "required": ["action"]}, "then": {"required": ["scope", "reason_ref", "supersedes"]}},
+    {"if": {"properties": {"action": {"enum": ["released", "cancelled"]}}, "required": ["action"]}, "then": {"required": ["supersedes", "rationale"], "not": {"required": ["scope"]}}}
+  ]
+}

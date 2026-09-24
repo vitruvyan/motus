@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/retention-policy-declaration.v1.schema.json",
+  "title": "Vitruvyan Motus RetentionPolicyDeclaration, v1",
+  "description": "ADR-040. One producer's immutable retention rule claim. Validity does not establish applicability or custody.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "policy_id", "rule", "scope", "declared_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "policy_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "rule": {"oneOf": [
+      {"type": "object", "required": ["kind", "trigger", "duration_seconds"], "additionalProperties": false, "properties": {
+        "kind": {"const": "duration"},
+        "trigger": {"enum": ["creation", "execution_completion", "incident_closure", "external_event"]},
+        "duration_seconds": {"type": "integer", "minimum": 1, "maximum": 3155760000}
+      }},
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "no_automatic_disposal"}}}
+    ]},
+    "scope": {"$ref": "#/$defs/ScopeSelector"},
+    "declared_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "actor_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "oversight_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  },
+  "$defs": {
+    "Text": {"type": "string", "minLength": 1, "maxLength": 8192, "pattern": "\\S"},
+    "Reference": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
+    "ArtifactIdentity": {
+      "type": "object", "required": ["kind", "fingerprint"], "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["trace", "receipt", "evidence_package", "system_manifest", "risk_control_registry", "control_application", "human_oversight_receipt", "regulatory_evidence_profile", "incident_declaration", "capa_action", "incident_capa_ledger", "retention_policy_declaration", "legal_hold_declaration", "retention_scope_snapshot", "retention_trigger_occurrence", "retention_application", "custody_observation"]},
+        "fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+      }
+    },
+    "ArtifactIdentities": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/$defs/ArtifactIdentity"}},
+    "ScopeSelector": {"oneOf": [
+      {"type": "object", "required": ["kind", "artifacts"], "additionalProperties": false, "properties": {"kind": {"const": "exact_artifacts"}, "artifacts": {"$ref": "#/$defs/ArtifactIdentities"}}},
+      {"type": "object", "required": ["kind", "execution_refs"], "additionalProperties": false, "properties": {"kind": {"const": "execution_refs"}, "execution_refs": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 8192}}}},
+      {"type": "object", "required": ["kind", "tenant"], "additionalProperties": false, "properties": {"kind": {"const": "tenant_writer"}, "tenant": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"}, "writer_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"}}}
+    ]}
+  }
+}

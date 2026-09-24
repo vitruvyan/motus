@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","producer_namespace":"acme/records","producer_ref":"records-team","policy_id":"P-001","rule":{"kind":"duration","trigger":"creation","duration_seconds":86400},"scope":{"kind":"exact_artifacts","artifacts":[{"kind":"receipt","fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},"declared_at":"2026-09-24T10:00:00Z"}

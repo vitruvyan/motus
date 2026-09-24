@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","producer_namespace":"acme/records","producer_ref":"records-team","hold_id":"H-001","action":"placed","scope":{"kind":"tenant_writer","tenant":"acme"},"reason_ref":"case/opaque-001","declared_at":"2026-09-24T10:01:00Z"}
