@@ -29,14 +29,15 @@ __all__ = [
 
 _MATCHED = "matched"
 _MISMATCHED = "mismatched"
-_NOT_VERIFIED = "not verified"
+_MISSING = "missing"
+_NOT_VERIFIED = "not_verified"
 _CONFLICT = "conflict"
 
 
 @dataclass(frozen=True, slots=True)
 class IncidentCAPAFinding:
     path: str
-    status: Literal["matched", "mismatched", "not verified", "conflict"]
+    status: Literal["matched", "mismatched", "missing", "not_verified", "conflict"]
     expected: str | None
     observed: str | tuple[str, ...] | None
     reason: str
@@ -66,6 +67,10 @@ class IncidentCAPAVerdict:
     @property
     def has_unverified(self) -> bool:
         return any(item.status == _NOT_VERIFIED for item in self.findings)
+
+    @property
+    def has_missing(self) -> bool:
+        return any(item.status == _MISSING for item in self.findings)
 
     @property
     def has_conflict(self) -> bool:
@@ -164,7 +169,7 @@ def _exact_reference_finding(
 ) -> IncidentCAPAFinding:
     if not observed:
         return IncidentCAPAFinding(
-            path, _NOT_VERIFIED, expected, None,
+            path, _MISSING, expected, None,
             f"no contract-valid {kind} document was supplied for independent "
             "fingerprint derivation",
         )
@@ -178,6 +183,48 @@ def _exact_reference_finding(
     )
 
 
+def _package_values(values: Iterable[bytes]) -> tuple[bytes, ...]:
+    if isinstance(values, (str, bytes, bytearray, dict)):
+        raise TypeError("evidence_packages must be an iterable of bytes")
+    result: list[bytes] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, bytes):
+            raise TypeError(f"evidence_packages[{index}] must be bytes")
+        result.append(value)
+    return tuple(result)
+
+
+def _adapt_chain_finding(prefix: str, finding: Any) -> IncidentCAPAFinding:
+    if finding.status == "not verified":
+        status = _MISSING if finding.observed is None else _NOT_VERIFIED
+    else:
+        status = finding.status
+    return IncidentCAPAFinding(
+        f"{prefix}:{finding.path}",
+        status,
+        finding.expected,
+        finding.observed,
+        finding.reason,
+    )
+
+
+def _document_by_fingerprint(documents, fingerprint, derive):
+    return next(
+        (document for document in documents if derive(document) == fingerprint),
+        None,
+    )
+
+
+def _receipt_for_execution(receipts, execution_ref):
+    return next(
+        (
+            receipt for receipt in receipts
+            if receipt_segment_for_execution_ref(receipt, execution_ref) is not None
+        ),
+        None,
+    )
+
+
 def verify_incident_capa_ledger(
     ledger: dict[str, Any],
     *,
@@ -186,6 +233,7 @@ def verify_incident_capa_ledger(
     registries: Iterable[dict[str, Any]] = (),
     control_applications: Iterable[dict[str, Any]] = (),
     human_oversight_receipts: Iterable[dict[str, Any]] = (),
+    evidence_packages: Iterable[bytes] = (),
 ) -> IncidentCAPAVerdict:
     """Verify one ledger view against the Motus evidence supplied by the caller.
 
@@ -228,6 +276,15 @@ def verify_incident_capa_ledger(
         validate, human_oversight_receipts, name="human_oversight_receipts",
         validator=validate.validate_human_oversight_receipt,
     )
+    package_docs = _package_values(evidence_packages)
+    if package_docs:
+        from vitruvyan_motus.evidence import evidence_package_fingerprint
+
+        package_fingerprints = tuple(
+            evidence_package_fingerprint(value) for value in package_docs
+        )
+    else:
+        package_fingerprints = ()
 
     pools = {
         "system_manifest": tuple(
@@ -242,6 +299,8 @@ def verify_incident_capa_ledger(
         "human_oversight_receipt": tuple(
             validate.human_oversight_receipt_fingerprint(value) for value in oversight_docs
         ),
+        "receipt": tuple(validate.receipt_fingerprint(value) for value in receipts),
+        "evidence_package": package_fingerprints,
     }
 
     entries: dict[str, tuple[int, dict[str, Any]]] = {}
@@ -308,7 +367,7 @@ def verify_incident_capa_ledger(
                 expected = reference["execution_ref"]
                 if not receipts:
                     findings.append(IncidentCAPAFinding(
-                        path + ".execution_ref", _NOT_VERIFIED, expected, None,
+                        path + ".execution_ref", _MISSING, expected, None,
                         "no execution receipt was supplied that can bind this locator",
                     ))
                 else:
@@ -327,12 +386,145 @@ def verify_incident_capa_ledger(
                         "a BEGIN at this execution_ref",
                     ))
             else:
-                findings.append(_exact_reference_finding(
+                kind = reference["kind"]
+                identity_finding = _exact_reference_finding(
                     path=path + ".fingerprint",
                     expected=reference["fingerprint"],
-                    observed=pools[reference["kind"]],
-                    kind=reference["kind"],
-                ))
+                    observed=pools[kind],
+                    kind=kind,
+                )
+                findings.append(identity_finding)
+                if identity_finding.status != _MATCHED:
+                    continue
+
+                if kind == "control_application":
+                    from vitruvyan_motus.risk_control import (
+                        verify_control_application_bindings,
+                    )
+
+                    application = _document_by_fingerprint(
+                        application_docs,
+                        reference["fingerprint"],
+                        validate.control_application_fingerprint,
+                    )
+                    registry = _document_by_fingerprint(
+                        registry_docs,
+                        application["registry_fingerprint"],
+                        validate.risk_control_registry_fingerprint,
+                    )
+                    if registry is None:
+                        findings.append(IncidentCAPAFinding(
+                            path + ".verification:$.registry_fingerprint",
+                            _MISSING,
+                            application["registry_fingerprint"],
+                            None,
+                            "the exact ControlApplication is present, but its "
+                            "mandatory Registry revision was not supplied",
+                        ))
+                    else:
+                        manifest_fingerprint = application.get("manifest_fingerprint")
+                        manifest = (
+                            _document_by_fingerprint(
+                                manifest_docs,
+                                manifest_fingerprint,
+                                validate.system_manifest_fingerprint,
+                            )
+                            if manifest_fingerprint is not None else None
+                        )
+                        receipt = _receipt_for_execution(
+                            receipts, application["execution_ref"]
+                        )
+                        chain = verify_control_application_bindings(
+                            application,
+                            registry=registry,
+                            manifest=manifest,
+                            receipt=receipt,
+                        )
+                        findings.extend(
+                            _adapt_chain_finding(path + ".verification", item)
+                            for item in chain.findings
+                        )
+
+                elif kind == "human_oversight_receipt":
+                    from vitruvyan_motus.human_oversight import (
+                        verify_human_oversight_bindings,
+                    )
+
+                    oversight = _document_by_fingerprint(
+                        oversight_docs,
+                        reference["fingerprint"],
+                        validate.human_oversight_receipt_fingerprint,
+                    )
+                    bindings = oversight.get("bindings", {})
+                    manifest = _document_by_fingerprint(
+                        manifest_docs,
+                        bindings.get("manifest_fingerprint"),
+                        validate.system_manifest_fingerprint,
+                    )
+                    registry = _document_by_fingerprint(
+                        registry_docs,
+                        bindings.get("registry_fingerprint"),
+                        validate.risk_control_registry_fingerprint,
+                    )
+                    application_fingerprint = bindings.get(
+                        "control_application_fingerprint"
+                    )
+                    if oversight["subject"]["kind"] == "control_application":
+                        application_fingerprint = oversight["subject"][
+                            "control_application_fingerprint"
+                        ]
+                    application = _document_by_fingerprint(
+                        application_docs,
+                        application_fingerprint,
+                        validate.control_application_fingerprint,
+                    )
+                    receipt = _receipt_for_execution(
+                        receipts, oversight["execution_ref"]
+                    )
+                    chain = verify_human_oversight_bindings(
+                        oversight,
+                        execution_receipt=receipt,
+                        manifest=manifest,
+                        registry=registry,
+                        control_application=application,
+                    )
+                    findings.extend(
+                        _adapt_chain_finding(path + ".verification", item)
+                        for item in chain.findings
+                    )
+
+                elif kind == "evidence_package":
+                    from vitruvyan_motus.evidence import (
+                        evidence_package_fingerprint,
+                        verify_package,
+                    )
+
+                    package = next(
+                        value for value in package_docs
+                        if evidence_package_fingerprint(value)
+                        == reference["fingerprint"]
+                    )
+                    package_verdict = verify_package(package)
+                    if package_verdict.verdict is None:
+                        status = _NOT_VERIFIED
+                    elif (
+                        package_verdict.transport_ok
+                        and not package_verdict.damaged
+                        and not package_verdict.trace_violations
+                        and not package_verdict.verdict.violations
+                        and not package_verdict.verdict.refused
+                    ):
+                        status = _MATCHED
+                    else:
+                        status = _MISMATCHED
+                    findings.append(IncidentCAPAFinding(
+                        path + ".verification",
+                        status,
+                        reference["fingerprint"],
+                        reference["fingerprint"],
+                        "the exact package bytes were checked with the native "
+                        "Motus evidence-package verifier",
+                    ))
 
     for predecessor, successors in sorted(children.items()):
         if len(successors) > 1:

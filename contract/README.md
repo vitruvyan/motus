@@ -79,17 +79,27 @@ JSON and never embedded in the record. A correction is a new record whose
 `supersedes` names one exact immediate predecessor. The prior declaration
 remains evidence of what was declared before the correction.
 
+`receipt_fingerprint(document)` derives the exact canonical identity used by
+ADR-039 receipt references. Evidence-package references instead identify the
+exact transport bytes through the public `evidence_package_fingerprint()`
+helper; neither fingerprint replaces ADR-027 execution identity or the
+artifact's existing verifier.
+
 Ledger entry array order is transport-only. `order_incident_capa_entries()`
 places present parents before children and uses exact fingerprints as the only
 tie-breaker. `incident_capa_ledger_fingerprint()` normalises that transport
 order before hashing. A missing predecessor remains a valid partial view but
-is `not verified`; two children of the same predecessor remain a `conflict`.
+is `not_verified`; two children of the same predecessor remain a `conflict`.
 No timestamp, ingestion order, role or lifecycle value selects a winner.
 
 The public verifier binds CAPA actions to exact incident revisions and compares
-evidence references only with contract-valid documents supplied by the caller.
-Its `matched`, `mismatched`, `not verified` and `conflict` states describe
-identity and lineage only. They do not establish occurrence, blame,
+evidence references only with contract-valid documents or exact package bytes
+supplied by the caller. Its `matched`, `mismatched`, `missing`, `not_verified`
+and `conflict` states keep omitted evidence distinct from evidence that a
+composed verifier could not establish. Exact ControlApplication and
+HumanOversightReceipt identity never bypasses their existing outbound-binding
+verifiers. These states describe identity and lineage only; they do not
+establish occurrence, blame,
 reportability, root cause, action effectiveness, legal sufficiency, or
 incident closure.
 

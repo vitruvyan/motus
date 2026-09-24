@@ -96,5 +96,26 @@
     "from": "snapshot = _snapshot(validate, ledger)\n    rows = {",
     "to": "snapshot = ledger\n    rows = {",
     "tests": "tests/test_incident_capa_bindings.py::test_verification_and_ordering_do_not_mutate_inputs_and_return_snapshots"
+  },
+  {
+    "name": "missing evidence stays distinct from not verified",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "path, _MISSING, expected, None,",
+    "to": "path, _NOT_VERIFIED, expected, None,",
+    "tests": "tests/test_incident_capa_bindings.py::test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified"
+  },
+  {
+    "name": "exact ControlApplication identity composes its verifier",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if kind == \"control_application\":",
+    "to": "if False and kind == \"control_application\":",
+    "tests": "tests/test_incident_capa_bindings.py::test_exact_control_application_identity_does_not_bypass_its_verifier"
+  },
+  {
+    "name": "receipt and package evidence kinds stay admitted",
+    "file": "contract/incident-declaration.v1.schema.json",
+    "from": ", \"receipt\", \"evidence_package\"",
+    "to": "",
+    "tests": "tests/test_incident_capa_bindings.py::test_receipt_and_evidence_package_reference_kinds_are_admitted"
   }
 ]

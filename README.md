@@ -942,7 +942,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `RunResult`;
 - state and values: `State`, `Fact`, native `Decision`, `Rejection`, `redact`;
 - replay: `TraceBundle`, `ReplayEngine`, `ReplayResult`, `ReplayStatus`;
-- evidence packaging: `pack`, `verify_package`, `PackageVerdict`;
+- evidence packaging: `pack`, `verify_package`, `evidence_package_fingerprint`,
+  `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
 - system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
   `SystemManifestBindingFinding`;
@@ -953,6 +954,9 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `HumanOversightBindingVerdict`, `HumanOversightBindingFinding`;
 - regulatory evidence profiles: `assess_evidence_profile`,
   `RegulatoryEvidenceAssessment`, `RegulatoryEvidenceFinding`;
+- incident and CAPA: `verify_incident_capa_ledger`,
+  `order_incident_capa_entries`, `IncidentCAPAVerdict`,
+  `IncidentCAPAFinding`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -1112,6 +1116,7 @@ verdict = verify_incident_capa_ledger(
     registries=registries,
     control_applications=control_applications,
     human_oversight_receipts=oversight_receipts,
+    evidence_packages=package_blobs,
 )
 ordered_entries = order_incident_capa_entries(ledger)
 ```
@@ -1119,12 +1124,19 @@ ordered_entries = order_incident_capa_entries(ledger)
 Corrections append a new exact revision through `supersedes`; they do not
 rewrite or delete the prior claim. Entry array order has no evidentiary
 meaning. Present parents are ordered before children and exact fingerprints
-break ties. Missing predecessors are `not verified`, while competing children
+break ties. Missing predecessors are `not_verified`, while competing children
 are preserved as `conflict`; Motus chooses no winner.
 
 `bindings_complete` means only that every binding represented in the verifier's
 findings matched the supplied evidence. The verifier performs no network or
-database lookup and derives all exact fingerprints independently.
+database lookup and derives all exact fingerprints independently. `missing`
+means the caller omitted referenced evidence, including material required by
+a composed outbound verifier; `not_verified` means the material was present
+but the verifier could not establish its required outbound bindings. Exact
+receipt documents and evidence-package
+bytes can also be referenced; package identity is the exact transport-byte
+fingerprint returned by `evidence_package_fingerprint()`, while
+`verify_package()` remains authoritative for package contents.
 
 ### Evidence API for bridges
 

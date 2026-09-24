@@ -80,7 +80,7 @@
         {
           "type": "object", "required": ["kind", "fingerprint"], "additionalProperties": false,
           "properties": {
-            "kind": { "enum": ["system_manifest", "risk_control_registry", "control_application", "human_oversight_receipt"] },
+            "kind": { "enum": ["system_manifest", "risk_control_registry", "control_application", "human_oversight_receipt", "receipt", "evidence_package"] },
             "fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
           }
         }

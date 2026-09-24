@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from vitruvyan_motus import (
+    evidence_package_fingerprint,
     order_incident_capa_entries,
     verify_incident_capa_ledger,
 )
@@ -85,7 +86,7 @@ def test_absent_predecessor_is_not_verified_and_never_assumed_false():
 
     assert verdict.ledger_violations == ()
     assert verdict.has_unverified is True
-    assert verdict.findings[0].status == "not verified"
+    assert verdict.findings[0].status == "not_verified"
 
 
 def test_amendment_fork_is_preserved_as_conflict_and_has_no_winner():
@@ -164,8 +165,82 @@ def test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified():
     wrong = verify_incident_capa_ledger(
         ledger, manifests=[_fixture("310-system-manifest-valid.json")]
     )
-    assert absent.findings[0].status == "not verified"
+    assert absent.findings[0].status == "missing"
+    assert absent.has_missing is True
     assert wrong.findings[0].status == "mismatched"
+
+
+def test_exact_control_application_identity_does_not_bypass_its_verifier():
+    registry = _fixture("320-risk-control-registry-valid.json")
+    registry.pop("system")
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    application = {
+        "schema_version": "1.0.0",
+        "registry_fingerprint": validate.risk_control_registry_fingerprint(registry),
+        "control_id": "C-001",
+        "execution_ref": receipt["execution"]["ref"],
+        "enforcement_point": "tool_dispatch",
+        "outcome": "blocked",
+        "observed_at": "2026-09-23T10:01:00Z",
+        "evidence": {"kind": "motus_execution"},
+    }
+    incident = _incident(evidence=[{
+        "kind": "control_application",
+        "fingerprint": validate.control_application_fingerprint(application),
+    }])
+
+    incomplete = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        control_applications=[application],
+    )
+    complete = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        registries=[registry],
+        control_applications=[application],
+        execution_receipts=[receipt],
+    )
+
+    assert incomplete.findings[0].status == "matched"
+    assert any(item.status == "missing" for item in incomplete.findings)
+    assert incomplete.bindings_complete is False
+    assert {item.status for item in complete.findings} == {"matched"}
+    assert complete.bindings_complete is True
+
+
+def test_receipt_and_evidence_package_reference_kinds_are_admitted():
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    package = b"not a valid evidence package"
+    receipt_ref = {
+        "kind": "receipt",
+        "fingerprint": validate.receipt_fingerprint(receipt),
+    }
+    package_ref = {
+        "kind": "evidence_package",
+        "fingerprint": evidence_package_fingerprint(package),
+    }
+    incident = _incident(evidence=[receipt_ref, package_ref])
+
+    assert validate.validate_incident_declaration(incident) == []
+    absent = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        execution_receipts=[receipt],
+    )
+    supplied = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        execution_receipts=[receipt],
+        evidence_packages=[package],
+    )
+
+    by_path = {item.path: item for item in absent.findings}
+    assert by_path["$.entries[0].document.evidence[0].fingerprint"].status == "matched"
+    assert by_path["$.entries[0].document.evidence[1].fingerprint"].status == "missing"
+    supplied_by_path = {item.path: item for item in supplied.findings}
+    assert supplied_by_path[
+        "$.entries[0].document.evidence[1].fingerprint"
+    ].status == "matched"
+    assert supplied_by_path[
+        "$.entries[0].document.evidence[1].verification"
+    ].status == "not_verified"
 
 
 def test_receipt_with_inconsistent_derived_identity_is_refused():

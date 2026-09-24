@@ -767,6 +767,11 @@ def human_oversight_receipt_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def receipt_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one receipt document referenced by ADR-039."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 def regulatory_evidence_profile_fingerprint(document: Any) -> str:
     """ADR-038 identity of one exact Regulatory Evidence Profile."""
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
