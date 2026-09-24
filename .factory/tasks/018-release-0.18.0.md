@@ -7,9 +7,12 @@ Starts only after the Incident / CAPA Ledger v1 pull request is merged and
 
 Goal: prepare the 0.18.0 release using the repository release discipline.
 
-Status: IN PROGRESS. The release branch starts at the Point 5 merge commit.
-Runtime identity and characterization targets are retargeted to 0.18.0;
-measured evidence has not yet been produced.
+Status: RELEASE EVIDENCE COMPLETE. The release branch starts at the Point 5
+merge commit. Runtime identity and characterization targets are 0.18.0. Three
+independent relative Jenkins builds pass the per-release budget, the cumulative
+FAIL is disclosed under ADR-018 with a fresh sub-1% Orbis measurement, and the
+absolute Jenkins candidate passes the SLO gate. PR review, merge, post-merge
+verification, and the annotated source tag remain.
 
 Do not:
 - move or recreate existing release tags;
