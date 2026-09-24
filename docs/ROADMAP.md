@@ -38,8 +38,8 @@ one-tag rule is restored.
 | 2 | Regulatory System Manifest | DONE | shipped in v0.15.0 |
 | 3 | Risk & Control Registry / ControlApplication | DONE | shipped in v0.15.0 |
 | 4 | Human Oversight Receipt | DONE | shipped in v0.17.0 |
-| 5 | Incident / CAPA Ledger | NEXT | target v0.18.0 |
-| 6 | Retention & Legal Hold | QUEUED | target v0.19.0 |
+| 5 | Incident / CAPA Ledger | DONE | shipped in v0.18.0 |
+| 6 | Retention & Legal Hold | NEXT | target v0.19.0 |
 | 7 | AI System Registry | QUEUED | target v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | QUEUED | target v0.21.0 |
@@ -52,9 +52,9 @@ already released Regulatory Evidence Profile. The profile may map only evidence
 kinds Motus actually owns; adding each missing kind requires its own ADR and
 release first.
 
-### Point 5 / v0.18.0 — Incident / CAPA Ledger
+### Point 5 / v0.18.0 — Incident / CAPA Ledger — shipped
 
-The next release defines the neutral boundary between:
+Motus 0.18.0 defined the neutral boundary between:
 
 1. an incident declaration;
 2. corrective and preventive actions linked to that incident; and
@@ -63,7 +63,25 @@ The next release defines the neutral boundary between:
 It must not infer blame, legal reportability, remediation effectiveness,
 compliance, or closure merely from the presence of a record. Exact semantics,
 identity, append-only and amendment behavior, execution bindings, and stop
-conditions belong in a founder-accepted ADR before product code changes.
+conditions are governed by founder-accepted ADR-039.
+
+### Point 6 / v0.19.0 — Retention & Legal Hold
+
+The next release defines the neutral boundary between:
+
+1. a producer's retention-policy declaration;
+2. a producer's legal-hold declaration and immutable scope snapshots;
+3. separately verifiable evidence that a custodian applied preservation,
+   disposal or deletion-blocking operations; and
+4. bounded custody observations that never inherit stronger meaning from an
+   anchor, receipt, policy or UI response.
+
+It must not select applicable law, infer legal authority, treat a declared
+deadline as permission to delete, or redefine ADR-020 `RETENTION` as proof of
+continued custody. Exact semantics, identities, append-only history, scope
+resolution, subset-scoped blocker findings and stop conditions are proposed in
+ADR-040. Motus never emits disposal clearance. Founder acceptance is required
+before contract or product code changes.
 
 ### Existing Motus UI draft
 
@@ -104,16 +122,18 @@ UI state shown to the user.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-09-23. This section is a
+*Last reconciled against the repository on 2026-09-24. This section is a
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
-- **0.17.0** is the current source release (2026-09-23): the annotated tag
+- **0.18.0** is the current source release (2026-09-24): the annotated tag
+  points at the verified merge commit for Incident / CAPA Ledger v1. Its
+  GitHub Release remains a draft and PyPI publication is not authorised;
+- **0.17.0** (2026-09-23): the annotated tag
   points at the verified merge commit for Regulatory Evidence Profile v1.
   The profile composes existing Motus validators and reports only `missing`,
-  `not_verified`, `mismatched`, or `matched`. Its GitHub Release remains a
-  draft and PyPI publication is not authorised;
+  `not_verified`, `mismatched`, or `matched`;
 - **0.15.0** shipped the Canonical Evidence API, Regulatory System Manifest,
   and Risk & Control Registry / ControlApplication. This was the historical
   exception that combined multiple regulatory roadmap points in one tag;
