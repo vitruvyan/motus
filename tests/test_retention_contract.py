@@ -183,3 +183,17 @@ def test_fingerprint_binds_complete_canonical_document_and_cli_reaches_it(tmp_pa
         capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_cli_reports_an_invalid_retention_document(tmp_path, kind):
+    document = fixture(kind)
+    document["schema_version"] = "unsupported"
+    path = tmp_path / "document.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "contract" / "validate.py"), kind, str(path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 1
+    assert "SCHEMA" in result.stdout
