@@ -1,7 +1,8 @@
 # ADR-040 — Retention and legal hold are declarations with separate application evidence
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-24
+- **Accepted:** 2026-09-24, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust and assurance levels), ADR-021 and ADR-031 (anchor evidence and trust), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it), ADR-035 (system declaration != execution proof), ADR-036 (control declaration != ControlApplication evidence), ADR-037 (claimed human act != authority or compliance), ADR-038 (profiles map evidence; they do not decide compliance), ADR-039 (append-only claims, exact revision identity and visible conflict).
 - **Amends on acceptance:** permits canonical, jurisdiction-neutral RetentionPolicyDeclaration, LegalHoldDeclaration, RetentionApplication and custody-observation contract surfaces plus deterministic structural, lineage, scope-resolution and binding verification. It does **not** amend the meaning of ADR-020 `RETENTION`, trace, GraphSpec, commitment, checkpoint, receipt, evidence-package, System Manifest, Risk & Control, ControlApplication, HumanOversightReceipt, Incident / CAPA, or Regulatory Evidence Profile wire formats unless a later ADR explicitly does so.
