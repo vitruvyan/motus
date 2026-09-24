@@ -2082,6 +2082,16 @@ def _validate_retention_document(kind: str, document: dict) -> list[Violation]:
     if violations:
         return violations
 
+    # jsonschema treats an integral Python float as an integer. The wire
+    # contract needs the JSON integer value itself, not only equal arithmetic.
+    if (kind == "retention-policy-declaration"
+            and document["rule"]["kind"] == "duration"
+            and type(document["rule"]["duration_seconds"]) is not int):
+        violations.append(Violation(
+            "RET4", "$.rule.duration_seconds",
+            "duration_seconds must be a JSON integer, not an integral float",
+        ))
+
     for field in _RETENTION_TIME_FIELDS[kind]:
         if field in document and not _calendar_valid_utc(document[field]):
             violations.append(Violation(

@@ -15,6 +15,14 @@ supersession chains, resolve scope, verify external bindings, calculate target
 instants, evaluate hold blockers or mutate stored evidence. A valid declaration
 or observation remains a producer claim.
 
+Adversarial closure: `RetentionScopeSnapshot.snapshot_id` is a required,
+bounded producer-scoped stable reference so future lineage can preserve
+`(producer_namespace, snapshot_id)` across revisions. Duration seconds must
+be an actual JSON integer; an integral float is refused by RET4 in the API and
+CLI. The inherited strict parser can raise `RecursionError` at roughly 20k
+nesting levels. That parser-robustness finding predates this surface and is
+recorded as out of scope for Task 019; no parser change is made here.
+
 Verification gate: focused tests, full suite, packaging, frozen-path guard and
 mutation proof after the local commit. No push, merge, tag, release or PR in
 this task.

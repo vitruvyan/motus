@@ -4,12 +4,13 @@
   "title": "Vitruvyan Motus RetentionScopeSnapshot, v1",
   "description": "ADR-040. Producer claim about exact artifact membership at one observation instant; an empty result is allowed.",
   "type": "object",
-  "required": ["schema_version", "producer_namespace", "producer_ref", "source", "artifacts", "observed_at"],
+  "required": ["schema_version", "producer_namespace", "producer_ref", "snapshot_id", "source", "artifacts", "observed_at"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {"const": "1.0.0"},
     "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
     "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "snapshot_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
     "source": {"type": "object", "required": ["kind", "fingerprint"], "additionalProperties": false, "properties": {
       "kind": {"enum": ["retention_policy_declaration", "legal_hold_declaration"]},
       "fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}

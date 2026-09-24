@@ -32,7 +32,7 @@ enforcement point.
 | 9 | HumanOversightReceipt | `human-oversight-receipt.v1.schema.json` | An evidence consumer that needs one bounded record of a claimed human review, decision, override, escalation, or abstention tied to a Motus execution | `validate_human_oversight_receipt()` applies schema + HO1-HO4. It validates the event document only; it does not prove humanity, identity, authority, independence, legal competence, or compliance, and no action elevates an ADR-020 assurance level |
 | 10 | Regulatory Evidence Profile | `regulatory-evidence-profile.v1.schema.json` | Any Motus consumer that needs to map opaque external requirement references to existing Motus evidence kinds | `validate_regulatory_evidence_profile()` applies schema + REP1. `assess_evidence_profile()` reports only evidence states (`missing`, `not_verified`, `mismatched`, `matched`); neither validity nor a complete evidence mapping is a compliance, conformity, certification, safety, or legal-sufficiency verdict |
 | 11 | Incident / CAPA Ledger | `incident-declaration.v1.schema.json`, `capa-action.v1.schema.json`, `incident-capa-ledger.v1.schema.json` | An evidence consumer that needs immutable producer claims about incidents and corrective or preventive actions without importing a case-management or legal-classification system | The three validators apply schema plus INC1-INC2, CAPA1-CAPA2 and LEDGER1-LEDGER3. `verify_incident_capa_ledger()` derives exact identities, preserves amendment forks and reports only binding states; validity and `completed`/`closed` remain producer claims, never Motus verdicts |
-| 12 | Retention / Hold v1 | `retention-policy-declaration.v1.schema.json`, `legal-hold-declaration.v1.schema.json`, `retention-scope-snapshot.v1.schema.json`, `retention-trigger-occurrence.v1.schema.json`, `retention-application.v1.schema.json`, `custody-observation.v1.schema.json` | An evidence consumer that needs distinct, exact producer claims for a rule, hold action, resolved scope, trigger occurrence, custodian action and bounded custody observation | The six validators apply closed schema plus RET1-RET3 for real UTC instants, typed artifact uniqueness and canonical execution coordinates. This first stage validates each document independently; it does not verify lineage, scope membership, external bindings or custody |
+| 12 | Retention / Hold v1 | `retention-policy-declaration.v1.schema.json`, `legal-hold-declaration.v1.schema.json`, `retention-scope-snapshot.v1.schema.json`, `retention-trigger-occurrence.v1.schema.json`, `retention-application.v1.schema.json`, `custody-observation.v1.schema.json` | An evidence consumer that needs distinct, exact producer claims for a rule, hold action, resolved scope, trigger occurrence, custodian action and bounded custody observation | The six validators apply closed schema plus RET1-RET4 for real UTC instants, typed artifact uniqueness, canonical execution coordinates and integer duration values. This first stage validates each document independently; it does not verify lineage, scope membership, external bindings or custody |
 
 ### Retention and hold structural v1
 
@@ -44,6 +44,9 @@ by its matching `*_fingerprint(document)` helper and never embedded in the
 document. `supersedes` names an exact predecessor fingerprint when present.
 The structural validators do not yet resolve that predecessor or pick a
 winning amendment branch.
+Each scope snapshot has a required bounded `snapshot_id`, stable within its
+`producer_namespace`; a later lineage verifier can compare both when checking
+`supersedes`. The fingerprint still identifies the complete exact revision.
 
 A policy may declare a duration of 1 through 3155760000 seconds after one of
 four neutral triggers (`creation`, `execution_completion`, `incident_closure`,
@@ -72,7 +75,9 @@ nothing about whether a hold exists. CustodyObservation describes one
 observer's bounded result at one time, never continued retrievability.
 
 `RET1` checks the real UTC calendar instant behind every timestamp after
-schema validation. All six validators return only local structural findings.
+schema validation. `RET4` rejects a Python float such as `86400.0` in
+`duration_seconds`, even though `jsonschema` calls an integral float an
+integer. All six validators return only local structural findings.
 They do not query a store, verify referenced artifacts, resolve selectors,
 derive blocker findings, calculate deadlines, mutate bytes, or authorize any
 storage action. Those operations need separately defined evidence and later

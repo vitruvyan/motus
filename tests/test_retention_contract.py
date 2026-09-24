@@ -85,6 +85,32 @@ def test_duration_is_bounded_and_no_automatic_disposal_has_no_trigger():
     assert "SCHEMA" in rules(validate.validate_retention_policy_declaration(document))
 
 
+def test_duration_requires_a_real_integer_in_the_direct_api():
+    document = fixture("retention-policy-declaration")
+    assert document["rule"]["duration_seconds"] == 86400
+    assert validate.validate_retention_policy_declaration(document) == []
+    document["rule"]["duration_seconds"] = 86400.0
+    violations = validate.validate_retention_policy_declaration(document)
+    assert [(item.rule, item.path) for item in violations] == [
+        ("RET4", "$.rule.duration_seconds")
+    ]
+
+
+def test_cli_refuses_the_integral_float_json_lexeme(tmp_path):
+    document = fixture("retention-policy-declaration")
+    document["rule"]["duration_seconds"] = 86400.0
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert '"duration_seconds": 86400.0' in path.read_text(encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "contract" / "validate.py"),
+         "retention-policy-declaration", str(path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 1
+    assert "RET4 $.rule.duration_seconds:" in result.stdout
+
+
 @pytest.mark.parametrize("action,required", [
     ("placed", "scope"), ("amended", "supersedes"),
     ("released", "supersedes"), ("cancelled", "rationale"),
@@ -116,6 +142,19 @@ def test_snapshot_may_be_empty_but_source_must_be_typed_and_exact():
     document = fixture("retention-scope-snapshot")
     assert validate.validate_retention_scope_snapshot(document) == []
     document["source"]["kind"] = "receipt"
+    assert "SCHEMA" in rules(validate.validate_retention_scope_snapshot(document))
+
+
+def test_snapshot_requires_a_bounded_stable_id_and_binds_it_in_fingerprint():
+    document = fixture("retention-scope-snapshot")
+    assert validate.validate_retention_scope_snapshot(document) == []
+    original = validate.retention_scope_snapshot_fingerprint(document)
+    document["snapshot_id"] = "S-002"
+    assert validate.validate_retention_scope_snapshot(document) == []
+    assert validate.retention_scope_snapshot_fingerprint(document) != original
+    document["snapshot_id"] = " " * 201
+    assert "SCHEMA" in rules(validate.validate_retention_scope_snapshot(document))
+    del document["snapshot_id"]
     assert "SCHEMA" in rules(validate.validate_retention_scope_snapshot(document))
 
 
