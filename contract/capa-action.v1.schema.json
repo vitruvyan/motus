@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/capa-action.v1.schema.json",
+  "title": "Vitruvyan Motus CAPAAction, v1",
+  "description": "ADR-039. One immutable producer claim about a corrective or preventive action. A completed action is not proof of adequacy, effectiveness, approval, compliance, or incident closure.",
+  "type": "object",
+  "required": [
+    "schema_version", "producer_namespace", "producer_ref", "action_id",
+    "incident_id", "incident_fingerprint", "action_kind", "description",
+    "lifecycle", "declared_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "producer_namespace": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "producer_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "action_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "incident_id": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "incident_fingerprint": { "$ref": "commitment.v1.schema.json#/$defs/Digest" },
+    "action_kind": { "enum": ["corrective", "preventive", "corrective_and_preventive"] },
+    "description": { "$ref": "#/$defs/Text" },
+    "lifecycle": {
+      "enum": ["proposed", "started", "completed", "cancelled", "blocked"],
+      "description": "Producer-declared action state. completed does not establish effectiveness."
+    },
+    "declared_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "due_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "started_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "completed_at": { "$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp" },
+    "actor_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "assignee_ref": { "$ref": "commitment.v1.schema.json#/$defs/Identifier" },
+    "authority_ref": { "$ref": "#/$defs/Reference" },
+    "evidence": { "$ref": "incident-declaration.v1.schema.json#/$defs/EvidenceReferences" },
+    "references": { "$ref": "#/$defs/References" },
+    "supersedes": { "$ref": "commitment.v1.schema.json#/$defs/Digest" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "lifecycle": { "const": "completed" } }, "required": ["lifecycle"] },
+      "then": { "required": ["completed_at"] },
+      "else": { "not": { "required": ["completed_at"] } }
+    },
+    {
+      "if": { "properties": { "lifecycle": { "const": "started" } }, "required": ["lifecycle"] },
+      "then": { "required": ["started_at"] }
+    }
+  ],
+  "$defs": {
+    "Text": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "\\S" },
+    "Reference": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" },
+    "References": {
+      "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/Reference" }
+    }
+  }
+}

@@ -27,7 +27,9 @@ if TYPE_CHECKING:
     from vitruvyan_motus.replay import TraceBundle
     from vitruvyan_motus.contract.validate import Verdict
 
-__all__ = ["pack", "verify_package", "PackageVerdict"]
+__all__ = [
+    "pack", "verify_package", "evidence_package_fingerprint", "PackageVerdict",
+]
 
 _PACKAGE_VERSION = "1.0"
 _MANIFEST_MEMBER = "manifest.json"
@@ -66,6 +68,18 @@ class PackageVerdict:
     transport_ok: bool
     damaged: tuple[str, ...]
     trace_violations: tuple[str, ...] = ()
+
+
+def evidence_package_fingerprint(data: bytes) -> str:
+    """Return the exact transport fingerprint of one evidence-package blob.
+
+    This is an ADR-039 reference identity for the bytes held by a caller, not
+    a replacement execution identity and not a package-verification verdict.
+    ``verify_package`` remains authoritative for the package contents.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError("package data must be bytes")
+    return _SHA256_PREFIX + hashlib.sha256(data).hexdigest()
 
 
 def _is_safe_member_name(name: str) -> bool:

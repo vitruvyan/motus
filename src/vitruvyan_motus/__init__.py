@@ -54,7 +54,9 @@ from vitruvyan_motus.runtime import (
 )
 from vitruvyan_motus.sinks import JsonlTraceSink
 from vitruvyan_motus.replay import ReplayEngine, ReplayResult, TraceBundle
-from vitruvyan_motus.evidence import PackageVerdict, pack, verify_package
+from vitruvyan_motus.evidence import (
+    PackageVerdict, evidence_package_fingerprint, pack, verify_package,
+)
 from vitruvyan_motus.evidence_api import EvidenceAPI, EvidenceSource, LiveEvidenceSource
 from vitruvyan_motus.system_manifest import (
     SystemManifestBindingFinding, SystemManifestBindingVerdict,
@@ -71,6 +73,10 @@ from vitruvyan_motus.human_oversight import (
 from vitruvyan_motus.regulatory_profile import (
     RegulatoryEvidenceAssessment, RegulatoryEvidenceFinding,
     assess_evidence_profile,
+)
+from vitruvyan_motus.incident_capa import (
+    IncidentCAPAFinding, IncidentCAPAVerdict,
+    order_incident_capa_entries, verify_incident_capa_ledger,
 )
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
@@ -92,7 +98,7 @@ __all__ = [
     "AsyncStreamDriver",
     "Policy", "DurabilityProfile", "EvidenceStatus", "RunResult", "Runtime",
     "TraceBundle", "ReplayResult", "ReplayEngine",
-    "pack", "verify_package", "PackageVerdict",
+    "pack", "verify_package", "evidence_package_fingerprint", "PackageVerdict",
     "EvidenceAPI", "EvidenceSource", "LiveEvidenceSource",
     "SystemManifestBindingFinding", "SystemManifestBindingVerdict",
     "verify_system_manifest_bindings",
@@ -103,6 +109,8 @@ __all__ = [
     "verify_human_oversight_bindings",
     "RegulatoryEvidenceAssessment", "RegulatoryEvidenceFinding",
     "assess_evidence_profile",
+    "IncidentCAPAFinding", "IncidentCAPAVerdict",
+    "order_incident_capa_entries", "verify_incident_capa_ledger",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]

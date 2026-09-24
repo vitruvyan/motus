@@ -1,0 +1,54 @@
+{
+  "artifact": "incident-capa-ledger",
+  "expect": "valid",
+  "instance": {
+    "schema_version": "1.0.0",
+    "entries": [
+      {
+        "kind": "incident_declaration",
+        "document": {
+          "schema_version": "1.0.0",
+          "producer_namespace": "example/incidents",
+          "producer_ref": "operator-7",
+          "incident_id": "INC-001",
+          "lifecycle": "open",
+          "event_class": "reliability",
+          "title": "Execution did not reach its declared terminal",
+          "description": "The producer observed an incomplete execution and recorded the claim for review.",
+          "observed_at": "2026-09-23T09:55:00Z",
+          "declared_at": "2026-09-23T10:00:00Z",
+          "severity": {
+            "scale": "example/operational-severity",
+            "value": "moderate"
+          },
+          "evidence": [
+            {"kind": "execution", "execution_ref": "acme/w1/0"}
+          ],
+          "references": ["ticket://incident/INC-001"]
+        }
+      },
+      {
+        "kind": "capa_action",
+        "document": {
+          "schema_version": "1.0.0",
+          "producer_namespace": "example/incidents",
+          "producer_ref": "operator-7",
+          "action_id": "CAPA-001",
+          "incident_id": "INC-001",
+          "incident_fingerprint": "sha256:9f5415551b7bb281c240b65eab86bff14be8276812f70077d80ff45edbd7427d",
+          "action_kind": "corrective",
+          "description": "Add an independently reviewed retry guard before the next deployment.",
+          "lifecycle": "proposed",
+          "declared_at": "2026-09-23T10:05:00Z",
+          "due_at": "2026-10-01T12:00:00Z",
+          "assignee_ref": "team-runtime",
+          "evidence": [
+            {"kind": "execution", "execution_ref": "acme/w1/0"}
+          ],
+          "references": ["ticket://capa/CAPA-001"]
+        }
+      }
+    ]
+  },
+  "spec": null
+}

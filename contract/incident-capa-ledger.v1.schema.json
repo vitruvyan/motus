@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/incident-capa-ledger.v1.schema.json",
+  "title": "Vitruvyan Motus Incident / CAPA Ledger, v1",
+  "description": "ADR-039. A bounded portable collection of immutable incident and CAPA records. Array order is transport order only and carries no evidentiary meaning.",
+  "type": "object",
+  "required": ["schema_version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "entries": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/LedgerEntry" }
+    }
+  },
+  "$defs": {
+    "LedgerEntry": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["kind", "document"], "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "incident_declaration" },
+            "document": { "$ref": "incident-declaration.v1.schema.json" }
+          }
+        },
+        {
+          "type": "object", "required": ["kind", "document"], "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "capa_action" },
+            "document": { "$ref": "capa-action.v1.schema.json" }
+          }
+        }
+      ]
+    }
+  }
+}

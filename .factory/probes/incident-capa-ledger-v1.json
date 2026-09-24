@@ -1,0 +1,121 @@
+[
+  {
+    "name": "incident execution locator validation",
+    "file": "contract/validate.py",
+    "from": "violations += _incident_evidence_ref_violations(\n        document, prefix=\"$\", rule=\"INC1\"\n    )",
+    "to": "violations += []  # mutation: INC1 disabled",
+    "tests": "tests/test_incident_capa_contract.py::test_calendar_and_execution_locator_checks_are_semantic_rules"
+  },
+  {
+    "name": "incident calendar validation",
+    "file": "contract/validate.py",
+    "from": "violations += _incident_timestamp_violations(\n        document,\n        fields=(\"observed_at\", \"discovered_at\", \"declared_at\"),\n        prefix=\"$\",\n        rule=\"INC2\",\n    )",
+    "to": "violations += []  # mutation: INC2 disabled",
+    "tests": "tests/test_incident_capa_contract.py::test_calendar_and_execution_locator_checks_are_semantic_rules"
+  },
+  {
+    "name": "CAPA execution locator validation",
+    "file": "contract/validate.py",
+    "from": "violations += _incident_evidence_ref_violations(\n        document, prefix=\"$\", rule=\"CAPA1\"\n    )",
+    "to": "violations += []  # mutation: CAPA1 disabled",
+    "tests": "tests/test_incident_capa_contract.py::test_calendar_and_execution_locator_checks_are_semantic_rules"
+  },
+  {
+    "name": "CAPA calendar validation",
+    "file": "contract/validate.py",
+    "from": "violations += _incident_timestamp_violations(\n        document,\n        fields=(\"declared_at\", \"due_at\", \"started_at\", \"completed_at\"),\n        prefix=\"$\",\n        rule=\"CAPA2\",\n    )",
+    "to": "violations += []  # mutation: CAPA2 disabled",
+    "tests": "tests/test_incident_capa_contract.py::test_calendar_and_execution_locator_checks_are_semantic_rules"
+  },
+  {
+    "name": "ledger duplicate exact record rejection",
+    "file": "contract/validate.py",
+    "from": "if fingerprint_value in by_fingerprint:",
+    "to": "if False and fingerprint_value in by_fingerprint:",
+    "tests": "tests/test_incident_capa_contract.py::test_ledger_rejects_duplicate_exact_records_and_wrong_present_predecessor"
+  },
+  {
+    "name": "ledger stable identity preservation",
+    "file": "contract/validate.py",
+    "from": "if target_kind != kind or _ledger_identity(\n            target_kind, target_document\n        ) != _ledger_identity(kind, inner):",
+    "to": "if target_kind != kind:",
+    "tests": "tests/test_incident_capa_contract.py::test_ledger_rejects_duplicate_exact_records_and_wrong_present_predecessor"
+  },
+  {
+    "name": "ledger cycle refusal",
+    "file": "contract/validate.py",
+    "from": "if current in seen:\n            index = by_fingerprint[start][0]",
+    "to": "if False and current in seen:\n            index = by_fingerprint[start][0]",
+    "tests": "tests/test_incident_capa_contract.py::test_cycle_check_fails_closed_even_under_a_digest_collision"
+  },
+  {
+    "name": "ledger fingerprint ignores transport order",
+    "file": "contract/validate.py",
+    "from": "snapshot[\"entries\"].sort(\n            key=lambda entry:",
+    "to": "sorted(snapshot[\"entries\"],\n            key=lambda entry:",
+    "tests": "tests/test_incident_capa_contract.py::test_ledger_fingerprint_ignores_transport_order_but_binds_content"
+  },
+  {
+    "name": "deterministic fingerprint tie breaking",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "ready = sorted(key for key, degree in indegree.items() if degree == 0)",
+    "to": "ready = [key for key, degree in indegree.items() if degree == 0]",
+    "tests": "tests/test_incident_capa_bindings.py::test_ordering_and_ledger_identity_are_independent_of_input_array_order"
+  },
+  {
+    "name": "missing predecessor remains unresolved",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "_MATCHED if target is not None else _NOT_VERIFIED,",
+    "to": "_MATCHED,",
+    "tests": "tests/test_incident_capa_bindings.py::test_absent_predecessor_is_not_verified_and_never_assumed_false"
+  },
+  {
+    "name": "forks remain conflicts",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if len(successors) > 1:",
+    "to": "if len(successors) > 2:",
+    "tests": "tests/test_incident_capa_bindings.py::test_amendment_fork_is_preserved_as_conflict_and_has_no_winner"
+  },
+  {
+    "name": "execution receipts need coherent derived identity",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if issue is not None:\n            raise ValueError(",
+    "to": "if False and issue is not None:\n            raise ValueError(",
+    "tests": "tests/test_incident_capa_bindings.py::test_receipt_with_inconsistent_derived_identity_is_refused"
+  },
+  {
+    "name": "exact artifact fingerprint comparison",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "_MATCHED if expected in observed else _MISMATCHED,",
+    "to": "_MATCHED,",
+    "tests": "tests/test_incident_capa_bindings.py::test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified"
+  },
+  {
+    "name": "verification snapshots caller input",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "snapshot = _snapshot(validate, ledger)\n    rows = {",
+    "to": "snapshot = ledger\n    rows = {",
+    "tests": "tests/test_incident_capa_bindings.py::test_verification_and_ordering_do_not_mutate_inputs_and_return_snapshots"
+  },
+  {
+    "name": "missing evidence stays distinct from not verified",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "path, _MISSING, expected, None,",
+    "to": "path, _NOT_VERIFIED, expected, None,",
+    "tests": "tests/test_incident_capa_bindings.py::test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified"
+  },
+  {
+    "name": "exact ControlApplication identity composes its verifier",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if kind == \"control_application\":",
+    "to": "if False and kind == \"control_application\":",
+    "tests": "tests/test_incident_capa_bindings.py::test_exact_control_application_identity_does_not_bypass_its_verifier"
+  },
+  {
+    "name": "receipt and package evidence kinds stay admitted",
+    "file": "contract/incident-declaration.v1.schema.json",
+    "from": ", \"receipt\", \"evidence_package\"",
+    "to": "",
+    "tests": "tests/test_incident_capa_bindings.py::test_receipt_and_evidence_package_reference_kinds_are_admitted"
+  }
+]

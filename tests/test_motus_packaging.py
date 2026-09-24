@@ -63,6 +63,9 @@ _NOT_SOURCE = {
     "*.egg-info",
     "__pycache__",
     ".pytest_cache",
+    "pytest-of-*",
+    "motus-demo-*",
+    "motus-example-*",
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",
@@ -410,6 +413,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         # a receipt is the artefact a THIRD PARTY holds, and a verifier they
         # had to clone a repository to obtain is a verifier most of them will
         # not run.
+        "vitruvyan_motus/contract/capa-action.v1.schema.json",
         "vitruvyan_motus/contract/checkpoint.v1.schema.json",
         "vitruvyan_motus/contract/commitment.v1.schema.json",
         "vitruvyan_motus/contract/control-application.v1.schema.json",
@@ -419,6 +423,8 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         # (#108), so `motus_find` has to be able to reach it.
         "vitruvyan_motus/contract/guarantees.md",
         "vitruvyan_motus/contract/human-oversight-receipt.v1.schema.json",
+        "vitruvyan_motus/contract/incident-capa-ledger.v1.schema.json",
+        "vitruvyan_motus/contract/incident-declaration.v1.schema.json",
         "vitruvyan_motus/contract/node-protocol.md",
         "vitruvyan_motus/contract/receipt.v1.schema.json",
         "vitruvyan_motus/contract/regulatory-evidence-profile.v1.schema.json",

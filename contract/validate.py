@@ -112,6 +112,9 @@ _RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
 _CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
 _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
 _REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schema.json"
+_INCIDENT_DECLARATION_SCHEMA_FILE = "incident-declaration.v1.schema.json"
+_CAPA_ACTION_SCHEMA_FILE = "capa-action.v1.schema.json"
+_INCIDENT_CAPA_LEDGER_SCHEMA_FILE = "incident-capa-ledger.v1.schema.json"
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -764,9 +767,41 @@ def human_oversight_receipt_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def receipt_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one receipt document referenced by ADR-039."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 def regulatory_evidence_profile_fingerprint(document: Any) -> str:
     """ADR-038 identity of one exact Regulatory Evidence Profile."""
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def incident_declaration_fingerprint(document: Any) -> str:
+    """ADR-039 identity of one exact IncidentDeclaration revision."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def capa_action_fingerprint(document: Any) -> str:
+    """ADR-039 identity of one exact CAPAAction revision."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def incident_capa_ledger_fingerprint(document: Any) -> str:
+    """Identity of one portable ledger view with transport order removed.
+
+    ADR-039 makes lineage and canonical fingerprint tie-breaking authoritative;
+    the input array is only a transport container.  Reordering the same exact
+    records therefore cannot create a second ledger identity.
+    """
+    snapshot = json.loads(canonical_json(document).decode("utf-8"))
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("entries"), list):
+        snapshot["entries"].sort(
+            key=lambda entry: _ledger_document_fingerprint(
+                entry["kind"], entry["document"]
+            )
+        )
+    return "sha256:" + hashlib.sha256(canonical_json(snapshot)).hexdigest()
 
 
 
@@ -800,6 +835,7 @@ _SYSTEM_MANIFEST_REGISTRY: Registry | None = None
 _RISK_CONTROL_SCHEMA_REGISTRY: Registry | None = None
 _CONTROL_APPLICATION_SCHEMA_REGISTRY: Registry | None = None
 _HUMAN_OVERSIGHT_SCHEMA_REGISTRY: Registry | None = None
+_INCIDENT_CAPA_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -854,6 +890,21 @@ def load_human_oversight_receipt_schema() -> dict:
 def load_regulatory_evidence_profile_schema() -> dict:
     """The Regulatory Evidence Profile v1 schema, loaded relative to this file."""
     return _load(_REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE)
+
+
+def load_incident_declaration_schema() -> dict:
+    """The IncidentDeclaration v1 schema, loaded relative to this file."""
+    return _load(_INCIDENT_DECLARATION_SCHEMA_FILE)
+
+
+def load_capa_action_schema() -> dict:
+    """The CAPAAction v1 schema, loaded relative to this file."""
+    return _load(_CAPA_ACTION_SCHEMA_FILE)
+
+
+def load_incident_capa_ledger_schema() -> dict:
+    """The Incident / CAPA Ledger v1 schema, loaded relative to this file."""
+    return _load(_INCIDENT_CAPA_LEDGER_SCHEMA_FILE)
 
 
 
@@ -1011,6 +1062,50 @@ def _human_oversight_receipt_validator() -> Draft202012Validator:
 def _regulatory_evidence_profile_validator() -> Draft202012Validator:
     return _validator(
         "regulatory-evidence-profile", load_regulatory_evidence_profile_schema()
+    )
+
+
+def _incident_capa_schema_registry() -> Registry:
+    """Schemas needed to resolve the three ADR-039 documents."""
+    global _INCIDENT_CAPA_SCHEMA_REGISTRY
+    if _INCIDENT_CAPA_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _INCIDENT_DECLARATION_SCHEMA_FILE,
+            _CAPA_ACTION_SCHEMA_FILE,
+            _INCIDENT_CAPA_LEDGER_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _INCIDENT_CAPA_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _INCIDENT_CAPA_SCHEMA_REGISTRY
+
+
+def _incident_capa_validator(key: str, schema: dict) -> Draft202012Validator:
+    if key not in _VALIDATORS:
+        _VALIDATORS[key] = Draft202012Validator(
+            schema,
+            format_checker=FormatChecker(),
+            registry=_incident_capa_schema_registry(),
+        )
+    return _VALIDATORS[key]
+
+
+def _incident_declaration_validator() -> Draft202012Validator:
+    return _incident_capa_validator(
+        "incident-declaration", load_incident_declaration_schema()
+    )
+
+
+def _capa_action_validator() -> Draft202012Validator:
+    return _incident_capa_validator("capa-action", load_capa_action_schema())
+
+
+def _incident_capa_ledger_validator() -> Draft202012Validator:
+    return _incident_capa_validator(
+        "incident-capa-ledger", load_incident_capa_ledger_schema()
     )
 
 
@@ -1766,6 +1861,195 @@ def validate_regulatory_evidence_profile(document: dict) -> list[Violation]:
                 "requirement_ref values must be unique within one profile",
             ))
         seen.add(ref)
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Incident / CAPA Ledger semantics — ADR-039                                 #
+# --------------------------------------------------------------------------- #
+
+
+def _incident_evidence_ref_violations(
+    document: dict, *, prefix: str, rule: str
+) -> list[Violation]:
+    violations: list[Violation] = []
+    for index, reference in enumerate(document.get("evidence", ())):
+        if reference["kind"] == "execution" and (
+            _canonical_execution_ref_parts(reference["execution_ref"]) is None
+        ):
+            violations.append(Violation(
+                rule,
+                f"{prefix}.evidence[{index}].execution_ref",
+                "execution_ref must be a canonical tenant/writer/sequence "
+                "coordinate naming a Motus execution BEGIN",
+            ))
+    return violations
+
+
+def _incident_timestamp_violations(
+    document: dict, *, fields: Iterable[str], prefix: str, rule: str
+) -> list[Violation]:
+    violations: list[Violation] = []
+    for field in fields:
+        if field in document and not _calendar_valid_utc(document[field]):
+            violations.append(Violation(
+                rule,
+                f"{prefix}.{field}",
+                f"{document[field]!r} has the RFC 3339 UTC shape but is not "
+                "a calendar-valid UTC instant",
+            ))
+    return violations
+
+
+def validate_incident_declaration(document: dict) -> list[Violation]:
+    """Validate one immutable producer declaration about an incident.
+
+    A clean result establishes shape and internal coherence only. It does not
+    establish occurrence, blame, reportability, cause, liability, remediation
+    effectiveness, closure, or compliance.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    schema = load_incident_declaration_schema()
+    violations += _schema_violations(
+        schema, _incident_declaration_validator(), document
+    )
+    if violations:
+        return violations
+    violations += _incident_evidence_ref_violations(
+        document, prefix="$", rule="INC1"
+    )
+    violations += _incident_timestamp_violations(
+        document,
+        fields=("observed_at", "discovered_at", "declared_at"),
+        prefix="$",
+        rule="INC2",
+    )
+    return violations
+
+
+def validate_capa_action(document: dict) -> list[Violation]:
+    """Validate one immutable corrective/preventive action claim."""
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    schema = load_capa_action_schema()
+    violations += _schema_violations(schema, _capa_action_validator(), document)
+    if violations:
+        return violations
+    violations += _incident_evidence_ref_violations(
+        document, prefix="$", rule="CAPA1"
+    )
+    violations += _incident_timestamp_violations(
+        document,
+        fields=("declared_at", "due_at", "started_at", "completed_at"),
+        prefix="$",
+        rule="CAPA2",
+    )
+    return violations
+
+
+def _ledger_identity(kind: str, document: dict) -> tuple[str, str]:
+    field = "incident_id" if kind == "incident_declaration" else "action_id"
+    return document["producer_namespace"], document[field]
+
+
+def _ledger_document_fingerprint(kind: str, document: dict) -> str:
+    if kind == "incident_declaration":
+        return incident_declaration_fingerprint(document)
+    return capa_action_fingerprint(document)
+
+
+def validate_incident_capa_ledger(document: dict) -> list[Violation]:
+    """Validate an ADR-039 portable append-only ledger view.
+
+    Missing predecessors and missing incident documents are allowed in a
+    partial portable view and are reported as ``not verified`` by the public
+    verifier. A present predecessor, however, must agree on kind and stable
+    identity. Entry array order never resolves lineage.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    schema = load_incident_capa_ledger_schema()
+    violations += _schema_violations(
+        schema, _incident_capa_ledger_validator(), document
+    )
+    if violations:
+        return violations
+
+    rows: list[tuple[int, str, dict, str]] = []
+    by_fingerprint: dict[str, tuple[int, str, dict]] = {}
+    for index, entry in enumerate(document["entries"]):
+        kind = entry["kind"]
+        inner = entry["document"]
+        validator = (
+            validate_incident_declaration
+            if kind == "incident_declaration"
+            else validate_capa_action
+        )
+        for violation in validator(inner):
+            violations.append(Violation(
+                violation.rule,
+                f"$.entries[{index}].document{violation.path[1:]}",
+                violation.message,
+            ))
+        fingerprint_value = _ledger_document_fingerprint(kind, inner)
+        rows.append((index, kind, inner, fingerprint_value))
+        if fingerprint_value in by_fingerprint:
+            first = by_fingerprint[fingerprint_value][0]
+            violations.append(Violation(
+                "LEDGER1",
+                f"$.entries[{index}]",
+                f"exact record {fingerprint_value} duplicates entry {first}; "
+                "a ledger collection contains each exact record at most once",
+            ))
+        else:
+            by_fingerprint[fingerprint_value] = (index, kind, inner)
+
+    predecessors: dict[str, str] = {}
+    for index, kind, inner, fingerprint_value in rows:
+        predecessor = inner.get("supersedes")
+        if predecessor is None:
+            continue
+        predecessors[fingerprint_value] = predecessor
+        if predecessor == fingerprint_value:
+            violations.append(Violation(
+                "LEDGER2",
+                f"$.entries[{index}].document.supersedes",
+                "a record cannot supersede its own exact fingerprint",
+            ))
+            continue
+        target = by_fingerprint.get(predecessor)
+        if target is None:
+            continue
+        _target_index, target_kind, target_document = target
+        if target_kind != kind or _ledger_identity(
+            target_kind, target_document
+        ) != _ledger_identity(kind, inner):
+            violations.append(Violation(
+                "LEDGER2",
+                f"$.entries[{index}].document.supersedes",
+                "a present predecessor must have the same record kind, "
+                "producer namespace, and stable identifier",
+            ))
+
+    for start in predecessors:
+        seen: set[str] = set()
+        current = start
+        while current in predecessors and current not in seen:
+            seen.add(current)
+            current = predecessors[current]
+        if current in seen:
+            index = by_fingerprint[start][0]
+            violations.append(Violation(
+                "LEDGER3",
+                f"$.entries[{index}].document.supersedes",
+                "the supersession relationship contains a cycle",
+            ))
+            break
 
     return violations
 
@@ -4874,8 +5158,9 @@ def main(argv: list[str] | None = None) -> int:
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
             "P-rules, System Manifest SM-rules, Risk & Control Registry "
             "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
-            "HO-rules, Regulatory Evidence Profile REP-rules, JSON document and JSONL "
-            "stream forms."
+            "HO-rules, Regulatory Evidence Profile REP-rules, Incident "
+            "Declaration INC-rules, CAPAAction CAPA-rules, Incident/CAPA "
+            "Ledger rules, JSON document and JSONL stream forms."
         ),
         epilog=(
             "Prints one line per violation ('RULE path: message') and exits 0 "
@@ -4889,7 +5174,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
                  "receipt", "system-manifest", "risk-control-registry",
                  "control-application", "human-oversight-receipt",
-                 "regulatory-evidence-profile", "package"],
+                 "regulatory-evidence-profile", "incident-declaration",
+                 "capa-action", "incident-capa-ledger", "package"],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -5032,6 +5318,12 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_human_oversight_receipt(doc)
         elif args.artifact == "regulatory-evidence-profile":
             violations = validate_regulatory_evidence_profile(doc)
+        elif args.artifact == "incident-declaration":
+            violations = validate_incident_declaration(doc)
+        elif args.artifact == "capa-action":
+            violations = validate_capa_action(doc)
+        elif args.artifact == "incident-capa-ledger":
+            violations = validate_incident_capa_ledger(doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:
