@@ -24,5 +24,9 @@ complete, correctly parameterised sequence is `#21` through `#24`; no build was
 retried to select a favourable measurement.
 
 Do not publish the draft GitHub Release or PyPI without separate founder
-approval. PR review, merge, post-merge verification, annotated source tag and
-post-tag roadmap closure remain.
+approval.
+
+Release closure completed on 2026-09-25: PR #193 merged as
+`080f39cf9641de440bfa6dda72e1fa67383e317b`, Jenkins `main` build #16 passed,
+and annotated tag `v0.19.0` points at that exact merge. The draft release assets
+are byte-identical to the authenticated workflow artifact.

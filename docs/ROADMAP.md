@@ -39,7 +39,7 @@ one-tag rule is restored.
 | 3 | Risk & Control Registry / ControlApplication | DONE | shipped in v0.15.0 |
 | 4 | Human Oversight Receipt | DONE | shipped in v0.17.0 |
 | 5 | Incident / CAPA Ledger | DONE | shipped in v0.18.0 |
-| 6 | Retention & Legal Hold | NEXT | target v0.19.0 |
+| 6 | Retention & Legal Hold | DONE | shipped in v0.19.0 |
 | 7 | AI System Registry | QUEUED | target v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | QUEUED | target v0.21.0 |
@@ -65,9 +65,9 @@ compliance, or closure merely from the presence of a record. Exact semantics,
 identity, append-only and amendment behavior, execution bindings, and stop
 conditions are governed by founder-accepted ADR-039.
 
-### Point 6 / v0.19.0 — Retention & Legal Hold
+### Point 6 / v0.19.0 — Retention & Legal Hold — shipped
 
-The next release defines the neutral boundary between:
+Motus 0.19.0 defines the neutral boundary between:
 
 1. a producer's retention-policy declaration;
 2. a producer's legal-hold declaration and immutable scope snapshots;
@@ -122,12 +122,16 @@ UI state shown to the user.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-09-24. This section is a
+*Last reconciled against the repository on 2026-09-25. This section is a
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
-- **0.18.0** is the current source release (2026-09-24): the annotated tag
+- **0.19.0** is the current source release (2026-09-25): the annotated tag
+  points at verified merge commit `080f39cf9641de440bfa6dda72e1fa67383e317b`
+  for Retention & Legal Hold v1. Its GitHub Release remains a draft and PyPI
+  publication is not authorised;
+- **0.18.0** (2026-09-24): the annotated tag
   points at the verified merge commit for Incident / CAPA Ledger v1. Its
   GitHub Release remains a draft and PyPI publication is not authorised;
 - **0.17.0** (2026-09-23): the annotated tag
