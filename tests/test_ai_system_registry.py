@@ -300,6 +300,72 @@ def test_event_correction_requires_an_exact_conflict_free_chain():
     assert verdict.terminal_action == "registered"
 
 
+def test_unrelated_invalid_rows_do_not_block_a_valid_projection():
+    reg = registration(manifest())
+    first = event(reg)
+    unrelated_reg = copy.deepcopy(reg)
+    unrelated_reg["registration_id"] = "unrelated-registration"
+    unrelated_reg["compliant"] = True
+    unrelated_event = copy.deepcopy(first)
+    unrelated_event["registration_id"] = "unrelated-registration"
+    unrelated_event["compliant"] = True
+
+    verdict = project_supplied_ai_system_lifecycle(
+        reg["registration_id"],
+        registrations=[reg, unrelated_reg],
+        events=[first, unrelated_event],
+    )
+
+    assert verdict.terminal_action == "registered"
+    assert verdict.registration_violations
+    assert verdict.event_violations
+
+
+def test_event_correction_exact_other_subject_is_mismatched_not_missing():
+    reg = registration(manifest())
+    first = event(reg)
+    other_reg = copy.deepcopy(reg)
+    other_reg["registration_id"] = "unrelated-registration"
+    unrelated = event(other_reg, event_id="unrelated-event")
+    correction = copy.deepcopy(first)
+    correction["supersedes"] = (
+        validate.ai_system_registry_event_fingerprint(unrelated)
+    )
+    correction["reason_ref"] = "Invalid cross-subject correction."
+
+    verdict = project_supplied_ai_system_lifecycle(
+        reg["registration_id"], registrations=[reg, other_reg],
+        events=[first, correction, unrelated],
+    )
+    finding = next(item for item in verdict.findings
+                   if item.path.endswith(".supersedes"))
+
+    assert finding.status == "mismatched"
+    assert verdict.terminal_action is None
+
+
+def test_event_correction_exact_invalid_predecessor_is_not_verified():
+    reg = registration(manifest())
+    first = event(reg)
+    invalid = copy.deepcopy(first)
+    invalid["compliant"] = True
+    correction = copy.deepcopy(first)
+    correction["supersedes"] = (
+        validate.ai_system_registry_event_fingerprint(invalid)
+    )
+    correction["reason_ref"] = "Correction of an invalid supplied event."
+
+    verdict = project_supplied_ai_system_lifecycle(
+        reg["registration_id"], registrations=[reg],
+        events=[first, correction, invalid],
+    )
+    finding = next(item for item in verdict.findings
+                   if item.path.endswith(".supersedes"))
+
+    assert finding.status == "not_verified"
+    assert verdict.terminal_action is None
+
+
 def test_event_correction_fork_refuses_projection():
     reg = registration(manifest())
     first = event(reg)

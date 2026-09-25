@@ -365,6 +365,24 @@ def project_supplied_ai_system_lifecycle(
         )
         if fingerprint is not None:
             invalid_reg_by_fp.setdefault(fingerprint, []).append(index)
+    all_event_by_fp: dict[str, list[dict[str, Any]]] = {}
+    for _, fp, _, doc in event_rows:
+        all_event_by_fp.setdefault(fp, []).append(doc)
+    invalid_event_by_fp: dict[str, list[int]] = {}
+    for index, _ in event_invalid:
+        fingerprint = _canonicalizable_fingerprint(
+            validate, "ai-system-registry-event", event_values[index]
+        )
+        if fingerprint is not None:
+            invalid_event_by_fp.setdefault(fingerprint, []).append(index)
+    relevant_reg_invalid = tuple(
+        item for item in reg_invalid
+        if registration_values[item[0]].get("registration_id") == registration_id
+    )
+    relevant_event_invalid = tuple(
+        item for item in event_invalid
+        if event_values[item[0]].get("registration_id") == registration_id
+    )
     candidates = [(fp, doc) for _, fp, _, doc in event_rows
                   if doc["registration_id"] == registration_id]
     scopes = {(doc["producer_namespace"], doc["registry_id"])
@@ -426,19 +444,51 @@ def project_supplied_ai_system_lifecycle(
     for fp, doc in candidates:
         by_event_id.setdefault(doc["event_id"], []).append((fp, doc))
     for event_id, revisions in sorted(by_event_id.items()):
-        identities = {fp for fp, _ in revisions}
         parents = []
         bad = False
         for fp, doc in revisions:
             predecessor = doc.get("supersedes")
             if predecessor is not None:
-                parents.append(predecessor)
-                if predecessor not in identities:
+                supplied = all_event_by_fp.get(predecessor, [])
+                invalid_supplied = invalid_event_by_fp.get(predecessor, [])
+                if len(supplied) + len(invalid_supplied) > 1:
+                    findings.append(AISystemRegistryFinding(
+                        f"event:{fp}.supersedes", "conflict", predecessor,
+                        tuple(predecessor for _ in range(
+                            len(supplied) + len(invalid_supplied)
+                        )),
+                        "multiple valid or invalid supplied events share the correction predecessor identity",
+                    ))
+                    bad = True
+                elif invalid_supplied:
+                    findings.append(AISystemRegistryFinding(
+                        f"event:{fp}.supersedes", "not_verified", predecessor,
+                        predecessor,
+                        "the exact supplied correction predecessor violates its structural contract",
+                    ))
+                    bad = True
+                elif not supplied:
                     findings.append(AISystemRegistryFinding(
                         f"event:{fp}.supersedes", "missing", predecessor, None,
                         "the correction predecessor is absent from this supplied view",
                     ))
                     bad = True
+                else:
+                    predecessor_doc = supplied[0]
+                    stable_identity = (
+                        "producer_namespace", "registry_id", "registration_id",
+                        "event_id",
+                    )
+                    if any(predecessor_doc[field] != doc[field]
+                           for field in stable_identity):
+                        findings.append(AISystemRegistryFinding(
+                            f"event:{fp}.supersedes", "mismatched", predecessor,
+                            predecessor,
+                            "the exact correction predecessor belongs to another stable event subject",
+                        ))
+                        bad = True
+                    else:
+                        parents.append(predecessor)
         roots_for_id = [(fp, doc) for fp, doc in revisions if "supersedes" not in doc]
         heads = [(fp, doc) for fp, doc in revisions if fp not in parents]
         if len(roots_for_id) != 1 or len(heads) != 1 or len(set(parents)) != len(parents):
@@ -490,7 +540,7 @@ def project_supplied_ai_system_lifecycle(
         ))
     ordered = []
     terminal = None
-    if len(roots) == 1 and not event_invalid:
+    if len(roots) == 1 and not relevant_event_invalid:
         fp, doc = roots[0]
         seen = set()
         while fp not in seen:
@@ -515,7 +565,8 @@ def project_supplied_ai_system_lifecycle(
                 "the supplied lifecycle chain contains a cycle",
             ))
             terminal = None
-    if (reg_invalid or event_invalid or any(item.status != "matched" for item in findings)
+    if (relevant_reg_invalid or relevant_event_invalid
+            or any(item.status != "matched" for item in findings)
             or len(ordered) != len(effective)):
         terminal = None
     return AISystemLifecycleProjection(
