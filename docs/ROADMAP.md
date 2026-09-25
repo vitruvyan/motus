@@ -79,9 +79,9 @@ The next release defines the neutral boundary between:
 It must not select applicable law, infer legal authority, treat a declared
 deadline as permission to delete, or redefine ADR-020 `RETENTION` as proof of
 continued custody. Exact semantics, identities, append-only history, scope
-resolution, subset-scoped blocker findings and stop conditions are proposed in
-ADR-040. Motus never emits disposal clearance. Founder acceptance is required
-before contract or product code changes.
+resolution, subset-scoped blocker findings and stop conditions are governed by
+founder-accepted ADR-040 and implemented by the v0.19 retention contract and
+read-only verification surfaces. Motus never emits disposal clearance.
 
 ### Existing Motus UI draft
 
