@@ -202,6 +202,24 @@ def test_event_correction_requires_an_exact_conflict_free_chain():
     assert verdict.terminal_action == "registered"
 
 
+def test_event_correction_fork_refuses_projection():
+    reg = registration(manifest())
+    first = event(reg)
+    first_fp = validate.ai_system_registry_event_fingerprint(first)
+    left = copy.deepcopy(first)
+    left["supersedes"] = first_fp
+    left["reason_ref"] = "Left correction."
+    right = copy.deepcopy(first)
+    right["supersedes"] = first_fp
+    right["reason_ref"] = "Right correction."
+    verdict = project_supplied_ai_system_lifecycle(
+        reg["registration_id"], registrations=[reg], events=[first, left, right]
+    )
+    assert verdict.terminal_action is None
+    assert any(item.path.startswith("event-corrections:")
+               and item.status == "conflict" for item in verdict.findings)
+
+
 def test_same_registration_id_across_registries_is_not_collapsed():
     first = registration(manifest())
     second = copy.deepcopy(first)
@@ -232,6 +250,17 @@ def test_snapshot_checks_exact_members_without_claiming_completeness():
     assert "not proof of completeness" in verdict.scope
     missing = verify_ai_system_registry_snapshot(snapshot)
     assert {item.status for item in missing.findings} == {"missing"}
+
+
+def test_snapshot_member_from_another_registry_is_mismatched():
+    reg = registration(manifest())
+    reg["registry_id"] = "other/inventory"
+    snapshot = fixture("ai-system-registry-snapshot")
+    snapshot["registrations"] = [validate.ai_system_registration_fingerprint(reg)]
+    snapshot["events"] = []
+    verdict = verify_ai_system_registry_snapshot(snapshot, registrations=[reg])
+    assert len(verdict.findings) == 1
+    assert verdict.findings[0].status == "mismatched"
 
 
 def test_public_surface_exports_read_only_helpers():

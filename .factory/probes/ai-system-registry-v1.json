@@ -2,15 +2,15 @@
   {
     "name": "AI registry real UTC instant",
     "file": "contract/validate.py",
-    "from": "if field in document and not _calendar_valid_utc(document[field]):",
-    "to": "if False:",
+    "from": "for field in _AI_SYSTEM_REGISTRY_TIME_FIELDS[kind]:\n        if field in document and not _calendar_valid_utc(document[field]):",
+    "to": "for field in _AI_SYSTEM_REGISTRY_TIME_FIELDS[kind]:\n        if False:",
     "tests": "tests/test_ai_system_registry.py"
   },
   {
     "name": "AI registry duplicate semantic identity",
     "file": "contract/validate.py",
-    "from": "if key in seen:",
-    "to": "if False:",
+    "from": "for index, item in enumerate(entries):\n            key = identity(item)\n            if key in seen:",
+    "to": "for index, item in enumerate(entries):\n            key = identity(item)\n            if False:",
     "tests": "tests/test_ai_system_registry.py"
   },
   {
@@ -31,13 +31,6 @@
     "name": "lifecycle branch refuses terminal action",
     "file": "src/vitruvyan_motus/ai_system_registry.py",
     "from": "if len(children) != 1:",
-    "to": "if False:",
-    "tests": "tests/test_ai_system_registry.py"
-  },
-  {
-    "name": "event correction has one unambiguous head",
-    "file": "src/vitruvyan_motus/ai_system_registry.py",
-    "from": "if len(roots_for_id) != 1 or len(heads) != 1 or len(set(parents)) != len(parents):",
     "to": "if False:",
     "tests": "tests/test_ai_system_registry.py"
   },
