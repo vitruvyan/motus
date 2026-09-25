@@ -50,3 +50,24 @@ validated and explicitly reported as unused, including malformed input;
 competing unsuperseded roots for one producer-scoped stable ID are conflicts;
 and cycle findings identify only the strongly connected revisions, with their
 downstream descendants ordered after the cycle. The graph walk is iterative.
+
+## Micro-step 3 — supplied bindings and hold findings
+
+The local retention module checks exact policy, hold and scope-snapshot
+fingerprints cited by a RetentionApplication. Invalid supplied documents and
+ambiguous duplicate fingerprints remain visible; a cited snapshot must name an
+exact supplied source in the same producer namespace. The application and its
+operation outcome remain producer claims.
+
+For one typed artifact, the supplied-hold evaluator returns one of the five
+ADR-040 subset verdicts. A matching placed/amended declaration is a blocker
+only in that supplied producer-claim sense. Release/cancellation cannot remove
+that history or establish authority; its presence yields `not_verified` unless
+the supplied lineage itself conflicts. Selector scope requires one exact
+snapshot, and missing or conflicting material remains visible. Neither this
+step nor a CustodyObservation establishes continued custody, global hold
+absence, legal authority, or disposal permission. Target-time arithmetic and
+top-level package exports remain outside this step.
+
+Focused tests are in `tests/test_retention_bindings_blockers.py`; mutation
+targets are in `.factory/probes/retention-bindings-blockers.json`.

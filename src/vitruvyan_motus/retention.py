@@ -63,6 +63,30 @@ class RetentionScopeVerdict:
     findings: tuple[RetentionFinding, ...]
 
 
+BlockerStatus = Literal[
+    "blocked_by_supplied_hold", "conflicting_supplied_hold", "missing_binding",
+    "not_verified", "no_blocker_in_supplied_evidence",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionApplicationBindingVerdict:
+    application_fingerprint: str | None
+    application_violations: tuple["Violation", ...]
+    supplied_violations: tuple[tuple[str, int, tuple["Violation", ...]], ...]
+    findings: tuple[RetentionFinding, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionBlockerVerdict:
+    """A verdict over only the hold declarations and snapshots supplied here."""
+
+    status: BlockerStatus
+    artifact: RetentionArtifactIdentity | None
+    violations: tuple[tuple[str, int, tuple["Violation", ...]], ...]
+    findings: tuple[RetentionFinding, ...]
+
+
 def _contract_validate():
     return importlib.import_module("vitruvyan_motus.contract.validate")
 
@@ -362,3 +386,272 @@ def resolve_supplied_retention_scope(
                          "the exact supplied producer snapshot binds this declaration; "
                          "membership completeness and custody are unverified"),
     ))
+
+
+def _supplied_pool(validate, kind: str, values: Iterable[dict[str, Any]]):
+    if isinstance(values, (str, bytes, dict)):
+        raise TypeError(f"{kind} documents must be an iterable of dicts")
+    valid: list[tuple[str, dict[str, Any]]] = []
+    invalid: list[tuple[str, int, tuple[Violation, ...]]] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, dict):
+            raise TypeError(f"{kind} documents[{index}] must be a dict")
+        issues = tuple(_validator(validate, kind)(value))
+        if issues:
+            invalid.append((kind, index, issues))
+        else:
+            document = _snapshot(validate, value)
+            valid.append((_fingerprint(validate, kind, document), document))
+    valid.sort(key=lambda pair: (pair[0], validate.canonical_json(pair[1])))
+    return tuple(valid), tuple(invalid)
+
+
+def _exact_reference_finding(
+    path: str, expected: str, pool: tuple[tuple[str, dict[str, Any]], ...],
+    invalid: bool,
+) -> RetentionFinding:
+    observed = tuple(sorted({fingerprint for fingerprint, _ in pool}))
+    if expected in observed:
+        return RetentionFinding(path, "matched", expected, expected,
+                                "the exact supplied document fingerprint matches")
+    if observed:
+        return RetentionFinding(path, "mismatched", expected, observed,
+                                "supplied valid documents have different exact fingerprints")
+    if invalid:
+        return RetentionFinding(path, "not_verified", expected, None,
+                                "supplied documents violate their structural contract")
+    return RetentionFinding(path, "missing", expected, None,
+                            "the exact referenced document was not supplied")
+
+
+def verify_retention_application_bindings(
+    application: dict[str, Any], *, policy: dict[str, Any] | None = None,
+    holds: Iterable[dict[str, Any]] = (),
+    snapshots: Iterable[dict[str, Any]] = (),
+) -> RetentionApplicationBindingVerdict:
+    """Verify exact referenced revisions on one claimed custodian action.
+
+    The operation and outcome remain claims. Omitted holds are not evidence of
+    their global absence, and this function neither verifies legal authority
+    nor infers custody from an application record.
+    """
+    if not isinstance(application, dict):
+        raise TypeError("application must be a dict")
+    if policy is not None and not isinstance(policy, dict):
+        raise TypeError("policy must be a dict or None")
+    validate = _contract_validate()
+    app_issues = tuple(validate.validate_retention_application(application))
+    if app_issues:
+        return RetentionApplicationBindingVerdict(None, app_issues, (), (
+            RetentionFinding("$.application", "not_verified", None, None,
+                             "the application violates its structural contract"),
+        ))
+    app = _snapshot(validate, application)
+    app_fingerprint = validate.retention_application_fingerprint(app)
+    policies, policy_issues = _supplied_pool(
+        validate, "retention-policy-declaration", () if policy is None else (policy,),
+    )
+    hold_docs, hold_issues = _supplied_pool(validate, "legal-hold-declaration", holds)
+    scope_docs, scope_issues = _supplied_pool(validate, "retention-scope-snapshot", snapshots)
+    supplied_violations = policy_issues + hold_issues + scope_issues
+    findings: list[RetentionFinding] = []
+    for label, pool in (("policy", policies), ("hold", hold_docs),
+                        ("snapshot", scope_docs)):
+        counts: dict[str, int] = {}
+        for fingerprint, _ in pool:
+            counts[fingerprint] = counts.get(fingerprint, 0) + 1
+        for fingerprint, count in sorted(counts.items()):
+            if count > 1:
+                findings.append(RetentionFinding(
+                    f"{label}:{fingerprint}", "conflict", fingerprint,
+                    tuple(fingerprint for _ in range(count)),
+                    "multiple supplied documents have one exact fingerprint; "
+                    "the binding source is ambiguous",
+                ))
+    findings.append(_exact_reference_finding(
+        "$.policy_fingerprint", app["policy_fingerprint"], policies,
+        bool(policy_issues),
+    ))
+    cited_holds = set(app.get("hold_fingerprints", ()))
+    cited_scopes = set(app.get("scope_snapshot_fingerprints", ()))
+    for index, expected in enumerate(app.get("hold_fingerprints", ())):
+        findings.append(_exact_reference_finding(
+            f"$.hold_fingerprints[{index}]", expected, hold_docs,
+            bool(hold_issues),
+        ))
+    for index, expected in enumerate(app.get("scope_snapshot_fingerprints", ())):
+        findings.append(_exact_reference_finding(
+            f"$.scope_snapshot_fingerprints[{index}]", expected, scope_docs,
+            bool(scope_issues),
+        ))
+    if "hold_fingerprints" not in app:
+        findings.append(RetentionFinding(
+            "$.hold_fingerprints", "not_verified", None, None,
+            "hold bindings are omitted; this says nothing about other holds",
+        ))
+
+    source_documents = {
+        ("retention_policy_declaration", fingerprint): document
+        for fingerprint, document in policies
+        if fingerprint == app["policy_fingerprint"]
+    }
+    source_documents.update({
+        ("legal_hold_declaration", fingerprint): document
+        for fingerprint, document in hold_docs if fingerprint in cited_holds
+    })
+    for fingerprint, scope in scope_docs:
+        if fingerprint not in cited_scopes:
+            continue
+        source = scope["source"]
+        source_key = (source["kind"], source["fingerprint"])
+        source_document = source_documents.get(source_key)
+        path = f"scope:{fingerprint}.source"
+        if source_document is None:
+            findings.append(RetentionFinding(
+                path, "not_verified", source["fingerprint"], None,
+                "the snapshot source is not an exact supplied policy or cited hold",
+            ))
+        elif scope["producer_namespace"] != source_document["producer_namespace"]:
+            findings.append(RetentionFinding(
+                path, "mismatched", source_document["producer_namespace"],
+                scope["producer_namespace"],
+                "snapshot and source producer namespaces differ",
+            ))
+        else:
+            findings.append(RetentionFinding(
+                path, "matched", source["fingerprint"], source["fingerprint"],
+                "the snapshot names an exact supplied source in the same namespace",
+            ))
+    findings.sort(key=lambda item: (item.path, item.status, item.expected or "",
+                                    str(item.observed), item.reason))
+    return RetentionApplicationBindingVerdict(
+        app_fingerprint, (), supplied_violations, tuple(findings),
+    )
+
+
+def _artifact_violations(validate, artifact: Any) -> tuple[Violation, ...]:
+    root = validate.load_retention_policy_declaration_schema()
+    wrapper = {
+        "$schema": root["$schema"],
+        "$ref": root["$id"] + "#/$defs/ArtifactIdentity",
+    }
+    validator = validate._retention_validator("retention-artifact-identity", wrapper)
+    violations, structural = validate._j1_violations(artifact)
+    if structural:
+        return tuple(violations)
+    return tuple(violations + validate._schema_violations(wrapper, validator, artifact))
+
+
+def evaluate_supplied_retention_blocker(
+    artifact: dict[str, Any], *, holds: Iterable[dict[str, Any]] = (),
+    snapshots: Iterable[dict[str, Any]] = (),
+) -> RetentionBlockerVerdict:
+    """Evaluate one artifact against only caller-supplied producer hold claims.
+
+    A blocked result means a supplied placed or amended declaration enumerates
+    this exact identity. It does not validate legal authority, enforcement or
+    the completeness of the caller's hold universe. A release/cancellation is
+    never interpreted as authority to disregard an earlier placement.
+    """
+    if not isinstance(artifact, dict):
+        raise TypeError("artifact must be a dict")
+    validate = _contract_validate()
+    artifact_issues = _artifact_violations(validate, artifact)
+    if artifact_issues:
+        return RetentionBlockerVerdict("not_verified", None,
+                                      (("artifact", 0, artifact_issues),), (
+            RetentionFinding("$.artifact", "not_verified", None, None,
+                             "the artifact identity violates its contract"),
+        ))
+    identity = RetentionArtifactIdentity(artifact["kind"], artifact["fingerprint"])
+    hold_docs, hold_issues = _supplied_pool(validate, "legal-hold-declaration", holds)
+    scope_docs, scope_issues = _supplied_pool(validate, "retention-scope-snapshot", snapshots)
+    violations = hold_issues + scope_issues
+    findings: list[RetentionFinding] = []
+    if violations:
+        findings.append(RetentionFinding(
+            "$.supplied", "not_verified", None, None,
+            "one or more supplied hold or snapshot documents violate their contract",
+        ))
+    hold_lineage = verify_retention_lineage(
+        "legal-hold-declaration", (document for _, document in hold_docs),
+    )
+    findings.extend(hold_lineage.findings)
+    conflict = any(item.status == "conflict" for item in hold_lineage.findings)
+    missing = any(item.status == "not_verified" and
+                  item.path.endswith(".supersedes")
+                  for item in hold_lineage.findings)
+    unverified = bool(violations) or any(
+        item.status == "mismatched" for item in hold_lineage.findings
+    )
+    terminal_claim = False
+    matched = False
+    for hold_fingerprint, hold in hold_docs:
+        if hold["action"] in ("released", "cancelled"):
+            terminal_claim = True
+            unverified = True
+            findings.append(RetentionFinding(
+                f"hold:{hold_fingerprint}.action", "not_verified", None,
+                hold["action"],
+                "release or cancellation is a producer claim; authority to "
+                "disregard prior placement is not established",
+            ))
+            continue
+        scope = hold["scope"]
+        bound_snapshots = tuple((fingerprint, document)
+                                for fingerprint, document in scope_docs
+                                if document["source"] == {
+                                    "kind": "legal_hold_declaration",
+                                    "fingerprint": hold_fingerprint,
+                                })
+        if scope["kind"] != "exact_artifacts" and len(bound_snapshots) > 1:
+            conflict = True
+            findings.append(RetentionFinding(
+                f"hold:{hold_fingerprint}.snapshots", "conflict", hold_fingerprint,
+                tuple(fingerprint for fingerprint, _ in bound_snapshots),
+                "multiple supplied snapshots bind this selector revision; "
+                "none is selected or unioned",
+            ))
+            continue
+        supplied_snapshot = (bound_snapshots[0][1] if bound_snapshots else None)
+        result = resolve_supplied_retention_scope(hold, snapshot=supplied_snapshot)
+        if any(item.status == "missing" for item in result.findings):
+            missing = True
+            findings.append(RetentionFinding(
+                f"hold:{hold_fingerprint}.snapshot", "missing", hold_fingerprint,
+                None, "this selector has no exact supplied scope snapshot",
+            ))
+            continue
+        if result.declaration_violations or result.snapshot_violations or any(
+            item.status in ("mismatched", "not_verified", "conflict")
+            for item in result.findings
+        ):
+            unverified = True
+            findings.append(RetentionFinding(
+                f"hold:{hold_fingerprint}.scope", "not_verified", hold_fingerprint,
+                result.snapshot_fingerprint,
+                "supplied scope binding could not be verified",
+            ))
+            continue
+        if identity in result.artifacts:
+            matched = True
+            findings.append(RetentionFinding(
+                f"hold:{hold_fingerprint}.artifact", "matched", identity.fingerprint,
+                hold_fingerprint,
+                "this supplied producer hold declaration scopes the exact typed artifact",
+            ))
+    if conflict:
+        status: BlockerStatus = "conflicting_supplied_hold"
+    elif terminal_claim:
+        status = "not_verified"
+    elif missing:
+        status = "missing_binding"
+    elif unverified:
+        status = "not_verified"
+    elif matched:
+        status = "blocked_by_supplied_hold"
+    else:
+        status = "no_blocker_in_supplied_evidence"
+    findings.sort(key=lambda item: (item.path, item.status, item.expected or "",
+                                    str(item.observed), item.reason))
+    return RetentionBlockerVerdict(status, identity, violations, tuple(findings))

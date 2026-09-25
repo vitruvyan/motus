@@ -1,0 +1,44 @@
+[
+  {
+    "name": "application exact referenced policy identity",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if expected in observed:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "application snapshot exact source binding",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if source_document is None:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "supplied placed hold exact artifact membership",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if identity in result.artifacts:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "release claim never makes prior placement disappear",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "elif terminal_claim:",
+    "to": "elif False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "missing scope snapshot remains a missing binding",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if any(item.status == \"missing\" for item in result.findings):",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "conflicting supplied hold lineage",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "conflict = any(item.status == \"conflict\" for item in hold_lineage.findings)",
+    "to": "conflict = False",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  }
+]
