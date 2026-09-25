@@ -1,7 +1,8 @@
 # ADR-041 — An AI System Registry records immutable registration and lifecycle claims, not legal status
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-25
+- **Accepted:** 2026-09-25, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust and assurance levels), ADR-021 and ADR-031 (anchor evidence and trust), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges only expose it), ADR-035 (a System Manifest is one immutable system declaration, not a registry), ADR-036 (control declaration != ControlApplication evidence), ADR-037 (claimed human act != authority or compliance), ADR-038 (profiles map evidence; they do not decide compliance), ADR-039 (append-only claims, exact revision identity and visible conflict), ADR-040 (declaration != application or custody evidence).
 - **Amends on acceptance:** permits canonical, jurisdiction-neutral AI System Registration, AI System Registry Event and AI System Registry Snapshot contract surfaces plus deterministic structural, lineage and binding verification. It does **not** amend the meaning or wire format of trace, GraphSpec, commitment, checkpoint, receipt, evidence package, System Manifest, Risk & Control Registry, ControlApplication, HumanOversightReceipt, Incident / CAPA, Retention / Legal Hold or Regulatory Evidence Profile unless a later ADR explicitly does so.
