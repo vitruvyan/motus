@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "producer_namespace": "acme/governance",
+  "producer_ref": "acme/registry-service",
+  "registry_id": "acme/ai-inventory",
+  "snapshot_id": "snapshot-001",
+  "registrations": ["sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+  "events": ["sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+  "observed_at": "2026-09-25T10:10:00Z"
+}

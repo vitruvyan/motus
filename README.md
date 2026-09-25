@@ -996,6 +996,11 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `evaluate_supplied_retention_blocker`, `RetentionFinding`,
   `RetentionArtifactIdentity`, `RetentionLineageVerdict`, `RetentionScopeVerdict`,
   `RetentionApplicationBindingVerdict`, `RetentionBlockerVerdict`;
+- AI System Registry: `verify_ai_system_registry_lineage`,
+  `verify_ai_system_registration_binding`, `project_supplied_ai_system_lifecycle`,
+  `verify_ai_system_registry_snapshot`, `AISystemRegistryFinding`,
+  `AISystemRegistryLineageVerdict`, `AISystemRegistrationBindingVerdict`,
+  `AISystemLifecycleProjection`, `AISystemRegistrySnapshotVerdict`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -1209,6 +1214,42 @@ cancellation is another producer claim and does not erase a placement.
 `no_blocker_in_supplied_evidence` describes only the caller's subset; it does
 not establish that other holds are absent or authorize disposal. Application
 outcomes and custody observations do not prove continued custody.
+
+### AI System Registry evidence
+
+ADR-041 separates one exact System Manifest from immutable registration claims,
+lifecycle events, and bounded snapshots. The helpers operate only on documents
+supplied by the caller:
+
+```python
+from vitruvyan_motus import (
+    project_supplied_ai_system_lifecycle,
+    verify_ai_system_registration_binding,
+    verify_ai_system_registry_lineage,
+    verify_ai_system_registry_snapshot,
+)
+
+binding = verify_ai_system_registration_binding(
+    registration, manifests=[manifest],
+)
+lineage = verify_ai_system_registry_lineage(
+    "ai-system-registration", registration_revisions,
+)
+lifecycle = project_supplied_ai_system_lifecycle(
+    registration["registration_id"],
+    registrations=registration_revisions,
+    events=events,
+)
+snapshot_result = verify_ai_system_registry_snapshot(
+    snapshot, registrations=registration_revisions, events=events,
+)
+```
+
+`terminal_action` is derived only when the supplied correction and lifecycle
+chains are complete and conflict-free. It is not global current state or proof
+of deployment. Snapshot membership is not proof that the inventory is complete.
+Actor, party, filing, lifecycle and external-reference fields remain producer
+claims; validity does not establish authority, legal status or compliance.
 
 ### Evidence API for bridges
 

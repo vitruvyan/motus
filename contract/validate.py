@@ -123,6 +123,11 @@ _RETENTION_SCHEMA_FILES = {
     "retention-application": "retention-application.v1.schema.json",
     "custody-observation": "custody-observation.v1.schema.json",
 }
+_AI_SYSTEM_REGISTRY_SCHEMA_FILES = {
+    "ai-system-registration": "ai-system-registration.v1.schema.json",
+    "ai-system-registry-event": "ai-system-registry-event.v1.schema.json",
+    "ai-system-registry-snapshot": "ai-system-registry-snapshot.v1.schema.json",
+}
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -825,6 +830,21 @@ def custody_observation_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def ai_system_registration_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one ADR-041 registration claim."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def ai_system_registry_event_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one ADR-041 lifecycle event claim."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def ai_system_registry_snapshot_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one bounded ADR-041 registry view."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 def incident_capa_ledger_fingerprint(document: Any) -> str:
     """Identity of one portable ledger view with transport order removed.
 
@@ -875,6 +895,7 @@ _CONTROL_APPLICATION_SCHEMA_REGISTRY: Registry | None = None
 _HUMAN_OVERSIGHT_SCHEMA_REGISTRY: Registry | None = None
 _INCIDENT_CAPA_SCHEMA_REGISTRY: Registry | None = None
 _RETENTION_SCHEMA_REGISTRY: Registry | None = None
+_AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -969,6 +990,18 @@ def load_retention_application_schema() -> dict:
 def load_custody_observation_schema() -> dict:
     return _load(_RETENTION_SCHEMA_FILES["custody-observation"])
 
+
+
+def load_ai_system_registration_schema() -> dict:
+    return _load(_AI_SYSTEM_REGISTRY_SCHEMA_FILES["ai-system-registration"])
+
+
+def load_ai_system_registry_event_schema() -> dict:
+    return _load(_AI_SYSTEM_REGISTRY_SCHEMA_FILES["ai-system-registry-event"])
+
+
+def load_ai_system_registry_snapshot_schema() -> dict:
+    return _load(_AI_SYSTEM_REGISTRY_SCHEMA_FILES["ai-system-registry-snapshot"])
 
 
 def _commitment_registry() -> Registry:
@@ -1198,6 +1231,32 @@ def _retention_validator(key: str, schema: dict) -> Draft202012Validator:
         )
     return _VALIDATORS[key]
 
+
+
+def _ai_system_registry_schema_registry() -> Registry:
+    """Resolve ADR-041 shared identifiers, timestamps and digests."""
+    global _AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY
+    if _AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY is None:
+        names = (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            *_AI_SYSTEM_REGISTRY_SCHEMA_FILES.values(),
+        )
+        resources = []
+        for name in names:
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY
+
+
+def _ai_system_registry_validator(key: str, schema: dict) -> Draft202012Validator:
+    if key not in _VALIDATORS:
+        _VALIDATORS[key] = Draft202012Validator(
+            schema, format_checker=FormatChecker(),
+            registry=_ai_system_registry_schema_registry(),
+        )
+    return _VALIDATORS[key]
 
 
 def _pointer_validator(key: str, root: dict, pointer: str) -> Draft202012Validator:
@@ -2152,6 +2211,75 @@ _RETENTION_VALIDATE_DISPATCH = {
     "retention-trigger-occurrence": validate_retention_trigger_occurrence,
     "retention-application": validate_retention_application,
     "custody-observation": validate_custody_observation,
+}
+
+
+# --------------------------------------------------------------------------- #
+# AI System Registry declarations — ADR-041 structural stage                  #
+# --------------------------------------------------------------------------- #
+
+_AI_SYSTEM_REGISTRY_TIME_FIELDS = {
+    "ai-system-registration": ("declared_at",),
+    "ai-system-registry-event": ("occurred_at", "effective_at"),
+    "ai-system-registry-snapshot": ("observed_at",),
+}
+
+
+def _validate_ai_system_registry_document(kind: str, document: dict) -> list[Violation]:
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    schema = _load(_AI_SYSTEM_REGISTRY_SCHEMA_FILES[kind])
+    violations += _schema_violations(
+        schema, _ai_system_registry_validator(kind, schema), document
+    )
+    if violations:
+        return violations
+    for field in _AI_SYSTEM_REGISTRY_TIME_FIELDS[kind]:
+        if field in document and not _calendar_valid_utc(document[field]):
+            violations.append(Violation(
+                "AIR1", f"$.{field}",
+                "timestamp has UTC shape but is not a real UTC instant",
+            ))
+    arrays: list[tuple[str, list, Any]] = []
+    if kind == "ai-system-registration":
+        arrays.extend([
+            ("$.parties", document.get("parties", []),
+             lambda item: (item["role"], item["party_ref"])),
+            ("$.external_references", document.get("external_references", []),
+             lambda item: (item["kind"], item["reference"])),
+        ])
+    elif kind == "ai-system-registry-event":
+        arrays.append(("$.evidence", document.get("evidence", []),
+                       lambda item: (item["kind"], item["fingerprint"])))
+    for path, entries, identity in arrays:
+        seen = set()
+        for index, item in enumerate(entries):
+            key = identity(item)
+            if key in seen:
+                violations.append(Violation(
+                    "AIR2", f"{path}[{index}]", "identity appears more than once",
+                ))
+            seen.add(key)
+    return violations
+
+
+def validate_ai_system_registration(document: dict) -> list[Violation]:
+    return _validate_ai_system_registry_document("ai-system-registration", document)
+
+
+def validate_ai_system_registry_event(document: dict) -> list[Violation]:
+    return _validate_ai_system_registry_document("ai-system-registry-event", document)
+
+
+def validate_ai_system_registry_snapshot(document: dict) -> list[Violation]:
+    return _validate_ai_system_registry_document("ai-system-registry-snapshot", document)
+
+
+_AI_SYSTEM_REGISTRY_VALIDATE_DISPATCH = {
+    "ai-system-registration": validate_ai_system_registration,
+    "ai-system-registry-event": validate_ai_system_registry_event,
+    "ai-system-registry-snapshot": validate_ai_system_registry_snapshot,
 }
 
 
@@ -5364,8 +5492,8 @@ def main(argv: list[str] | None = None) -> int:
             "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
             "HO-rules, Regulatory Evidence Profile REP-rules, Incident "
             "Declaration INC-rules, CAPAAction CAPA-rules, Incident/CAPA "
-            "Ledger rules, ADR-040 retention/hold RET-rules, JSON document "
-            "and JSONL stream forms."
+            "Ledger rules, ADR-040 retention/hold RET-rules, ADR-041 AI "
+            "System Registry AIR-rules, JSON document and JSONL stream forms."
         ),
         epilog=(
             "Prints one line per violation ('RULE path: message') and exits 0 "
@@ -5381,7 +5509,7 @@ def main(argv: list[str] | None = None) -> int:
                  "control-application", "human-oversight-receipt",
                  "regulatory-evidence-profile", "incident-declaration",
                  "capa-action", "incident-capa-ledger", "package",
-                 *_RETENTION_SCHEMA_FILES],
+                 *_RETENTION_SCHEMA_FILES, *_AI_SYSTEM_REGISTRY_SCHEMA_FILES],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -5532,6 +5660,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_incident_capa_ledger(doc)
         elif args.artifact in _RETENTION_SCHEMA_FILES:
             violations = _RETENTION_VALIDATE_DISPATCH[args.artifact](doc)
+        elif args.artifact in _AI_SYSTEM_REGISTRY_SCHEMA_FILES:
+            violations = _AI_SYSTEM_REGISTRY_VALIDATE_DISPATCH[args.artifact](doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:

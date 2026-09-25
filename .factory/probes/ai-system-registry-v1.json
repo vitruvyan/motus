@@ -1,0 +1,72 @@
+[
+  {
+    "name": "AI registry real UTC instant",
+    "file": "contract/validate.py",
+    "from": "for field in _AI_SYSTEM_REGISTRY_TIME_FIELDS[kind]:\n        if field in document and not _calendar_valid_utc(document[field]):",
+    "to": "for field in _AI_SYSTEM_REGISTRY_TIME_FIELDS[kind]:\n        if False:",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "AI registry duplicate semantic identity",
+    "file": "contract/validate.py",
+    "from": "for index, item in enumerate(entries):\n            key = identity(item)\n            if key in seen:",
+    "to": "for index, item in enumerate(entries):\n            key = identity(item)\n            if False:",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "registration exact manifest system identity",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "\"matched\" if observed_system == document[\"system_id\"] else \"mismatched\"",
+    "to": "\"matched\"",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "registration amendment fork visibility",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "if len(children) > 1:",
+    "to": "if len(children) > 10000:",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle branch refuses terminal action",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "if len(children) != 1:",
+    "to": "if False:",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "same registration id across registries remains conflict",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "if len(scopes) > 1:",
+    "to": "if len(scopes) > 10000:",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle projection composes registration lineage",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": ") for item in registration_lineage.findings)",
+    "to": ") for item in ())",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle binding searches all supplied registrations",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "cited_regs = all_reg_by_fp.get(cited, [])",
+    "to": "cited_regs = reg_by_fp.get(cited, [])",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle exact invalid registration is not absent",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "elif invalid_cited_regs:\n            findings.append(AISystemRegistryFinding(",
+    "to": "elif False:\n            findings.append(AISystemRegistryFinding(",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "snapshot exact registry scope",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "status = \"matched\" if same_registry else \"mismatched\"",
+    "to": "status = \"matched\"",
+    "tests": "tests/test_ai_system_registry.py"
+  }
+]

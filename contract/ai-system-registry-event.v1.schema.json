@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/ai-system-registry-event.v1.schema.json",
+  "title": "Vitruvyan Motus AI System Registry Event, v1",
+  "description": "ADR-041. One immutable producer claim about a lifecycle action. It is not proof of authority, deployment or official status.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "registry_id", "registration_id", "event_id", "registration_fingerprint", "action", "occurred_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "registry_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "registration_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "event_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "registration_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "action": {"enum": ["registered", "updated", "activated", "suspended", "resumed", "retired", "decommissioned"]},
+    "predecessor_event_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "actor_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "reason_ref": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
+    "evidence": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/ArtifactIdentity"}},
+    "occurred_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "effective_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  },
+  "allOf": [
+    {"if": {"properties": {"action": {"const": "registered"}}}, "then": {"not": {"required": ["predecessor_event_fingerprint"]}}, "else": {"required": ["predecessor_event_fingerprint"]}}
+  ],
+  "$defs": {
+    "ArtifactIdentity": {
+      "type": "object", "required": ["kind", "fingerprint"], "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["trace", "receipt", "evidence_package", "system_manifest", "risk_control_registry", "control_application", "human_oversight_receipt", "regulatory_evidence_profile", "incident_declaration", "capa_action", "incident_capa_ledger", "retention_policy_declaration", "legal_hold_declaration", "retention_scope_snapshot", "retention_application", "custody_observation", "ai_system_registration", "ai_system_registry_event", "ai_system_registry_snapshot"]},
+        "fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+      }
+    }
+  }
+}

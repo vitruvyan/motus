@@ -40,7 +40,7 @@ one-tag rule is restored.
 | 4 | Human Oversight Receipt | DONE | shipped in v0.17.0 |
 | 5 | Incident / CAPA Ledger | DONE | shipped in v0.18.0 |
 | 6 | Retention & Legal Hold | DONE | shipped in v0.19.0 |
-| 7 | AI System Registry | QUEUED | target v0.20.0 |
+| 7 | AI System Registry | IMPLEMENTING | target v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | QUEUED | target v0.21.0 |
 | 10 | Verification and query API/CLI | QUEUED | target v0.22.0 |
@@ -82,6 +82,23 @@ continued custody. Exact semantics, identities, append-only history, scope
 resolution, subset-scoped blocker findings and stop conditions are governed by
 founder-accepted ADR-040 and implemented by the v0.19 retention contract and
 read-only verification surfaces. Motus never emits disposal clearance.
+
+### Point 7 / v0.20.0 — AI System Registry — implementing
+
+ADR-041 proposes a neutral boundary between:
+
+1. one immutable registration claim bound to one exact System Manifest;
+2. separate append-only lifecycle event claims; and
+3. bounded registry snapshots over exact supplied records.
+
+The proposed surface records producer claims and verifies their exact identities,
+lineage and supplied bindings. It does not decide whether a subject is legally an
+AI system, in scope, deployed, current, approved, registered with an authority,
+safe, compliant or completely inventoried. A supplied chain or snapshot never
+becomes proof of global current state or completeness.
+
+The founder accepted ADR-041 on 2026-09-25. Contract-first implementation may
+begin without weakening the decision's stop conditions.
 
 ### Existing Motus UI draft
 

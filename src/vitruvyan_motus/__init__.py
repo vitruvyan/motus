@@ -85,6 +85,13 @@ from vitruvyan_motus.retention import (
     resolve_supplied_retention_scope, verify_retention_application_bindings,
     evaluate_supplied_retention_blocker,
 )
+from vitruvyan_motus.ai_system_registry import (
+    AISystemRegistryFinding, AISystemRegistryLineageVerdict,
+    AISystemRegistrationBindingVerdict, AISystemLifecycleProjection,
+    AISystemRegistrySnapshotVerdict, verify_ai_system_registry_lineage,
+    verify_ai_system_registration_binding, project_supplied_ai_system_lifecycle,
+    verify_ai_system_registry_snapshot,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -123,6 +130,11 @@ __all__ = [
     "RetentionBlockerVerdict", "verify_retention_lineage",
     "resolve_supplied_retention_scope", "verify_retention_application_bindings",
     "evaluate_supplied_retention_blocker",
+    "AISystemRegistryFinding", "AISystemRegistryLineageVerdict",
+    "AISystemRegistrationBindingVerdict", "AISystemLifecycleProjection",
+    "AISystemRegistrySnapshotVerdict", "verify_ai_system_registry_lineage",
+    "verify_ai_system_registration_binding", "project_supplied_ai_system_lifecycle",
+    "verify_ai_system_registry_snapshot",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]
