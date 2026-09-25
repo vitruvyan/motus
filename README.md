@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release candidate:** Motus 0.19.0 (`release/0.19.0`)
+> **Current release:** [Motus 0.19.0](https://github.com/vitruvyan/motus/releases/tag/v0.19.0)
 >
 > Commitment window files written by releases through 0.13.0 use the legacy
 > envelope key `c`; releases from 0.14.0 write `commitment`.
