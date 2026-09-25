@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "producer_namespace": "acme/governance",
+  "producer_ref": "acme/registry-service",
+  "registry_id": "acme/ai-inventory",
+  "registration_id": "customer-support-assistant",
+  "event_id": "event-001",
+  "registration_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "action": "registered",
+  "actor_ref": "acme/governance-user",
+  "reason_ref": "Initial producer registration claim.",
+  "occurred_at": "2026-09-25T10:05:00Z"
+}

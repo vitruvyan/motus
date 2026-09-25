@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "producer_namespace": "acme/governance",
+  "producer_ref": "acme/registry-service",
+  "registry_id": "acme/ai-inventory",
+  "registration_id": "customer-support-assistant",
+  "system_id": "acme/customer-support-assistant",
+  "system_manifest_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "purposes": ["Assist support staff with draft responses."],
+  "contexts": ["Internal customer-support workflow."],
+  "parties": [{"role": "operator", "party_ref": "acme/support"}],
+  "external_references": [{"kind": "inventory_record", "reference": "opaque:record-17"}],
+  "declared_at": "2026-09-25T10:00:00Z"
+}

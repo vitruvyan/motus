@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/ai-system-registry-snapshot.v1.schema.json",
+  "title": "Vitruvyan Motus AI System Registry Snapshot, v1",
+  "description": "ADR-041. A bounded producer-declared view over exact registry records. Validity is not proof of completeness or current state.",
+  "type": "object",
+  "required": ["schema_version", "producer_namespace", "producer_ref", "registry_id", "snapshot_id", "registrations", "events", "observed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "registry_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "snapshot_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "registrations": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}},
+    "events": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}},
+    "observed_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  }
+}

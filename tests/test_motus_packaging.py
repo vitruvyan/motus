@@ -418,6 +418,9 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         # neither this list nor that one can grow alone.
         "vitruvyan_motus/contract/README.md",
         "vitruvyan_motus/contract/__init__.py",
+        "vitruvyan_motus/contract/ai-system-registration.v1.schema.json",
+        "vitruvyan_motus/contract/ai-system-registry-event.v1.schema.json",
+        "vitruvyan_motus/contract/ai-system-registry-snapshot.v1.schema.json",
         # The commitment side travels for the same reason the trace side does:
         # a receipt is the artefact a THIRD PARTY holds, and a verifier they
         # had to clone a repository to obtain is a verifier most of them will

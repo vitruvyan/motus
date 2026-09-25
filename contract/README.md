@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The twelve surfaces
+## The thirteen surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -33,6 +33,27 @@ enforcement point.
 | 10 | Regulatory Evidence Profile | `regulatory-evidence-profile.v1.schema.json` | Any Motus consumer that needs to map opaque external requirement references to existing Motus evidence kinds | `validate_regulatory_evidence_profile()` applies schema + REP1. `assess_evidence_profile()` reports only evidence states (`missing`, `not_verified`, `mismatched`, `matched`); neither validity nor a complete evidence mapping is a compliance, conformity, certification, safety, or legal-sufficiency verdict |
 | 11 | Incident / CAPA Ledger | `incident-declaration.v1.schema.json`, `capa-action.v1.schema.json`, `incident-capa-ledger.v1.schema.json` | An evidence consumer that needs immutable producer claims about incidents and corrective or preventive actions without importing a case-management or legal-classification system | The three validators apply schema plus INC1-INC2, CAPA1-CAPA2 and LEDGER1-LEDGER3. `verify_incident_capa_ledger()` derives exact identities, preserves amendment forks and reports only binding states; validity and `completed`/`closed` remain producer claims, never Motus verdicts |
 | 12 | Retention / Hold v1 | `retention-policy-declaration.v1.schema.json`, `legal-hold-declaration.v1.schema.json`, `retention-scope-snapshot.v1.schema.json`, `retention-trigger-occurrence.v1.schema.json`, `retention-application.v1.schema.json`, `custody-observation.v1.schema.json` | An evidence consumer that needs distinct, exact producer claims for a rule, hold action, resolved scope, trigger occurrence, custodian action and bounded custody observation | The six validators apply closed schema plus RET1-RET4 for real UTC instants, typed artifact uniqueness, canonical execution coordinates and integer duration values. This first stage validates each document independently; it does not verify lineage, scope membership, external bindings or custody |
+| 13 | AI System Registry v1 | `ai-system-registration.v1.schema.json`, `ai-system-registry-event.v1.schema.json`, `ai-system-registry-snapshot.v1.schema.json` | An evidence consumer that needs immutable producer registration and lifecycle claims bound to exact System Manifest revisions | The three validators apply closed schema plus AIR1-AIR2. Read-only helpers verify supplied correction lineage, exact manifest bindings, lifecycle chains and bounded snapshot membership; they never establish legal status, deployment, global current state, completeness, authority or compliance |
+
+### AI System Registry structural v1
+
+ADR-041 defines three immutable documents. `AISystemRegistration` binds one
+stable producer-scoped registry subject to one exact System Manifest fingerprint.
+`AISystemRegistryEvent` records a neutral lifecycle action; `supersedes` links
+corrections of the same event while `predecessor_event_fingerprint` separately
+orders lifecycle claims. `AISystemRegistrySnapshot` enumerates exact registration
+and event fingerprints observed in one bounded producer view.
+
+`AIR1` checks real UTC calendar instants after schema validation. `AIR2` refuses
+duplicate party, external-reference and typed evidence identities. Canonical
+fingerprints cover each complete document and are never embedded in it.
+
+The supplied-document helpers preserve missing predecessors, forks, cycles and
+digest ambiguity. A terminal lifecycle action is emitted only for one complete,
+conflict-free supplied chain. It remains a projection over that subset, not an
+official or global state. A snapshot cannot prove that omitted systems or later
+events do not exist. Party roles, actor references and external references are
+producer claims and do not establish authority, filing validity or compliance.
 
 ### Retention and hold structural v1
 
