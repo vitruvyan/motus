@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release:** [Motus 0.19.0](https://github.com/vitruvyan/motus/releases/tag/v0.19.0)
+> **Current release candidate:** Motus 0.20.0 (`release/0.20.0`)
 >
 > Commitment window files written by releases through 0.13.0 use the legacy
 > envelope key `c`; releases from 0.14.0 write `commitment`.
@@ -22,16 +22,17 @@ The trace is not reconstructed from logs after execution.
 >
 > Apache-2.0 · stdlib-only kernel · validator included
 
-0.19.0 adds the jurisdiction-neutral Retention & Legal Hold v1 boundary. Its
-immutable declarations, exact scope snapshots, applications, trigger
-occurrences and custody observations remain producer claims. Supplied-document
-verification reports lineage, scope, binding and blocker findings without
-selecting applicable law, inferring authority or custody, or authorising
-disposal.
+0.20.0 adds the jurisdiction-neutral AI System Registry v1 boundary. Immutable
+registration claims, separate append-only lifecycle event claims, and bounded
+registry snapshots remain distinct evidence types. Supplied-document
+verification reports exact identities, lineage, manifest bindings, correction
+conflicts, and subset-scoped lifecycle projection without deciding legal
+AI-system status, deployment, approval, official registration, compliance,
+global current state, or inventory completeness.
 
-The release candidate passes the unchanged per-release budget against v0.18.0
-at **+2.7%, -2.0%, and +0.1%** across three independent Jenkins dispatches.
-The job ranges are +1.5% to +5.7%, -12.6% to +3.4%, and -1.7% to +4.2%; the
+The release candidate passes the unchanged per-release budget against v0.19.0
+at **-3.6%, -2.3%, and -2.4%** across three independent Jenkins dispatches.
+The job ranges are -5.3% to -3.5%, -3.3% to +5.3%, and -6.7% to -0.2%; the
 paired spread is wider than every measured effect, so the honest conclusion is
 that the instrument does not resolve a matching code effect.
 
@@ -40,19 +41,19 @@ under ADR-018 without moving its budget:
 
 | metric | cumulative | budget |
 |---|---:|---:|
-| Per-node overhead | **+106.8%** | +20% |
-| 100-node no-op | **+131.4%** | +20% |
-| Trace materialization | **+23.6%** | +20% |
+| Per-node overhead | **+106.9%** | +20% |
+| 100-node no-op | **+131.3%** | +20% |
+| Trace materialization | **+24.6%** | +20% |
 
-The independently re-taken real-workload costs are **3.5, 2.8, 2.9, 3.9,
-and 4.4 ms** against requests of 11.515, 21.364, 7.848, 26.030, and 17.690
+The independently re-taken real-workload costs are **6.7, 2.6, 2.9, 4.7,
+and 4.0 ms** against requests of 5.887, 9.928, 7.050, 8.696, and 10.272
 seconds. The conservative share — the worst Motus cost over the fastest
-request — is **0.056%**, below ADR-018's pre-registered 1% ceiling. The five
+request — is **0.114%**, below ADR-018's pre-registered 1% ceiling. The five
 traces validate cleanly with integrity chains. The current Orbis graph runtime
 is bound to `localhost:8001/run`; its missing health metadata keeps the probe's
 service verdict honestly `degraded`, which does not weaken this Motus cost
 measurement. Complete evidence is committed under
-`benchmarks/relative-0.19.0/` and `benchmarks/real-workload-0.19.0.txt`.
+`benchmarks/relative-0.20.0/` and `benchmarks/real-workload-0.20.0.txt`.
 
 ### Historical 0.15.0 performance record
 
