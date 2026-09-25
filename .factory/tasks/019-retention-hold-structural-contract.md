@@ -89,6 +89,23 @@ names it; a same-lineage conflict still outranks this uncertainty. A malformed
 or unrelated source cannot associate the defect with that hold, and an
 independent complete blocker is not erased by unrelated invalid input.
 
+Further PR #192 closure: application references first compare against
+canonicalizable schema-invalid policy, hold and snapshot candidates by their
+exact derived fingerprint, yielding `not_verified` even with unrelated valid
+documents. Non-JSON invalid material has no derived identity; duplicate or
+colliding valid/invalid fingerprints remain conflicts. A globally supplied
+same-kind hold predecessor with the wrong namespace or hold ID is propagated
+to its child lineage as a mismatch, not downgraded to a missing binding.
+An ambiguous exact supplied predecessor similarly remains a conflict.
+
+Final PR #192 predecessor closure: a canonicalizable schema-invalid hold is
+indexed by its exact fingerprint even if its raw namespace or hold ID differs
+from a valid child citing it. That child's supplied predecessor is
+`not_verified`, not absent; duplicate invalid or valid/invalid identities are
+`conflict`. Unfingerprintable invalid inputs remain violations only. A truly
+absent predecessor remains a missing binding, and a separate complete hold
+still establishes only its supplied-subset blocker.
+
 ## Micro-step 4 — public read-only package surface
 
 The six immutable finding, identity and verdict dataclasses plus four
