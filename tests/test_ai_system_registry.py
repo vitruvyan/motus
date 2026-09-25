@@ -213,6 +213,65 @@ def test_conflict_free_supplied_lifecycle_projection_is_explicitly_scoped():
     assert "supplied" in verdict.scope
 
 
+def test_lifecycle_projection_refuses_registration_lineage_fork():
+    base = registration(manifest())
+    base_fp = validate.ai_system_registration_fingerprint(base)
+    left = copy.deepcopy(base)
+    left["supersedes"] = base_fp
+    left["contexts"] = ["left"]
+    right = copy.deepcopy(base)
+    right["supersedes"] = base_fp
+    right["contexts"] = ["right"]
+
+    verdict = project_supplied_ai_system_lifecycle(
+        base["registration_id"],
+        registrations=[base, left, right],
+        events=[event(base)],
+    )
+
+    assert verdict.terminal_action is None
+    assert any(item.path.startswith("registration-lineage:")
+               and item.status == "conflict" for item in verdict.findings)
+
+
+def test_lifecycle_exact_other_registration_is_mismatched_not_missing():
+    target = registration(manifest())
+    other = copy.deepcopy(target)
+    other["registration_id"] = "another-registration"
+    lifecycle_event = event(target)
+    lifecycle_event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(other)
+    )
+
+    verdict = project_supplied_ai_system_lifecycle(
+        target["registration_id"], registrations=[other], events=[lifecycle_event]
+    )
+    finding = next(item for item in verdict.findings
+                   if item.path.endswith(".registration_fingerprint"))
+
+    assert finding.status == "mismatched"
+    assert verdict.terminal_action is None
+
+
+def test_lifecycle_exact_invalid_registration_is_not_verified_not_missing():
+    target = registration(manifest())
+    invalid = copy.deepcopy(target)
+    invalid["compliant"] = True
+    lifecycle_event = event(target)
+    lifecycle_event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(invalid)
+    )
+
+    verdict = project_supplied_ai_system_lifecycle(
+        target["registration_id"], registrations=[invalid], events=[lifecycle_event]
+    )
+    finding = next(item for item in verdict.findings
+                   if item.path.endswith(".registration_fingerprint"))
+
+    assert finding.status == "not_verified"
+    assert verdict.terminal_action is None
+
+
 def test_lifecycle_fork_refuses_terminal_action():
     reg = registration(manifest())
     first = event(reg)

@@ -42,6 +42,27 @@
     "tests": "tests/test_ai_system_registry.py"
   },
   {
+    "name": "lifecycle projection composes registration lineage",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": ") for item in registration_lineage.findings)",
+    "to": ") for item in ())",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle binding searches all supplied registrations",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "cited_regs = all_reg_by_fp.get(cited, [])",
+    "to": "cited_regs = reg_by_fp.get(cited, [])",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
+    "name": "lifecycle exact invalid registration is not absent",
+    "file": "src/vitruvyan_motus/ai_system_registry.py",
+    "from": "elif invalid_cited_regs:\n            findings.append(AISystemRegistryFinding(",
+    "to": "elif False:\n            findings.append(AISystemRegistryFinding(",
+    "tests": "tests/test_ai_system_registry.py"
+  },
+  {
     "name": "snapshot exact registry scope",
     "file": "src/vitruvyan_motus/ai_system_registry.py",
     "from": "status = \"matched\" if same_registry else \"mismatched\"",

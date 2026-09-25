@@ -332,13 +332,39 @@ def project_supplied_ai_system_lifecycle(
     if not isinstance(registration_id, str):
         raise TypeError("registration_id must be a string")
     validate = _validate_module()
-    reg_rows, reg_invalid = _documents(validate, "ai-system-registration", registrations)
-    event_rows, event_invalid = _documents(validate, "ai-system-registry-event", events)
+    registration_values = tuple(registrations)
+    event_values = tuple(events)
+    reg_rows, reg_invalid = _documents(
+        validate, "ai-system-registration", registration_values
+    )
+    event_rows, event_invalid = _documents(
+        validate, "ai-system-registry-event", event_values
+    )
     findings = []
+    relevant_registrations = tuple(
+        value for value in registration_values
+        if value.get("registration_id") == registration_id
+    )
+    registration_lineage = verify_ai_system_registry_lineage(
+        "ai-system-registration", relevant_registrations
+    )
+    findings.extend(AISystemRegistryFinding(
+        "registration-" + item.path, item.status, item.expected,
+        item.observed, item.reason,
+    ) for item in registration_lineage.findings)
+    all_reg_by_fp: dict[str, list[dict[str, Any]]] = {}
     reg_by_fp: dict[str, list[dict[str, Any]]] = {}
     for _, fp, _, doc in reg_rows:
+        all_reg_by_fp.setdefault(fp, []).append(doc)
         if doc["registration_id"] == registration_id:
             reg_by_fp.setdefault(fp, []).append(doc)
+    invalid_reg_by_fp: dict[str, list[int]] = {}
+    for index, _ in reg_invalid:
+        fingerprint = _canonicalizable_fingerprint(
+            validate, "ai-system-registration", registration_values[index]
+        )
+        if fingerprint is not None:
+            invalid_reg_by_fp.setdefault(fingerprint, []).append(index)
     candidates = [(fp, doc) for _, fp, _, doc in event_rows
                   if doc["registration_id"] == registration_id]
     scopes = {(doc["producer_namespace"], doc["registry_id"])
@@ -355,17 +381,26 @@ def project_supplied_ai_system_lifecycle(
     for fp, doc in candidates:
         by_fp.setdefault(fp, []).append(doc)
         cited = doc["registration_fingerprint"]
-        cited_regs = reg_by_fp.get(cited, [])
-        if not cited_regs:
+        cited_regs = all_reg_by_fp.get(cited, [])
+        invalid_cited_regs = invalid_reg_by_fp.get(cited, [])
+        if len(cited_regs) + len(invalid_cited_regs) > 1:
+            findings.append(AISystemRegistryFinding(
+                f"event:{fp}.registration_fingerprint", "conflict", cited,
+                tuple(cited for _ in range(
+                    len(cited_regs) + len(invalid_cited_regs)
+                )),
+                "multiple valid or invalid supplied registrations share the cited identity",
+            ))
+        elif invalid_cited_regs:
+            findings.append(AISystemRegistryFinding(
+                f"event:{fp}.registration_fingerprint", "not_verified", cited,
+                cited,
+                "the exact supplied registration violates its structural contract",
+            ))
+        elif not cited_regs:
             findings.append(AISystemRegistryFinding(
                 f"event:{fp}.registration_fingerprint", "missing", cited, None,
                 "the exact registration revision is absent from this supplied view",
-            ))
-        elif len(cited_regs) > 1:
-            findings.append(AISystemRegistryFinding(
-                f"event:{fp}.registration_fingerprint", "conflict", cited,
-                tuple(cited for _ in cited_regs),
-                "multiple supplied registration rows share the cited identity",
             ))
         else:
             cited_reg = cited_regs[0]
