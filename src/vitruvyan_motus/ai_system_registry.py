@@ -134,8 +134,11 @@ def verify_ai_system_registry_lineage(
     """Order supplied correction revisions without selecting a fork."""
     if kind not in _KINDS:
         raise ValueError(f"unsupported AI System Registry kind: {kind!r}")
+    if isinstance(documents, (str, bytes, dict)):
+        raise TypeError("documents must be an iterable of dicts")
     validate = _validate_module()
-    rows, invalid = _documents(validate, kind, documents)
+    supplied = tuple(documents)
+    rows, invalid = _documents(validate, kind, supplied)
     findings = [AISystemRegistryFinding(
         f"$.documents[{index}]", "not_verified", None, None,
         "the supplied document violates its structural contract",
@@ -149,6 +152,18 @@ def verify_ai_system_registry_lineage(
                 f"lineage:{fingerprint}", "conflict", fingerprint,
                 tuple(fingerprint for _ in positions),
                 "multiple supplied rows have this exact fingerprint",
+            ))
+    invalid_by_fp: dict[str, list[int]] = {}
+    for index, _ in invalid:
+        fingerprint = _canonicalizable_fingerprint(validate, kind, supplied[index])
+        if fingerprint is not None:
+            invalid_by_fp.setdefault(fingerprint, []).append(index)
+    for fingerprint, indexes in sorted(invalid_by_fp.items()):
+        if len(indexes) > 1 or fingerprint in by_fp:
+            findings.append(AISystemRegistryFinding(
+                f"lineage:{fingerprint}", "conflict", fingerprint,
+                tuple(fingerprint for _ in range(len(indexes) + len(by_fp.get(fingerprint, ())))),
+                "multiple valid or invalid supplied rows have this exact fingerprint",
             ))
 
     stable_field = _KINDS[kind]
@@ -164,12 +179,18 @@ def verify_ai_system_registry_lineage(
             origins.setdefault(stable, []).append(fingerprint)
             continue
         candidates = by_fp.get(predecessor, [])
+        invalid_candidates = invalid_by_fp.get(predecessor, [])
         path = f"lineage:{fingerprint}.supersedes"
-        if predecessor == fingerprint or len(candidates) > 1:
+        if predecessor == fingerprint or len(candidates) + len(invalid_candidates) > 1:
             findings.append(AISystemRegistryFinding(
                 path, "conflict", predecessor,
-                tuple(rows[i][1] for i in candidates) or fingerprint,
+                tuple(predecessor for _ in range(len(candidates) + len(invalid_candidates))) or fingerprint,
                 "the predecessor identity is self-referential or ambiguous",
+            ))
+        elif invalid_candidates:
+            findings.append(AISystemRegistryFinding(
+                path, "not_verified", predecessor, predecessor,
+                "the exact supplied predecessor violates its structural contract",
             ))
         elif not candidates:
             findings.append(AISystemRegistryFinding(
@@ -219,7 +240,8 @@ def verify_ai_system_registry_lineage(
             indegree[child] -= 1
             if indegree[child] == 0:
                 heapq.heappush(ready, (key(child), child))
-    remaining = sorted((i for i in range(len(rows)) if i not in set(ordered)), key=key)
+    ordered_set = set(ordered)
+    remaining = sorted((i for i in range(len(rows)) if i not in ordered_set), key=key)
     if remaining:
         findings.append(AISystemRegistryFinding(
             "lineage:cycle", "conflict", None,

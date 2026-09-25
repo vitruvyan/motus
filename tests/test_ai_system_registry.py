@@ -169,6 +169,35 @@ def test_registration_lineage_preserves_fork_conflict_and_order():
     assert any(item.status == "conflict" for item in verdict.findings)
 
 
+def test_exact_invalid_lineage_predecessor_is_not_reported_as_absent():
+    invalid = fixture("ai-system-registration")
+    invalid["compliant"] = True
+    child = fixture("ai-system-registration")
+    child["supersedes"] = validate.ai_system_registration_fingerprint(invalid)
+    child["contexts"] = ["Child of an invalid supplied predecessor."]
+    verdict = verify_ai_system_registry_lineage(
+        "ai-system-registration", [child, invalid]
+    )
+    finding = next(item for item in verdict.findings
+                   if item.path.endswith(".supersedes"))
+    assert finding.status == "not_verified"
+    assert verdict.violations
+
+
+def test_duplicate_exact_lineage_identity_is_conflict(monkeypatch):
+    first = fixture("ai-system-registration")
+    second = copy.deepcopy(first)
+    second["contexts"] = ["Distinct bytes under an induced digest collision."]
+    monkeypatch.setattr(
+        validate, "ai_system_registration_fingerprint", lambda _document: "sha256:" + "f" * 64
+    )
+    verdict = verify_ai_system_registry_lineage(
+        "ai-system-registration", [first, second]
+    )
+    assert any(item.path == "lineage:" + "sha256:" + "f" * 64
+               and item.status == "conflict" for item in verdict.findings)
+
+
 def test_conflict_free_supplied_lifecycle_projection_is_explicitly_scoped():
     reg = registration(manifest())
     first = event(reg)

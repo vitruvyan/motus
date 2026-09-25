@@ -28,10 +28,12 @@ characterization and green Jenkins evidence before merge or release.
 Implementation checkpoint: the three schemas, CLI validators, exact fingerprint
 helpers, supplied correction lineage, exact System Manifest binding, bounded
 lifecycle projection, snapshot membership verification and public read-only API
-are covered by `tests/test_ai_system_registry.py`. The initial full-suite gate
-passed with 1765 tests, 4 skipped and no failures after adversarial invalid-input
-closure. Executed mutation checks killed changes to UTC validation, duplicate
-semantic identity, manifest binding, lifecycle forks, cross-registry isolation
-and snapshot scope. Targets are recorded in
+are covered by `tests/test_ai_system_registry.py`. The reviewed full-suite gate
+passed with 1767 tests, 4 skipped and no failures after adversarial invalid-input
+closure. Exact invalid lineage predecessors are distinguished from absent
+documents, and duplicate exact lineage identities are refused as conflicts.
+Executed mutation checks killed changes to UTC validation, duplicate semantic
+identity, manifest binding, lifecycle forks, cross-registry isolation and
+snapshot scope. Targets are recorded in
 `.factory/probes/ai-system-registry-v1.json`; independent review,
 characterization and Jenkins evidence remain release gates.
