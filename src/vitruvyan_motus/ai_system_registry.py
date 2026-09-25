@@ -97,6 +97,15 @@ def _fingerprint(validate: Any, kind: str, document: dict[str, Any]) -> str:
     return getattr(validate, kind.replace("-", "_") + "_fingerprint")(document)
 
 
+def _canonicalizable_fingerprint(validate: Any, kind: str, document: dict[str, Any]) -> str | None:
+    """Derive identity for schema-invalid JSON without treating it as valid."""
+    try:
+        validate.canonical_json(document)
+        return _fingerprint(validate, kind, document)
+    except (TypeError, ValueError):
+        return None
+
+
 def _documents(
     validate: Any, kind: str, values: Iterable[dict[str, Any]],
 ) -> tuple[list[tuple[int, str, bytes, dict[str, Any]]],
@@ -241,27 +250,40 @@ def verify_ai_system_registration_binding(
         raise TypeError("manifests must be an iterable of dicts")
     valid: list[tuple[int, str, dict[str, Any]]] = []
     invalid = []
+    invalid_fingerprints: list[str] = []
     for index, value in enumerate(manifests):
         if not isinstance(value, dict):
             raise TypeError(f"manifests[{index}] must be a dict")
         manifest_issues = tuple(validate.validate_system_manifest(value))
         if manifest_issues:
             invalid.append((index, manifest_issues))
+            fingerprint = _canonicalizable_fingerprint(
+                validate, "system-manifest", value
+            )
+            if fingerprint is not None:
+                invalid_fingerprints.append(fingerprint)
             continue
         snap = _snapshot(validate, value)
         valid.append((index, validate.system_manifest_fingerprint(snap), snap))
     expected = document["system_manifest_fingerprint"]
     matches = [(index, manifest) for index, fp, manifest in valid if fp == expected]
     findings = []
-    if not matches:
+    invalid_match_count = invalid_fingerprints.count(expected)
+    if len(matches) + invalid_match_count > 1:
+        findings.append(AISystemRegistryFinding(
+            "$.system_manifest_fingerprint", "conflict", expected,
+            tuple(expected for _ in range(len(matches) + invalid_match_count)),
+            "multiple supplied valid or invalid manifests share the cited identity",
+        ))
+    elif invalid_match_count == 1:
+        findings.append(AISystemRegistryFinding(
+            "$.system_manifest_fingerprint", "not_verified", expected, expected,
+            "the exact supplied System Manifest violates its structural contract",
+        ))
+    elif not matches:
         findings.append(AISystemRegistryFinding(
             "$.system_manifest_fingerprint", "missing", expected, None,
             "no valid supplied System Manifest has the exact cited fingerprint",
-        ))
-    elif len(matches) > 1:
-        findings.append(AISystemRegistryFinding(
-            "$.system_manifest_fingerprint", "conflict", expected,
-            tuple(expected for _ in matches), "multiple supplied manifests share the cited identity",
         ))
     else:
         manifest = matches[0][1]
@@ -459,21 +481,35 @@ def verify_ai_system_registry_snapshot(
     document = _snapshot(validate, snapshot)
     supplied_violations = []
     findings = []
-    indexes: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    indexes: dict[str, Any] = {}
     for kind, values in (("ai-system-registration", registrations),
                          ("ai-system-registry-event", events)):
-        rows, invalid = _documents(validate, kind, values)
+        supplied = tuple(values)
+        rows, invalid = _documents(validate, kind, supplied)
         supplied_violations.extend((kind, index, violations) for index, violations in invalid)
         index: dict[str, list[dict[str, Any]]] = {}
         for _, fp, _, value in rows:
             index.setdefault(fp, []).append(value)
         indexes[kind] = index
+        invalid_index: dict[str, int] = {}
+        for position, _ in invalid:
+            fingerprint = _canonicalizable_fingerprint(validate, kind, supplied[position])
+            if fingerprint is not None:
+                invalid_index[fingerprint] = invalid_index.get(fingerprint, 0) + 1
+        indexes[kind + ":invalid"] = invalid_index
     for field, kind in (("registrations", "ai-system-registration"),
                         ("events", "ai-system-registry-event")):
         for position, expected in enumerate(document[field]):
             matches = indexes[kind].get(expected, [])
+            invalid_matches = indexes[kind + ":invalid"].get(expected, 0)
             path = f"$.{field}[{position}]"
-            if not matches:
+            if len(matches) + invalid_matches > 1:
+                status, observed, reason = "conflict", tuple(
+                    expected for _ in range(len(matches) + invalid_matches)
+                ), "multiple valid or invalid supplied rows share the exact identity"
+            elif invalid_matches == 1:
+                status, observed, reason = "not_verified", expected, "the exact supplied record violates its structural contract"
+            elif not matches:
                 status, observed, reason = "missing", None, "the exact cited record is absent"
             elif len(matches) > 1:
                 status, observed, reason = "conflict", tuple(expected for _ in matches), "the exact identity is ambiguous"

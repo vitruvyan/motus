@@ -146,6 +146,16 @@ def test_missing_manifest_never_becomes_a_match():
     assert verdict.binding_complete is False
 
 
+def test_exact_invalid_manifest_is_not_reported_as_absent():
+    invalid = manifest()
+    invalid["compliant"] = True
+    document = fixture("ai-system-registration")
+    document["system_manifest_fingerprint"] = validate.system_manifest_fingerprint(invalid)
+    verdict = verify_ai_system_registration_binding(document, manifests=[invalid])
+    assert verdict.manifest_violations
+    assert verdict.findings[0].status == "not_verified"
+
+
 def test_registration_lineage_preserves_fork_conflict_and_order():
     first = fixture("ai-system-registration")
     first_fp = validate.ai_system_registration_fingerprint(first)
@@ -261,6 +271,17 @@ def test_snapshot_member_from_another_registry_is_mismatched():
     verdict = verify_ai_system_registry_snapshot(snapshot, registrations=[reg])
     assert len(verdict.findings) == 1
     assert verdict.findings[0].status == "mismatched"
+
+
+def test_snapshot_exact_invalid_member_is_not_reported_as_absent():
+    invalid = fixture("ai-system-registration")
+    invalid["compliant"] = True
+    snapshot = fixture("ai-system-registry-snapshot")
+    snapshot["registrations"] = [validate.ai_system_registration_fingerprint(invalid)]
+    snapshot["events"] = []
+    verdict = verify_ai_system_registry_snapshot(snapshot, registrations=[invalid])
+    assert verdict.supplied_violations
+    assert verdict.findings[0].status == "not_verified"
 
 
 def test_public_surface_exports_read_only_helpers():
