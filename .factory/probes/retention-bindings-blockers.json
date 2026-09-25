@@ -23,8 +23,8 @@
   {
     "name": "release claim never makes prior placement disappear",
     "file": "src/vitruvyan_motus/retention.py",
-    "from": "elif terminal_claim:",
-    "to": "elif False:",
+    "from": "state[\"terminal\"] = True",
+    "to": "state[\"terminal\"] = False",
     "tests": "tests/test_retention_bindings_blockers.py"
   },
   {
@@ -37,8 +37,29 @@
   {
     "name": "conflicting supplied hold lineage",
     "file": "src/vitruvyan_motus/retention.py",
-    "from": "conflict = any(item.status == \"conflict\" for item in hold_lineage.findings)",
-    "to": "conflict = False",
+    "from": "elif any(state[\"conflict\"] for state in deciding):",
+    "to": "elif False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "independent proven blocker outranks unrelated uncertainty",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if complete_blocker:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "direct exact membership survives redundant snapshot",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if scope[\"kind\"] != \"exact_artifacts\":\n                    if any(item.status == \"missing\" for item in result.findings):",
+    "to": "if True:\n                    if any(item.status == \"missing\" for item in result.findings):",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid record in matching chain remains relevant",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "\"unverified\": chain_key in invalid_chains or any(",
+    "to": "\"unverified\": any(",
     "tests": "tests/test_retention_bindings_blockers.py"
   }
 ]

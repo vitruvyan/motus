@@ -71,3 +71,13 @@ top-level package exports remain outside this step.
 
 Focused tests are in `tests/test_retention_bindings_blockers.py`; mutation
 targets are in `.factory/probes/retention-bindings-blockers.json`.
+
+Adversarial outcome-precedence closure: blocker evaluation now groups supplied
+hold revisions by `(producer_namespace, hold_id)`. A complete matching group
+establishes the subset blocker even when an independent group has a missing
+snapshot, release claim, conflict or invalid record; all such defects remain
+visible as findings or violations. A conflict, release or missing binding in
+the matching group still prevents that group from establishing the blocker.
+For direct exact scope, a redundant supplied snapshot is validated and reported
+as unused without replacing the declaration's exact membership. Input order
+does not decide between independent groups.

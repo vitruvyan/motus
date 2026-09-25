@@ -564,7 +564,12 @@ def evaluate_supplied_retention_blocker(
                              "the artifact identity violates its contract"),
         ))
     identity = RetentionArtifactIdentity(artifact["kind"], artifact["fingerprint"])
-    hold_docs, hold_issues = _supplied_pool(validate, "legal-hold-declaration", holds)
+    if isinstance(holds, (str, bytes, dict)):
+        raise TypeError("legal-hold-declaration documents must be an iterable of dicts")
+    hold_values = tuple(holds)
+    hold_docs, hold_issues = _supplied_pool(
+        validate, "legal-hold-declaration", hold_values,
+    )
     scope_docs, scope_issues = _supplied_pool(validate, "retention-scope-snapshot", snapshots)
     violations = hold_issues + scope_issues
     findings: list[RetentionFinding] = []
@@ -577,78 +582,115 @@ def evaluate_supplied_retention_blocker(
         "legal-hold-declaration", (document for _, document in hold_docs),
     )
     findings.extend(hold_lineage.findings)
-    conflict = any(item.status == "conflict" for item in hold_lineage.findings)
-    missing = any(item.status == "not_verified" and
-                  item.path.endswith(".supersedes")
-                  for item in hold_lineage.findings)
-    unverified = bool(violations) or any(
-        item.status == "mismatched" for item in hold_lineage.findings
+    chains: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = {}
+    for fingerprint, hold in hold_docs:
+        chains.setdefault((hold["producer_namespace"], hold["hold_id"]), []).append(
+            (fingerprint, hold)
+        )
+    invalid_chains: set[tuple[str, str]] = set()
+    for _, index, _ in hold_issues:
+        value = hold_values[index]
+        if isinstance(value, dict):
+            namespace, hold_id = value.get("producer_namespace"), value.get("hold_id")
+            if isinstance(namespace, str) and isinstance(hold_id, str):
+                invalid_chains.add((namespace, hold_id))
+    states: list[dict[str, bool]] = []
+    for chain_key, records in sorted(chains.items()):
+        lineage = verify_retention_lineage(
+            "legal-hold-declaration", (document for _, document in records),
+        )
+        state = {
+            "matched": False,
+            "conflict": any(item.status == "conflict" for item in lineage.findings),
+            "missing": any(item.status == "not_verified" and
+                           item.path.endswith(".supersedes")
+                           for item in lineage.findings),
+            "unverified": chain_key in invalid_chains or any(
+                item.status == "mismatched" for item in lineage.findings
+            ),
+            "terminal": False,
+        }
+        for hold_fingerprint, hold in records:
+            if hold["action"] in ("released", "cancelled"):
+                state["terminal"] = True
+                findings.append(RetentionFinding(
+                    f"hold:{hold_fingerprint}.action", "not_verified", None,
+                    hold["action"],
+                    "release or cancellation is a producer claim; authority to "
+                    "disregard prior placement is not established",
+                ))
+                continue
+            scope = hold["scope"]
+            bound_snapshots = tuple((fingerprint, document)
+                                    for fingerprint, document in scope_docs
+                                    if document["source"] == {
+                                        "kind": "legal_hold_declaration",
+                                        "fingerprint": hold_fingerprint,
+                                    })
+            if scope["kind"] != "exact_artifacts" and len(bound_snapshots) > 1:
+                state["conflict"] = True
+                findings.append(RetentionFinding(
+                    f"hold:{hold_fingerprint}.snapshots", "conflict", hold_fingerprint,
+                    tuple(fingerprint for fingerprint, _ in bound_snapshots),
+                    "multiple supplied snapshots bind this selector revision; "
+                    "none is selected or unioned",
+                ))
+                continue
+            # An exact list already establishes direct membership. A supplied
+            # snapshot is still inspected and reported, but cannot replace it.
+            candidates = (bound_snapshots if scope["kind"] == "exact_artifacts"
+                          and bound_snapshots else ((None, None),))
+            if scope["kind"] != "exact_artifacts":
+                candidates = (bound_snapshots[0],) if bound_snapshots else ((None, None),)
+            for _, supplied_snapshot in candidates:
+                result = resolve_supplied_retention_scope(
+                    hold, snapshot=supplied_snapshot,
+                )
+                findings.extend(RetentionFinding(
+                    f"hold:{hold_fingerprint}.scope:{item.path}", item.status,
+                    item.expected, item.observed, item.reason,
+                ) for item in result.findings)
+                if scope["kind"] != "exact_artifacts":
+                    if any(item.status == "missing" for item in result.findings):
+                        state["missing"] = True
+                        findings.append(RetentionFinding(
+                            f"hold:{hold_fingerprint}.snapshot", "missing",
+                            hold_fingerprint, None,
+                            "this selector has no exact supplied scope snapshot",
+                        ))
+                        continue
+                    if (result.declaration_violations or result.snapshot_violations or
+                            any(item.status in ("mismatched", "not_verified", "conflict")
+                                for item in result.findings)):
+                        state["unverified"] = True
+                        continue
+                if identity in result.artifacts:
+                    state["matched"] = True
+                    findings.append(RetentionFinding(
+                        f"hold:{hold_fingerprint}.artifact", "matched",
+                        identity.fingerprint, hold_fingerprint,
+                        "this supplied producer hold declaration scopes the exact typed artifact",
+                    ))
+        states.append(state)
+
+    relevant = [state for state in states if state["matched"]]
+    complete_blocker = any(
+        state["matched"] and not any(state[key] for key in
+                                     ("conflict", "terminal", "missing", "unverified"))
+        for state in states
     )
-    terminal_claim = False
-    matched = False
-    for hold_fingerprint, hold in hold_docs:
-        if hold["action"] in ("released", "cancelled"):
-            terminal_claim = True
-            unverified = True
-            findings.append(RetentionFinding(
-                f"hold:{hold_fingerprint}.action", "not_verified", None,
-                hold["action"],
-                "release or cancellation is a producer claim; authority to "
-                "disregard prior placement is not established",
-            ))
-            continue
-        scope = hold["scope"]
-        bound_snapshots = tuple((fingerprint, document)
-                                for fingerprint, document in scope_docs
-                                if document["source"] == {
-                                    "kind": "legal_hold_declaration",
-                                    "fingerprint": hold_fingerprint,
-                                })
-        if scope["kind"] != "exact_artifacts" and len(bound_snapshots) > 1:
-            conflict = True
-            findings.append(RetentionFinding(
-                f"hold:{hold_fingerprint}.snapshots", "conflict", hold_fingerprint,
-                tuple(fingerprint for fingerprint, _ in bound_snapshots),
-                "multiple supplied snapshots bind this selector revision; "
-                "none is selected or unioned",
-            ))
-            continue
-        supplied_snapshot = (bound_snapshots[0][1] if bound_snapshots else None)
-        result = resolve_supplied_retention_scope(hold, snapshot=supplied_snapshot)
-        if any(item.status == "missing" for item in result.findings):
-            missing = True
-            findings.append(RetentionFinding(
-                f"hold:{hold_fingerprint}.snapshot", "missing", hold_fingerprint,
-                None, "this selector has no exact supplied scope snapshot",
-            ))
-            continue
-        if result.declaration_violations or result.snapshot_violations or any(
-            item.status in ("mismatched", "not_verified", "conflict")
-            for item in result.findings
-        ):
-            unverified = True
-            findings.append(RetentionFinding(
-                f"hold:{hold_fingerprint}.scope", "not_verified", hold_fingerprint,
-                result.snapshot_fingerprint,
-                "supplied scope binding could not be verified",
-            ))
-            continue
-        if identity in result.artifacts:
-            matched = True
-            findings.append(RetentionFinding(
-                f"hold:{hold_fingerprint}.artifact", "matched", identity.fingerprint,
-                hold_fingerprint,
-                "this supplied producer hold declaration scopes the exact typed artifact",
-            ))
-    if conflict:
-        status: BlockerStatus = "conflicting_supplied_hold"
-    elif terminal_claim:
+    deciding = relevant if relevant else states
+    if complete_blocker:
+        status: BlockerStatus = "blocked_by_supplied_hold"
+    elif any(state["conflict"] for state in deciding):
+        status = "conflicting_supplied_hold"
+    elif any(state["terminal"] for state in deciding):
         status = "not_verified"
-    elif missing:
+    elif any(state["missing"] for state in deciding):
         status = "missing_binding"
-    elif unverified:
+    elif any(state["unverified"] for state in deciding) or (not relevant and violations):
         status = "not_verified"
-    elif matched:
+    elif relevant:
         status = "blocked_by_supplied_hold"
     else:
         status = "no_blocker_in_supplied_evidence"

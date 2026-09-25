@@ -138,6 +138,94 @@ def test_matching_placed_hold_is_only_a_supplied_producer_blocker():
                ("clear", "eligible", "disposable", "custody_verified"))
 
 
+def test_redundant_source_bound_snapshot_does_not_erase_direct_hold_membership():
+    placed = hold()
+    redundant = snapshot_for(placed, "legal_hold_declaration")
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[placed], snapshots=[redundant],
+    )
+    assert result.status == "blocked_by_supplied_hold"
+    assert any(item.status == "mismatched" and "snapshot" in item.path
+               for item in result.findings)
+    assert any(item.status == "matched" and item.path.endswith(".artifact")
+               for item in result.findings)
+
+
+def test_independent_missing_selector_and_release_do_not_erase_proven_blocker():
+    placed = hold()
+    unrelated_selector = fixture(371, "legal-hold-declaration")
+    unrelated_selector["hold_id"] = "H-unrelated-selector"
+    unrelated_release = copy.deepcopy(unrelated_selector)
+    unrelated_release["hold_id"] = "H-unrelated-release"
+    unrelated_release["action"] = "released"
+    unrelated_release["supersedes"] = "sha256:" + "f" * 64
+    unrelated_release["rationale"] = "Producer claims a release."
+    del unrelated_release["scope"]
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[placed, unrelated_selector, unrelated_release],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[unrelated_release, unrelated_selector, placed],
+    )
+    assert left.status == right.status == "blocked_by_supplied_hold"
+    assert left.findings == right.findings
+    assert any(item.status == "missing" for item in left.findings)
+    assert any(item.status == "not_verified" and "release" in item.reason
+               for item in left.findings)
+
+
+def test_invalid_unrelated_record_remains_visible_with_a_matching_hold():
+    bad = hold()
+    bad["hold_id"] = "H-unrelated-invalid"
+    bad["schema_version"] = "invalid"
+    result = evaluate_supplied_retention_blocker(ARTIFACT, holds=[hold(), bad])
+    assert result.status == "blocked_by_supplied_hold"
+    assert result.violations
+    assert any(item.status == "not_verified" for item in result.findings)
+    bad["hold_id"] = []
+    malformed_identity = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[hold(), bad],
+    )
+    assert malformed_identity.status == "blocked_by_supplied_hold"
+    assert malformed_identity.violations
+
+
+def test_invalid_record_claiming_the_matching_chain_stays_unverified():
+    bad = hold()
+    bad["schema_version"] = "invalid"
+    result = evaluate_supplied_retention_blocker(ARTIFACT, holds=[hold(), bad])
+    assert result.status == "not_verified"
+    assert result.violations
+
+
+def test_missing_scope_in_the_matching_chain_still_prevents_a_blocker_verdict():
+    placed = hold()
+    amended = copy.deepcopy(placed)
+    amended["action"] = "amended"
+    amended["supersedes"] = validate.legal_hold_declaration_fingerprint(placed)
+    amended["scope"] = {"kind": "tenant_writer", "tenant": "acme"}
+    result = evaluate_supplied_retention_blocker(ARTIFACT, holds=[placed, amended])
+    assert result.status == "missing_binding"
+    assert any(item.status == "matched" and item.path.endswith(".artifact")
+               for item in result.findings)
+
+
+def test_conflict_in_an_independent_lineage_remains_visible_without_erasing_blocker():
+    placed = hold()
+    unrelated = hold()
+    unrelated["hold_id"] = "H-other"
+    unrelated["scope"] = {"kind": "exact_artifacts", "artifacts": [
+        {"kind": "receipt", "fingerprint": "sha256:" + "e" * 64},
+    ]}
+    competing = copy.deepcopy(unrelated)
+    competing["producer_ref"] = "second-producer"
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[competing, placed, unrelated],
+    )
+    assert result.status == "blocked_by_supplied_hold"
+    assert any(item.status == "conflict" for item in result.findings)
+
+
 def test_empty_or_nonmatching_subset_has_only_subset_verdict():
     empty = evaluate_supplied_retention_blocker(ARTIFACT)
     assert empty.status == "no_blocker_in_supplied_evidence"
@@ -163,7 +251,7 @@ def test_selector_requires_one_exact_snapshot_and_does_not_expand_empty_one():
     assert nonmatch.status == "no_blocker_in_supplied_evidence"
 
 
-def test_missing_or_wrong_predecessor_never_acts_as_a_verified_hold():
+def test_missing_predecessor_cannot_verify_its_chain_but_an_independent_hold_can():
     placed = hold()
     amended = copy.deepcopy(placed)
     amended["action"] = "amended"
@@ -173,7 +261,8 @@ def test_missing_or_wrong_predecessor_never_acts_as_a_verified_hold():
     assert missing.status == "missing_binding"
     amended["hold_id"] = "wrong-stable-id"
     wrong = evaluate_supplied_retention_blocker(ARTIFACT, holds=[placed, amended])
-    assert wrong.status == "not_verified"
+    assert wrong.status == "blocked_by_supplied_hold"
+    assert any(item.status == "mismatched" for item in wrong.findings)
 
 
 @pytest.mark.parametrize("action", ["released", "cancelled"])
