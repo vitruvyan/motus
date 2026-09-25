@@ -81,3 +81,13 @@ the matching group still prevents that group from establishing the blocker.
 For direct exact scope, a redundant supplied snapshot is validated and reported
 as unused without replacing the declaration's exact membership. Input order
 does not decide between independent groups.
+
+## Micro-step 4 — public read-only package surface
+
+The six immutable finding, identity and verdict dataclasses plus four
+retention helpers are exported through `vitruvyan_motus.__init__` and its
+explicit `__all__`. README lists the API and shows supplied-document use,
+including the subset-only meaning of hold findings and the limits of policy,
+release, application and custody claims. Public imports and wheel membership
+receive focused tests. This is an additive API checkpoint, not a v0.19.0
+release or a change to the roadmap delivery state.

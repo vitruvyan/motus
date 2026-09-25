@@ -989,6 +989,11 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - incident and CAPA: `verify_incident_capa_ledger`,
   `order_incident_capa_entries`, `IncidentCAPAVerdict`,
   `IncidentCAPAFinding`;
+- retention and legal hold: `verify_retention_lineage`,
+  `resolve_supplied_retention_scope`, `verify_retention_application_bindings`,
+  `evaluate_supplied_retention_blocker`, `RetentionFinding`,
+  `RetentionArtifactIdentity`, `RetentionLineageVerdict`, `RetentionScopeVerdict`,
+  `RetentionApplicationBindingVerdict`, `RetentionBlockerVerdict`;
 - effects: `EffectDescriptor`, `EffectReceipt`, `EffectClass`;
 - identity: `__version__`;
 - observation: `TraceSink`, `TraceRunSink`, `Listener`, `InMemoryTraceSink`,
@@ -1169,6 +1174,39 @@ receipt documents and evidence-package
 bytes can also be referenced; package identity is the exact transport-byte
 fingerprint returned by `evidence_package_fingerprint()`, while
 `verify_package()` remains authoritative for package contents.
+
+### Retention and legal-hold evidence
+
+ADR-040 separates policy and hold declarations, exact scope snapshots,
+application records, and custody observations. The read-only helpers inspect
+only the documents supplied by the caller. For an exact-artifact policy:
+
+```python
+from vitruvyan_motus import (
+    evaluate_supplied_retention_blocker,
+    resolve_supplied_retention_scope,
+    verify_retention_application_bindings,
+    verify_retention_lineage,
+)
+
+lineage = verify_retention_lineage("legal-hold-declaration", holds)
+scope = resolve_supplied_retention_scope(policy)
+bindings = verify_retention_application_bindings(
+    application, policy=policy, holds=holds, snapshots=snapshots,
+)
+blocker = evaluate_supplied_retention_blocker(
+    application["artifacts"][0], holds=holds, snapshots=snapshots,
+)
+```
+
+For an execution-reference or tenant/writer selector, pass one exact
+`snapshot=` to `resolve_supplied_retention_scope`; an absent snapshot leaves
+membership unverified. `blocked_by_supplied_hold` means a matching supplied
+producer hold claim, not legal authority or enforcement. A release or
+cancellation is another producer claim and does not erase a placement.
+`no_blocker_in_supplied_evidence` describes only the caller's subset; it does
+not establish that other holds are absent or authorize disposal. Application
+outcomes and custody observations do not prove continued custody.
 
 ### Evidence API for bridges
 
