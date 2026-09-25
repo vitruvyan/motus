@@ -11,6 +11,19 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Literal
 
+__all__ = (
+    "RetentionFinding",
+    "RetentionArtifactIdentity",
+    "RetentionLineageVerdict",
+    "RetentionScopeVerdict",
+    "RetentionApplicationBindingVerdict",
+    "RetentionBlockerVerdict",
+    "verify_retention_lineage",
+    "resolve_supplied_retention_scope",
+    "verify_retention_application_bindings",
+    "evaluate_supplied_retention_blocker",
+)
+
 if TYPE_CHECKING:
     from vitruvyan_motus.contract.validate import Violation
 

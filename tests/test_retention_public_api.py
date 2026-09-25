@@ -25,10 +25,17 @@ PUBLIC = (
 
 
 def test_every_retention_symbol_is_exported_from_the_native_package():
+    assert retention.__all__ == PUBLIC
     for name in PUBLIC:
         assert name in motus.__all__
         assert getattr(motus, name) is getattr(retention, name)
     assert len(motus.__all__) == len(set(motus.__all__))
+
+
+def test_retention_wildcard_import_exposes_only_the_public_surface():
+    namespace: dict[str, object] = {}
+    exec("from vitruvyan_motus.retention import *", namespace)
+    assert tuple(name for name in namespace if name != "__builtins__") == PUBLIC
 
 
 def test_readme_public_surface_names_every_exported_retention_symbol():
