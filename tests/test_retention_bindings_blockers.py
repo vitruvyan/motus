@@ -563,6 +563,63 @@ def test_ambiguous_cross_lineage_predecessor_remains_conflict(monkeypatch):
                for item in result.findings)
 
 
+def test_same_hold_fingerprint_across_chains_cannot_bind_snapshot(monkeypatch):
+    first = fixture(371, "legal-hold-declaration")
+    first["hold_id"] = "H-first"
+    second = copy.deepcopy(first)
+    second["hold_id"] = "H-second"
+    second["producer_ref"] = "other-producer"
+    forced = "sha256:" + "d" * 64
+    original = validate.legal_hold_declaration_fingerprint
+    monkeypatch.setattr(
+        validate, "legal_hold_declaration_fingerprint",
+        lambda document: forced if document["hold_id"] in ("H-first", "H-second")
+        else original(document),
+    )
+    snapshot = snapshot_for(first, "legal_hold_declaration")
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[first, second], snapshots=[snapshot],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[second, first], snapshots=[snapshot],
+    )
+    assert left.status == right.status == "conflicting_supplied_hold"
+    assert left.findings == right.findings
+    assert any(item.path == f"lineage:{forced}" and item.status == "conflict"
+               for item in left.findings)
+    independent = hold()
+    independent["hold_id"] = "H-independent-complete"
+    complete = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[second, independent, first], snapshots=[snapshot],
+    )
+    assert complete.status == "blocked_by_supplied_hold"
+    assert any(item.path == f"lineage:{forced}" and item.status == "conflict"
+               for item in complete.findings)
+
+
+def test_invalid_hold_colliding_with_snapshot_source_is_visible_conflict(monkeypatch):
+    valid = fixture(371, "legal-hold-declaration")
+    valid["hold_id"] = "H-valid"
+    invalid = copy.deepcopy(valid)
+    invalid["hold_id"] = "H-invalid"
+    invalid["schema_version"] = "wrong"
+    forced = "sha256:" + "d" * 64
+    original = validate.legal_hold_declaration_fingerprint
+    monkeypatch.setattr(
+        validate, "legal_hold_declaration_fingerprint",
+        lambda document: forced if document["hold_id"] in ("H-valid", "H-invalid")
+        else original(document),
+    )
+    snapshot = snapshot_for(valid, "legal_hold_declaration")
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid, valid], snapshots=[snapshot],
+    )
+    assert result.status == "conflicting_supplied_hold"
+    assert result.violations
+    assert any(item.path == f"lineage:{forced}" and item.status == "conflict"
+               for item in result.findings)
+
+
 @pytest.mark.parametrize("difference", ["producer_namespace", "hold_id", "both"])
 def test_exact_invalid_predecessor_is_supplied_but_unverified(difference):
     invalid_parent = hold()

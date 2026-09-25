@@ -660,11 +660,25 @@ def evaluate_supplied_retention_blocker(
         prior = invalid_predecessor_findings.get(path)
         if prior is None or replacement.status == "conflict":
             invalid_predecessor_findings[path] = replacement
+    global_conflict_paths = {
+        item.path for item in hold_lineage.findings if item.status == "conflict"
+    }
+    invalid_collision_findings = tuple(
+        RetentionFinding(
+            f"lineage:{fingerprint}", "conflict", fingerprint,
+            tuple(fingerprint for _ in range(predecessor_counts[fingerprint])),
+            "multiple supplied hold rows carry this exact fingerprint; "
+            "at least one violates its structural contract",
+        )
+        for fingerprint in sorted(set(invalid_hold_fingerprints))
+        if predecessor_counts[fingerprint] > 1 and
+        f"lineage:{fingerprint}" not in global_conflict_paths
+    )
     lineage_findings = tuple(
         item for item in hold_lineage.findings
         if item.path not in invalid_predecessor_findings or
         not item.path.endswith(".supersedes")
-    ) + tuple(invalid_predecessor_findings.values())
+    ) + tuple(invalid_predecessor_findings.values()) + invalid_collision_findings
     findings.extend(lineage_findings)
     globally_mismatched_predecessors = {
         item.path for item in lineage_findings
@@ -723,6 +737,8 @@ def evaluate_supplied_retention_blocker(
         state = {
             "matched": False,
             "conflict": (any(item.status == "conflict" for item in lineage.findings)
+                         or any(predecessor_counts[fingerprint] > 1
+                                for fingerprint, _ in records)
                          or any(
                              f"lineage:{fingerprint}.supersedes" in
                              globally_conflicting_predecessors

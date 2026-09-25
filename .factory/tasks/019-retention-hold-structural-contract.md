@@ -106,6 +106,12 @@ from a valid child citing it. That child's supplied predecessor is
 absent predecessor remains a missing binding, and a separate complete hold
 still establishes only its supplied-subset blocker.
 
+Cross-chain digest collision closure: a fingerprint shared by distinct
+supplied hold rows is a global ambiguity projected into every affected chain,
+including snapshot bindings. A valid/invalid collision also gets an explicit
+conflict finding. Neither can produce a blocker unless a separate complete
+hold chain supplies one.
+
 Final PR #192 snapshot-source closure: a valid supplied scope snapshot that
 contains the queried artifact cannot become invisible merely because its exact
 legal-hold source is absent from the supplied subset. The verdict is

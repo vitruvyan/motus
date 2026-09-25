@@ -117,5 +117,19 @@
     "from": "elif any(state[\"missing\"] for state in deciding) or unresolved_snapshot_missing:",
     "to": "elif any(state[\"missing\"] for state in deciding):",
     "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "duplicate hold fingerprint poisons every affected chain",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "or any(predecessor_counts[fingerprint] > 1\n                                for fingerprint, _ in records)",
+    "to": "or any(False\n                                for fingerprint, _ in records)",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid valid digest collision remains visible",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if predecessor_counts[fingerprint] > 1 and\n        f\"lineage:{fingerprint}\" not in global_conflict_paths",
+    "to": "if False and\n        f\"lineage:{fingerprint}\" not in global_conflict_paths",
+    "tests": "tests/test_retention_bindings_blockers.py"
   }
 ]
