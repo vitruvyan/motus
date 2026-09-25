@@ -251,6 +251,91 @@ def test_selector_requires_one_exact_snapshot_and_does_not_expand_empty_one():
     assert nonmatch.status == "no_blocker_in_supplied_evidence"
 
 
+def test_invalid_snapshot_named_to_selector_hold_is_not_missing_binding():
+    selector = fixture(371, "legal-hold-declaration")
+    invalid = snapshot_for(selector, "legal_hold_declaration")
+    invalid["schema_version"] = "wrong"
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector], snapshots=[invalid],
+    )
+    assert result.status == "not_verified"
+    assert result.violations and result.violations[0][0] == "retention-scope-snapshot"
+    fingerprint = validate.legal_hold_declaration_fingerprint(selector)
+    assert any(item.path == f"hold:{fingerprint}.snapshots" and
+               item.status == "not_verified" for item in result.findings)
+
+
+def test_valid_and_invalid_snapshots_for_same_selector_do_not_prove_blocker():
+    selector = fixture(371, "legal-hold-declaration")
+    valid = snapshot_for(selector, "legal_hold_declaration")
+    invalid = copy.deepcopy(valid)
+    invalid["snapshot_id"] = "S-invalid"
+    invalid["schema_version"] = "wrong"
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector], snapshots=[valid, invalid],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector], snapshots=[invalid, valid],
+    )
+    assert left.status == right.status == "not_verified"
+    assert left.findings == right.findings
+    assert any(item.path.endswith(".artifact") and item.status == "matched"
+               for item in left.findings)
+    assert left.violations and right.violations
+
+
+def test_same_selector_snapshot_conflict_outranks_invalid_snapshot():
+    selector = fixture(371, "legal-hold-declaration")
+    first = snapshot_for(selector, "legal_hold_declaration")
+    second = copy.deepcopy(first)
+    second["snapshot_id"] = "S-competing"
+    invalid = copy.deepcopy(first)
+    invalid["schema_version"] = "wrong"
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector], snapshots=[invalid, second, first],
+    )
+    assert result.status == "conflicting_supplied_hold"
+    assert result.violations
+    assert any(item.path.endswith(".snapshots") and item.status == "conflict"
+               for item in result.findings)
+
+
+def test_unrelated_invalid_snapshot_does_not_erase_independent_blocker():
+    placed = hold()
+    selector = fixture(371, "legal-hold-declaration")
+    selector["hold_id"] = "H-unrelated-selector"
+    invalid = snapshot_for(selector, "legal_hold_declaration")
+    invalid["schema_version"] = "wrong"
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[placed, selector], snapshots=[invalid],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector, placed], snapshots=[invalid],
+    )
+    assert left.status == right.status == "blocked_by_supplied_hold"
+    assert left.findings == right.findings
+    assert left.violations
+
+
+def test_malformed_snapshot_source_cannot_be_associated_with_selector_hold():
+    selector = fixture(371, "legal-hold-declaration")
+    selector["hold_id"] = "H-unrelated-selector"
+    invalid = snapshot_for(selector, "legal_hold_declaration")
+    invalid["source"] = ["legal_hold_declaration", "not-an-exact-digest"]
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector], snapshots=[invalid],
+    )
+    assert result.status == "missing_binding"
+    assert result.violations
+    assert not any(item.path.endswith(".snapshots") and
+                   item.status == "not_verified" for item in result.findings)
+    independently_blocked = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[selector, hold()], snapshots=[invalid],
+    )
+    assert independently_blocked.status == "blocked_by_supplied_hold"
+    assert independently_blocked.violations
+
+
 def test_missing_predecessor_cannot_verify_its_chain_but_an_independent_hold_can():
     placed = hold()
     amended = copy.deepcopy(placed)

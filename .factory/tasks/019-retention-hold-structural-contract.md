@@ -82,6 +82,13 @@ For direct exact scope, a redundant supplied snapshot is validated and reported
 as unused without replacing the declaration's exact membership. Input order
 does not decide between independent groups.
 
+PR #192 adversarial closure: structurally invalid scope snapshots remain
+supplied violations. When a readable raw `source` names the exact selector
+hold revision, that lineage is `not_verified` even if another valid snapshot
+names it; a same-lineage conflict still outranks this uncertainty. A malformed
+or unrelated source cannot associate the defect with that hold, and an
+independent complete blocker is not erased by unrelated invalid input.
+
 ## Micro-step 4 — public read-only package surface
 
 The six immutable finding, identity and verdict dataclasses plus four

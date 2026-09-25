@@ -61,5 +61,12 @@
     "from": "\"unverified\": chain_key in invalid_chains or any(",
     "to": "\"unverified\": any(",
     "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid snapshot exact selector source poisons matching lineage",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "hold_fingerprint in invalid_snapshot_sources)",
+    "to": "False)",
+    "tests": "tests/test_retention_bindings_blockers.py"
   }
 ]

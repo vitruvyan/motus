@@ -583,7 +583,21 @@ def evaluate_supplied_retention_blocker(
     hold_docs, hold_issues = _supplied_pool(
         validate, "legal-hold-declaration", hold_values,
     )
-    scope_docs, scope_issues = _supplied_pool(validate, "retention-scope-snapshot", snapshots)
+    if isinstance(snapshots, (str, bytes, dict)):
+        raise TypeError("retention-scope-snapshot documents must be an iterable of dicts")
+    snapshot_values = tuple(snapshots)
+    scope_docs, scope_issues = _supplied_pool(
+        validate, "retention-scope-snapshot", snapshot_values,
+    )
+    invalid_snapshot_sources: set[str] = set()
+    for _, index, _ in scope_issues:
+        source = snapshot_values[index].get("source")
+        if (isinstance(source, dict) and
+                source.get("kind") == "legal_hold_declaration" and
+                isinstance(source.get("fingerprint"), str)):
+            # Only a readable exact source may associate an invalid document
+            # with a hold; the invalid snapshot itself never resolves scope.
+            invalid_snapshot_sources.add(source["fingerprint"])
     violations = hold_issues + scope_issues
     findings: list[RetentionFinding] = []
     if violations:
@@ -634,6 +648,16 @@ def evaluate_supplied_retention_blocker(
                 ))
                 continue
             scope = hold["scope"]
+            invalid_bound_snapshot = (scope["kind"] != "exact_artifacts" and
+                                      hold_fingerprint in invalid_snapshot_sources)
+            if invalid_bound_snapshot:
+                state["unverified"] = True
+                findings.append(RetentionFinding(
+                    f"hold:{hold_fingerprint}.snapshots", "not_verified",
+                    hold_fingerprint, None,
+                    "a supplied snapshot naming this exact selector hold revision "
+                    "violates its structural contract; scope is not verified",
+                ))
             bound_snapshots = tuple((fingerprint, document)
                                     for fingerprint, document in scope_docs
                                     if document["source"] == {
@@ -655,6 +679,8 @@ def evaluate_supplied_retention_blocker(
                           and bound_snapshots else ((None, None),))
             if scope["kind"] != "exact_artifacts":
                 candidates = (bound_snapshots[0],) if bound_snapshots else ((None, None),)
+            if invalid_bound_snapshot and not bound_snapshots:
+                continue
             for _, supplied_snapshot in candidates:
                 result = resolve_supplied_retention_scope(
                     hold, snapshot=supplied_snapshot,
@@ -699,9 +725,11 @@ def evaluate_supplied_retention_blocker(
         status = "conflicting_supplied_hold"
     elif any(state["terminal"] for state in deciding):
         status = "not_verified"
+    elif any(state["unverified"] for state in deciding):
+        status = "not_verified"
     elif any(state["missing"] for state in deciding):
         status = "missing_binding"
-    elif any(state["unverified"] for state in deciding) or (not relevant and violations):
+    elif not relevant and violations:
         status = "not_verified"
     elif relevant:
         status = "blocked_by_supplied_hold"
