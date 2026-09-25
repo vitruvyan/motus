@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","producer_namespace":"acme/records","producer_ref":"records-team","observation_id":"C-001","observer_ref":"probe-1","artifact":{"kind":"receipt","fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"method_ref":"method/opaque-002","result":"retrievable","observed_at":"2026-09-24T10:05:00Z"}

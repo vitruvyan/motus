@@ -115,6 +115,14 @@ _REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schem
 _INCIDENT_DECLARATION_SCHEMA_FILE = "incident-declaration.v1.schema.json"
 _CAPA_ACTION_SCHEMA_FILE = "capa-action.v1.schema.json"
 _INCIDENT_CAPA_LEDGER_SCHEMA_FILE = "incident-capa-ledger.v1.schema.json"
+_RETENTION_SCHEMA_FILES = {
+    "retention-policy-declaration": "retention-policy-declaration.v1.schema.json",
+    "legal-hold-declaration": "legal-hold-declaration.v1.schema.json",
+    "retention-scope-snapshot": "retention-scope-snapshot.v1.schema.json",
+    "retention-trigger-occurrence": "retention-trigger-occurrence.v1.schema.json",
+    "retention-application": "retention-application.v1.schema.json",
+    "custody-observation": "custody-observation.v1.schema.json",
+}
 
 _TERMINAL_KINDS = frozenset({"run_completed", "run_failed", "run_cancelled"})
 
@@ -787,6 +795,36 @@ def capa_action_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def retention_policy_declaration_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one ADR-040 policy declaration."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def legal_hold_declaration_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one ADR-040 hold declaration."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def retention_scope_snapshot_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one ADR-040 scope snapshot."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def retention_trigger_occurrence_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one claimed trigger occurrence."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def retention_application_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one claimed custodian operation."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
+def custody_observation_fingerprint(document: Any) -> str:
+    """Exact canonical identity of one bounded custody observation."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 def incident_capa_ledger_fingerprint(document: Any) -> str:
     """Identity of one portable ledger view with transport order removed.
 
@@ -836,6 +874,7 @@ _RISK_CONTROL_SCHEMA_REGISTRY: Registry | None = None
 _CONTROL_APPLICATION_SCHEMA_REGISTRY: Registry | None = None
 _HUMAN_OVERSIGHT_SCHEMA_REGISTRY: Registry | None = None
 _INCIDENT_CAPA_SCHEMA_REGISTRY: Registry | None = None
+_RETENTION_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -905,6 +944,30 @@ def load_capa_action_schema() -> dict:
 def load_incident_capa_ledger_schema() -> dict:
     """The Incident / CAPA Ledger v1 schema, loaded relative to this file."""
     return _load(_INCIDENT_CAPA_LEDGER_SCHEMA_FILE)
+
+
+def load_retention_policy_declaration_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["retention-policy-declaration"])
+
+
+def load_legal_hold_declaration_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["legal-hold-declaration"])
+
+
+def load_retention_scope_snapshot_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["retention-scope-snapshot"])
+
+
+def load_retention_trigger_occurrence_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["retention-trigger-occurrence"])
+
+
+def load_retention_application_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["retention-application"])
+
+
+def load_custody_observation_schema() -> dict:
+    return _load(_RETENTION_SCHEMA_FILES["custody-observation"])
 
 
 
@@ -1107,6 +1170,33 @@ def _incident_capa_ledger_validator() -> Draft202012Validator:
     return _incident_capa_validator(
         "incident-capa-ledger", load_incident_capa_ledger_schema()
     )
+
+
+def _retention_schema_registry() -> Registry:
+    """Resolve ADR-040's shared types from the shipped schema set."""
+    global _RETENTION_SCHEMA_REGISTRY
+    if _RETENTION_SCHEMA_REGISTRY is None:
+        names = (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            *_RETENTION_SCHEMA_FILES.values(),
+        )
+        resources = []
+        for name in names:
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _RETENTION_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _RETENTION_SCHEMA_REGISTRY
+
+
+def _retention_validator(key: str, schema: dict) -> Draft202012Validator:
+    if key not in _VALIDATORS:
+        _VALIDATORS[key] = Draft202012Validator(
+            schema,
+            format_checker=FormatChecker(),
+            registry=_retention_schema_registry(),
+        )
+    return _VALIDATORS[key]
 
 
 
@@ -1949,6 +2039,120 @@ def validate_capa_action(document: dict) -> list[Violation]:
         rule="CAPA2",
     )
     return violations
+
+
+# --------------------------------------------------------------------------- #
+# Retention declarations and observations — ADR-040 structural stage         #
+# --------------------------------------------------------------------------- #
+
+
+_RETENTION_TIME_FIELDS = {
+    "retention-policy-declaration": ("declared_at",),
+    "legal-hold-declaration": ("declared_at", "effective_at"),
+    "retention-scope-snapshot": ("observed_at",),
+    "retention-trigger-occurrence": ("occurred_at", "declared_at"),
+    "retention-application": ("observed_at",),
+    "custody-observation": ("observed_at",),
+}
+
+
+def _retention_identity_arrays(kind: str, document: dict) -> list[tuple[str, list]]:
+    """The typed arrays whose identities must be unique, including nested scope."""
+    arrays: list[tuple[str, list]] = []
+    if kind in ("retention-policy-declaration", "legal-hold-declaration"):
+        scope = document.get("scope")
+        if scope and scope["kind"] == "exact_artifacts":
+            arrays.append(("$.scope.artifacts", scope["artifacts"]))
+    if kind in ("retention-scope-snapshot", "retention-application"):
+        arrays.append(("$.artifacts", document["artifacts"]))
+    if kind in ("retention-application", "custody-observation") and "evidence" in document:
+        arrays.append(("$.evidence", document["evidence"]))
+    return arrays
+
+
+def _validate_retention_document(kind: str, document: dict) -> list[Violation]:
+    """Validate one self-contained ADR-040 claim; referenced evidence stays unverified."""
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+    schema = _load(_RETENTION_SCHEMA_FILES[kind])
+    violations += _schema_violations(
+        schema, _retention_validator(kind, schema), document
+    )
+    if violations:
+        return violations
+
+    # jsonschema treats an integral Python float as an integer. The wire
+    # contract needs the JSON integer value itself, not only equal arithmetic.
+    if (kind == "retention-policy-declaration"
+            and document["rule"]["kind"] == "duration"
+            and type(document["rule"]["duration_seconds"]) is not int):
+        violations.append(Violation(
+            "RET4", "$.rule.duration_seconds",
+            "duration_seconds must be a JSON integer, not an integral float",
+        ))
+
+    for field in _RETENTION_TIME_FIELDS[kind]:
+        if field in document and not _calendar_valid_utc(document[field]):
+            violations.append(Violation(
+                "RET1", f"$.{field}",
+                "timestamp has UTC shape but is not a real UTC instant",
+            ))
+
+    for path, entries in _retention_identity_arrays(kind, document):
+        seen: set[tuple[str, str]] = set()
+        for index, entry in enumerate(entries):
+            identity = (entry["kind"], entry["fingerprint"])
+            if identity in seen:
+                violations.append(Violation(
+                    "RET2", f"{path}[{index}]",
+                    "typed artifact identity appears more than once",
+                ))
+            seen.add(identity)
+
+    scope = document.get("scope")
+    if scope and scope["kind"] == "execution_refs":
+        for index, ref in enumerate(scope["execution_refs"]):
+            if _canonical_execution_ref_parts(ref) is None:
+                violations.append(Violation(
+                    "RET3", f"$.scope.execution_refs[{index}]",
+                    "execution_ref must be a canonical tenant/writer/sequence coordinate",
+                ))
+    return violations
+
+
+def validate_retention_policy_declaration(document: dict) -> list[Violation]:
+    return _validate_retention_document("retention-policy-declaration", document)
+
+
+def validate_legal_hold_declaration(document: dict) -> list[Violation]:
+    return _validate_retention_document("legal-hold-declaration", document)
+
+
+def validate_retention_scope_snapshot(document: dict) -> list[Violation]:
+    return _validate_retention_document("retention-scope-snapshot", document)
+
+
+def validate_retention_trigger_occurrence(document: dict) -> list[Violation]:
+    return _validate_retention_document("retention-trigger-occurrence", document)
+
+
+def validate_retention_application(document: dict) -> list[Violation]:
+    return _validate_retention_document("retention-application", document)
+
+
+def validate_custody_observation(document: dict) -> list[Violation]:
+    return _validate_retention_document("custody-observation", document)
+
+
+_RETENTION_VALIDATE_DISPATCH = {
+    "retention-policy-declaration": validate_retention_policy_declaration,
+    "legal-hold-declaration": validate_legal_hold_declaration,
+    "retention-scope-snapshot": validate_retention_scope_snapshot,
+    "retention-trigger-occurrence": validate_retention_trigger_occurrence,
+    "retention-application": validate_retention_application,
+    "custody-observation": validate_custody_observation,
+}
 
 
 def _ledger_identity(kind: str, document: dict) -> tuple[str, str]:
@@ -5160,7 +5364,8 @@ def main(argv: list[str] | None = None) -> int:
             "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
             "HO-rules, Regulatory Evidence Profile REP-rules, Incident "
             "Declaration INC-rules, CAPAAction CAPA-rules, Incident/CAPA "
-            "Ledger rules, JSON document and JSONL stream forms."
+            "Ledger rules, ADR-040 retention/hold RET-rules, JSON document "
+            "and JSONL stream forms."
         ),
         epilog=(
             "Prints one line per violation ('RULE path: message') and exits 0 "
@@ -5175,7 +5380,8 @@ def main(argv: list[str] | None = None) -> int:
                  "receipt", "system-manifest", "risk-control-registry",
                  "control-application", "human-oversight-receipt",
                  "regulatory-evidence-profile", "incident-declaration",
-                 "capa-action", "incident-capa-ledger", "package"],
+                 "capa-action", "incident-capa-ledger", "package",
+                 *_RETENTION_SCHEMA_FILES],
     )
     parser.add_argument("file", help="the document (or JSONL stream) to validate")
     parser.add_argument(
@@ -5324,6 +5530,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_capa_action(doc)
         elif args.artifact == "incident-capa-ledger":
             violations = validate_incident_capa_ledger(doc)
+        elif args.artifact in _RETENTION_SCHEMA_FILES:
+            violations = _RETENTION_VALIDATE_DISPATCH[args.artifact](doc)
         elif args.artifact == "receipt":
             trace_side = None
             if args.trace:

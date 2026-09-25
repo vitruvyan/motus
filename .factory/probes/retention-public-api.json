@@ -1,0 +1,9 @@
+[
+  {
+    "name": "retention submodule explicit public export boundary",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "__all__ = (",
+    "to": "_UNEXPORTED = (",
+    "tests": "tests/test_retention_public_api.py"
+  }
+]

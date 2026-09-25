@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","producer_namespace":"acme/records","producer_ref":"records-team","snapshot_id":"S-001","source":{"kind":"legal_hold_declaration","fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"artifacts":[],"observed_at":"2026-09-24T10:02:00Z"}

@@ -1,0 +1,135 @@
+[
+  {
+    "name": "application exact referenced policy identity",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if expected in observed:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "application snapshot exact source binding",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if source_document is None:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "supplied placed hold exact artifact membership",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if identity in result.artifacts:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "release claim never makes prior placement disappear",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "state[\"terminal\"] = True",
+    "to": "state[\"terminal\"] = False",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "missing scope snapshot remains a missing binding",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if any(item.status == \"missing\" for item in result.findings):",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "conflicting supplied hold lineage",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "elif any(state[\"conflict\"] for state in deciding):",
+    "to": "elif False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "independent proven blocker outranks unrelated uncertainty",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if complete_blocker:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "direct exact membership survives redundant snapshot",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if scope[\"kind\"] != \"exact_artifacts\":\n                    if any(item.status == \"missing\" for item in result.findings):",
+    "to": "if True:\n                    if any(item.status == \"missing\" for item in result.findings):",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid record in matching chain remains relevant",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "\"unverified\": chain_key in invalid_chains or any(",
+    "to": "\"unverified\": any(",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid snapshot exact selector source poisons matching lineage",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "hold_fingerprint in invalid_snapshot_sources)",
+    "to": "False)",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "application exact invalid candidate outranks unrelated valid",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if expected in invalid_fingerprints:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "application invalid candidate duplicate collision visibility",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "for fingerprint in invalid_fingerprints:\n            counts[fingerprint]",
+    "to": "for fingerprint in ():\n            counts[fingerprint]",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "cross-lineage supplied predecessor mismatch propagates",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "f\"lineage:{fingerprint}.supersedes\" in globally_mismatched_predecessors",
+    "to": "False",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "ambiguous cross-lineage predecessor conflict propagates",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "globally_conflicting_predecessors\n                             for fingerprint, _ in records",
+    "to": "()\n                             for fingerprint, _ in records",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "exact invalid hold predecessor remains supplied",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if predecessor not in invalid_predecessor_fingerprints:",
+    "to": "if True:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "duplicate invalid predecessor remains ambiguous",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if predecessor_counts[predecessor] > 1:",
+    "to": "if False:",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "relevant snapshot cannot hide omitted hold source",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "elif any(state[\"missing\"] for state in deciding) or unresolved_snapshot_missing:",
+    "to": "elif any(state[\"missing\"] for state in deciding):",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "duplicate hold fingerprint poisons every affected chain",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "or any(predecessor_counts[fingerprint] > 1\n                                for fingerprint, _ in records)",
+    "to": "or any(False\n                                for fingerprint, _ in records)",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "invalid valid digest collision remains visible",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if predecessor_counts[fingerprint] > 1 and\n        f\"lineage:{fingerprint}\" not in global_conflict_paths",
+    "to": "if False and\n        f\"lineage:{fingerprint}\" not in global_conflict_paths",
+    "tests": "tests/test_retention_bindings_blockers.py"
+  }
+]

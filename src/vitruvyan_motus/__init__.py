@@ -78,6 +78,13 @@ from vitruvyan_motus.incident_capa import (
     IncidentCAPAFinding, IncidentCAPAVerdict,
     order_incident_capa_entries, verify_incident_capa_ledger,
 )
+from vitruvyan_motus.retention import (
+    RetentionFinding, RetentionArtifactIdentity, RetentionLineageVerdict,
+    RetentionScopeVerdict, RetentionApplicationBindingVerdict,
+    RetentionBlockerVerdict, verify_retention_lineage,
+    resolve_supplied_retention_scope, verify_retention_application_bindings,
+    evaluate_supplied_retention_blocker,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -111,6 +118,11 @@ __all__ = [
     "assess_evidence_profile",
     "IncidentCAPAFinding", "IncidentCAPAVerdict",
     "order_incident_capa_entries", "verify_incident_capa_ledger",
+    "RetentionFinding", "RetentionArtifactIdentity", "RetentionLineageVerdict",
+    "RetentionScopeVerdict", "RetentionApplicationBindingVerdict",
+    "RetentionBlockerVerdict", "verify_retention_lineage",
+    "resolve_supplied_retention_scope", "verify_retention_application_bindings",
+    "evaluate_supplied_retention_blocker",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]

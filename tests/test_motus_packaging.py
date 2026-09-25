@@ -126,6 +126,7 @@ def test_wheel_contains_the_package_and_py_typed_but_not_axis(built_wheel):
         names = archive.namelist()
 
     assert "vitruvyan_motus/__init__.py" in names
+    assert "vitruvyan_motus/retention.py" in names
     assert "vitruvyan_motus/py.typed" in names, (
         "py.typed must ship as package data — it is not a .py file and "
         "setuptools does not include it without an explicit declaration"
@@ -343,7 +344,15 @@ def test_installed_alone_motus_imports_and_axis_does_not(built_wheel, tmp_path):
         [
             str(python),
             "-c",
-            "import vitruvyan_motus; print('motus-ok', vitruvyan_motus.__version__)",
+            "import vitruvyan_motus as motus; "
+            "assert all(name in motus.__all__ and hasattr(motus, name) "
+            "for name in ('RetentionFinding', 'RetentionArtifactIdentity', "
+            "'RetentionLineageVerdict', 'RetentionScopeVerdict', "
+            "'RetentionApplicationBindingVerdict', 'RetentionBlockerVerdict', "
+            "'verify_retention_lineage', 'resolve_supplied_retention_scope', "
+            "'verify_retention_application_bindings', "
+            "'evaluate_supplied_retention_blocker')); "
+            "print('motus-ok', motus.__version__)",
         ],
         capture_output=True,
         text=True,
@@ -417,6 +426,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/checkpoint.v1.schema.json",
         "vitruvyan_motus/contract/commitment.v1.schema.json",
         "vitruvyan_motus/contract/control-application.v1.schema.json",
+        "vitruvyan_motus/contract/custody-observation.v1.schema.json",
         "vitruvyan_motus/contract/graphspec.v1.schema.json",
         # The invariants. `durability_profile` is documented here and an
         # integrator arrives holding that word from their own trace header
@@ -425,9 +435,14 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/human-oversight-receipt.v1.schema.json",
         "vitruvyan_motus/contract/incident-capa-ledger.v1.schema.json",
         "vitruvyan_motus/contract/incident-declaration.v1.schema.json",
+        "vitruvyan_motus/contract/legal-hold-declaration.v1.schema.json",
         "vitruvyan_motus/contract/node-protocol.md",
         "vitruvyan_motus/contract/receipt.v1.schema.json",
         "vitruvyan_motus/contract/regulatory-evidence-profile.v1.schema.json",
+        "vitruvyan_motus/contract/retention-application.v1.schema.json",
+        "vitruvyan_motus/contract/retention-policy-declaration.v1.schema.json",
+        "vitruvyan_motus/contract/retention-scope-snapshot.v1.schema.json",
+        "vitruvyan_motus/contract/retention-trigger-occurrence.v1.schema.json",
         "vitruvyan_motus/contract/risk-control-registry.v1.schema.json",
         "vitruvyan_motus/contract/system-manifest.v1.schema.json",
         "vitruvyan_motus/contract/trace.v1.schema.json",
