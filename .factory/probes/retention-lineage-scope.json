@@ -16,8 +16,8 @@
   {
     "name": "retention fingerprint tie break",
     "file": "src/vitruvyan_motus/retention.py",
-    "from": "ready.sort(key=row_key)",
-    "to": "ready.sort(key=row_key, reverse=True)",
+    "from": "component_key = tuple(row_key(members[0]) for members in components)",
+    "to": "component_key = tuple((-int(rows[members[0]][0][7:], 16), b\"\") for members in components)",
     "tests": "tests/test_retention_lineage_scope.py"
   },
   {
@@ -25,6 +25,27 @@
     "file": "src/vitruvyan_motus/retention.py",
     "from": "if supplied[\"source\"][\"fingerprint\"] != fingerprint:",
     "to": "if False:",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention supplied snapshot is never ignored for exact scope",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if snapshot is not None:\n            findings.append(RetentionFinding(",
+    "to": "if False:\n            findings.append(RetentionFinding(",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention competing lineage origins",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if len(fingerprints) > 1:",
+    "to": "if len(fingerprints) > 10000:",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention cycle condensation preserves downstream order",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "component_indegree[target_component] += 1",
+    "to": "component_indegree[target_component] += 0",
     "tests": "tests/test_retention_lineage_scope.py"
   }
 ]

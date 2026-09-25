@@ -44,3 +44,9 @@ exports are subsequent steps.
 
 Focused tests and mutation probes live in `tests/test_retention_lineage_scope.py`
 and `.factory/probes/retention-lineage-scope.json` respectively.
+
+Adversarial closure for this step: a supplied snapshot on direct exact scope is
+validated and explicitly reported as unused, including malformed input;
+competing unsuperseded roots for one producer-scoped stable ID are conflicts;
+and cycle findings identify only the strongly connected revisions, with their
+downstream descendants ordered after the cycle. The graph walk is iterative.

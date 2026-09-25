@@ -66,6 +66,25 @@ def test_same_stable_id_in_another_namespace_does_not_link():
     assert any(f.status == "mismatched" for f in verdict.findings)
 
 
+@pytest.mark.parametrize("kind", KINDS)
+def test_competing_roots_for_one_stable_id_are_visible_in_every_kind(kind):
+    first = fixture(kind)
+    second = copy.deepcopy(first)
+    second["producer_ref"] = "another-producer"
+    if kind == "legal-hold-declaration":
+        second["declared_at"] = "2025-01-01T00:00:00Z"
+    else:
+        time_field = "declared_at" if "declared_at" in second else "observed_at"
+        second[time_field] = "2025-01-01T00:00:00Z"
+    left = verify_retention_lineage(kind, [first, second])
+    right = verify_retention_lineage(kind, [second, first])
+    assert left.ordered_fingerprints == right.ordered_fingerprints
+    assert len(left.ordered_fingerprints) == 2
+    origins = [f for f in left.findings if "lineage origin" in f.reason]
+    assert len(origins) == 1 and origins[0].status == "conflict"
+    assert origins[0] == next(f for f in right.findings if "lineage origin" in f.reason)
+
+
 def test_missing_wrong_kind_and_invalid_roots_never_pretend_to_link():
     kind = KINDS[0]
     root = fixture(kind)
@@ -132,6 +151,46 @@ def test_digest_collision_is_reported_and_not_used_as_a_predecessor(monkeypatch)
     assert len(verdict.ordered_fingerprints) == 3
 
 
+def test_cycle_finding_excludes_downstream_revision_and_orders_it_after_cycle(monkeypatch):
+    kind = KINDS[0]
+    a = fixture(kind)
+    b = copy.deepcopy(a)
+    c = copy.deepcopy(a)
+    a["producer_ref"] = "a"
+    b["producer_ref"] = "b"
+    c["producer_ref"] = "c"
+    a["supersedes"] = "sha256:" + "b" * 64
+    b["supersedes"] = "sha256:" + "a" * 64
+    c["supersedes"] = "sha256:" + "b" * 64
+    digests = {"a": "sha256:" + "a" * 64,
+               "b": "sha256:" + "b" * 64,
+               "c": "sha256:" + "0" * 64}
+    monkeypatch.setattr(validate, "retention_policy_declaration_fingerprint",
+                        lambda document: digests[document["producer_ref"]])
+    verdict = verify_retention_lineage(kind, [c, b, a])
+    assert verdict.ordered_fingerprints == (digests["a"], digests["b"], digests["c"])
+    cycles = [f for f in verdict.findings if f.path == "lineage:cycle"]
+    assert len(cycles) == 1
+    assert cycles[0].observed == (digests["a"], digests["b"])
+
+
+def test_long_lineage_is_ordered_without_recursive_graph_walk():
+    kind = KINDS[0]
+    current = fixture(kind)
+    documents = [current]
+    for number in range(1100):
+        successor = child(kind, current)
+        successor["producer_ref"] = f"revision-{number}"
+        documents.append(successor)
+        current = successor
+    verdict = verify_retention_lineage(kind, reversed(documents))
+    assert verdict.violations == ()
+    assert verdict.ordered_fingerprints[0] == fingerprint(kind, documents[0])
+    assert verdict.ordered_fingerprints[-1] == fingerprint(kind, documents[-1])
+    assert len(verdict.ordered_fingerprints) == len(documents)
+    assert not any(f.status == "conflict" for f in verdict.findings)
+
+
 def test_permutation_and_reversed_timestamps_do_not_choose_a_branch():
     kind = KINDS[0]
     root = fixture(kind)
@@ -169,6 +228,28 @@ def test_exact_scope_needs_no_snapshot_and_returns_typed_identity():
     assert result.artifacts[0].kind == "receipt"
     assert result.artifacts[0].fingerprint == declaration["scope"]["artifacts"][0]["fingerprint"]
     assert result.snapshot_fingerprint is None
+
+
+@pytest.mark.parametrize("source", ["unrelated", "same", "malformed"])
+def test_exact_scope_explicitly_reports_every_supplied_snapshot(source):
+    declaration = fixture(KINDS[0])
+    scope = fixture(KINDS[2])
+    if source == "same":
+        scope["source"] = {"kind": "retention_policy_declaration",
+                           "fingerprint": fingerprint(KINDS[0], declaration)}
+    elif source == "malformed":
+        scope["source"]["kind"] = "receipt"
+    result = resolve_supplied_retention_scope(declaration, snapshot=scope)
+    assert len(result.artifacts) == 1
+    supplied = [f for f in result.findings if f.path == "$.snapshot"]
+    assert len(supplied) == 1 and supplied[0].status == "mismatched"
+    if source == "malformed":
+        assert result.snapshot_violations
+        assert supplied[0].observed == "invalid"
+    else:
+        assert not result.snapshot_violations
+        assert result.snapshot_fingerprint == fingerprint(KINDS[2], scope)
+        assert supplied[0].observed == result.snapshot_fingerprint
 
 
 @pytest.mark.parametrize("selector", ["execution_refs", "tenant_writer"])
