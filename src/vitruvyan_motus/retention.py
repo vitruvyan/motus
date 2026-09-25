@@ -686,6 +686,35 @@ def evaluate_supplied_retention_blocker(
             namespace, hold_id = value.get("producer_namespace"), value.get("hold_id")
             if isinstance(namespace, str) and isinstance(hold_id, str):
                 invalid_chains.add((namespace, hold_id))
+    supplied_hold_fingerprints = {fingerprint for fingerprint, _ in hold_docs}
+    unresolved_snapshot_missing = False
+    unresolved_snapshot_unverified = False
+    for snapshot_fingerprint, snapshot in scope_docs:
+        source = snapshot["source"]
+        if (source["kind"] != "legal_hold_declaration" or
+                source["fingerprint"] in supplied_hold_fingerprints):
+            continue
+        if not any(item["kind"] == identity.kind and
+                   item["fingerprint"] == identity.fingerprint
+                   for item in snapshot["artifacts"]):
+            continue
+        source_fingerprint = source["fingerprint"]
+        if source_fingerprint in invalid_hold_fingerprints:
+            unresolved_snapshot_unverified = True
+            findings.append(RetentionFinding(
+                f"snapshot:{snapshot_fingerprint}.source", "not_verified",
+                source_fingerprint, source_fingerprint,
+                "the exact source hold was supplied but violates its structural "
+                "contract; this snapshot's relevant scope cannot establish a blocker",
+            ))
+        else:
+            unresolved_snapshot_missing = True
+            findings.append(RetentionFinding(
+                f"snapshot:{snapshot_fingerprint}.source", "missing",
+                source_fingerprint, None,
+                "this relevant supplied snapshot names a hold declaration that was "
+                "not supplied",
+            ))
     states: list[dict[str, bool]] = []
     for chain_key, records in sorted(chains.items()):
         lineage = verify_retention_lineage(
@@ -803,7 +832,9 @@ def evaluate_supplied_retention_blocker(
         status = "not_verified"
     elif any(state["unverified"] for state in deciding):
         status = "not_verified"
-    elif any(state["missing"] for state in deciding):
+    elif unresolved_snapshot_unverified:
+        status = "not_verified"
+    elif any(state["missing"] for state in deciding) or unresolved_snapshot_missing:
         status = "missing_binding"
     elif not relevant and violations:
         status = "not_verified"

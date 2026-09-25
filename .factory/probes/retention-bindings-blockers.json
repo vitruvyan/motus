@@ -110,5 +110,12 @@
     "from": "if predecessor_counts[predecessor] > 1:",
     "to": "if False:",
     "tests": "tests/test_retention_bindings_blockers.py"
+  },
+  {
+    "name": "relevant snapshot cannot hide omitted hold source",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "elif any(state[\"missing\"] for state in deciding) or unresolved_snapshot_missing:",
+    "to": "elif any(state[\"missing\"] for state in deciding):",
+    "tests": "tests/test_retention_bindings_blockers.py"
   }
 ]

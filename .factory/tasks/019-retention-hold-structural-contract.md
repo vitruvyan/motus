@@ -106,6 +106,14 @@ from a valid child citing it. That child's supplied predecessor is
 absent predecessor remains a missing binding, and a separate complete hold
 still establishes only its supplied-subset blocker.
 
+Final PR #192 snapshot-source closure: a valid supplied scope snapshot that
+contains the queried artifact cannot become invisible merely because its exact
+legal-hold source is absent from the supplied subset. The verdict is
+`missing_binding`, with the unresolved source retained as a finding. If that
+exact hold is supplied but structurally invalid, the source is `not_verified`
+rather than absent. A separate complete supplied hold may still establish the
+subset blocker, while the unresolved snapshot finding remains visible.
+
 ## Micro-step 4 — public read-only package surface
 
 The six immutable finding, identity and verdict dataclasses plus four

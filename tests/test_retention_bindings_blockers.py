@@ -352,6 +352,57 @@ def test_selector_requires_one_exact_snapshot_and_does_not_expand_empty_one():
     assert nonmatch.status == "no_blocker_in_supplied_evidence"
 
 
+def test_snapshot_for_omitted_hold_is_a_visible_missing_binding():
+    omitted = fixture(371, "legal-hold-declaration")
+    snapshot = snapshot_for(omitted, "legal_hold_declaration")
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, snapshots=[snapshot],
+    )
+    assert result.status == "missing_binding"
+    source = validate.legal_hold_declaration_fingerprint(omitted)
+    assert any(item.path.endswith(".source") and item.status == "missing" and
+               item.expected == source for item in result.findings)
+
+    unrelated_artifact = copy.deepcopy(ARTIFACT)
+    unrelated_artifact["fingerprint"] = "sha256:" + "e" * 64
+    nonmatch = evaluate_supplied_retention_blocker(
+        unrelated_artifact, snapshots=[snapshot],
+    )
+    assert nonmatch.status == "no_blocker_in_supplied_evidence"
+
+
+def test_snapshot_for_omitted_hold_stays_visible_with_independent_blocker():
+    omitted = fixture(371, "legal-hold-declaration")
+    omitted["hold_id"] = "H-omitted"
+    snapshot = snapshot_for(omitted, "legal_hold_declaration")
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[hold()], snapshots=[snapshot],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, snapshots=[snapshot], holds=[hold()],
+    )
+    assert left.status == right.status == "blocked_by_supplied_hold"
+    assert left.findings == right.findings
+    assert any(item.path.endswith(".source") and item.status == "missing"
+               for item in left.findings)
+
+
+def test_snapshot_for_supplied_invalid_hold_is_not_claimed_absent():
+    invalid_hold = fixture(371, "legal-hold-declaration")
+    invalid_hold["schema_version"] = "wrong"
+    source = validate.legal_hold_declaration_fingerprint(invalid_hold)
+    snapshot = snapshot_for(invalid_hold, "legal_hold_declaration")
+    snapshot["source"]["fingerprint"] = source
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid_hold], snapshots=[snapshot],
+    )
+    assert result.status == "not_verified"
+    assert result.violations
+    assert any(item.path.endswith(".source") and
+               item.status == "not_verified" and item.expected == source
+               for item in result.findings)
+
+
 def test_invalid_snapshot_named_to_selector_hold_is_not_missing_binding():
     selector = fixture(371, "legal-hold-declaration")
     invalid = snapshot_for(selector, "legal_hold_declaration")
