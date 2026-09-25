@@ -1,0 +1,30 @@
+[
+  {
+    "name": "retention predecessor stable identity",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if (prior[\"producer_namespace\"], prior[stable_field]) != (",
+    "to": "if (prior[\"producer_namespace\"], prior[stable_field]) == (",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention amendment fork detection",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if len(descendants) > 1:",
+    "to": "if len(descendants) > 10000:",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention fingerprint tie break",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "ready.sort(key=row_key)",
+    "to": "ready.sort(key=row_key, reverse=True)",
+    "tests": "tests/test_retention_lineage_scope.py"
+  },
+  {
+    "name": "retention snapshot exact source fingerprint",
+    "file": "src/vitruvyan_motus/retention.py",
+    "from": "if supplied[\"source\"][\"fingerprint\"] != fingerprint:",
+    "to": "if False:",
+    "tests": "tests/test_retention_lineage_scope.py"
+  }
+]
