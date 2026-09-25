@@ -89,6 +89,107 @@ def test_application_distinguishes_missing_mismatched_and_invalid_references():
                for item in unverified.findings)
 
 
+def test_application_exact_invalid_policy_is_not_a_valid_binding():
+    invalid = policy()
+    invalid["schema_version"] = "wrong"
+    app = application()
+    app["policy_fingerprint"] = validate.retention_policy_declaration_fingerprint(invalid)
+    result = verify_retention_application_bindings(app, policy=invalid)
+    assert result.supplied_violations
+    assert any(item.path == "$.policy_fingerprint" and item.status == "not_verified"
+               and item.expected == app["policy_fingerprint"]
+               for item in result.findings)
+
+
+@pytest.mark.parametrize("kind", ["hold", "snapshot"])
+def test_application_exact_invalid_candidate_outranks_unrelated_valid(kind):
+    app = application()
+    current_hold = hold()
+    if kind == "hold":
+        invalid = copy.deepcopy(current_hold)
+        invalid["schema_version"] = "wrong"
+        unrelated = copy.deepcopy(current_hold)
+        unrelated["hold_id"] = "H-unrelated-valid"
+        expected = validate.legal_hold_declaration_fingerprint(invalid)
+        app["hold_fingerprints"] = [expected]
+        kwargs = lambda values: {"holds": values}
+        path = "$.hold_fingerprints[0]"
+    else:
+        invalid = snapshot_for(current_hold, "legal_hold_declaration")
+        invalid["schema_version"] = "wrong"
+        unrelated = snapshot_for(current_hold, "legal_hold_declaration")
+        unrelated["snapshot_id"] = "S-unrelated-valid"
+        expected = validate.retention_scope_snapshot_fingerprint(invalid)
+        app["scope_snapshot_fingerprints"] = [expected]
+        kwargs = lambda values: {"snapshots": values}
+        path = "$.scope_snapshot_fingerprints[0]"
+    left = verify_retention_application_bindings(
+        app, policy=policy(), **kwargs([invalid, unrelated]),
+    )
+    right = verify_retention_application_bindings(
+        app, policy=policy(), **kwargs([unrelated, invalid]),
+    )
+    for result in (left, right):
+        assert result.supplied_violations
+        assert any(item.path == path and item.status == "not_verified" and
+                   item.expected == expected for item in result.findings)
+        assert not any(item.path == path and item.status == "matched"
+                       for item in result.findings)
+    assert left.findings == right.findings
+
+
+def test_application_unfingerprintable_invalid_candidate_cannot_impersonate_digest():
+    app = application()
+    expected = "sha256:" + "d" * 64
+    app["hold_fingerprints"] = [expected]
+    invalid = hold()
+    invalid["producer_ref"] = float("nan")
+    unrelated = hold()
+    unrelated["hold_id"] = "H-unrelated-valid"
+    result = verify_retention_application_bindings(
+        app, policy=policy(), holds=[invalid, unrelated],
+    )
+    assert result.supplied_violations
+    assert any(item.path == "$.hold_fingerprints[0]" and
+               item.status == "mismatched" for item in result.findings)
+    assert not any(item.path == "$.hold_fingerprints[0]" and
+                   item.status == "matched" for item in result.findings)
+
+
+def test_application_duplicate_invalid_exact_identity_remains_conflicted():
+    app = application()
+    invalid = hold()
+    invalid["schema_version"] = "wrong"
+    expected = validate.legal_hold_declaration_fingerprint(invalid)
+    app["hold_fingerprints"] = [expected]
+    result = verify_retention_application_bindings(
+        app, policy=policy(), holds=[invalid, copy.deepcopy(invalid)],
+    )
+    assert any(item.path == "$.hold_fingerprints[0]" and
+               item.status == "not_verified" for item in result.findings)
+    assert any(item.path == f"hold:{expected}" and item.status == "conflict"
+               for item in result.findings)
+
+
+def test_application_valid_invalid_digest_collision_never_matches(monkeypatch):
+    app = application()
+    forced = "sha256:" + "d" * 64
+    app["hold_fingerprints"] = [forced]
+    invalid = hold()
+    invalid["schema_version"] = "wrong"
+    valid = hold()
+    valid["hold_id"] = "H-unrelated-valid"
+    monkeypatch.setattr(validate, "legal_hold_declaration_fingerprint",
+                        lambda _document: forced)
+    result = verify_retention_application_bindings(
+        app, policy=policy(), holds=[valid, invalid],
+    )
+    assert any(item.path == "$.hold_fingerprints[0]" and
+               item.status == "not_verified" for item in result.findings)
+    assert any(item.path == f"hold:{forced}" and item.status == "conflict"
+               for item in result.findings)
+
+
 def test_application_refuses_wrong_snapshot_source_and_unreferenced_hold_claim():
     current_policy = policy()
     current_hold = hold()
@@ -348,6 +449,165 @@ def test_missing_predecessor_cannot_verify_its_chain_but_an_independent_hold_can
     wrong = evaluate_supplied_retention_blocker(ARTIFACT, holds=[placed, amended])
     assert wrong.status == "blocked_by_supplied_hold"
     assert any(item.status == "mismatched" for item in wrong.findings)
+
+
+@pytest.mark.parametrize("changed", ["producer_namespace", "hold_id"])
+def test_cross_lineage_supplied_predecessor_is_mismatch_not_missing(changed):
+    predecessor = hold()
+    predecessor["scope"]["artifacts"] = [
+        {"kind": "receipt", "fingerprint": "sha256:" + "e" * 64},
+    ]
+    child = copy.deepcopy(predecessor)
+    child["action"] = "amended"
+    child["supersedes"] = validate.legal_hold_declaration_fingerprint(predecessor)
+    child["producer_ref"] = "child-producer"
+    child["scope"]["artifacts"] = [ARTIFACT]
+    child[changed] = "different-" + changed
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[predecessor, child],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, predecessor],
+    )
+    assert left.status == right.status == "not_verified"
+    assert left.findings == right.findings
+    assert any(item.path.endswith(".supersedes") and item.status == "mismatched"
+               for item in left.findings)
+    independent = hold()
+    independent["hold_id"] = "H-independent-complete"
+    complete = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, independent, predecessor],
+    )
+    assert complete.status == "blocked_by_supplied_hold"
+    assert any(item.status == "mismatched" for item in complete.findings)
+
+
+def test_ambiguous_cross_lineage_predecessor_remains_conflict(monkeypatch):
+    first = hold()
+    first["hold_id"] = "H-parent-one"
+    first["producer_ref"] = "parent-one"
+    first["scope"]["artifacts"] = [
+        {"kind": "receipt", "fingerprint": "sha256:" + "e" * 64},
+    ]
+    second = copy.deepcopy(first)
+    second["hold_id"] = "H-parent-two"
+    second["producer_ref"] = "parent-two"
+    child = hold()
+    child["hold_id"] = "H-child"
+    child["action"] = "amended"
+    child["producer_ref"] = "child"
+    forced = "sha256:" + "d" * 64
+    child["supersedes"] = forced
+    original = validate.legal_hold_declaration_fingerprint
+    monkeypatch.setattr(
+        validate, "legal_hold_declaration_fingerprint",
+        lambda document: forced if document["producer_ref"].startswith("parent-")
+        else original(document),
+    )
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[first, child, second],
+    )
+    assert result.status == "conflicting_supplied_hold"
+    assert any(item.path.endswith(".supersedes") and item.status == "conflict"
+               for item in result.findings)
+
+
+@pytest.mark.parametrize("difference", ["producer_namespace", "hold_id", "both"])
+def test_exact_invalid_predecessor_is_supplied_but_unverified(difference):
+    invalid_parent = hold()
+    invalid_parent["schema_version"] = "wrong"
+    if difference in ("producer_namespace", "both"):
+        invalid_parent["producer_namespace"] = "other-namespace"
+    if difference in ("hold_id", "both"):
+        invalid_parent["hold_id"] = "H-other-parent"
+    predecessor = validate.legal_hold_declaration_fingerprint(invalid_parent)
+    child = hold()
+    child["action"] = "amended"
+    child["producer_ref"] = "child-producer"
+    child["supersedes"] = predecessor
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid_parent, child],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, invalid_parent],
+    )
+    assert left.status == right.status == "not_verified"
+    assert left.findings == right.findings
+    assert left.violations and right.violations
+    assert any(item.path.endswith(".supersedes") and item.status == "not_verified"
+               and item.expected == predecessor and item.observed == predecessor
+               for item in left.findings)
+    independent = hold()
+    independent["hold_id"] = "H-independent-complete"
+    complete = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, invalid_parent, independent],
+    )
+    assert complete.status == "blocked_by_supplied_hold"
+    assert complete.violations
+
+
+def test_duplicate_invalid_exact_predecessor_is_conflict():
+    invalid_parent = hold()
+    invalid_parent["schema_version"] = "wrong"
+    invalid_parent["hold_id"] = "H-other-parent"
+    child = hold()
+    child["action"] = "amended"
+    child["producer_ref"] = "child-producer"
+    child["supersedes"] = validate.legal_hold_declaration_fingerprint(invalid_parent)
+    result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid_parent, child, copy.deepcopy(invalid_parent)],
+    )
+    reversed_result = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, copy.deepcopy(invalid_parent), invalid_parent],
+    )
+    assert result.status == reversed_result.status == "conflicting_supplied_hold"
+    assert result.findings == reversed_result.findings
+    assert len(result.violations) == 2
+    assert any(item.path.endswith(".supersedes") and item.status == "conflict"
+               for item in result.findings)
+    independent = hold()
+    independent["hold_id"] = "H-independent-complete"
+    complete = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid_parent, child, independent,
+                         copy.deepcopy(invalid_parent)],
+    )
+    assert complete.status == "blocked_by_supplied_hold"
+    assert any(item.path.endswith(".supersedes") and item.status == "conflict"
+               for item in complete.findings)
+
+
+def test_valid_invalid_exact_predecessor_collision_is_conflict(monkeypatch):
+    invalid_parent = hold()
+    invalid_parent["schema_version"] = "wrong"
+    invalid_parent["hold_id"] = "H-invalid-parent"
+    invalid_parent["producer_ref"] = "invalid-parent"
+    valid_parent = hold()
+    valid_parent["hold_id"] = "H-valid-parent"
+    valid_parent["producer_ref"] = "valid-parent"
+    valid_parent["scope"]["artifacts"] = [
+        {"kind": "receipt", "fingerprint": "sha256:" + "e" * 64},
+    ]
+    child = hold()
+    child["action"] = "amended"
+    child["producer_ref"] = "child-producer"
+    forced = "sha256:" + "d" * 64
+    child["supersedes"] = forced
+    original = validate.legal_hold_declaration_fingerprint
+    monkeypatch.setattr(
+        validate, "legal_hold_declaration_fingerprint",
+        lambda document: forced if document["producer_ref"] in
+        ("invalid-parent", "valid-parent") else original(document),
+    )
+    left = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[invalid_parent, valid_parent, child],
+    )
+    right = evaluate_supplied_retention_blocker(
+        ARTIFACT, holds=[child, valid_parent, invalid_parent],
+    )
+    assert left.status == right.status == "conflicting_supplied_hold"
+    assert left.findings == right.findings
+    assert any(item.path.endswith(".supersedes") and item.status == "conflict"
+               for item in left.findings)
 
 
 @pytest.mark.parametrize("action", ["released", "cancelled"])

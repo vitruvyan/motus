@@ -406,24 +406,38 @@ def _supplied_pool(validate, kind: str, values: Iterable[dict[str, Any]]):
         raise TypeError(f"{kind} documents must be an iterable of dicts")
     valid: list[tuple[str, dict[str, Any]]] = []
     invalid: list[tuple[str, int, tuple[Violation, ...]]] = []
+    invalid_fingerprints: list[str] = []
     for index, value in enumerate(values):
         if not isinstance(value, dict):
             raise TypeError(f"{kind} documents[{index}] must be a dict")
         issues = tuple(_validator(validate, kind)(value))
         if issues:
             invalid.append((kind, index, issues))
+            # A schema-invalid JSON document can still have an exact canonical
+            # identity. Non-JSON/J1 inputs cannot impersonate that identity.
+            if not validate._j1_violations(value)[0]:
+                try:
+                    invalid_document = _snapshot(validate, value)
+                    invalid_fingerprints.append(
+                        _fingerprint(validate, kind, invalid_document)
+                    )
+                except (TypeError, ValueError, RecursionError):
+                    pass
         else:
             document = _snapshot(validate, value)
             valid.append((_fingerprint(validate, kind, document), document))
     valid.sort(key=lambda pair: (pair[0], validate.canonical_json(pair[1])))
-    return tuple(valid), tuple(invalid)
+    return tuple(valid), tuple(invalid), tuple(sorted(invalid_fingerprints))
 
 
 def _exact_reference_finding(
     path: str, expected: str, pool: tuple[tuple[str, dict[str, Any]], ...],
-    invalid: bool,
+    invalid_fingerprints: tuple[str, ...], invalid: bool,
 ) -> RetentionFinding:
     observed = tuple(sorted({fingerprint for fingerprint, _ in pool}))
+    if expected in invalid_fingerprints:
+        return RetentionFinding(path, "not_verified", expected, expected,
+                                "the exact supplied document is structurally invalid")
     if expected in observed:
         return RetentionFinding(path, "matched", expected, expected,
                                 "the exact supplied document fingerprint matches")
@@ -461,17 +475,26 @@ def verify_retention_application_bindings(
         ))
     app = _snapshot(validate, application)
     app_fingerprint = validate.retention_application_fingerprint(app)
-    policies, policy_issues = _supplied_pool(
+    policies, policy_issues, invalid_policy_fingerprints = _supplied_pool(
         validate, "retention-policy-declaration", () if policy is None else (policy,),
     )
-    hold_docs, hold_issues = _supplied_pool(validate, "legal-hold-declaration", holds)
-    scope_docs, scope_issues = _supplied_pool(validate, "retention-scope-snapshot", snapshots)
+    hold_docs, hold_issues, invalid_hold_fingerprints = _supplied_pool(
+        validate, "legal-hold-declaration", holds,
+    )
+    scope_docs, scope_issues, invalid_scope_fingerprints = _supplied_pool(
+        validate, "retention-scope-snapshot", snapshots,
+    )
     supplied_violations = policy_issues + hold_issues + scope_issues
     findings: list[RetentionFinding] = []
-    for label, pool in (("policy", policies), ("hold", hold_docs),
-                        ("snapshot", scope_docs)):
+    for label, pool, invalid_fingerprints in (
+        ("policy", policies, invalid_policy_fingerprints),
+        ("hold", hold_docs, invalid_hold_fingerprints),
+        ("snapshot", scope_docs, invalid_scope_fingerprints),
+    ):
         counts: dict[str, int] = {}
         for fingerprint, _ in pool:
+            counts[fingerprint] = counts.get(fingerprint, 0) + 1
+        for fingerprint in invalid_fingerprints:
             counts[fingerprint] = counts.get(fingerprint, 0) + 1
         for fingerprint, count in sorted(counts.items()):
             if count > 1:
@@ -483,19 +506,19 @@ def verify_retention_application_bindings(
                 ))
     findings.append(_exact_reference_finding(
         "$.policy_fingerprint", app["policy_fingerprint"], policies,
-        bool(policy_issues),
+        invalid_policy_fingerprints, bool(policy_issues),
     ))
     cited_holds = set(app.get("hold_fingerprints", ()))
     cited_scopes = set(app.get("scope_snapshot_fingerprints", ()))
     for index, expected in enumerate(app.get("hold_fingerprints", ())):
         findings.append(_exact_reference_finding(
             f"$.hold_fingerprints[{index}]", expected, hold_docs,
-            bool(hold_issues),
+            invalid_hold_fingerprints, bool(hold_issues),
         ))
     for index, expected in enumerate(app.get("scope_snapshot_fingerprints", ())):
         findings.append(_exact_reference_finding(
             f"$.scope_snapshot_fingerprints[{index}]", expected, scope_docs,
-            bool(scope_issues),
+            invalid_scope_fingerprints, bool(scope_issues),
         ))
     if "hold_fingerprints" not in app:
         findings.append(RetentionFinding(
@@ -580,13 +603,13 @@ def evaluate_supplied_retention_blocker(
     if isinstance(holds, (str, bytes, dict)):
         raise TypeError("legal-hold-declaration documents must be an iterable of dicts")
     hold_values = tuple(holds)
-    hold_docs, hold_issues = _supplied_pool(
+    hold_docs, hold_issues, invalid_hold_fingerprints = _supplied_pool(
         validate, "legal-hold-declaration", hold_values,
     )
     if isinstance(snapshots, (str, bytes, dict)):
         raise TypeError("retention-scope-snapshot documents must be an iterable of dicts")
     snapshot_values = tuple(snapshots)
-    scope_docs, scope_issues = _supplied_pool(
+    scope_docs, scope_issues, _ = _supplied_pool(
         validate, "retention-scope-snapshot", snapshot_values,
     )
     invalid_snapshot_sources: set[str] = set()
@@ -608,7 +631,49 @@ def evaluate_supplied_retention_blocker(
     hold_lineage = verify_retention_lineage(
         "legal-hold-declaration", (document for _, document in hold_docs),
     )
-    findings.extend(hold_lineage.findings)
+    predecessor_counts: dict[str, int] = {}
+    for fingerprint, _ in hold_docs:
+        predecessor_counts[fingerprint] = predecessor_counts.get(fingerprint, 0) + 1
+    for fingerprint in invalid_hold_fingerprints:
+        predecessor_counts[fingerprint] = predecessor_counts.get(fingerprint, 0) + 1
+    invalid_predecessor_fingerprints = set(invalid_hold_fingerprints)
+    invalid_predecessor_paths: set[str] = set()
+    invalid_predecessor_findings: dict[str, RetentionFinding] = {}
+    for fingerprint, hold in hold_docs:
+        predecessor = hold.get("supersedes")
+        if predecessor not in invalid_predecessor_fingerprints:
+            continue
+        path = f"lineage:{fingerprint}.supersedes"
+        if predecessor_counts[predecessor] > 1:
+            replacement = RetentionFinding(
+                path, "conflict", predecessor,
+                tuple(predecessor for _ in range(predecessor_counts[predecessor])),
+                "multiple supplied rows carry this exact predecessor fingerprint; "
+                "at least one violates its structural contract",
+            )
+        else:
+            invalid_predecessor_paths.add(path)
+            replacement = RetentionFinding(
+                path, "not_verified", predecessor, predecessor,
+                "the exact predecessor was supplied but violates its structural contract",
+            )
+        prior = invalid_predecessor_findings.get(path)
+        if prior is None or replacement.status == "conflict":
+            invalid_predecessor_findings[path] = replacement
+    lineage_findings = tuple(
+        item for item in hold_lineage.findings
+        if item.path not in invalid_predecessor_findings or
+        not item.path.endswith(".supersedes")
+    ) + tuple(invalid_predecessor_findings.values())
+    findings.extend(lineage_findings)
+    globally_mismatched_predecessors = {
+        item.path for item in lineage_findings
+        if item.status == "mismatched" and item.path.endswith(".supersedes")
+    }
+    globally_conflicting_predecessors = {
+        item.path for item in lineage_findings
+        if item.status == "conflict" and item.path.endswith(".supersedes")
+    }
     chains: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = {}
     for fingerprint, hold in hold_docs:
         chains.setdefault((hold["producer_namespace"], hold["hold_id"]), []).append(
@@ -628,12 +693,23 @@ def evaluate_supplied_retention_blocker(
         )
         state = {
             "matched": False,
-            "conflict": any(item.status == "conflict" for item in lineage.findings),
+            "conflict": (any(item.status == "conflict" for item in lineage.findings)
+                         or any(
+                             f"lineage:{fingerprint}.supersedes" in
+                             globally_conflicting_predecessors
+                             for fingerprint, _ in records
+                         )),
             "missing": any(item.status == "not_verified" and
                            item.path.endswith(".supersedes")
                            for item in lineage.findings),
             "unverified": chain_key in invalid_chains or any(
                 item.status == "mismatched" for item in lineage.findings
+            ) or any(
+                f"lineage:{fingerprint}.supersedes" in globally_mismatched_predecessors
+                for fingerprint, _ in records
+            ) or any(
+                f"lineage:{fingerprint}.supersedes" in invalid_predecessor_paths
+                for fingerprint, _ in records
             ),
             "terminal": False,
         }
