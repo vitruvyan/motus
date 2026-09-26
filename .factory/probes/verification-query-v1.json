@@ -331,15 +331,43 @@
   {
     "name": "cross-kind supplied predecessors suppress contradictory absence",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if parent in context_fingerprints:",
+    "from": "if context_count == 1:",
     "to": "if False:",
     "tests": "tests/test_verification_query_query.py"
   },
   {
     "name": "unrequested ledger kinds do not leak identity findings",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "and issue.path in requested_paths):",
-    "to": "and True):",
+    "from": "if entry[\"kind\"] != kind:\n                continue",
+    "to": "if False:\n                continue",
     "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "projected record ordering uses canonical JSON",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "item[\"record\"], sort_keys=True, separators=(\",\", \":\"),",
+    "to": "item[\"record\"], sort_keys=False, separators=(\",\", \":\"),",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "lineage cycle traversal marks completed paths",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "completed.update(path)",
+    "to": "completed.update(())",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "cross-kind predecessor multiplicity remains visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if context_count > 1:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "nested diagnostic collection cardinality remains bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for item in value[:_DIAGNOSTIC_COLLECTION_LIMIT]",
+    "to": "for item in value",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]

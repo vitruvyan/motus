@@ -300,3 +300,10 @@ def test_invalid_outcome_survives_result_truncation(monkeypatch):
     assert result["outcome"] == "invalid"
     assert len(result["violations"]) == 1
     assert result["findings"][0]["status"] == "incomplete"
+
+
+def test_nested_diagnostic_collections_are_cardinality_bounded():
+    bounded = verification_query._bounded_json_strings(list(range(100)))
+    assert bounded[:32] == list(range(32))
+    assert bounded[32] == {"truncated_items": 68}
+    assert len(bounded) == 33

@@ -23,6 +23,7 @@ _LIMITATIONS = [
 ]
 
 _RESULT_ITEM_LIMIT = 10_000
+_DIAGNOSTIC_COLLECTION_LIMIT = 32
 _PACKAGE_MEMBER_LIMIT = 1_000
 _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
@@ -176,14 +177,28 @@ def _bounded_json_strings(value: Any) -> Any:
     if isinstance(value, str):
         return value[:8192]
     if isinstance(value, tuple):
-        return [_bounded_json_strings(item) for item in value]
+        value = list(value)
     if isinstance(value, list):
-        return [_bounded_json_strings(item) for item in value]
+        bounded = [
+            _bounded_json_strings(item)
+            for item in value[:_DIAGNOSTIC_COLLECTION_LIMIT]
+        ]
+        if len(value) > _DIAGNOSTIC_COLLECTION_LIMIT:
+            bounded.append({
+                "truncated_items": len(value) - _DIAGNOSTIC_COLLECTION_LIMIT,
+            })
+        return bounded
     if isinstance(value, dict):
-        return {
+        items = sorted(value.items(), key=lambda item: str(item[0]))
+        bounded = {
             str(key)[:8192]: _bounded_json_strings(item)
-            for key, item in value.items()
+            for key, item in items[:_DIAGNOSTIC_COLLECTION_LIMIT]
         }
+        if len(items) > _DIAGNOSTIC_COLLECTION_LIMIT:
+            bounded["truncated_items"] = (
+                len(items) - _DIAGNOSTIC_COLLECTION_LIMIT
+            )
+        return bounded
     return value
 
 
@@ -611,6 +626,34 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
     return set()
 
 
+def _lineage_cycle_members(
+    predecessor_of: dict[str, str], unique_fingerprints: set[str],
+) -> set[str]:
+    """Find cycle members with each unambiguous lineage node visited once."""
+    cycle_members: set[str] = set()
+    completed: set[str] = set()
+    for start in sorted(predecessor_of):
+        if start in completed:
+            continue
+        cursor = start
+        path: list[str] = []
+        positions: dict[str, int] = {}
+        while cursor in predecessor_of and cursor in unique_fingerprints:
+            if cursor in completed:
+                break
+            if cursor in positions:
+                cycle_members.update(path[positions[cursor]:])
+                break
+            positions[cursor] = len(path)
+            path.append(cursor)
+            parent = predecessor_of[cursor]
+            if parent not in unique_fingerprints:
+                break
+            cursor = parent
+        completed.update(path)
+    return cycle_members
+
+
 def _authoritative_lineage_findings(
     kind: str, documents: list[dict[str, Any]],
     related_documents: list[tuple[str, dict[str, Any]]] | None = None,
@@ -626,25 +669,51 @@ def _authoritative_lineage_findings(
                 else [(kind, document) for document in documents]
             )
         ]
-        ledger = {
-            "schema_version": "1.0.0",
-            "entries": ledger_entries,
-        }
-        requested_paths = {
-            f"$.entries[{index}].document.supersedes"
-            for index, entry in enumerate(ledger_entries)
-            if entry["kind"] == kind
-        }
+        indexed: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for index, entry in enumerate(ledger_entries):
+            fingerprint = (
+                validate.incident_declaration_fingerprint(entry["document"])
+                if entry["kind"] == "incident_declaration"
+                else validate.capa_action_fingerprint(entry["document"])
+            )
+            indexed.setdefault(fingerprint, []).append((index, entry))
         findings = []
-        for issue in validate.validate_incident_capa_ledger(ledger):
-            if (issue.rule == "LEDGER2"
-                    and "same record kind" in issue.message
-                    and issue.path in requested_paths):
-                findings.append({
-                    "path": issue.path,
-                    "status": "mismatched",
-                    "reason": f"{issue.rule}: {issue.message}",
-                })
+        for index, entry in enumerate(ledger_entries):
+            if entry["kind"] != kind:
+                continue
+            document = entry["document"]
+            predecessor = document.get("supersedes")
+            current = (
+                validate.incident_declaration_fingerprint(document)
+                if kind == "incident_declaration"
+                else validate.capa_action_fingerprint(document)
+            )
+            targets = indexed.get(predecessor, ())
+            if predecessor is None:
+                continue
+            if predecessor != current and targets:
+                target = targets[0][1]
+                stable_field = (
+                    "incident_id" if kind == "incident_declaration"
+                    else "action_id"
+                )
+                if (target["kind"] == kind
+                        and target["document"]["producer_namespace"]
+                        == document["producer_namespace"]
+                        and target["document"][stable_field]
+                        == document[stable_field]):
+                    continue
+            entries = [entry]
+            if predecessor != current and targets:
+                entries.insert(0, targets[0][1])
+            ledger = {"schema_version": "1.0.0", "entries": entries}
+            for issue in validate.validate_incident_capa_ledger(ledger):
+                if issue.rule == "LEDGER2":
+                    findings.append({
+                        "path": f"$.entries[{index}].document.supersedes",
+                        "status": "mismatched",
+                        "reason": f"{issue.rule}: {issue.message}",
+                    })
         return findings
     if kind == "regulatory_evidence_dossier":
         verdict = importlib.import_module(
@@ -718,7 +787,7 @@ def _query_result(
     elif kind == "correction_lineage":
         wanted = projection["artifact_kind"]
         rows = []
-        context_fingerprints: set[str] = set()
+        context_fingerprints: dict[str, int] = {}
         for artifact, inspected in valid:
             if artifact["kind"] == wanted:
                 document = artifact["document"]
@@ -738,14 +807,15 @@ def _query_result(
                 for artifact, _ in valid
                 if artifact["kind"] in {"incident_declaration", "capa_action"}
             ]
-            context_fingerprints = {
-                (
+            for related_kind, document in related_documents:
+                fingerprint = (
                     lineage_contract.incident_declaration_fingerprint(document)
                     if related_kind == "incident_declaration"
                     else lineage_contract.capa_action_fingerprint(document)
                 )
-                for related_kind, document in related_documents
-            }
+                context_fingerprints[fingerprint] = (
+                    context_fingerprints.get(fingerprint, 0) + 1
+                )
         authoritative = _authoritative_lineage_findings(
             wanted, [document for _, _, document in rows], related_documents,
         )
@@ -767,7 +837,11 @@ def _query_result(
             for fingerprint, parent in sorted(predecessor_of.items()):
                 candidates = by_fingerprint.get(parent, ())
                 if not candidates:
-                    if parent in context_fingerprints:
+                    context_count = context_fingerprints.get(parent, 0)
+                    if context_count > 1:
+                        findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "conflict", "expected": parent, "observed": context_count, "reason": "the cross-kind predecessor identity is ambiguous in the supplied view"})
+                        continue
+                    if context_count == 1:
                         continue
                     findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "incomplete", "expected": parent, "reason": "the immediate predecessor is absent from this supplied view"})
                 elif len(candidates) > 1:
@@ -775,21 +849,14 @@ def _query_result(
             for parent, count in sorted(parents.items()):
                 if count > 1:
                     findings.append({"path": f"lineage:{parent}", "status": "conflict", "expected": parent, "observed": count, "reason": "multiple supplied revisions name the same predecessor; no winner was selected"})
-            cycle_members: set[str] = set()
-            for start in sorted(predecessor_of):
-                cursor = start
-                path: list[str] = []
-                positions: dict[str, int] = {}
-                while cursor in predecessor_of and len(by_fingerprint.get(cursor, ())) == 1:
-                    if cursor in positions:
-                        cycle_members.update(path[positions[cursor]:])
-                        break
-                    positions[cursor] = len(path)
-                    path.append(cursor)
-                    parent = predecessor_of[cursor]
-                    if len(by_fingerprint.get(parent, ())) != 1:
-                        break
-                    cursor = parent
+            cycle_members = _lineage_cycle_members(
+                predecessor_of,
+                {
+                    fingerprint
+                    for fingerprint, candidates in by_fingerprint.items()
+                    if len(candidates) == 1
+                },
+            )
             if cycle_members:
                 findings.append({"path": "lineage:cycle", "status": "conflict", "observed": sorted(cycle_members), "reason": "the supplied correction lineage contains a cycle; no winner was selected"})
     elif kind == "dossier_membership":
@@ -836,7 +903,13 @@ def _query_result(
         findings.extend({"path": item.path, "status": item.status.replace(" ", "_"), "expected": _json_value(item.expected), "observed": _json_value(item.observed), "reason": item.reason} for item in projected.findings)
 
     matches.sort(key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""))
-    records.sort(key=lambda item: (item["record_kind"], item["source_input_id"], str(item["record"])))
+    records.sort(key=lambda item: (
+        item["record_kind"], item["source_input_id"],
+        json.dumps(
+            item["record"], sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False,
+        ),
+    ))
     outcome = "invalid" if invalid_findings else ("conflict" if any(item["status"] == "conflict" for item in findings) else "completed")
     return {
         "interface_version": "1.0.0", "message_type": "result",

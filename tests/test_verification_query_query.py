@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from vitruvyan_motus import query_artifacts
 from vitruvyan_motus.contract import validate
 
 ROOT = Path(__file__).resolve().parent.parent
+verification_query = importlib.import_module("vitruvyan_motus.verification_query")
 
 
 def fixture(name: str, directory: str = "fixtures") -> dict:
@@ -84,6 +86,27 @@ def test_controls_for_risk_composes_the_existing_registry_helper():
     assert [item["record"] for item in result["records"]] == expected
 
 
+def test_projected_record_order_ignores_object_key_insertion_order():
+    registry = fixture("320-risk-control-registry-valid.json")
+    reordered = copy.deepcopy(registry)
+    reordered["controls"] = [
+        dict(reversed(list(control.items())))
+        for control in reordered["controls"]
+    ]
+    projection = {
+        "kind": "controls_for_risk",
+        "registry_input_id": "registry",
+        "risk_id": "R-001",
+    }
+    original = query_artifacts(
+        projection, [typed("risk_control_registry", registry, "registry")],
+    )
+    equivalent = query_artifacts(
+        projection, [typed("risk_control_registry", reordered, "registry")],
+    )
+    assert original["records"] == equivalent["records"]
+
+
 def test_missing_risk_remains_missing_not_an_exception():
     registry = fixture("320-risk-control-registry-valid.json")
     result = query_artifacts({"kind": "controls_for_risk", "registry_input_id": "registry", "risk_id": "absent"}, [typed("risk_control_registry", registry, "registry")])
@@ -140,6 +163,27 @@ def test_correction_lineage_exposes_missing_predecessor_duplicate_and_cycle(monk
          typed("incident_declaration", fixture("360-incident-declaration-valid.json"), "two")],
     )
     assert any("same correction identity" in item["reason"] for item in duplicate["findings"])
+
+
+def test_maximum_lineage_traversal_visits_each_node_once():
+    class CountingPredecessors(dict):
+        checks = 0
+
+        def __contains__(self, key):
+            self.checks += 1
+            return super().__contains__(key)
+
+    size = 10_000
+    predecessors = CountingPredecessors({
+        f"node-{index:05d}": f"node-{index - 1:05d}"
+        for index in range(1, size)
+    })
+    members = verification_query._lineage_cycle_members(
+        predecessors,
+        {f"node-{index:05d}" for index in range(size)},
+    )
+    assert members == set()
+    assert predecessors.checks < size * 6
 
 
 def test_correction_lineage_uses_authoritative_stable_identity_checks():
@@ -215,6 +259,26 @@ def test_incident_lineage_excludes_unrequested_capa_identity_failures():
     )
     assert not any("LEDGER2" in item["reason"] for item in result["findings"])
     assert [item["input_id"] for item in result["matches"]] == ["incident"]
+
+
+def test_cross_kind_duplicate_predecessors_remain_ambiguous():
+    parent = fixture("361-capa-action-valid.json")
+    child = fixture("360-incident-declaration-valid.json")
+    child["supersedes"] = validate.capa_action_fingerprint(parent)
+    result = query_artifacts(
+        {"kind": "correction_lineage", "artifact_kind": "incident_declaration"},
+        [
+            typed("capa_action", parent, "capa-parent-a"),
+            typed("capa_action", copy.deepcopy(parent), "capa-parent-b"),
+            typed("incident_declaration", child, "incident-child"),
+        ],
+    )
+    assert result["outcome"] == "conflict"
+    assert any(
+        item["status"] == "conflict"
+        and "cross-kind predecessor identity is ambiguous" in item["reason"]
+        for item in result["findings"]
+    )
 
 
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
