@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from vitruvyan_motus import execute_verification_query, query_artifacts, verify_artifact
 from vitruvyan_motus.contract import validate
+import vitruvyan_motus.verification_query as verification_query
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -238,4 +239,47 @@ def test_every_authoritative_receipt_status_maps_to_the_closed_result_vocabulary
         "matched", "not_verified", "not_verified", "not_verified", "not_verified",
     ]
     assert result["outcome"] == "not_verified"
+    assert validate.validate_verification_query_message(result) == []
+
+
+def test_authoritative_verifier_refusal_is_a_stable_not_verified_result(monkeypatch):
+    module = __import__(
+        "vitruvyan_motus.risk_control",
+        fromlist=["verify_control_application_bindings"],
+    )
+
+    def refuse(*_args, **_kwargs):
+        raise ValueError("inconsistent execution receipt")
+
+    monkeypatch.setattr(module, "verify_control_application_bindings", refuse)
+    application = typed(
+        "control_application",
+        fixture("330-control-application-valid.json"),
+        "application",
+    )
+    registry = typed(
+        "risk_control_registry",
+        fixture("320-risk-control-registry-valid.json"),
+        "registry",
+    )
+    result = verify_artifact(application, [registry])
+    assert result["outcome"] == "not_verified"
+    assert any(
+        item["path"] == "$.verification"
+        and item["observed"] == "ValueError"
+        and "authoritative verifier refused" in item["reason"]
+        for item in result["findings"]
+    )
+    assert validate.validate_verification_query_message(result) == []
+
+
+def test_invalid_outcome_survives_result_truncation(monkeypatch):
+    monkeypatch.setattr(verification_query, "_RESULT_ITEM_LIMIT", 1)
+    document = fixture("310-system-manifest-valid.json")
+    del document["schema_version"]
+    document["unexpected"] = True
+    result = verify_artifact(typed("system_manifest", document, "invalid-manifest"))
+    assert result["outcome"] == "invalid"
+    assert len(result["violations"]) == 1
+    assert result["findings"][0]["status"] == "incomplete"
     assert validate.validate_verification_query_message(result) == []

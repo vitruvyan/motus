@@ -164,7 +164,7 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
             "reason": "findings were deterministically truncated to the v1 result bound",
         })
     bounded["findings"] = findings + markers
-    if markers:
+    if markers and bounded["outcome"] not in {"invalid", "invalid_request"}:
         bounded["outcome"] = {
             "inspect": "invalid", "verify": "not_verified", "query": "invalid",
         }[bounded["operation"]]
@@ -618,20 +618,28 @@ def _authoritative_lineage_findings(
     """Compose an existing lineage authority when Motus defines one."""
     if kind in {"incident_declaration", "capa_action"}:
         validate = _contract()
+        ledger_entries = [
+            {"kind": item_kind, "document": document}
+            for item_kind, document in (
+                related_documents
+                if related_documents is not None
+                else [(kind, document) for document in documents]
+            )
+        ]
         ledger = {
             "schema_version": "1.0.0",
-            "entries": [
-                {"kind": item_kind, "document": document}
-                for item_kind, document in (
-                    related_documents
-                    if related_documents is not None
-                    else [(kind, document) for document in documents]
-                )
-            ],
+            "entries": ledger_entries,
+        }
+        requested_paths = {
+            f"$.entries[{index}].document.supersedes"
+            for index, entry in enumerate(ledger_entries)
+            if entry["kind"] == kind
         }
         findings = []
         for issue in validate.validate_incident_capa_ledger(ledger):
-            if issue.rule == "LEDGER2" and "same record kind" in issue.message:
+            if (issue.rule == "LEDGER2"
+                    and "same record kind" in issue.message
+                    and issue.path in requested_paths):
                 findings.append({
                     "path": issue.path,
                     "status": "mismatched",
@@ -710,6 +718,7 @@ def _query_result(
     elif kind == "correction_lineage":
         wanted = projection["artifact_kind"]
         rows = []
+        context_fingerprints: set[str] = set()
         for artifact, inspected in valid:
             if artifact["kind"] == wanted:
                 document = artifact["document"]
@@ -723,11 +732,20 @@ def _query_result(
             })
         related_documents = None
         if wanted in {"incident_declaration", "capa_action"}:
+            lineage_contract = _contract()
             related_documents = [
                 (artifact["kind"], artifact["document"])
                 for artifact, _ in valid
                 if artifact["kind"] in {"incident_declaration", "capa_action"}
             ]
+            context_fingerprints = {
+                (
+                    lineage_contract.incident_declaration_fingerprint(document)
+                    if related_kind == "incident_declaration"
+                    else lineage_contract.capa_action_fingerprint(document)
+                )
+                for related_kind, document in related_documents
+            }
         authoritative = _authoritative_lineage_findings(
             wanted, [document for _, _, document in rows], related_documents,
         )
@@ -749,6 +767,8 @@ def _query_result(
             for fingerprint, parent in sorted(predecessor_of.items()):
                 candidates = by_fingerprint.get(parent, ())
                 if not candidates:
+                    if parent in context_fingerprints:
+                        continue
                     findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "incomplete", "expected": parent, "reason": "the immediate predecessor is absent from this supplied view"})
                 elif len(candidates) > 1:
                     findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "conflict", "expected": parent, "observed": len(candidates), "reason": "the predecessor identity is ambiguous in the supplied view"})
@@ -983,6 +1003,22 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         mark_used(name)
         return binary_pools.get(name, [])
 
+    def authoritative(call: Any, *args: Any, **kwargs: Any) -> Any:
+        """Turn a domain verifier's refusal into a stable public result."""
+        try:
+            return call(*args, **kwargs)
+        except (ValueError, RecursionError) as exc:
+            findings.append({
+                "path": "$.verification",
+                "status": "not_verified",
+                "observed": type(exc).__name__,
+                "reason": (
+                    "authoritative verifier refused the supplied evidence: "
+                    + str(exc)
+                )[:8192],
+            })
+            return None
+
     verdict = None
     if kind == "trace":
         spec = one("graphspec")
@@ -993,20 +1029,20 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             if not violations:
                 findings.append({"path": "$.artifact", "status": "matched", "reason": "trace matched the supplied GraphSpec under existing SB rules"})
     elif kind == "execution_receipt":
-        verdict = validate.verify(document, one("trace"))
+        verdict = authoritative(validate.verify, document, one("trace"))
     elif kind == "system_manifest":
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
         module = importlib.import_module("vitruvyan_motus.system_manifest")
-        verdict = module.verify_system_manifest_bindings(document, graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
+        verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
     elif kind == "control_application":
         registry = one("risk_control_registry")
         if registry is None:
             findings.append({"path": "$.companions.risk_control_registry", "status": "not_verified", "reason": "ControlApplication binding requires one explicit Registry companion"})
         else:
-            verdict = importlib.import_module("vitruvyan_motus.risk_control").verify_control_application_bindings(document, registry=registry, manifest=one("system_manifest"), receipt=one("execution_receipt"))
+            verdict = authoritative(importlib.import_module("vitruvyan_motus.risk_control").verify_control_application_bindings, document, registry=registry, manifest=one("system_manifest"), receipt=one("execution_receipt"))
     elif kind == "human_oversight_receipt":
-        verdict = importlib.import_module("vitruvyan_motus.human_oversight").verify_human_oversight_bindings(document, execution_receipt=one("execution_receipt"), manifest=one("system_manifest"), registry=one("risk_control_registry"), control_application=one("control_application"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.human_oversight").verify_human_oversight_bindings, document, execution_receipt=one("execution_receipt"), manifest=one("system_manifest"), registry=one("risk_control_registry"), control_application=one("control_application"))
     elif kind == "regulatory_evidence_profile":
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
@@ -1022,27 +1058,28 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
                 "risk_control_registry", "control_application",
             })
         uses_manifest = "system_manifest" in requested
-        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt", use="execution_receipt" in used_kinds), system_manifest=one("system_manifest", use="system_manifest" in used_kinds), risk_control_registry=one("risk_control_registry", use="risk_control_registry" in used_kinds), control_application=one("control_application", use="control_application" in used_kinds), human_oversight_receipt=one("human_oversight_receipt", use="human_oversight_receipt" in used_kinds), graph_specs=[graph.from_dict(value) for value in many("graphspec", use=uses_manifest)], traces=[trace.from_dict(value) for value in many("trace", use=uses_manifest)])
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile, document, execution_receipt=one("execution_receipt", use="execution_receipt" in used_kinds), system_manifest=one("system_manifest", use="system_manifest" in used_kinds), risk_control_registry=one("risk_control_registry", use="risk_control_registry" in used_kinds), control_application=one("control_application", use="control_application" in used_kinds), human_oversight_receipt=one("human_oversight_receipt", use="human_oversight_receipt" in used_kinds), graph_specs=[graph.from_dict(value) for value in many("graphspec", use=uses_manifest)], traces=[trace.from_dict(value) for value in many("trace", use=uses_manifest)])
     elif kind == "incident_capa_ledger":
-        verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger, document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
     elif kind == "retention_application":
-        verdict = importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings(document, policy=one("retention_policy_declaration"), holds=many("legal_hold_declaration"), snapshots=many("retention_scope_snapshot"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings, document, policy=one("retention_policy_declaration"), holds=many("legal_hold_declaration"), snapshots=many("retention_scope_snapshot"))
     elif kind == "ai_system_registration":
-        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding(document, manifests=many("system_manifest"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding, document, manifests=many("system_manifest"))
     elif kind == "ai_system_registry_snapshot":
-        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registry_snapshot(document, registrations=many("ai_system_registration"), events=many("ai_system_registry_event"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registry_snapshot, document, registrations=many("ai_system_registration"), events=many("ai_system_registry_event"))
     elif kind == "execution_evidence_package":
-        package = importlib.import_module("vitruvyan_motus.evidence").verify_package(base64.b64decode(artifact["content_base64"], validate=True))
-        if package.verdict is None:
-            findings.append({"path": "$.artifact", "status": "not_verified", "reason": "package carries no receipt verdict"})
-        else:
-            verdict = package.verdict
-        findings.extend({"path": "$.members", "status": "damaged", "observed": item, "reason": "package member failed transport integrity"} for item in package.damaged)
-        findings.extend({"path": "$.trace", "status": "mismatched", "observed": item, "reason": "embedded trace failed its Motus contract"} for item in package.trace_violations)
-        if not package.transport_ok and not package.damaged:
-            findings.append({"path": "$.transport", "status": "mismatched", "reason": "package transport verification failed"})
+        package = authoritative(importlib.import_module("vitruvyan_motus.evidence").verify_package, base64.b64decode(artifact["content_base64"], validate=True))
+        if package is not None:
+            if package.verdict is None:
+                findings.append({"path": "$.artifact", "status": "not_verified", "reason": "package carries no receipt verdict"})
+            else:
+                verdict = package.verdict
+            findings.extend({"path": "$.members", "status": "damaged", "observed": item, "reason": "package member failed transport integrity"} for item in package.damaged)
+            findings.extend({"path": "$.trace", "status": "mismatched", "observed": item, "reason": "embedded trace failed its Motus contract"} for item in package.trace_violations)
+            if not package.transport_ok and not package.damaged:
+                findings.append({"path": "$.transport", "status": "mismatched", "reason": "package transport verification failed"})
     elif kind == "regulatory_evidence_dossier_export":
-        verdict = importlib.import_module("vitruvyan_motus.regulatory_dossier").verify_regulatory_dossier(base64.b64decode(artifact["content_base64"], validate=True))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.regulatory_dossier").verify_regulatory_dossier, base64.b64decode(artifact["content_base64"], validate=True))
     else:
         findings.append({"path": "$.artifact", "status": "not_verified", "reason": "this artifact kind has structural inspection but no standalone binding verifier"})
 

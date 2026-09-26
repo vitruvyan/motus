@@ -191,7 +191,30 @@ def test_incident_lineage_sees_a_supplied_cross_kind_predecessor():
     )
     assert any(item["status"] == "mismatched" for item in result["findings"])
     assert any("LEDGER2" in item["reason"] for item in result["findings"])
+    assert not any(
+        item["status"] == "incomplete"
+        and "predecessor is absent" in item["reason"]
+        for item in result["findings"]
+    )
     assert [item["input_id"] for item in result["matches"]] == ["incident-child"]
+
+
+def test_incident_lineage_excludes_unrequested_capa_identity_failures():
+    incident = fixture("360-incident-declaration-valid.json")
+    capa_parent = fixture("361-capa-action-valid.json")
+    capa_child = copy.deepcopy(capa_parent)
+    capa_child["action_id"] = "different-capa-action"
+    capa_child["supersedes"] = validate.capa_action_fingerprint(capa_parent)
+    result = query_artifacts(
+        {"kind": "correction_lineage", "artifact_kind": "incident_declaration"},
+        [
+            typed("incident_declaration", incident, "incident"),
+            typed("capa_action", capa_parent, "capa-parent"),
+            typed("capa_action", capa_child, "capa-child"),
+        ],
+    )
+    assert not any("LEDGER2" in item["reason"] for item in result["findings"])
+    assert [item["input_id"] for item in result["matches"]] == ["incident"]
 
 
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():

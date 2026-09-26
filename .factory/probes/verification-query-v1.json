@@ -306,5 +306,33 @@
     "from": "safe = _terminal_safe",
     "to": "safe = str",
     "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "authoritative verifier refusals remain stable public results",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "except (ValueError, RecursionError) as exc:",
+    "to": "except RecursionError as exc:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid verification outcomes survive diagnostic truncation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if markers and bounded[\"outcome\"] not in {\"invalid\", \"invalid_request\"}:",
+    "to": "if markers:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "cross-kind supplied predecessors suppress contradictory absence",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if parent in context_fingerprints:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "unrequested ledger kinds do not leak identity findings",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "and issue.path in requested_paths):",
+    "to": "and True):",
+    "tests": "tests/test_verification_query_query.py"
   }
 ]
