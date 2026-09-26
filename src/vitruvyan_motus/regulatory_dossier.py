@@ -345,30 +345,62 @@ def _compose_existing_verifiers(
         documents.get("execution_receipt", ())
     )
 
+    def exact_document(
+        kind: str, expected: str | None, path: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        matches = document_index.get((kind, expected), ()) if expected else ()
+        if len(matches) > 1:
+            findings.append(_finding(
+                path, "conflict", "one exact supplied identity", len(matches),
+                "multiple supplied documents have the required exact identity",
+            ))
+            return None, True
+        return (matches[0] if matches else None), False
+
+    def execution_receipt(
+        execution_ref: str, path: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        matches = receipt_index.get(execution_ref, ())
+        if len(matches) > 1:
+            findings.append(_finding(
+                path, "conflict", "one receipt for the execution reference",
+                len(matches),
+                "multiple supplied receipts claim the required execution reference",
+            ))
+            return None, True
+        return (matches[0] if matches else None), False
+
     from vitruvyan_motus.risk_control import verify_control_application_bindings
     for application in documents.get("control_application", ()):
         if findings.exhausted:
             break
         app_fp = validate.control_application_fingerprint(application)
-        registry = _matching_document(
-            document_index, "risk_control_registry",
-            application["registry_fingerprint"],
+        registry_path = (
+            f"binding:control_application:{app_fp}.registry_fingerprint"
         )
+        registry, registry_conflict = exact_document(
+            "risk_control_registry", application["registry_fingerprint"],
+            registry_path,
+        )
+        if registry_conflict:
+            continue
         if registry is None:
             findings.append(_finding(
-                f"binding:control_application:{app_fp}.registry_fingerprint",
+                registry_path,
                 "missing", application["registry_fingerprint"], None,
-                "the exact Registry required by the existing binding verifier is absent or ambiguous",
+                "the exact Registry required by the existing binding verifier is absent",
             ))
             continue
-        manifest = _matching_document(
-            document_index, "system_manifest",
-            application.get("manifest_fingerprint"),
+        manifest, manifest_conflict = exact_document(
+            "system_manifest", application.get("manifest_fingerprint"),
+            f"binding:control_application:{app_fp}.manifest_fingerprint",
         )
-        matching_receipts = receipt_index.get(application["execution_ref"], ())
-        receipt = (
-            matching_receipts[0] if len(matching_receipts) == 1 else None
+        receipt, receipt_conflict = execution_receipt(
+            application["execution_ref"],
+            f"binding:control_application:{app_fp}.execution_ref",
         )
+        if manifest_conflict or receipt_conflict:
+            continue
         verdict = verify_control_application_bindings(
             application, registry=registry, manifest=manifest, receipt=receipt,
         )
@@ -382,25 +414,31 @@ def _compose_existing_verifiers(
             break
         fp = validate.human_oversight_receipt_fingerprint(oversight)
         bindings = oversight.get("bindings", {})
-        matching_receipts = receipt_index.get(oversight["execution_ref"], ())
-        receipt = (
-            matching_receipts[0] if len(matching_receipts) == 1 else None
+        prefix = f"binding:human_oversight_receipt:{fp}"
+        receipt, receipt_conflict = execution_receipt(
+            oversight["execution_ref"], prefix + ".execution_ref",
         )
+        manifest, manifest_conflict = exact_document(
+            "system_manifest", bindings.get("manifest_fingerprint"),
+            prefix + ".manifest_fingerprint",
+        )
+        registry, registry_conflict = exact_document(
+            "risk_control_registry", bindings.get("registry_fingerprint"),
+            prefix + ".registry_fingerprint",
+        )
+        control_application, application_conflict = exact_document(
+            "control_application", bindings.get("control_application_fingerprint"),
+            prefix + ".control_application_fingerprint",
+        )
+        if any((receipt_conflict, manifest_conflict, registry_conflict,
+                application_conflict)):
+            continue
         verdict = verify_human_oversight_bindings(
             oversight,
             execution_receipt=receipt,
-            manifest=_matching_document(
-                document_index, "system_manifest",
-                bindings.get("manifest_fingerprint"),
-            ),
-            registry=_matching_document(
-                document_index, "risk_control_registry",
-                bindings.get("registry_fingerprint"),
-            ),
-            control_application=_matching_document(
-                document_index, "control_application",
-                bindings.get("control_application_fingerprint"),
-            ),
+            manifest=manifest,
+            registry=registry,
+            control_application=control_application,
         )
         findings.extend(_converted_findings(
             f"binding:human_oversight_receipt:{fp}", verdict.findings,
@@ -467,12 +505,15 @@ def _compose_existing_verifiers(
         if findings.exhausted:
             break
         fp = validate.retention_application_fingerprint(application)
+        policy, policy_conflict = exact_document(
+            "retention_policy_declaration", application["policy_fingerprint"],
+            f"binding:retention_application:{fp}.policy_fingerprint",
+        )
+        if policy_conflict:
+            continue
         verdict = verify_retention_application_bindings(
             application,
-            policy=_matching_document(
-                document_index, "retention_policy_declaration",
-                application["policy_fingerprint"],
-            ),
+            policy=policy,
             holds=documents.get("legal_hold_declaration", ()),
             snapshots=documents.get("retention_scope_snapshot", ()),
         )

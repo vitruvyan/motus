@@ -212,8 +212,8 @@
   {
     "name": "verification results identify singular companions actually used",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if values:\n            mark_used(name)\n            return values[0]",
-    "to": "if values:\n            return values[0]",
+    "from": "used_companions[identity[\"input_id\"]] = identity\n            return value",
+    "to": "return value",
     "tests": "tests/test_verification_query_verify.py"
   },
   {
@@ -586,5 +586,33 @@
     "from": "for input_id in scope[\"input_ids\"]",
     "to": "for input_id in ()",
     "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "verification selects companions by declared exact identity",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if pair[1][\"fingerprint\"] == fingerprint",
+    "to": "if True",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "dossier duplicate exact identities remain conflicts",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "matches = document_index.get((kind, expected), ()) if expected else ()\n        if len(matches) > 1:",
+    "to": "matches = document_index.get((kind, expected), ()) if expected else ()\n        if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "lifecycle selected input membership remains linear",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return {item[\"input_id\"] for item, _ in selected}",
+    "to": "return [item[\"input_id\"] for item, _ in selected]",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid request input deduplication remains linear",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "and value not in seen_ids):",
+    "to": "and value not in ids):",
+    "tests": "tests/test_verification_query_query.py"
   }
 ]

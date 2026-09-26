@@ -127,17 +127,47 @@ def test_control_application_without_registry_fails_closed():
 
 
 def test_control_application_dispatches_to_existing_binding_verifier():
-    application = typed("control_application", fixture("330-control-application-valid.json"), "application")
-    registry = typed("risk_control_registry", fixture("320-risk-control-registry-valid.json"), "registry")
+    application_document = fixture("330-control-application-valid.json")
+    registry_document = fixture("320-risk-control-registry-valid.json")
+    application_document["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry_document)
+    )
+    application = typed("control_application", application_document, "application")
+    registry = typed("risk_control_registry", registry_document, "registry")
     result = verify_artifact(application, [registry])
     assert result["outcome"] in {"matched", "mismatched", "not_verified", "conflict"}
     assert result["findings"]
     assert validate.validate_verification_query_message(result) == []
 
 
+def test_control_application_selects_exact_registry_among_unrelated_revisions():
+    application_document = fixture("330-control-application-valid.json")
+    exact_document = fixture("320-risk-control-registry-valid.json")
+    application_document["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(exact_document)
+    )
+    application = typed("control_application", application_document, "application")
+    exact = typed(
+        "risk_control_registry", exact_document, "exact-registry",
+    )
+    unrelated_document = fixture("320-risk-control-registry-valid.json")
+    unrelated_document["registry"]["version"] = "2026.09.21-2"
+    unrelated = typed("risk_control_registry", unrelated_document, "unrelated")
+
+    result = verify_artifact(application, [unrelated, exact])
+
+    assert result["outcome"] != "conflict"
+    assert [item["input_id"] for item in result["matches"]] == ["exact-registry"]
+
+
 def test_verify_identifies_only_the_companions_actually_used():
-    application = typed("control_application", fixture("330-control-application-valid.json"), "application")
-    registry = typed("risk_control_registry", fixture("320-risk-control-registry-valid.json"), "registry")
+    application_document = fixture("330-control-application-valid.json")
+    registry_document = fixture("320-risk-control-registry-valid.json")
+    application_document["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry_document)
+    )
+    application = typed("control_application", application_document, "application")
+    registry = typed("risk_control_registry", registry_document, "registry")
     unrelated = typed("graphspec", fixture("01-graphspec-linear.json"), "unrelated")
     result = verify_artifact(application, [unrelated, registry])
     assert [item["input_id"] for item in result["matches"]] == ["registry"]
@@ -265,8 +295,13 @@ def test_invalid_request_scope_ids_are_result_bounded():
 
 
 def test_duplicate_singular_companions_remain_conflict():
-    artifact = typed("control_application", fixture("330-control-application-valid.json"), "application")
-    registry = typed("risk_control_registry", fixture("320-risk-control-registry-valid.json"), "registry")
+    application_document = fixture("330-control-application-valid.json")
+    registry_document = fixture("320-risk-control-registry-valid.json")
+    application_document["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry_document)
+    )
+    artifact = typed("control_application", application_document, "application")
+    registry = typed("risk_control_registry", registry_document, "registry")
     duplicate = dict(registry, input_id="registry-2")
     result = verify_artifact(artifact, [registry, duplicate])
     assert result["outcome"] == "conflict"
@@ -328,16 +363,13 @@ def test_authoritative_verifier_refusal_is_a_stable_not_verified_result(monkeypa
         raise ValueError("inconsistent execution receipt")
 
     monkeypatch.setattr(module, "verify_control_application_bindings", refuse)
-    application = typed(
-        "control_application",
-        fixture("330-control-application-valid.json"),
-        "application",
+    application_document = fixture("330-control-application-valid.json")
+    registry_document = fixture("320-risk-control-registry-valid.json")
+    application_document["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry_document)
     )
-    registry = typed(
-        "risk_control_registry",
-        fixture("320-risk-control-registry-valid.json"),
-        "registry",
-    )
+    application = typed("control_application", application_document, "application")
+    registry = typed("risk_control_registry", registry_document, "registry")
     result = verify_artifact(application, [registry])
     assert result["outcome"] == "not_verified"
     assert any(

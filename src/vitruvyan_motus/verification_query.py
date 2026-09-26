@@ -311,11 +311,13 @@ def _invalid_request(
 ) -> dict[str, Any]:
     candidates = input_ids if isinstance(input_ids, (list, tuple)) else [input_ids]
     ids: list[str] = []
+    seen_ids: set[str] = set()
     for value in candidates:
         if (isinstance(value, str) and 1 <= len(value) <= 128
                 and any(not char.isspace() for char in value)
-                and value not in ids):
+                and value not in seen_ids):
             ids.append(value)
+            seen_ids.add(value)
             if len(ids) == _RESULT_ITEM_LIMIT:
                 break
     return _checked_result({
@@ -806,6 +808,13 @@ def _canonical_json_sort_key(value: Any) -> str:
     )
 
 
+def _source_id_set(
+    selected: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> set[str]:
+    """Build the selected-input membership index once for linear projection."""
+    return {item["input_id"] for item, _ in selected}
+
+
 def _authoritative_lineage_findings(
     kind: str, documents: list[dict[str, Any]],
     related_documents: list[tuple[str, dict[str, Any]]] | None = None,
@@ -1089,7 +1098,7 @@ def _query_result(
             and inspected["subject"]["fingerprint"] in selected_event_fingerprints
         ]
         selected = selected_registrations + selected_events
-        source_ids = [item["input_id"] for item, _ in selected]
+        source_ids = _source_id_set(selected)
         for artifact, inspected in valid:
             if artifact["input_id"] in source_ids:
                 matches.append(inspected["subject"])
@@ -1252,16 +1261,26 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         for identity in companion_subjects.get(name, ()):
             used_companions[identity["input_id"]] = identity
 
-    def one(name: str, *, use: bool = True) -> Any:
+    def one(
+        name: str, *, use: bool = True, fingerprint: str | None = None,
+    ) -> Any:
         if not use:
             return None
         values = pools.get(name, [])
-        if len(values) > 1:
-            findings.append({"path": f"$.companions.{name}", "status": "conflict", "observed": len(values), "reason": "multiple supplied companions are ambiguous"})
+        identities = companion_subjects.get(name, [])
+        candidates = list(zip(values, identities))
+        if fingerprint is not None:
+            candidates = [
+                pair for pair in candidates
+                if pair[1]["fingerprint"] == fingerprint
+            ]
+        if len(candidates) > 1:
+            findings.append({"path": f"$.companions.{name}", "status": "conflict", "observed": len(candidates), "reason": "multiple supplied companions are ambiguous"})
             return None
-        if values:
-            mark_used(name)
-            return values[0]
+        if candidates:
+            value, identity = candidates[0]
+            used_companions[identity["input_id"]] = identity
+            return value
         return None
 
     def many(name: str, *, use: bool = True) -> list[Any]:
@@ -1334,13 +1353,17 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
                 used_companions[identity["input_id"]] = identity
         verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in graph_values], traces=[trace.from_dict(value) for value in relevant_traces])
     elif kind == "control_application":
-        registry = one("risk_control_registry")
+        registry = one(
+            "risk_control_registry", fingerprint=document["registry_fingerprint"],
+        )
         if registry is None:
             findings.append({"path": "$.companions.risk_control_registry", "status": "not_verified", "reason": "ControlApplication binding requires one explicit Registry companion"})
         else:
-            verdict = authoritative(importlib.import_module("vitruvyan_motus.risk_control").verify_control_application_bindings, document, registry=registry, manifest=one("system_manifest"), receipt=one("execution_receipt"))
+            manifest_fp = document.get("manifest_fingerprint")
+            verdict = authoritative(importlib.import_module("vitruvyan_motus.risk_control").verify_control_application_bindings, document, registry=registry, manifest=one("system_manifest", use=manifest_fp is not None, fingerprint=manifest_fp), receipt=one("execution_receipt"))
     elif kind == "human_oversight_receipt":
-        verdict = authoritative(importlib.import_module("vitruvyan_motus.human_oversight").verify_human_oversight_bindings, document, execution_receipt=one("execution_receipt"), manifest=one("system_manifest"), registry=one("risk_control_registry"), control_application=one("control_application"))
+        bindings = document.get("bindings", {})
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.human_oversight").verify_human_oversight_bindings, document, execution_receipt=one("execution_receipt"), manifest=one("system_manifest", fingerprint=bindings.get("manifest_fingerprint")), registry=one("risk_control_registry", fingerprint=bindings.get("registry_fingerprint")), control_application=one("control_application", fingerprint=bindings.get("control_application_fingerprint")))
     elif kind == "regulatory_evidence_profile":
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
@@ -1360,7 +1383,7 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     elif kind == "incident_capa_ledger":
         verdict = authoritative(importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger, document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
     elif kind == "retention_application":
-        verdict = authoritative(importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings, document, policy=one("retention_policy_declaration"), holds=many("legal_hold_declaration"), snapshots=many("retention_scope_snapshot"))
+        verdict = authoritative(importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings, document, policy=one("retention_policy_declaration", fingerprint=document["policy_fingerprint"]), holds=many("legal_hold_declaration"), snapshots=many("retention_scope_snapshot"))
     elif kind == "ai_system_registration":
         verdict = authoritative(importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding, document, manifests=many("system_manifest"))
     elif kind == "ai_system_registry_snapshot":

@@ -115,6 +115,38 @@ def test_companion_index_derives_each_fingerprint_once(monkeypatch):
     assert calls == 1
 
 
+def test_duplicate_exact_dossier_companions_are_conflicts_not_missing():
+    registry = json.loads(
+        (ROOT / JSON_FIXTURES["risk_control_registry"]).read_text("utf-8")
+    )["instance"]
+    application = json.loads(
+        (ROOT / JSON_FIXTURES["control_application"]).read_text("utf-8")
+    )["instance"]
+    application["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry)
+    )
+
+    findings = dossier_module._compose_existing_verifiers(
+        {
+            "risk_control_registry": [registry, copy.deepcopy(registry)],
+            "control_application": [application],
+        },
+        [], validate,
+    )
+
+    assert any(
+        item.path.endswith(".registry_fingerprint")
+        and item.status == "conflict"
+        and item.observed == 2
+        for item in findings
+    )
+    assert not any(
+        item.path.endswith(".registry_fingerprint")
+        and item.status == "missing"
+        for item in findings
+    )
+
+
 def test_dossier_ledgers_share_one_package_verdict_cache(monkeypatch):
     package = b"not a valid evidence package"
     package_ref = {

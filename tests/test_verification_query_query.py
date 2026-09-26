@@ -61,6 +61,36 @@ def test_complete_invalid_artifact_shells_are_rejected_before_jsonschema(monkeyp
     assert calls == ["result"]
 
 
+def test_invalid_request_input_id_deduplication_is_linear():
+    class CountingString(str):
+        comparisons = 0
+
+        def __eq__(self, other):
+            type(self).comparisons += 1
+            return super().__eq__(other)
+
+        __hash__ = str.__hash__
+
+    values = [CountingString(f"input-{index}") for index in range(2000)]
+    verification_query._invalid_request(
+        [verification_query._PreflightViolation("$", "invalid")],
+        values, "query",
+    )
+
+    assert CountingString.comparisons < 10_000
+
+
+def test_lifecycle_selected_input_membership_uses_a_set():
+    selected = [
+        ({"input_id": f"input-{index}"}, {}) for index in range(10_000)
+    ]
+
+    source_ids = verification_query._source_id_set(selected)
+
+    assert isinstance(source_ids, set)
+    assert len(source_ids) == 10_000
+
+
 @pytest.mark.parametrize(
     "change,path",
     [
