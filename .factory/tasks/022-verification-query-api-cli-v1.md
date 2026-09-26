@@ -90,7 +90,7 @@ Point 10 / 0.22.0 is complete only when:
 14. release `v0.22.0` is characterized and closed under repository release
     discipline.
 
-## Current checkpoint — 2026-09-26
+## Current checkpoint — 2026-09-27
 
 - dedicated branch created from `origin/main` at
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
@@ -108,7 +108,7 @@ Point 10 / 0.22.0 is complete only when:
 - composite verification, all seven closed query projections, the stable
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
-- independent code and security review found sixty-eight defects across supplied-input
+- independent code and security review found seventy defects across supplied-input
   visibility, receipt coordinates, authoritative lineage composition, lifecycle
   provenance, result and parser bounds, companion-detail and companion-use
   provenance, ZIP expansion, receipt status normalization, bounded finding paths,
@@ -141,8 +141,9 @@ Point 10 / 0.22.0 is complete only when:
   authoritative Incident/CAPA correction validation, authority short-circuiting
   after the dossier-wide finding cap, escaped Unicode line separators and
   complete supplied-scope rendering in human CLI output, exact referenced
-  companion selection, explicit dossier duplicate-identity conflicts and linear
-  lifecycle/scope membership indexes; all sixty-eight classes have regression
+  companion selection, explicit dossier duplicate-identity conflicts, linear
+  lifecycle/scope membership indexes, safe rejection of non-string ArtifactInput
+  keys and a cumulative dossier AI-lifecycle projection work budget; all seventy classes have regression
   tests;
 - focused ADR-043 and authority regression bank after review remediation:
   `189 passed` with the pre-existing dossier duplicate-ZIP-name warning;
@@ -150,8 +151,15 @@ Point 10 / 0.22.0 is complete only when:
   pre-existing duplicate-ZIP-name warnings;
 - permanent ADR-043 mutation probe: `88/88 killed` on clean code/test commit
   `4c2b3c16b3e5ddb89c97d354c13eca3a27d7d8f7`;
+- final targeted regression bank for the last two review findings: `73 passed`
+  with the pre-existing dossier duplicate-ZIP-name warning;
+- full suite on final code commit `07704c3`: `1930 passed, 6 skipped` with the
+  two pre-existing duplicate-ZIP-name warnings;
+- two incremental permanent mutation probes for the final corrections: `2/2
+  killed` on clean final code commit `07704c3`;
 - frozen-path guard: passed against base
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
 - Jenkins PR-head build #5 passed on intermediate reviewed head `f051c24`;
-  final review and Jenkins rerun remain required on the evidence commit before
+  the earlier final-head build #28 remained pending on superseded evidence head
+  `2aceee1`; one Jenkins run on the new evidence head remains required before
   merge and release qualification.
