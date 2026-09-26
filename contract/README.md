@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The thirteen surfaces
+## The fourteen surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -34,6 +34,37 @@ enforcement point.
 | 11 | Incident / CAPA Ledger | `incident-declaration.v1.schema.json`, `capa-action.v1.schema.json`, `incident-capa-ledger.v1.schema.json` | An evidence consumer that needs immutable producer claims about incidents and corrective or preventive actions without importing a case-management or legal-classification system | The three validators apply schema plus INC1-INC2, CAPA1-CAPA2 and LEDGER1-LEDGER3. `verify_incident_capa_ledger()` derives exact identities, preserves amendment forks and reports only binding states; validity and `completed`/`closed` remain producer claims, never Motus verdicts |
 | 12 | Retention / Hold v1 | `retention-policy-declaration.v1.schema.json`, `legal-hold-declaration.v1.schema.json`, `retention-scope-snapshot.v1.schema.json`, `retention-trigger-occurrence.v1.schema.json`, `retention-application.v1.schema.json`, `custody-observation.v1.schema.json` | An evidence consumer that needs distinct, exact producer claims for a rule, hold action, resolved scope, trigger occurrence, custodian action and bounded custody observation | The six validators apply closed schema plus RET1-RET4 for real UTC instants, typed artifact uniqueness, canonical execution coordinates and integer duration values. This first stage validates each document independently; it does not verify lineage, scope membership, external bindings or custody |
 | 13 | AI System Registry v1 | `ai-system-registration.v1.schema.json`, `ai-system-registry-event.v1.schema.json`, `ai-system-registry-snapshot.v1.schema.json` | An evidence consumer that needs immutable producer registration and lifecycle claims bound to exact System Manifest revisions | The three validators apply closed schema plus AIR1-AIR2. Read-only helpers verify supplied correction lineage, exact manifest bindings, lifecycle chains and bounded snapshot membership; they never establish legal status, deployment, global current state, completeness, authority or compliance |
+| 14 | Regulatory Evidence Dossier v1 | `regulatory-evidence-dossier.v1.schema.json` | A third party holding one bounded export who must verify which exact Motus artifacts the producer included | `validate_regulatory_evidence_dossier()` applies closed schema plus RED1-RED5. It validates manifest time, unique entry identities, one exact profile binding, safe bounded member paths and exact integer sizes; it does not establish archive integrity, evidence completeness, legal sufficiency, official submission, acceptance or compliance |
+
+### Regulatory Evidence Dossier structural v1
+
+ADR-042 separates the immutable dossier manifest from the deterministic export
+archive that carries it. The manifest names one producer-declared subject, one
+exact Regulatory Evidence Profile and a bounded list of exact Motus artifacts.
+Each entry keeps the canonical artifact fingerprint separate from the SHA-256 of
+the original transported bytes. Equivalent JSON can therefore retain one
+semantic identity while correctly having a different byte digest.
+
+The v1 vocabulary is closed to Motus-owned artifacts through ADR-041. Exactly
+one profile entry is required and must match `profile_fingerprint`. Unknown
+attachments, legal opinions, reports and regulator forms are not upgraded into
+verified Motus evidence merely because an archive can carry bytes.
+
+The manifest admits at most 1000 entries, matching the accepted upper bound for
+requirements in one Regulatory Evidence Profile. Each declared member is at
+most 28 MiB, reusing the measured evidence-package fixed-member ceiling that
+accommodates the 27.4 MiB medium trace. Paths are at most 1024 characters and
+16 POSIX components, reserve `dossier.json` for the manifest, and refuse empty,
+dot, parent, absolute, drive-qualified or backslash forms.
+
+`RED1` checks that `observed_at` is a real UTC calendar instant. `RED2` refuses
+duplicate entry identifiers, paths and typed artifact fingerprints. `RED3`
+requires one profile entry bound to the manifest's exact profile fingerprint.
+`RED4` refuses unsafe, reserved or over-deep member paths. `RED5` prevents an
+integral float or boolean from being laundered through JSON Schema's broad
+`integer` type. These
+rules validate only the manifest; byte-preserving packing, archive limits,
+member dispatch and profile assessment are subsequent independently tested gates.
 
 ### AI System Registry structural v1
 

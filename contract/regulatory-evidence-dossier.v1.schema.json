@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/regulatory-evidence-dossier.v1.schema.json",
+  "title": "Vitruvyan Motus Regulatory Evidence Dossier, v1",
+  "description": "ADR-042. An immutable manifest for one bounded, byte-preserving export of exact Motus artifacts. Validity is not completeness, legal sufficiency, official submission, acceptance, or compliance.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer_namespace",
+    "producer_ref",
+    "dossier_id",
+    "subject",
+    "profile_fingerprint",
+    "entries",
+    "observed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "producer_namespace": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "producer_ref": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "dossier_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+    "subject": {"$ref": "#/$defs/Subject"},
+    "profile_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {"$ref": "#/$defs/Entry"}
+    },
+    "observed_at": {"$ref": "system-manifest.v1.schema.json#/$defs/UtcTimestamp"},
+    "supersedes": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+  },
+  "$defs": {
+    "Subject": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+        "id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"}
+      }
+    },
+    "ArtifactKind": {
+      "enum": [
+        "execution_receipt",
+        "execution_evidence_package",
+        "system_manifest",
+        "risk_control_registry",
+        "control_application",
+        "human_oversight_receipt",
+        "regulatory_evidence_profile",
+        "incident_declaration",
+        "capa_action",
+        "incident_capa_ledger",
+        "retention_policy_declaration",
+        "legal_hold_declaration",
+        "retention_scope_snapshot",
+        "retention_trigger_occurrence",
+        "retention_application",
+        "custody_observation",
+        "ai_system_registration",
+        "ai_system_registry_event",
+        "ai_system_registry_snapshot"
+      ]
+    },
+    "Entry": {
+      "type": "object",
+      "required": [
+        "entry_id",
+        "artifact_kind",
+        "path",
+        "media_type",
+        "size_bytes",
+        "content_sha256",
+        "artifact_fingerprint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "entry_id": {"$ref": "commitment.v1.schema.json#/$defs/Identifier"},
+        "artifact_kind": {"$ref": "#/$defs/ArtifactKind"},
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[^\\\\\\u0000]+$"
+        },
+        "media_type": {"enum": ["application/json", "application/zip"]},
+        "size_bytes": {"type": "integer", "minimum": 0, "maximum": 29360128},
+        "content_sha256": {"$ref": "commitment.v1.schema.json#/$defs/Digest"},
+        "artifact_fingerprint": {"$ref": "commitment.v1.schema.json#/$defs/Digest"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"artifact_kind": {"const": "execution_evidence_package"}}},
+          "then": {"properties": {"media_type": {"const": "application/zip"}}},
+          "else": {"properties": {"media_type": {"const": "application/json"}}}
+        }
+      ]
+    }
+  }
+}
