@@ -108,7 +108,7 @@ Point 10 / 0.22.0 is complete only when:
 - composite verification, all seven closed query projections, the stable
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
-- independent code and security review found thirty-seven defects across supplied-input
+- independent code and security review found forty-one defects across supplied-input
   visibility, receipt coordinates, authoritative lineage composition, lifecycle
   provenance, result and parser bounds, companion-detail and companion-use
   provenance, ZIP expansion, receipt status normalization, bounded finding paths,
@@ -123,13 +123,14 @@ Point 10 / 0.22.0 is complete only when:
   lineage isolation, nonblocking special-file refusal, canonical projection
   ordering, linear maximum-bound lineage traversal, nested diagnostic bounds
   and cross-kind predecessor multiplicity, cross-namespace AI authority context
-  and complete prefixed query inspection diagnostics; all thirty-seven classes
-  have regression tests;
-- focused ADR-043 bank after review remediation: `81 passed`;
-- full suite after review remediation: `1894 passed, 6 skipped` with the two
+  and complete prefixed query inspection diagnostics, linear dossier lineage,
+  bounded Manifest/Trace joins, scoped AI lifecycle candidates and accurate
+  invalid-request operation scope; all forty-one classes have regression tests;
+- focused ADR-043 bank after review remediation: `83 passed`;
+- full suite after review remediation: `1897 passed, 6 skipped` with the two
   pre-existing duplicate-ZIP-name warnings;
-- permanent ADR-043 mutation probe: `56/56 killed` on clean commit
-  `70d509e75fed3119435100f382590f9531845c38`;
+- permanent ADR-043 mutation probe: `60/60 killed` on clean commit
+  `85f86007c19989e74e43cc272bf0aaf9372719d3`;
 - frozen-path guard: passed against base
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
 - Jenkins PR-head build #5 passed on intermediate reviewed head `f051c24`;
