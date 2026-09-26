@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "producer_namespace": "acme/governance",
+  "producer_ref": "acme/evidence-exporter",
+  "dossier_id": "customer-support-review-2026-09",
+  "subject": {
+    "kind": "ai-system",
+    "id": "acme/customer-support-assistant"
+  },
+  "profile_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "entries": [
+    {
+      "entry_id": "profile",
+      "artifact_kind": "regulatory_evidence_profile",
+      "path": "profile/regulatory-evidence-profile.json",
+      "media_type": "application/json",
+      "size_bytes": 512,
+      "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifact_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "entry_id": "system-manifest",
+      "artifact_kind": "system_manifest",
+      "path": "evidence/system-manifest.json",
+      "media_type": "application/json",
+      "size_bytes": 1024,
+      "content_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "artifact_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "observed_at": "2026-09-26T08:00:00Z"
+}

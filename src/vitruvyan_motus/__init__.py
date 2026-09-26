@@ -74,6 +74,13 @@ from vitruvyan_motus.regulatory_profile import (
     RegulatoryEvidenceAssessment, RegulatoryEvidenceFinding,
     assess_evidence_profile,
 )
+from vitruvyan_motus.regulatory_dossier import (
+    RegulatoryDossierFinding, RegulatoryDossierEntryVerdict,
+    RegulatoryDossierVerdict, RegulatoryDossierLineageVerdict,
+    pack_regulatory_dossier, verify_regulatory_dossier,
+    verify_regulatory_dossier_lineage,
+    regulatory_dossier_export_fingerprint,
+)
 from vitruvyan_motus.incident_capa import (
     IncidentCAPAFinding, IncidentCAPAVerdict,
     order_incident_capa_entries, verify_incident_capa_ledger,
@@ -123,6 +130,11 @@ __all__ = [
     "verify_human_oversight_bindings",
     "RegulatoryEvidenceAssessment", "RegulatoryEvidenceFinding",
     "assess_evidence_profile",
+    "RegulatoryDossierFinding", "RegulatoryDossierEntryVerdict",
+    "RegulatoryDossierVerdict", "RegulatoryDossierLineageVerdict",
+    "pack_regulatory_dossier", "verify_regulatory_dossier",
+    "verify_regulatory_dossier_lineage",
+    "regulatory_dossier_export_fingerprint",
     "IncidentCAPAFinding", "IncidentCAPAVerdict",
     "order_incident_capa_entries", "verify_incident_capa_ledger",
     "RetentionFinding", "RetentionArtifactIdentity", "RetentionLineageVerdict",

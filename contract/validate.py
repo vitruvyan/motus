@@ -112,6 +112,7 @@ _RISK_CONTROL_REGISTRY_SCHEMA_FILE = "risk-control-registry.v1.schema.json"
 _CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
 _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
 _REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schema.json"
+_REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE = "regulatory-evidence-dossier.v1.schema.json"
 _INCIDENT_DECLARATION_SCHEMA_FILE = "incident-declaration.v1.schema.json"
 _CAPA_ACTION_SCHEMA_FILE = "capa-action.v1.schema.json"
 _INCIDENT_CAPA_LEDGER_SCHEMA_FILE = "incident-capa-ledger.v1.schema.json"
@@ -790,6 +791,11 @@ def regulatory_evidence_profile_fingerprint(document: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
 
 
+def regulatory_evidence_dossier_fingerprint(document: Any) -> str:
+    """ADR-042 identity of one exact Regulatory Evidence Dossier manifest."""
+    return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
+
+
 def incident_declaration_fingerprint(document: Any) -> str:
     """ADR-039 identity of one exact IncidentDeclaration revision."""
     return "sha256:" + hashlib.sha256(canonical_json(document)).hexdigest()
@@ -896,6 +902,7 @@ _HUMAN_OVERSIGHT_SCHEMA_REGISTRY: Registry | None = None
 _INCIDENT_CAPA_SCHEMA_REGISTRY: Registry | None = None
 _RETENTION_SCHEMA_REGISTRY: Registry | None = None
 _AI_SYSTEM_REGISTRY_SCHEMA_REGISTRY: Registry | None = None
+_REGULATORY_DOSSIER_SCHEMA_REGISTRY: Registry | None = None
 
 
 def _validator(key: str, schema: dict) -> Draft202012Validator:
@@ -950,6 +957,11 @@ def load_human_oversight_receipt_schema() -> dict:
 def load_regulatory_evidence_profile_schema() -> dict:
     """The Regulatory Evidence Profile v1 schema, loaded relative to this file."""
     return _load(_REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE)
+
+
+def load_regulatory_evidence_dossier_schema() -> dict:
+    """The Regulatory Evidence Dossier v1 manifest schema."""
+    return _load(_REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE)
 
 
 def load_incident_declaration_schema() -> dict:
@@ -1159,6 +1171,32 @@ def _regulatory_evidence_profile_validator() -> Draft202012Validator:
     return _validator(
         "regulatory-evidence-profile", load_regulatory_evidence_profile_schema()
     )
+
+
+def _regulatory_dossier_schema_registry() -> Registry:
+    """Resolve ADR-042 identifiers, digests and timestamp references."""
+    global _REGULATORY_DOSSIER_SCHEMA_REGISTRY
+    if _REGULATORY_DOSSIER_SCHEMA_REGISTRY is None:
+        resources = []
+        for name in (
+            _COMMITMENT_SCHEMA_FILE,
+            _SYSTEM_MANIFEST_SCHEMA_FILE,
+            _REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE,
+        ):
+            schema = _load(name)
+            resources.append((schema["$id"], Resource.from_contents(schema)))
+        _REGULATORY_DOSSIER_SCHEMA_REGISTRY = Registry().with_resources(resources)
+    return _REGULATORY_DOSSIER_SCHEMA_REGISTRY
+
+
+def _regulatory_evidence_dossier_validator() -> Draft202012Validator:
+    if "regulatory-evidence-dossier" not in _VALIDATORS:
+        _VALIDATORS["regulatory-evidence-dossier"] = Draft202012Validator(
+            load_regulatory_evidence_dossier_schema(),
+            format_checker=FormatChecker(),
+            registry=_regulatory_dossier_schema_registry(),
+        )
+    return _VALIDATORS["regulatory-evidence-dossier"]
 
 
 def _incident_capa_schema_registry() -> Registry:
@@ -2010,6 +2048,104 @@ def validate_regulatory_evidence_profile(document: dict) -> list[Violation]:
                 "requirement_ref values must be unique within one profile",
             ))
         seen.add(ref)
+
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Regulatory Evidence Dossier semantics — ADR-042 rules RED1-RED5            #
+# --------------------------------------------------------------------------- #
+
+_DOSSIER_MANIFEST_MEMBER = "dossier.json"
+_DOSSIER_MAX_PATH_PARTS = 16
+
+
+def _dossier_member_path_valid(value: object) -> bool:
+    """Whether one dossier path is a safe, bounded POSIX archive member."""
+    if not isinstance(value, str) or not value or "\\" in value:
+        return False
+    if value.startswith("/") or value == _DOSSIER_MANIFEST_MEMBER:
+        return False
+    if len(value) >= 2 and value[0].isalpha() and value[1] == ":":
+        return False
+    parts = value.split("/")
+    return (
+        len(parts) <= _DOSSIER_MAX_PATH_PARTS
+        and all(part not in ("", ".", "..") for part in parts)
+    )
+
+
+def validate_regulatory_evidence_dossier(document: dict) -> list[Violation]:
+    """Validate one bounded ADR-042 dossier manifest, never its sufficiency."""
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_regulatory_evidence_dossier_schema()
+    violations += _schema_violations(
+        schema, _regulatory_evidence_dossier_validator(), document
+    )
+    if violations:
+        return violations
+
+    if not _calendar_valid_utc(document["observed_at"]):
+        violations.append(Violation(
+            "RED1", "$.observed_at",
+            "timestamp has UTC shape but is not a real UTC instant",
+        ))
+
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    seen_artifacts: set[tuple[str, str]] = set()
+    profile_entries: list[tuple[int, dict]] = []
+    for index, entry in enumerate(document["entries"]):
+        identity_fields = (
+            ("entry_id", seen_ids),
+            ("path", seen_paths),
+        )
+        for field, seen in identity_fields:
+            value = entry[field]
+            if value in seen:
+                violations.append(Violation(
+                    "RED2", f"$.entries[{index}].{field}",
+                    f"{field} appears more than once in one dossier",
+                ))
+            seen.add(value)
+
+        artifact_identity = (
+            entry["artifact_kind"], entry["artifact_fingerprint"]
+        )
+        if artifact_identity in seen_artifacts:
+            violations.append(Violation(
+                "RED2", f"$.entries[{index}].artifact_fingerprint",
+                "exact typed artifact appears more than once in one dossier",
+            ))
+        seen_artifacts.add(artifact_identity)
+
+        if not _dossier_member_path_valid(entry["path"]):
+            violations.append(Violation(
+                "RED4", f"$.entries[{index}].path",
+                "path must be a safe relative POSIX member with at most 16 parts",
+            ))
+        if entry["artifact_kind"] == "regulatory_evidence_profile":
+            profile_entries.append((index, entry))
+        if type(entry["size_bytes"]) is not int:
+            violations.append(Violation(
+                "RED5", f"$.entries[{index}].size_bytes",
+                "size_bytes must be a JSON integer, not an integral float or bool",
+            ))
+
+    if len(profile_entries) != 1:
+        violations.append(Violation(
+            "RED3", "$.entries",
+            "exactly one Regulatory Evidence Profile entry is required",
+        ))
+    elif profile_entries[0][1]["artifact_fingerprint"] != document["profile_fingerprint"]:
+        index = profile_entries[0][0]
+        violations.append(Violation(
+            "RED3", f"$.entries[{index}].artifact_fingerprint",
+            "profile entry must match the dossier profile_fingerprint",
+        ))
 
     return violations
 
@@ -5490,7 +5626,8 @@ def main(argv: list[str] | None = None) -> int:
             "trace T-rules, commitment C-rules, checkpoint K-rules, receipt "
             "P-rules, System Manifest SM-rules, Risk & Control Registry "
             "RCR-rules, ControlApplication CA-rules, HumanOversightReceipt "
-            "HO-rules, Regulatory Evidence Profile REP-rules, Incident "
+            "HO-rules, Regulatory Evidence Profile REP-rules, Regulatory "
+            "Evidence Dossier RED-rules, Incident "
             "Declaration INC-rules, CAPAAction CAPA-rules, Incident/CAPA "
             "Ledger rules, ADR-040 retention/hold RET-rules, ADR-041 AI "
             "System Registry AIR-rules, JSON document and JSONL stream forms."
@@ -5507,7 +5644,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=["graphspec", "trace", "jsonl", "commitment", "checkpoint",
                  "receipt", "system-manifest", "risk-control-registry",
                  "control-application", "human-oversight-receipt",
-                 "regulatory-evidence-profile", "incident-declaration",
+                 "regulatory-evidence-profile", "regulatory-evidence-dossier",
+                 "incident-declaration",
                  "capa-action", "incident-capa-ledger", "package",
                  *_RETENTION_SCHEMA_FILES, *_AI_SYSTEM_REGISTRY_SCHEMA_FILES],
     )
@@ -5652,6 +5790,8 @@ def main(argv: list[str] | None = None) -> int:
             violations = validate_human_oversight_receipt(doc)
         elif args.artifact == "regulatory-evidence-profile":
             violations = validate_regulatory_evidence_profile(doc)
+        elif args.artifact == "regulatory-evidence-dossier":
+            violations = validate_regulatory_evidence_dossier(doc)
         elif args.artifact == "incident-declaration":
             violations = validate_incident_declaration(doc)
         elif args.artifact == "capa-action":

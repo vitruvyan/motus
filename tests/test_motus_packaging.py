@@ -441,6 +441,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/legal-hold-declaration.v1.schema.json",
         "vitruvyan_motus/contract/node-protocol.md",
         "vitruvyan_motus/contract/receipt.v1.schema.json",
+        "vitruvyan_motus/contract/regulatory-evidence-dossier.v1.schema.json",
         "vitruvyan_motus/contract/regulatory-evidence-profile.v1.schema.json",
         "vitruvyan_motus/contract/retention-application.v1.schema.json",
         "vitruvyan_motus/contract/retention-policy-declaration.v1.schema.json",
