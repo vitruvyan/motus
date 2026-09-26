@@ -108,7 +108,7 @@ Point 10 / 0.22.0 is complete only when:
 - composite verification, all seven closed query projections, the stable
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
-- independent code and security review found sixty-four defects across supplied-input
+- independent code and security review found sixty-five defects across supplied-input
   visibility, receipt coordinates, authoritative lineage composition, lifecycle
   provenance, result and parser bounds, companion-detail and companion-use
   provenance, ZIP expansion, receipt status normalization, bounded finding paths,
@@ -139,14 +139,15 @@ Point 10 / 0.22.0 is complete only when:
   dossier-wide composed-finding cap, semantic GraphSpec-binding mismatch
   classification, complete terminal-safe CLI record rendering, single-pass
   authoritative Incident/CAPA correction validation, authority short-circuiting
-  after the dossier-wide finding cap and escaped Unicode line separators; all
-  sixty-four classes have regression tests;
+  after the dossier-wide finding cap, escaped Unicode line separators and
+  complete supplied-scope rendering in human CLI output; all sixty-five classes
+  have regression tests;
 - focused ADR-043 and authority regression bank after review remediation:
-  `184 passed` with the pre-existing dossier duplicate-ZIP-name warning;
-- full suite after review remediation: `1922 passed, 6 skipped` with the two
+  `185 passed` with the pre-existing dossier duplicate-ZIP-name warning;
+- full suite after review remediation: `1923 passed, 6 skipped` with the two
   pre-existing duplicate-ZIP-name warnings;
-- permanent ADR-043 mutation probe: `83/83 killed` on clean code/test commit
-  `dcb88dbb6ce4b2c234dc871897e519e32c2f767c`;
+- permanent ADR-043 mutation probe: `84/84 killed` on clean code/test commit
+  `764ce982addfa3b0a5eeed8407bc3aea2b692515`;
 - frozen-path guard: passed against base
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
 - Jenkins PR-head build #5 passed on intermediate reviewed head `f051c24`;
