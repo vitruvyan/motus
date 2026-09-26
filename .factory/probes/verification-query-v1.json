@@ -110,5 +110,40 @@
     "from": "except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:",
     "to": "except (OSError, UnicodeDecodeError, ValueError) as exc:",
     "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "evidence packages retain a member-count work limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_MEMBER_LIMIT = 1_000",
+    "to": "_PACKAGE_MEMBER_LIMIT = 2_000",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "evidence packages retain a per-member expansion limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024",
+    "to": "_PACKAGE_MEMBER_MAX_BYTES = 64 * 1024 * 1024",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "evidence packages retain an aggregate expansion limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024",
+    "to": "_PACKAGE_TOTAL_MAX_BYTES = 256 * 1024 * 1024",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "receipt established status maps to matched",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"verified\": \"matched\", \"established\": \"matched\", \"matched\": \"matched\"",
+    "to": "\"verified\": \"matched\", \"established\": \"not_verified\", \"matched\": \"matched\"",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "receipt provisional statuses fail closed",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"not established\": \"not_verified\", \"not yet\": \"not_verified\"",
+    "to": "\"not established\": \"not_verified\", \"not yet\": \"matched\"",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]

@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import json
+import zipfile
 from pathlib import Path
 
 from vitruvyan_motus import inspect_artifact
@@ -75,6 +77,42 @@ def test_bad_binary_keeps_exact_transport_identity_and_fails_closed():
     assert result["outcome"] == "invalid"
     assert result["subject"]["fingerprint"] == "sha256:" + __import__("hashlib").sha256(data).hexdigest()
     assert result["scope"]["global_complete"] is False
+
+
+def test_evidence_package_expansion_limits_run_before_domain_verification(monkeypatch):
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    monkeypatch.setattr(
+        evidence, "verify_package",
+        lambda _data: (_ for _ in ()).throw(AssertionError("domain verifier must not run")),
+    )
+
+    def archive(entries):
+        target = io.BytesIO()
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
+            for name, payload in entries:
+                output.writestr(name, payload)
+        return target.getvalue()
+
+    cases = [
+        archive((f"member-{index}", b"") for index in range(1_001)),
+        archive([("oversize", b"\0" * (28 * 1024 * 1024 + 1))]),
+        archive((f"large-{index}", b"\0" * (27 * 1024 * 1024)) for index in range(5)),
+    ]
+    expected_reasons = (
+        "member-count work limit",
+        "member exceeds the expanded-byte limit",
+        "aggregate expanded-work limit",
+    )
+    for index, (data, reason) in enumerate(zip(cases, expected_reasons)):
+        artifact = {
+            "input_id": f"package-{index}",
+            "kind": "execution_evidence_package",
+            "media_type": "application/zip",
+            "content_base64": base64.b64encode(data).decode("ascii"),
+        }
+        result = inspect_artifact(artifact)
+        assert result["outcome"] == "invalid"
+        assert reason in result["findings"][0]["reason"]
 
 
 def test_inspection_takes_no_ownership_of_the_callers_document():

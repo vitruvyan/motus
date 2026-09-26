@@ -91,3 +91,24 @@ def test_verifier_expansion_is_bounded_and_fails_closed(monkeypatch):
     assert len(result["findings"]) == 10_000
     assert result["findings"][-1]["status"] == "incomplete"
     assert validate.validate_verification_query_message(result) == []
+
+
+def test_every_authoritative_receipt_status_maps_to_the_closed_result_vocabulary(monkeypatch):
+    statuses = (
+        "established", "not established", "not yet", "claimed, unchecked", "refused",
+    )
+    verdict = SimpleNamespace(
+        violations=(),
+        findings=tuple(
+            SimpleNamespace(level=f"LEVEL-{index}", status=status, reason="receipt verdict")
+            for index, status in enumerate(statuses)
+        ),
+    )
+    monkeypatch.setattr(validate, "verify", lambda *_args, **_kwargs: verdict)
+    artifact = typed("execution_receipt", fixture("204-receipt-a-run-of-one-segment.json"), "receipt")
+    result = verify_artifact(artifact)
+    assert [item["status"] for item in result["findings"]] == [
+        "matched", "not_verified", "not_verified", "not_verified", "not_verified",
+    ]
+    assert result["outcome"] == "not_verified"
+    assert validate.validate_verification_query_message(result) == []

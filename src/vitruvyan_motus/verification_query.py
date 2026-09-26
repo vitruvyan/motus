@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import base64
 import importlib
+import io
+import zipfile
+import zlib
 from typing import Any
 
 __all__ = ["execute_verification_query", "inspect_artifact", "query_artifacts", "verify_artifact"]
@@ -18,6 +21,9 @@ _LIMITATIONS = [
 ]
 
 _RESULT_ITEM_LIMIT = 10_000
+_PACKAGE_MEMBER_LIMIT = 1_000
+_PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
+_PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
 
 _JSON_DISPATCH: dict[str, tuple[str, str | None]] = {
     "graphspec": ("validate_graphspec", "graph"),
@@ -176,8 +182,82 @@ def _json_inspection(
     }
 
 
+def _package_expansion_finding(data: bytes) -> dict[str, Any] | None:
+    """Bound ZIP work before the evidence-package verifier sees the archive."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except (zipfile.BadZipFile, ValueError):
+        return None  # The authoritative verifier reports malformed transport.
+    total = 0
+    try:
+        infos = archive.infolist()
+        if len(infos) > _PACKAGE_MEMBER_LIMIT:
+            return {
+                "path": "$.members", "status": "not_verified",
+                "expected": _PACKAGE_MEMBER_LIMIT, "observed": len(infos),
+                "reason": "evidence package exceeds the member-count work limit",
+            }
+        declared_total = sum(info.file_size for info in infos)
+        if declared_total > _PACKAGE_TOTAL_MAX_BYTES:
+            return {
+                "path": "$.members", "status": "not_verified",
+                "expected": _PACKAGE_TOTAL_MAX_BYTES, "observed": declared_total,
+                "reason": "evidence package exceeds the aggregate expanded-work limit",
+            }
+        for info in infos:
+            if info.file_size > _PACKAGE_MEMBER_MAX_BYTES:
+                return {
+                    "path": f"$.members[{info.filename}]", "status": "not_verified",
+                    "expected": _PACKAGE_MEMBER_MAX_BYTES, "observed": info.file_size,
+                    "reason": "evidence package member exceeds the expanded-byte limit",
+                }
+            member_total = 0
+            with archive.open(info) as member:
+                while True:
+                    chunk = member.read(min(
+                        1024 * 1024,
+                        _PACKAGE_MEMBER_MAX_BYTES - member_total + 1,
+                        _PACKAGE_TOTAL_MAX_BYTES - total + 1,
+                    ))
+                    if not chunk:
+                        break
+                    member_total += len(chunk)
+                    total += len(chunk)
+                    if member_total > _PACKAGE_MEMBER_MAX_BYTES:
+                        return {
+                            "path": f"$.members[{info.filename}]", "status": "not_verified",
+                            "expected": _PACKAGE_MEMBER_MAX_BYTES, "observed": member_total,
+                            "reason": "evidence package member exceeds the expanded-byte limit",
+                        }
+                    if total > _PACKAGE_TOTAL_MAX_BYTES:
+                        return {
+                            "path": "$.members", "status": "not_verified",
+                            "expected": _PACKAGE_TOTAL_MAX_BYTES, "observed": total,
+                            "reason": "evidence package exceeds the aggregate expanded-work limit",
+                        }
+    except (NotImplementedError, RuntimeError, zipfile.LargeZipFile,
+            zipfile.BadZipFile, EOFError, OSError, MemoryError, zlib.error) as exc:
+        return {
+            "path": "$.members", "status": "not_verified",
+            "observed": type(exc).__name__,
+            "reason": "evidence package expansion could not be bounded safely",
+        }
+    finally:
+        archive.close()
+    return None
+
+
 def _package_inspection(input_id: str, kind: str, data: bytes) -> dict[str, Any]:
     evidence = importlib.import_module("vitruvyan_motus.evidence")
+    expansion_finding = _package_expansion_finding(data)
+    if expansion_finding is not None:
+        return {
+            "interface_version": "1.0.0", "message_type": "result",
+            "operation": "inspect", "outcome": "invalid",
+            "scope": _scope([input_id]),
+            "subject": {"input_id": input_id, "kind": kind, "fingerprint": evidence.evidence_package_fingerprint(data)},
+            "violations": [], "findings": [expansion_finding], "matches": [], "records": [],
+        }
     package = evidence.verify_package(data)
     findings: list[dict[str, Any]] = []
     for name in package.damaged:
@@ -464,8 +544,15 @@ def query_artifacts(
 
 
 def _status(value: str) -> str:
-    token = value.lower().replace(" ", "_")
-    return {"verified": "matched", "not_established": "not_verified", "refused": "not_verified", "failed": "mismatched"}.get(token, token)
+    normalized = value.lower().strip()
+    return {
+        "verified": "matched", "established": "matched", "matched": "matched",
+        "failed": "mismatched", "mismatched": "mismatched",
+        "not established": "not_verified", "not yet": "not_verified",
+        "claimed, unchecked": "not_verified", "not verified": "not_verified",
+        "refused": "not_verified", "missing": "missing", "conflict": "conflict",
+        "damaged": "damaged", "incomplete": "incomplete",
+    }.get(normalized, "not_verified")
 
 
 def _finding_value(item: Any, index: int) -> dict[str, Any]:
