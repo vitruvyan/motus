@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from vitruvyan_motus import execute_verification_query, verify_artifact
+from vitruvyan_motus import execute_verification_query, query_artifacts, verify_artifact
 from vitruvyan_motus.contract import validate
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -92,6 +92,26 @@ def test_profile_does_not_claim_companions_for_unrequested_evidence_kinds():
     assert result["scope"]["input_ids"] == ["profile", "unrelated-spec"]
 
 
+def test_profile_uses_transitive_control_application_dependencies():
+    profile = typed(
+        "regulatory_evidence_profile",
+        fixture("350-regulatory-evidence-profile-valid.json"),
+        "profile",
+    )
+    application = typed(
+        "control_application", fixture("330-control-application-valid.json"),
+        "application",
+    )
+    registry = typed(
+        "risk_control_registry", fixture("320-risk-control-registry-valid.json"),
+        "registry",
+    )
+    result = verify_artifact(profile, [application, registry])
+    assert {item["input_id"] for item in result["matches"]} == {
+        "application", "registry",
+    }
+
+
 def test_invalid_companion_preserves_its_structural_violations():
     application = typed("control_application", fixture("330-control-application-valid.json"), "application")
     invalid = fixture("320-risk-control-registry-valid.json")
@@ -148,6 +168,23 @@ def test_request_dispatcher_preserves_available_ids_on_interface_errors():
     result = execute_verification_query(request)
     assert result["outcome"] == "invalid_request"
     assert result["scope"]["input_ids"] == ["named-input"]
+
+
+def test_direct_facades_preserve_all_available_ids_on_interface_errors():
+    manifest = typed("system_manifest", fixture("310-system-manifest-valid.json"), "manifest")
+    query_result = query_artifacts({"kind": "unsupported-projection"}, [manifest])
+    assert query_result["outcome"] == "invalid_request"
+    assert query_result["scope"]["input_ids"] == ["manifest"]
+
+    invalid_companion = {
+        "input_id": "bad-companion",
+        "kind": "unsupported-kind",
+        "media_type": "application/json",
+        "document": {},
+    }
+    verify_result = verify_artifact(manifest, [invalid_companion])
+    assert verify_result["outcome"] == "invalid_request"
+    assert verify_result["scope"]["input_ids"] == ["manifest", "bad-companion"]
 
 
 def test_duplicate_singular_companions_remain_conflict():

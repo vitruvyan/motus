@@ -602,7 +602,7 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
     if kind in ("incident_declaration", "capa_action"):
         return {
             item["execution_ref"] for item in document.get("evidence", ())
-            if item.get("kind") == "execution_ref"
+            if item.get("kind") == "execution"
         }
     if kind == "retention_policy_declaration":
         selector = document.get("scope")
@@ -613,6 +613,7 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
 
 def _authoritative_lineage_findings(
     kind: str, documents: list[dict[str, Any]],
+    related_documents: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Compose an existing lineage authority when Motus defines one."""
     if kind in {"incident_declaration", "capa_action"}:
@@ -620,8 +621,12 @@ def _authoritative_lineage_findings(
         ledger = {
             "schema_version": "1.0.0",
             "entries": [
-                {"kind": kind, "document": document}
-                for document in documents
+                {"kind": item_kind, "document": document}
+                for item_kind, document in (
+                    related_documents
+                    if related_documents is not None
+                    else [(kind, document) for document in documents]
+                )
             ],
         }
         findings = []
@@ -716,8 +721,15 @@ def _query_result(
                 "record_kind": "lineage_edge",
                 "record": {"fingerprint": fingerprint, "supersedes": document.get("supersedes")},
             })
+        related_documents = None
+        if wanted in {"incident_declaration", "capa_action"}:
+            related_documents = [
+                (artifact["kind"], artifact["document"])
+                for artifact, _ in valid
+                if artifact["kind"] in {"incident_declaration", "capa_action"}
+            ]
         authoritative = _authoritative_lineage_findings(
-            wanted, [document for _, _, document in rows],
+            wanted, [document for _, _, document in rows], related_documents,
         )
         if authoritative is not None:
             findings.extend(authoritative)
@@ -823,7 +835,7 @@ def query_artifacts(
     validate = _contract()
     violations = validate.validate_verification_query_message(request)
     if violations:
-        return _invalid_request(violations, None, "query")
+        return _invalid_request(violations, _request_input_ids(request), "query")
     result = _query_result(list(artifacts), projection, _ZipWorkBudget())
     return _checked_result(result)
 
@@ -890,8 +902,9 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     validate = _contract()
     request_violations = validate.validate_verification_query_message(request)
     if request_violations:
-        input_id = artifact.get("input_id") if isinstance(artifact, dict) else None
-        return _invalid_request(request_violations, input_id, "verify")
+        return _invalid_request(
+            request_violations, _request_input_ids(request), "verify",
+        )
     work_budget = _ZipWorkBudget()
     inspected = _inspect_artifact(artifact, work_budget)
     companions = companion_values
@@ -1002,8 +1015,14 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             for requirement in document["requirements"]
             for expectation in requirement["evidence"]
         }
+        used_kinds = set(requested)
+        if requested & {"control_application", "human_oversight_receipt"}:
+            used_kinds.update({
+                "execution_receipt", "system_manifest",
+                "risk_control_registry", "control_application",
+            })
         uses_manifest = "system_manifest" in requested
-        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt", use="execution_receipt" in requested), system_manifest=one("system_manifest", use=uses_manifest), risk_control_registry=one("risk_control_registry", use="risk_control_registry" in requested), control_application=one("control_application", use="control_application" in requested), human_oversight_receipt=one("human_oversight_receipt", use="human_oversight_receipt" in requested), graph_specs=[graph.from_dict(value) for value in many("graphspec", use=uses_manifest)], traces=[trace.from_dict(value) for value in many("trace", use=uses_manifest)])
+        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt", use="execution_receipt" in used_kinds), system_manifest=one("system_manifest", use="system_manifest" in used_kinds), risk_control_registry=one("risk_control_registry", use="risk_control_registry" in used_kinds), control_application=one("control_application", use="control_application" in used_kinds), human_oversight_receipt=one("human_oversight_receipt", use="human_oversight_receipt" in used_kinds), graph_specs=[graph.from_dict(value) for value in many("graphspec", use=uses_manifest)], traces=[trace.from_dict(value) for value in many("trace", use=uses_manifest)])
     elif kind == "incident_capa_ledger":
         verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
     elif kind == "retention_application":

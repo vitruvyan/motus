@@ -257,5 +257,33 @@
     "from": "for issue in validate.validate_incident_capa_ledger(ledger):",
     "to": "for issue in ():",
     "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "incident and CAPA execution queries use the declared discriminator",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item.get(\"kind\") == \"execution\"",
+    "to": "if item.get(\"kind\") == \"execution_ref\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "profile verification retains transitive binding companions",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if requested & {\"control_application\", \"human_oversight_receipt\"}:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "direct query errors retain supplied artifact ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_invalid_request(violations, _request_input_ids(request), \"query\")",
+    "to": "_invalid_request(violations, None, \"query\")",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "direct verify errors retain subject and companion ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "request_violations, _request_input_ids(request), \"verify\"",
+    "to": "request_violations, None, \"verify\"",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]

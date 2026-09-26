@@ -59,6 +59,23 @@ def test_execution_ref_query_never_promotes_a_receipt_end_coordinate():
     assert end["matches"] == []
 
 
+def test_execution_ref_query_reads_incident_and_capa_execution_evidence():
+    for kind, fixture_name in (
+        ("incident_declaration", "360-incident-declaration-valid.json"),
+        ("capa_action", "361-capa-action-valid.json"),
+    ):
+        document = fixture(fixture_name)
+        execution_ref = next(
+            item["execution_ref"] for item in document["evidence"]
+            if item["kind"] == "execution"
+        )
+        result = query_artifacts(
+            {"kind": "execution_ref", "execution_ref": execution_ref},
+            [typed(kind, document, kind)],
+        )
+        assert [item["input_id"] for item in result["matches"]] == [kind]
+
+
 def test_controls_for_risk_composes_the_existing_registry_helper():
     registry = fixture("320-risk-control-registry-valid.json")
     risk_id = registry["risks"][0]["risk_id"]
@@ -159,6 +176,22 @@ def test_incident_and_capa_lineage_reject_cross_identity_corrections():
         )
         assert any(item["status"] == "mismatched" for item in result["findings"])
         assert any("LEDGER2" in item["reason"] for item in result["findings"])
+
+
+def test_incident_lineage_sees_a_supplied_cross_kind_predecessor():
+    parent = fixture("361-capa-action-valid.json")
+    child = fixture("360-incident-declaration-valid.json")
+    child["supersedes"] = validate.capa_action_fingerprint(parent)
+    result = query_artifacts(
+        {"kind": "correction_lineage", "artifact_kind": "incident_declaration"},
+        [
+            typed("capa_action", parent, "capa-parent"),
+            typed("incident_declaration", child, "incident-child"),
+        ],
+    )
+    assert any(item["status"] == "mismatched" for item in result["findings"])
+    assert any("LEDGER2" in item["reason"] for item in result["findings"])
+    assert [item["input_id"] for item in result["matches"]] == ["incident-child"]
 
 
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
