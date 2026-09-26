@@ -109,4 +109,6 @@ Point 10 / 0.22.0 is complete only when:
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
 - full suite on the complete functional surface: `1852 passed, 6 skipped`;
-- permanent ADR-043 mutation probe defined; execution follows the clean commit.
+- permanent ADR-043 mutation probe: `7/7 killed` on clean commit `a1d6cc4`;
+- implementation is ready for independent/adversarial review and CI; release
+  work remains gated on those results.

@@ -43,7 +43,7 @@ one-tag rule is restored.
 | 7 | AI System Registry | DONE | shipped in v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | AWAITING PUBLICATION | tagged candidate v0.21.0; draft not published |
-| 10 | Verification and query API/CLI | ADR ACCEPTED | target v0.22.0; contract-first implementation next |
+| 10 | Verification and query API/CLI | IMPLEMENTED; REVIEW PENDING | target v0.22.0 |
 | 11 | Motus UI | DRAFT ONLY | release target decided after the v0.22 interface is stable |
 
 The ordering remains semantic even though point 8 shipped early. Incident/CAPA,
@@ -132,8 +132,10 @@ retrieval, hidden discovery, a global-current view, a general query language or
 a compliance verdict.
 
 The founder accepted ADR-043 on 2026-09-26. Contract-first implementation is
-now authorised; no contract or runtime implementation was included in the
-acceptance commit.
+complete on its dedicated feature branch: explicit inspection, composed
+verification, seven bounded supplied-set projections and the `motus-evidence`
+CLI share one stable result envelope. Independent/adversarial review, CI,
+merge and release qualification remain required before this point is shipped.
 
 ### Existing Motus UI draft
 
