@@ -207,6 +207,44 @@ def test_dossier_ledger_findings_share_one_cumulative_cap(monkeypatch):
     )
 
 
+def test_dossier_stops_later_authorities_after_finding_cap(monkeypatch):
+    snapshot_wrapper = json.loads(
+        (ROOT / JSON_FIXTURES["ai_system_registry_snapshot"]).read_text("utf-8")
+    )
+    snapshot = snapshot_wrapper.get("instance", snapshot_wrapper)
+    registry_module = __import__(
+        "vitruvyan_motus.ai_system_registry",
+        fromlist=["verify_ai_system_registry_snapshot"],
+    )
+    calls = 0
+
+    def many_findings(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Verdict", (), {"findings": tuple(
+            dossier_module._finding(
+                f"$.members[{index}]", "missing", "member", None, "missing",
+            )
+            for index in range(100)
+        )})()
+
+    monkeypatch.setattr(
+        registry_module, "verify_ai_system_registry_snapshot", many_findings,
+    )
+    monkeypatch.setattr(dossier_module, "_COMPOSED_FINDING_LIMIT", 10)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"ai_system_registry_snapshot": [
+            copy.deepcopy(snapshot), copy.deepcopy(snapshot),
+        ]},
+        [], validate,
+    )
+
+    assert calls == 1
+    assert len(findings) == 10
+    assert any(item.path == "binding:findings" for item in findings)
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()

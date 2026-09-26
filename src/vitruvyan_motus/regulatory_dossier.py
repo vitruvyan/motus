@@ -347,6 +347,8 @@ def _compose_existing_verifiers(
 
     from vitruvyan_motus.risk_control import verify_control_application_bindings
     for application in documents.get("control_application", ()):
+        if findings.exhausted:
+            break
         app_fp = validate.control_application_fingerprint(application)
         registry = _matching_document(
             document_index, "risk_control_registry",
@@ -376,6 +378,8 @@ def _compose_existing_verifiers(
 
     from vitruvyan_motus.human_oversight import verify_human_oversight_bindings
     for oversight in documents.get("human_oversight_receipt", ()):
+        if findings.exhausted:
+            break
         fp = validate.human_oversight_receipt_fingerprint(oversight)
         bindings = oversight.get("bindings", {})
         matching_receipts = receipt_index.get(oversight["execution_ref"], ())
@@ -450,6 +454,8 @@ def _compose_existing_verifiers(
         "retention-application", "custody-observation",
     )
     for hyphen_kind in retention_kinds:
+        if findings.exhausted:
+            break
         underscore_kind = hyphen_kind.replace("-", "_")
         values = documents.get(underscore_kind, ())
         if values:
@@ -458,6 +464,8 @@ def _compose_existing_verifiers(
                 f"lineage:{underscore_kind}", verdict.findings,
             ))
     for application in documents.get("retention_application", ()):
+        if findings.exhausted:
+            break
         fp = validate.retention_application_fingerprint(application)
         verdict = verify_retention_application_bindings(
             application,
@@ -480,6 +488,8 @@ def _compose_existing_verifiers(
     for underscore_kind in (
         "ai_system_registration", "ai_system_registry_event", "ai_system_registry_snapshot",
     ):
+        if findings.exhausted:
+            break
         values = documents.get(underscore_kind, ())
         if values:
             verdict = verify_ai_system_registry_lineage(underscore_kind.replace("_", "-"), values)
@@ -487,6 +497,8 @@ def _compose_existing_verifiers(
                 f"lineage:{underscore_kind}", verdict.findings,
             ))
     for registration in documents.get("ai_system_registration", ()):
+        if findings.exhausted:
+            break
         fp = validate.ai_system_registration_fingerprint(registration)
         verdict = verify_ai_system_registration_binding(
             registration, manifests=documents.get("system_manifest", ()),
@@ -499,6 +511,8 @@ def _compose_existing_verifiers(
         for value in documents.get("ai_system_registration", ())
     })
     for registration_id in registration_ids:
+        if findings.exhausted:
+            break
         projection = project_supplied_ai_system_lifecycle(
             registration_id,
             registrations=documents.get("ai_system_registration", ()),
@@ -508,6 +522,8 @@ def _compose_existing_verifiers(
             f"projection:ai_system_registry:{registration_id}", projection.findings,
         ))
     for snapshot in documents.get("ai_system_registry_snapshot", ()):
+        if findings.exhausted:
+            break
         fp = validate.ai_system_registry_snapshot_fingerprint(snapshot)
         verdict = verify_ai_system_registry_snapshot(
             snapshot,

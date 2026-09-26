@@ -281,6 +281,34 @@ def test_incident_and_capa_lineage_reject_cross_identity_corrections():
         assert any("LEDGER2" in item["reason"] for item in result["findings"])
 
 
+def test_incident_correction_lineage_invokes_authority_once(monkeypatch):
+    parent = fixture("360-incident-declaration-valid.json")
+    parent_fp = validate.incident_declaration_fingerprint(parent)
+    children = []
+    for index in range(20):
+        child = copy.deepcopy(parent)
+        child["incident_id"] = f"different-{index}"
+        child["declared_at"] = f"2026-09-24T10:00:{index + 1:02d}Z"
+        child["supersedes"] = parent_fp
+        children.append(typed("incident_declaration", child, f"child-{index}"))
+    original = validate.validate_incident_capa_ledger
+    calls = 0
+
+    def counted(document):
+        nonlocal calls
+        calls += 1
+        return original(document)
+
+    monkeypatch.setattr(validate, "validate_incident_capa_ledger", counted)
+    result = query_artifacts(
+        {"kind": "correction_lineage", "artifact_kind": "incident_declaration"},
+        [typed("incident_declaration", parent, "parent"), *children],
+    )
+
+    assert calls == 1
+    assert any(item["status"] == "mismatched" for item in result["findings"])
+
+
 def test_incident_lineage_sees_a_supplied_cross_kind_predecessor():
     parent = fixture("361-capa-action-valid.json")
     child = fixture("360-incident-declaration-valid.json")

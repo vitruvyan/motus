@@ -821,51 +821,25 @@ def _authoritative_lineage_findings(
                 else [(kind, document) for document in documents]
             )
         ]
-        indexed: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-        for index, entry in enumerate(ledger_entries):
-            fingerprint = (
-                validate.incident_declaration_fingerprint(entry["document"])
-                if entry["kind"] == "incident_declaration"
-                else validate.capa_action_fingerprint(entry["document"])
-            )
-            indexed.setdefault(fingerprint, []).append((index, entry))
         findings = []
-        for index, entry in enumerate(ledger_entries):
-            if entry["kind"] != kind:
+        ledger = {"schema_version": "1.0.0", "entries": ledger_entries}
+        for issue in validate.validate_incident_capa_ledger(ledger):
+            if issue.rule != "LEDGER2" or not issue.path.startswith("$.entries["):
                 continue
-            document = entry["document"]
-            predecessor = document.get("supersedes")
-            current = (
-                validate.incident_declaration_fingerprint(document)
-                if kind == "incident_declaration"
-                else validate.capa_action_fingerprint(document)
-            )
-            targets = indexed.get(predecessor, ())
-            if predecessor is None:
+            closing = issue.path.find("]", len("$.entries["))
+            try:
+                index = int(issue.path[len("$.entries["):closing])
+            except (TypeError, ValueError):
                 continue
-            if predecessor != current and targets:
-                target = targets[0][1]
-                stable_field = (
-                    "incident_id" if kind == "incident_declaration"
-                    else "action_id"
-                )
-                if (target["kind"] == kind
-                        and target["document"]["producer_namespace"]
-                        == document["producer_namespace"]
-                        and target["document"][stable_field]
-                        == document[stable_field]):
-                    continue
-            entries = [entry]
-            if predecessor != current and targets:
-                entries.insert(0, targets[0][1])
-            ledger = {"schema_version": "1.0.0", "entries": entries}
-            for issue in validate.validate_incident_capa_ledger(ledger):
-                if issue.rule == "LEDGER2":
-                    findings.append({
-                        "path": f"$.entries[{index}].document.supersedes",
-                        "status": "mismatched",
-                        "reason": f"{issue.rule}: {issue.message}",
-                    })
+            if not 0 <= index < len(ledger_entries):
+                continue
+            if ledger_entries[index]["kind"] != kind:
+                continue
+            findings.append({
+                "path": issue.path,
+                "status": "mismatched",
+                "reason": f"{issue.rule}: {issue.message}",
+            })
         return findings
     if kind == "regulatory_evidence_dossier":
         verdict = importlib.import_module(

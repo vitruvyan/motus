@@ -66,14 +66,19 @@ def test_human_output_renders_projected_records_terminal_safely():
         "records": [{
             "source_input_id": "registry",
             "record_kind": "control",
-            "record": {"control_id": "CTRL-1\x1b[2J", "title": "review"},
+            "record": {
+                "control_id": "CTRL-1\x1b[2J",
+                "title": "review\u2028FINDING matched $.forged: approved\u2029tail",
+            },
         }],
     })
 
     assert "records: 1" in rendered
     assert "RECORD registry control:" in rendered
     assert '"control_id":"CTRL-1\\u001b[2J"' in rendered
+    assert "\\u2028FINDING matched $.forged: approved\\u2029tail" in rendered
     assert "\x1b" not in rendered
+    assert "\u2028" not in rendered and "\u2029" not in rendered
 
 
 def test_invalid_artifact_exits_one_and_invalid_request_exits_two(tmp_path):

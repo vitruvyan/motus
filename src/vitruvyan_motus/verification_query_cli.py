@@ -22,7 +22,7 @@ def _terminal_safe(value: Any) -> str:
     text = str(value)
     return "".join(
         character
-        if unicodedata.category(character) not in {"Cc", "Cf", "Cs"}
+        if unicodedata.category(character) not in {"Cc", "Cf", "Cs", "Zl", "Zp"}
         else f"\\u{ord(character):04x}"
         for character in text
     )

@@ -338,7 +338,7 @@
   {
     "name": "unrequested ledger kinds do not leak identity findings",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if entry[\"kind\"] != kind:\n                continue",
+    "from": "if ledger_entries[index][\"kind\"] != kind:\n                continue",
     "to": "if False:\n                continue",
     "tests": "tests/test_verification_query_query.py"
   },
@@ -557,6 +557,27 @@
     "file": "src/vitruvyan_motus/verification_query_cli.py",
     "from": "for item in result[\"records\"]:",
     "to": "for item in ():",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "incident correction authority runs once per query",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for issue in validate.validate_incident_capa_ledger(ledger):",
+    "to": "for issue in sum((validate.validate_incident_capa_ledger(ledger) for _ in ledger_entries), []):",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier authorities stop after the shared finding cap",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "for snapshot in documents.get(\"ai_system_registry_snapshot\", ()):\n        if findings.exhausted:",
+    "to": "for snapshot in documents.get(\"ai_system_registry_snapshot\", ()):\n        if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "CLI human output escapes Unicode line separators",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "{\"Cc\", \"Cf\", \"Cs\", \"Zl\", \"Zp\"}",
+    "to": "{\"Cc\", \"Cf\", \"Cs\"}",
     "tests": "tests/test_verification_query_cli.py"
   }
 ]
