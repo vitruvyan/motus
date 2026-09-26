@@ -204,15 +204,7 @@ def verify_system_manifest_bindings(
         len(manifest_document["bindings"]["graphs"])
         * len(trace_documents)
     )
-    if trace_join_work > _TRACE_JOIN_LIMIT:
-        return SystemManifestBindingVerdict(
-            fingerprint, (), (SystemManifestBindingFinding(
-                "$.bindings.graphs", _NOT_VERIFIED,
-                f"at most {_TRACE_JOIN_LIMIT} manifest/trace comparisons",
-                str(trace_join_work),
-                "binding verification exceeded the bounded trace join budget",
-            ),),
-        )
+    trace_join_over_budget = trace_join_work > _TRACE_JOIN_LIMIT
 
     findings: list[SystemManifestBindingFinding] = []
     motus = manifest_document["bindings"]["motus"]
@@ -224,6 +216,13 @@ def verify_system_manifest_bindings(
         "$.bindings.motus.trace_schema_version", motus["trace_schema_version"], TRACE_SCHEMA_VERSION,
         source="this Motus distribution's TRACE_SCHEMA_VERSION",
     ))
+    if trace_join_over_budget:
+        findings.append(SystemManifestBindingFinding(
+            "$.bindings.graphs", _NOT_VERIFIED,
+            f"at most {_TRACE_JOIN_LIMIT} manifest/trace comparisons",
+            str(trace_join_work),
+            "trace matching exceeded the bounded join budget; independent runtime and GraphSpec comparisons remain reported",
+        ))
 
     for index, graph in enumerate(manifest_document["bindings"]["graphs"]):
         prefix = f"$.bindings.graphs[{index}]"
@@ -259,6 +258,8 @@ def verify_system_manifest_bindings(
                 ),
             ])
         elif not candidates:
+            if trace_join_over_budget:
+                continue
             for field in ("name", "version", "spec_schema_version", "graph_fingerprint"):
                 findings.append(_finding(
                     f"{prefix}.{field}", graph[field], None,
@@ -292,6 +293,8 @@ def verify_system_manifest_bindings(
                     "contradicts the manifest declaration",
                 ))
 
+        if trace_join_over_budget:
+            continue
         code_values = _matching_trace_code_fingerprints(
             trace_documents, graph, motus["trace_schema_version"]
         )

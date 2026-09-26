@@ -241,7 +241,10 @@ def _json_inspection(
     validate: Any, input_id: str, kind: str, document: Any,
 ) -> dict[str, Any]:
     validator_name, _fingerprint_name = _JSON_DISPATCH[kind]
-    violations = list(getattr(validate, validator_name)(document))
+    if kind == "system_manifest":
+        violations = _bounded_system_manifest_violations(validate, document)
+    else:
+        violations = list(getattr(validate, validator_name)(document))
     fingerprint = None if violations else _json_fingerprint(validate, kind, document)
     return {
         "interface_version": "1.0.0",
@@ -255,6 +258,26 @@ def _json_inspection(
         "matches": [],
         "records": [],
     }
+
+
+def _bounded_system_manifest_violations(
+    validate: Any, document: Any,
+) -> list[Any]:
+    """Stop schema diagnostics before their discarded tail is materialized."""
+    violations, structural = validate._j1_violations(document)
+    if structural:
+        return list(violations[:_RESULT_ITEM_LIMIT + 1])
+    schema = validate.load_system_manifest_schema()
+    bounded = []
+    for error in validate._system_manifest_validator().iter_errors(document):
+        leaf = validate._best_leaf(schema, error)
+        bounded.append(validate.Violation("SCHEMA", leaf.json_path, leaf.message))
+        if len(bounded) > _RESULT_ITEM_LIMIT:
+            break
+    if bounded:
+        bounded.sort(key=lambda item: item.path)
+        return bounded
+    return list(validate.validate_system_manifest(document)[:_RESULT_ITEM_LIMIT + 1])
 
 
 def _manifest_trace_companion_inspection(

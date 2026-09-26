@@ -79,10 +79,10 @@ def test_manifest_trace_join_budget_fails_closed_before_authority(monkeypatch):
         "system_manifest", fixture("310-system-manifest-valid.json"), "manifest",
     )
     result = verify_artifact(manifest)
-    assert result["outcome"] == "not_verified"
+    assert result["outcome"] in {"mismatched", "not_verified"}
     assert any(
         item["status"] == "not_verified"
-        and "trace join budget" in item["reason"]
+        and "join budget" in item["reason"]
         for item in result["findings"]
     )
 

@@ -25,6 +25,34 @@ def typed(kind: str, document: object, input_id: str = "subject") -> dict:
     return {"input_id": input_id, "kind": kind, "media_type": "application/json", "document": document}
 
 
+def test_manifest_schema_diagnostics_stop_at_the_result_budget():
+    observed = {"count": 0}
+
+    class FakeValidator:
+        def iter_errors(self, _document):
+            for index in range(100_000):
+                observed["count"] += 1
+                yield SimpleNamespace(
+                    json_path=f"$.bindings.graphs[{index}]",
+                    message="invalid graph binding",
+                )
+
+    fake = SimpleNamespace(
+        _j1_violations=lambda _document: ([], False),
+        load_system_manifest_schema=lambda: {},
+        _system_manifest_validator=lambda: FakeValidator(),
+        _best_leaf=lambda _schema, error: error,
+        Violation=lambda rule, path, message: SimpleNamespace(
+            rule=rule, path=path, message=message,
+        ),
+    )
+    violations = verification_query._bounded_system_manifest_violations(
+        fake, {},
+    )
+    assert len(violations) == 10_001
+    assert observed["count"] == 10_001
+
+
 def zip_bytes(entries) -> bytes:
     target = io.BytesIO()
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
