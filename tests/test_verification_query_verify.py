@@ -1,7 +1,10 @@
 """ADR-043 composite verification facade tests."""
 from __future__ import annotations
 
+import base64
+import io
 import json
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +21,15 @@ def fixture(name: str) -> dict:
 
 def typed(kind: str, document: dict, input_id: str) -> dict:
     return {"input_id": input_id, "kind": kind, "media_type": "application/json", "document": document}
+
+
+def binary(kind: str, data: bytes, input_id: str) -> dict:
+    return {
+        "input_id": input_id,
+        "kind": kind,
+        "media_type": "application/zip",
+        "content_base64": base64.b64encode(data).decode("ascii"),
+    }
 
 
 def test_trace_without_graphspec_is_not_verified_not_matched():
@@ -43,6 +55,42 @@ def test_control_application_dispatches_to_existing_binding_verifier():
     result = verify_artifact(application, [registry])
     assert result["outcome"] in {"matched", "mismatched", "not_verified", "conflict"}
     assert result["findings"]
+    assert validate.validate_verification_query_message(result) == []
+
+
+def test_verify_identifies_only_the_companions_actually_used():
+    application = typed("control_application", fixture("330-control-application-valid.json"), "application")
+    registry = typed("risk_control_registry", fixture("320-risk-control-registry-valid.json"), "registry")
+    unrelated = typed("graphspec", fixture("01-graphspec-linear.json"), "unrelated")
+    result = verify_artifact(application, [unrelated, registry])
+    assert [item["input_id"] for item in result["matches"]] == ["registry"]
+    assert result["scope"]["input_ids"] == ["application", "unrelated", "registry"]
+
+
+def test_invalid_companion_preserves_its_structural_violations():
+    application = typed("control_application", fixture("330-control-application-valid.json"), "application")
+    invalid = fixture("320-risk-control-registry-valid.json")
+    invalid["unexpected"] = True
+    result = verify_artifact(application, [typed("risk_control_registry", invalid, "bad-registry")])
+    assert result["outcome"] == "invalid"
+    assert result["violations"]
+    assert result["violations"][0]["path"].startswith("$.companions[bad-registry]")
+    assert validate.validate_verification_query_message(result) == []
+
+
+def test_limited_binary_companion_preserves_transport_findings():
+    application = typed("control_application", fixture("330-control-application-valid.json"), "application")
+    registry = typed("risk_control_registry", fixture("320-risk-control-registry-valid.json"), "registry")
+    target = io.BytesIO()
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("oversize", b"\0" * (28 * 1024 * 1024 + 1))
+    limited = binary("execution_evidence_package", target.getvalue(), "limited-package")
+    result = verify_artifact(application, [registry, limited])
+    assert any(
+        item["path"].startswith("$.companions[limited-package]")
+        and "expanded-byte limit" in item["reason"]
+        for item in result["findings"]
+    )
     assert validate.validate_verification_query_message(result) == []
 
 

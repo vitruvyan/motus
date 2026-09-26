@@ -555,6 +555,34 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
     return set()
 
 
+def _authoritative_lineage_findings(
+    kind: str, documents: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """Compose an existing lineage authority when Motus defines one."""
+    if kind == "regulatory_evidence_dossier":
+        verdict = importlib.import_module(
+            "vitruvyan_motus.regulatory_dossier"
+        ).verify_regulatory_dossier_lineage(documents)
+    elif kind in {
+        "retention_policy_declaration", "legal_hold_declaration",
+        "retention_scope_snapshot", "retention_trigger_occurrence",
+        "retention_application", "custody_observation",
+    }:
+        verdict = importlib.import_module(
+            "vitruvyan_motus.retention"
+        ).verify_retention_lineage(kind.replace("_", "-"), documents)
+    elif kind in {"ai_system_registration", "ai_system_registry_event"}:
+        verdict = importlib.import_module(
+            "vitruvyan_motus.ai_system_registry"
+        ).verify_ai_system_registry_lineage(kind.replace("_", "-"), documents)
+    else:
+        return None
+    return [
+        _finding_value(item, index)
+        for index, item in enumerate(verdict.findings)
+    ]
+
+
 def _query_result(
     artifacts: list[dict[str, Any]], projection: dict[str, Any],
     work_budget: _ZipWorkBudget,
@@ -614,44 +642,50 @@ def _query_result(
                 "record_kind": "lineage_edge",
                 "record": {"fingerprint": fingerprint, "supersedes": document.get("supersedes")},
             })
-        by_fingerprint: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
-        parents: dict[str, int] = {}
-        predecessor_of: dict[str, str] = {}
-        for fingerprint, artifact, document in rows:
-            by_fingerprint.setdefault(fingerprint, []).append((artifact, document))
-            parent = document.get("supersedes")
-            if parent is not None:
-                parents[parent] = parents.get(parent, 0) + 1
-                predecessor_of[fingerprint] = parent
-        for fingerprint, duplicates in sorted(by_fingerprint.items()):
-            if len(duplicates) > 1:
-                findings.append({"path": f"lineage:{fingerprint}", "status": "conflict", "expected": "one supplied artifact per fingerprint", "observed": len(duplicates), "reason": "multiple supplied artifacts have the same correction identity"})
-        for fingerprint, parent in sorted(predecessor_of.items()):
-            candidates = by_fingerprint.get(parent, ())
-            if not candidates:
-                findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "incomplete", "expected": parent, "reason": "the immediate predecessor is absent from this supplied view"})
-            elif len(candidates) > 1:
-                findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "conflict", "expected": parent, "observed": len(candidates), "reason": "the predecessor identity is ambiguous in the supplied view"})
-        for parent, count in sorted(parents.items()):
-            if count > 1:
-                findings.append({"path": f"lineage:{parent}", "status": "conflict", "expected": parent, "observed": count, "reason": "multiple supplied revisions name the same predecessor; no winner was selected"})
-        cycle_members: set[str] = set()
-        for start in sorted(predecessor_of):
-            cursor = start
-            path: list[str] = []
-            positions: dict[str, int] = {}
-            while cursor in predecessor_of and len(by_fingerprint.get(cursor, ())) == 1:
-                if cursor in positions:
-                    cycle_members.update(path[positions[cursor]:])
-                    break
-                positions[cursor] = len(path)
-                path.append(cursor)
-                parent = predecessor_of[cursor]
-                if len(by_fingerprint.get(parent, ())) != 1:
-                    break
-                cursor = parent
-        if cycle_members:
-            findings.append({"path": "lineage:cycle", "status": "conflict", "observed": sorted(cycle_members), "reason": "the supplied correction lineage contains a cycle; no winner was selected"})
+        authoritative = _authoritative_lineage_findings(
+            wanted, [document for _, _, document in rows],
+        )
+        if authoritative is not None:
+            findings.extend(authoritative)
+        else:
+            by_fingerprint: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+            parents: dict[str, int] = {}
+            predecessor_of: dict[str, str] = {}
+            for fingerprint, artifact, document in rows:
+                by_fingerprint.setdefault(fingerprint, []).append((artifact, document))
+                parent = document.get("supersedes")
+                if parent is not None:
+                    parents[parent] = parents.get(parent, 0) + 1
+                    predecessor_of[fingerprint] = parent
+            for fingerprint, duplicates in sorted(by_fingerprint.items()):
+                if len(duplicates) > 1:
+                    findings.append({"path": f"lineage:{fingerprint}", "status": "conflict", "expected": "one supplied artifact per fingerprint", "observed": len(duplicates), "reason": "multiple supplied artifacts have the same correction identity"})
+            for fingerprint, parent in sorted(predecessor_of.items()):
+                candidates = by_fingerprint.get(parent, ())
+                if not candidates:
+                    findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "incomplete", "expected": parent, "reason": "the immediate predecessor is absent from this supplied view"})
+                elif len(candidates) > 1:
+                    findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "conflict", "expected": parent, "observed": len(candidates), "reason": "the predecessor identity is ambiguous in the supplied view"})
+            for parent, count in sorted(parents.items()):
+                if count > 1:
+                    findings.append({"path": f"lineage:{parent}", "status": "conflict", "expected": parent, "observed": count, "reason": "multiple supplied revisions name the same predecessor; no winner was selected"})
+            cycle_members: set[str] = set()
+            for start in sorted(predecessor_of):
+                cursor = start
+                path: list[str] = []
+                positions: dict[str, int] = {}
+                while cursor in predecessor_of and len(by_fingerprint.get(cursor, ())) == 1:
+                    if cursor in positions:
+                        cycle_members.update(path[positions[cursor]:])
+                        break
+                    positions[cursor] = len(path)
+                    path.append(cursor)
+                    parent = predecessor_of[cursor]
+                    if len(by_fingerprint.get(parent, ())) != 1:
+                        break
+                    cursor = parent
+            if cycle_members:
+                findings.append({"path": "lineage:cycle", "status": "conflict", "observed": sorted(cycle_members), "reason": "the supplied correction lineage contains a cycle; no winner was selected"})
     elif kind == "dossier_membership":
         if projection["dossier_input_id"] not in by_id:
             return {
@@ -794,27 +828,61 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
 
     pools: dict[str, list[Any]] = {}
     binary_pools: dict[str, list[bytes]] = {}
+    companion_subjects: dict[str, list[dict[str, Any]]] = {}
     companion_findings: list[dict[str, Any]] = []
+    violations: list[dict[str, str]] = []
     for item in companions:
         companion_result = _inspect_artifact(item, work_budget)
         if companion_result["outcome"] != "valid":
-            companion_findings.append({"path": f"$.companions.{item['input_id']}", "status": "not_verified", "reason": "the supplied companion did not satisfy its own Motus contract"})
+            prefix = f"$.companions[{item['input_id']}]"
+            violations.extend({
+                "rule": detail["rule"],
+                "path": (prefix + detail["path"][1:])[:8192],
+                "message": detail["message"],
+            } for detail in companion_result["violations"])
+            companion_findings.extend({
+                **detail,
+                "path": (prefix + detail["path"][1:])[:8192],
+            } for detail in companion_result["findings"])
+            if not companion_result["violations"] and not companion_result["findings"]:
+                companion_findings.append({
+                    "path": prefix, "status": "not_verified",
+                    "reason": "the supplied companion did not satisfy its own Motus contract",
+                })
             continue
+        companion_subjects.setdefault(item["kind"], []).append(
+            companion_result["subject"]
+        )
         if item["media_type"] == "application/json":
             pools.setdefault(item["kind"], []).append(item["document"])
         else:
             binary_pools.setdefault(item["kind"], []).append(base64.b64decode(item["content_base64"], validate=True))
     kind = artifact["kind"]
     document = artifact.get("document")
-    violations: list[dict[str, str]] = []
     findings: list[dict[str, Any]] = companion_findings
+    used_companions: dict[str, dict[str, Any]] = {}
+
+    def mark_used(name: str) -> None:
+        for identity in companion_subjects.get(name, ()):
+            used_companions[identity["input_id"]] = identity
 
     def one(name: str) -> Any:
         values = pools.get(name, [])
         if len(values) > 1:
             findings.append({"path": f"$.companions.{name}", "status": "conflict", "observed": len(values), "reason": "multiple supplied companions are ambiguous"})
             return None
-        return values[0] if values else None
+        if values:
+            mark_used(name)
+            return values[0]
+        return None
+
+    def many(name: str) -> list[Any]:
+        mark_used(name)
+        return pools.get(name, [])
+
+    def many_binary(name: str) -> list[bytes]:
+        mark_used(name)
+        return binary_pools.get(name, [])
 
     verdict = None
     if kind == "trace":
@@ -831,7 +899,7 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
         module = importlib.import_module("vitruvyan_motus.system_manifest")
-        verdict = module.verify_system_manifest_bindings(document, graph_specs=[graph.from_dict(value) for value in pools.get("graphspec", ())], traces=[trace.from_dict(value) for value in pools.get("trace", ())])
+        verdict = module.verify_system_manifest_bindings(document, graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
     elif kind == "control_application":
         registry = one("risk_control_registry")
         if registry is None:
@@ -843,15 +911,15 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     elif kind == "regulatory_evidence_profile":
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
-        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt"), system_manifest=one("system_manifest"), risk_control_registry=one("risk_control_registry"), control_application=one("control_application"), human_oversight_receipt=one("human_oversight_receipt"), graph_specs=[graph.from_dict(value) for value in pools.get("graphspec", ())], traces=[trace.from_dict(value) for value in pools.get("trace", ())])
+        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt"), system_manifest=one("system_manifest"), risk_control_registry=one("risk_control_registry"), control_application=one("control_application"), human_oversight_receipt=one("human_oversight_receipt"), graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
     elif kind == "incident_capa_ledger":
-        verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=pools.get("execution_receipt", ()), manifests=pools.get("system_manifest", ()), registries=pools.get("risk_control_registry", ()), control_applications=pools.get("control_application", ()), human_oversight_receipts=pools.get("human_oversight_receipt", ()), evidence_packages=binary_pools.get("execution_evidence_package", ()))
+        verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
     elif kind == "retention_application":
-        verdict = importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings(document, policy=one("retention_policy_declaration"), holds=pools.get("legal_hold_declaration", ()), snapshots=pools.get("retention_scope_snapshot", ()))
+        verdict = importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings(document, policy=one("retention_policy_declaration"), holds=many("legal_hold_declaration"), snapshots=many("retention_scope_snapshot"))
     elif kind == "ai_system_registration":
-        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding(document, manifests=pools.get("system_manifest", ()))
+        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding(document, manifests=many("system_manifest"))
     elif kind == "ai_system_registry_snapshot":
-        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registry_snapshot(document, registrations=pools.get("ai_system_registration", ()), events=pools.get("ai_system_registry_event", ()))
+        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registry_snapshot(document, registrations=many("ai_system_registration"), events=many("ai_system_registry_event"))
     elif kind == "execution_evidence_package":
         package = importlib.import_module("vitruvyan_motus.evidence").verify_package(base64.b64decode(artifact["content_base64"], validate=True))
         if package.verdict is None:
@@ -877,7 +945,11 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             if verdict.profile_assessment is not None:
                 findings.extend({"path": f"requirement:{item.requirement_ref}:{item.kind}", "status": item.status, "reason": item.reason} for item in verdict.profile_assessment.findings)
     outcome = _verification_outcome(violations, findings)
-    return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": outcome, "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": violations, "findings": findings, "matches": [], "records": []})
+    matches = sorted(
+        used_companions.values(),
+        key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""),
+    )
+    return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": outcome, "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": violations, "findings": findings, "matches": matches, "records": []})
 
 
 def execute_verification_query(request: Any) -> dict[str, Any]:

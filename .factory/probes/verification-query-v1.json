@@ -30,8 +30,8 @@
   {
     "name": "correction forks remain visible conflicts",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if count > 1:\n                findings.append({\"path\": f\"lineage:{parent}\"",
-    "to": "if count > 999:\n                findings.append({\"path\": f\"lineage:{parent}\"",
+    "from": "if count > 1:\n                    findings.append({\"path\": f\"lineage:{parent}\"",
+    "to": "if count > 999:\n                    findings.append({\"path\": f\"lineage:{parent}\"",
     "tests": "tests/test_verification_query_query.py"
   },
   {
@@ -65,22 +65,22 @@
   {
     "name": "missing correction predecessors remain visible",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if not candidates:\n                findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
-    "to": "if False:\n                findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
+    "from": "if not candidates:\n                    findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
+    "to": "if False:\n                    findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
     "tests": "tests/test_verification_query_query.py"
   },
   {
     "name": "duplicate correction identities remain conflicts",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if len(duplicates) > 1:\n                findings.append({\"path\": f\"lineage:{fingerprint}\"",
-    "to": "if False:\n                findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "from": "if len(duplicates) > 1:\n                    findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "to": "if False:\n                    findings.append({\"path\": f\"lineage:{fingerprint}\"",
     "tests": "tests/test_verification_query_query.py"
   },
   {
     "name": "correction lineage cycles remain conflicts",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if cycle_members:\n            findings.append({\"path\": \"lineage:cycle\"",
-    "to": "if False:\n            findings.append({\"path\": \"lineage:cycle\"",
+    "from": "if cycle_members:\n                findings.append({\"path\": \"lineage:cycle\"",
+    "to": "if False:\n                findings.append({\"path\": \"lineage:cycle\"",
     "tests": "tests/test_verification_query_query.py"
   },
   {
@@ -187,5 +187,33 @@
     "from": "actual_work_members = len(infos) - (1 if len(manifest_infos) == 1 else 0)",
     "to": "actual_work_members = len(infos)",
     "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "retention correction queries use the authoritative lineage verifier",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"retention_policy_declaration\", \"legal_hold_declaration\",",
+    "to": "\"legal_hold_declaration\",",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid companion structural violations remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "violations.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid companion transport findings remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "companion_findings.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "verification results identify singular companions actually used",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if values:\n            mark_used(name)\n            return values[0]",
+    "to": "if values:\n            return values[0]",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]

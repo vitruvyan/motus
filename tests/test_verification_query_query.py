@@ -125,6 +125,24 @@ def test_correction_lineage_exposes_missing_predecessor_duplicate_and_cycle(monk
     assert any("same correction identity" in item["reason"] for item in duplicate["findings"])
 
 
+def test_correction_lineage_uses_authoritative_stable_identity_checks():
+    parent = fixture(
+        "370-retention-policy-declaration-valid.json", "retention-fixtures",
+    )
+    child = copy.deepcopy(parent)
+    child["policy_id"] = "different-policy"
+    child["supersedes"] = validate.retention_policy_declaration_fingerprint(parent)
+    result = query_artifacts(
+        {"kind": "correction_lineage", "artifact_kind": "retention_policy_declaration"},
+        [
+            typed("retention_policy_declaration", parent, "parent"),
+            typed("retention_policy_declaration", child, "child"),
+        ],
+    )
+    assert any(item["status"] == "mismatched" for item in result["findings"])
+    assert any("stable identifier" in item["reason"] for item in result["findings"])
+
+
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
     invalid = fixture("310-system-manifest-valid.json")
     invalid["compliant"] = True
