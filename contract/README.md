@@ -65,6 +65,11 @@ integral float or boolean from being laundered through JSON Schema's broad
 `integer` type. These
 rules validate only the manifest; byte-preserving packing, archive limits,
 member dispatch and profile assessment are subsequent independently tested gates.
+The export verifier additionally caps the aggregate declared member bytes at
+128 MiB, and caps the compressed transport at 160 MiB. This permits four
+maximum-size 28 MiB artifacts plus 16 MiB operating margin while bounding
+in-memory verification and rejecting oversized input before ZIP parsing; it is an implementation resource
+limit, not a claim about evidence completeness or regulatory sufficiency.
 
 ### AI System Registry structural v1
 

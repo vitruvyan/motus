@@ -1,0 +1,51 @@
+[
+  {
+    "name": "dossier packer checks exact member digest",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "        if _sha256(payload) != entry[\"content_sha256\"]:\n            raise ValueError(f\"dossier member {path!r} digest does not match manifest\")",
+    "to": "        if False:\n            raise ValueError(f\"dossier member {path!r} digest does not match manifest\")",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier export is deterministic",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "            info = zipfile.ZipInfo(path, date_time=_ZIP_DATE)",
+    "to": "            info = zipfile.ZipInfo(path)",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier verifier checks raw member digest",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "            if raw_digest != entry[\"content_sha256\"]:\n                problems.append(\"content_sha256 does not match exact member bytes\")",
+    "to": "            if False:\n                problems.append(\"content_sha256 does not match exact member bytes\")",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier verifier recomputes semantic artifact fingerprint",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "                    if observed_fp != entry[\"artifact_fingerprint\"]:\n                        artifact_status = \"mismatched\"",
+    "to": "                    if False:\n                        artifact_status = \"mismatched\"",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier verifier refuses undeclared members",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "        for extra in sorted(actual - set(declared)):\n            findings.append(_finding",
+    "to": "        for extra in ():\n            findings.append(_finding",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier correction forks remain visible",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "        if len(children) > 1:\n            findings.append(_finding",
+    "to": "        if len(children) > 10000:\n            findings.append(_finding",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier composes existing AI System Registry binding verifier",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "        verdict = verify_ai_system_registration_binding(\n            registration, manifests=documents.get(\"system_manifest\", ()),\n        )",
+    "to": "        verdict = verify_ai_system_registration_binding(\n            registration, manifests=(),\n        )",
+    "tests": "tests/test_regulatory_dossier.py"
+  }
+]

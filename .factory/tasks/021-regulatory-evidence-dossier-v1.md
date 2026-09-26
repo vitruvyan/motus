@@ -67,3 +67,39 @@ Point 9 / 0.21.0 mechanism work is complete only when:
 11. independent and adversarial review have no unresolved verified finding;
 12. Jenkins is green on the exact reviewed head and on `main` after merge;
 13. release `v0.21.0` is characterized and closed under the repository release discipline.
+
+## Implementation checkpoint — 2026-09-26
+
+Implemented on `feat/regulatory-evidence-dossier-v1`:
+
+- accepted structural contract and RED1-RED5 validator;
+- deterministic byte-preserving ZIP packer with fixed metadata;
+- separate dossier, artifact, raw-member and export fingerprints;
+- fail-closed archive checks for duplicates, unsafe paths, links, encryption,
+  unsupported compression, missing/extra members and bounded resources;
+- dispatch for every closed v1 artifact kind through its existing Motus
+  validator, including nested execution evidence packages;
+- separate composition of available control, oversight, incident/CAPA,
+  retention and AI System Registry binding/lineage verifiers;
+- exact-profile ADR-038 assessment with ambiguous candidates retained as
+  conflict rather than selected by archive order;
+- append-only dossier correction lineage with missing predecessors, competing
+  roots and forks visible;
+- public API, contract/runtime documentation and permanent mutation probes.
+
+Evidence at this checkpoint:
+
+- focused dossier tests: `28 passed`;
+- dossier plus evidence-package regression: `64 passed`;
+- integrated regulatory verifier bank: `180 passed` before the final bounded
+  transport and nested-package cases were added;
+- full suite before those two additive hardening cases: `1807 passed, 6 skipped`;
+- packaging: `16 passed`;
+- frozen contract paths: `PASS`;
+- lazy bare import: passed, with `jsonschema` absent after package import;
+- ADR-042 permanent mutation probe: `7/7 killed`;
+- `git diff --check`: passed.
+
+Still required after the implementation commit: rerun the full suite on the
+exact head, independent/adversarial review, Jenkins on the exact reviewed head,
+merge, main verification and the repository release-characterization/tag flow.

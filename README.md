@@ -989,6 +989,11 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
   `HumanOversightBindingVerdict`, `HumanOversightBindingFinding`;
 - regulatory evidence profiles: `assess_evidence_profile`,
   `RegulatoryEvidenceAssessment`, `RegulatoryEvidenceFinding`;
+- regulatory evidence dossiers: `pack_regulatory_dossier`,
+  `verify_regulatory_dossier`, `verify_regulatory_dossier_lineage`,
+  `regulatory_dossier_export_fingerprint`, `RegulatoryDossierVerdict`,
+  `RegulatoryDossierEntryVerdict`, `RegulatoryDossierLineageVerdict`,
+  `RegulatoryDossierFinding`;
 - incident and CAPA: `verify_incident_capa_ledger`,
   `order_incident_capa_entries`, `IncidentCAPAVerdict`,
   `IncidentCAPAFinding`;
@@ -1138,6 +1143,31 @@ composes it rather than downgrading verification to schema validity. In
 particular, System Manifest reaches `matched` only when its supplied GraphSpec
 and trace bindings are complete; a receipt verifier refusal is reported as
 `not_verified`, not rewritten as a contradiction.
+
+### Regulatory Evidence Dossier export
+
+ADR-042 packages one exact, bounded set of recognized Motus artifacts without
+turning the package into a report or filing. `pack_regulatory_dossier()` first
+validates the manifest and checks every supplied byte length and SHA-256 digest;
+it then writes `dossier.json` plus the unmodified member bytes to a deterministic
+ZIP. Identical manifest and member bytes therefore produce identical exports.
+
+`verify_regulatory_dossier()` keeps three identities distinct: the canonical
+dossier fingerprint, each artifact's existing Motus semantic fingerprint, and
+the export fingerprint over the exact ZIP bytes. It refuses duplicate, unsafe,
+linked, encrypted, undeclared, missing, unsupported, or resource-unbounded ZIP
+members before treating them as evidence, and dispatches recognized artifacts
+to their existing Motus validators. The exact included profile is assessed only
+when each profiled kind has at most one unambiguous candidate; later Motus
+artifact kinds remain individually verified without silently expanding the
+ADR-038 profile vocabulary.
+
+`verify_regulatory_dossier_lineage()` evaluates only caller-supplied manifests.
+It preserves missing or invalid predecessors, competing roots, forks and cycles;
+it performs no discovery and chooses no winner. None of these helpers emits a
+compliance, completeness, legal-sufficiency, official-submission or acceptance
+verdict. The v1 archive bounds are 1000 artifact members, 28 MiB per member,
+128 MiB aggregate declared member bytes and 160 MiB compressed transport bytes.
 
 ### Incident / CAPA Ledger
 
