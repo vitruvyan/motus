@@ -1,9 +1,9 @@
 # TASK 021-R — Motus 0.21.0 release
 
-Parent: Point 8 / ADR-042.
+Parent: Point 9 / ADR-042.
 
 Candidate source: `bf6be6acd9504c1e42639aafd52f53d8af82260e` on
-`release/0.21.0`, based on the verified Point 8 merge
+`release/0.21.0`, based on the verified Point 9 merge
 `4c5a5772ff1ae0bf4fb6c3e37e3705bf443657d1`.
 
 Release evidence is complete:
