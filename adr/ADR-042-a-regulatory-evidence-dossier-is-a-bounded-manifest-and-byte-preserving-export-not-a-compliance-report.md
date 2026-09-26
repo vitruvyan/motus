@@ -1,7 +1,8 @@
 # ADR-042 — A Regulatory Evidence Dossier is a bounded manifest and byte-preserving export, not a compliance report
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-26
+- **Accepted:** 2026-09-26, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001 (contract authority), ADR-020 (trust and assurance levels), ADR-027 (execution identity), ADR-034 (Motus owns evidence; bridges expose it), ADR-035 through ADR-041 (the neutral regulatory evidence surfaces and their stop conditions).
 - **Amends on acceptance:** permits one canonical, jurisdiction-neutral Regulatory Evidence Dossier manifest plus deterministic local pack and verify helpers for a byte-preserving dossier export. It does **not** amend the meaning or wire format of trace, GraphSpec, commitment, checkpoint, receipt, the existing evidence package, System Manifest, Risk & Control Registry, ControlApplication, HumanOversightReceipt, Regulatory Evidence Profile, Incident / CAPA, Retention / Legal Hold, or AI System Registry artifacts.

@@ -1,6 +1,6 @@
 # TASK 021 — Regulatory Evidence Dossier / export v1
 
-Parent: ADR-042, proposed on 2026-09-26 and awaiting founder acceptance.
+Parent: ADR-042, accepted by the founder on 2026-09-26.
 
 Branch: `feat/regulatory-evidence-dossier-v1`.
 
@@ -14,7 +14,7 @@ The dossier is a manifest and transport boundary. It is not a compliance report,
 
 ## Gate
 
-1. The founder accepts ADR-042. No contract or product implementation begins before that acceptance.
+1. ADR-042 was accepted by the founder on 2026-09-26.
 2. Contract-first implementation then proceeds in independently verifiable micro-steps:
    - dossier manifest schema and semantic invariants;
    - canonical dossier fingerprint and append-only correction lineage;

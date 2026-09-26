@@ -42,7 +42,7 @@ one-tag rule is restored.
 | 6 | Retention & Legal Hold | DONE | shipped in v0.19.0 |
 | 7 | AI System Registry | DONE | shipped in v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
-| 9 | Regulatory Evidence Dossier / export | PROPOSED | target v0.21.0; ADR-042 awaiting founder acceptance |
+| 9 | Regulatory Evidence Dossier / export | IMPLEMENTING | target v0.21.0; ADR-042 accepted 2026-09-26 |
 | 10 | Verification and query API/CLI | QUEUED | target v0.22.0 |
 | 11 | Motus UI | DRAFT ONLY | release target decided after the v0.22 interface is stable |
 
@@ -100,24 +100,24 @@ becomes proof of global current state or completeness.
 The founder accepted ADR-041 on 2026-09-25. Contract-first implementation and
 the v0.20.0 release completed without weakening the decision's stop conditions.
 
-### Point 9 / v0.21.0 — Regulatory Evidence Dossier / export — proposed
+### Point 9 / v0.21.0 — Regulatory Evidence Dossier / export — implementing
 
-ADR-042 proposes a neutral boundary between:
+ADR-042 defines a neutral boundary between:
 
 1. one immutable dossier manifest naming an exact bounded set of Motus artifacts;
 2. the semantic fingerprints of recognized artifacts;
 3. the SHA-256 digests of the exact bytes carried for transport; and
 4. one deterministic byte-preserving export archive.
 
-The proposed surface composes existing Motus validators and the exact Regulatory
+The accepted surface composes existing Motus validators and the exact Regulatory
 Evidence Profile included by the producer. It does not infer global completeness,
 legal sufficiency, official submission, regulator acceptance or compliance. It
 does not change the existing execution evidence-package wire format, accept
 arbitrary attachments as verified Motus evidence, fetch hidden evidence, or
 rewrite member bytes under their old identities.
 
-ADR-042 remains `PROPOSED`. Contract or product implementation must not begin
-until the founder accepts it.
+The founder accepted ADR-042 on 2026-09-26. Contract-first implementation may
+begin without weakening the decision's stop conditions.
 
 ### Existing Motus UI draft
 
