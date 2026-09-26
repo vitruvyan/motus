@@ -399,13 +399,6 @@
     "tests": "tests/test_regulatory_dossier.py"
   },
   {
-    "name": "manifest trace joins fail closed before excessive authority work",
-    "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if join_work > _MANIFEST_TRACE_JOIN_LIMIT:",
-    "to": "if False:",
-    "tests": "tests/test_verification_query_verify.py"
-  },
-  {
     "name": "AI lifecycle candidates stay inside the requested namespace",
     "file": "src/vitruvyan_motus/verification_query.py",
     "from": "if item[\"document\"][\"producer_namespace\"] == namespace\n            and item[\"document\"][\"registration_id\"] == registration_id\n        ]\n        cited_registrations",

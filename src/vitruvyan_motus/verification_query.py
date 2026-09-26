@@ -24,7 +24,6 @@ _LIMITATIONS = [
 
 _RESULT_ITEM_LIMIT = 10_000
 _DIAGNOSTIC_COLLECTION_LIMIT = 32
-_MANIFEST_TRACE_JOIN_LIMIT = 1_000_000
 _PACKAGE_MEMBER_LIMIT = 1_000
 _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
@@ -1218,17 +1217,7 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             ) in binding_keys:
                 relevant_traces.append(value)
                 used_companions[identity["input_id"]] = identity
-        join_work = len(document["bindings"]["graphs"]) * len(relevant_traces)
-        if join_work > _MANIFEST_TRACE_JOIN_LIMIT:
-            findings.append({
-                "path": "$.verification.work_budget",
-                "status": "not_verified",
-                "expected": f"at most {_MANIFEST_TRACE_JOIN_LIMIT} manifest/trace comparisons",
-                "observed": join_work,
-                "reason": "system manifest binding verification exceeded the bounded semantic join budget",
-            })
-        else:
-            verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in graph_values], traces=[trace.from_dict(value) for value in relevant_traces])
+        verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in graph_values], traces=[trace.from_dict(value) for value in relevant_traces])
     elif kind == "control_application":
         registry = one("risk_control_registry")
         if registry is None:
