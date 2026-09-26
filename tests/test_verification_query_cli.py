@@ -103,28 +103,25 @@ def test_request_reader_bounds_the_open_stream(monkeypatch):
 
     stream = TrackingStream(b"x" * 72)
 
-    class FakePath:
-        def open(self, _mode):
-            return stream
-
+    opened = {}
+    monkeypatch.setattr(cli.os, "open", lambda path, flags: opened.update(path=path, flags=flags) or 123)
+    monkeypatch.setattr(cli.os, "fdopen", lambda fd, mode: stream)
     monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o100644))
+    monkeypatch.setattr(cli.os, "close", lambda _fd: None)
     with pytest.raises(ValueError, match="225 MiB"):
-        cli._read_request_bytes(FakePath(), limit=4)
+        cli._read_request_bytes(Path("request.json"), limit=4)
     assert stream.requested == 5
+    assert opened["flags"] & getattr(cli.os, "O_NONBLOCK", 0) == getattr(cli.os, "O_NONBLOCK", 0)
 
 
 def test_request_reader_rejects_non_regular_streams(monkeypatch):
-    stream = TrackingStreamForSpecial(b"x" * 72)
-
-    class FakePath:
-        def open(self, _mode):
-            return stream
-
+    opened = {}
+    closed = []
+    monkeypatch.setattr(cli.os, "open", lambda path, flags: opened.update(path=path, flags=flags) or 456)
+    monkeypatch.setattr(cli.os, "fdopen", lambda *_args: pytest.fail("special file must be rejected before fdopen"))
     monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o010644))
+    monkeypatch.setattr(cli.os, "close", closed.append)
     with pytest.raises(ValueError, match="regular file"):
-        cli._read_request_bytes(FakePath(), limit=4)
-
-
-class TrackingStreamForSpecial(io.BytesIO):
-    def fileno(self):
-        return 456
+        cli._read_request_bytes(Path("request.fifo"), limit=4)
+    assert opened["flags"] & getattr(cli.os, "O_NONBLOCK", 0) == getattr(cli.os, "O_NONBLOCK", 0)
+    assert closed == [456]

@@ -296,8 +296,15 @@
   {
     "name": "CLI refuses non-regular request streams",
     "file": "src/vitruvyan_motus/verification_query_cli.py",
-    "from": "if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):",
+    "from": "if not stat.S_ISREG(os.fstat(descriptor).st_mode):",
     "to": "if False:",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI opens request paths nonblocking before type validation",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "| getattr(os, \"O_NONBLOCK\", 0)",
+    "to": "| 0",
     "tests": "tests/test_verification_query_cli.py"
   },
   {

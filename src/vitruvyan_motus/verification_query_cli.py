@@ -44,10 +44,21 @@ def _human(result: dict[str, Any]) -> str:
 
 def _read_request_bytes(path: Path, limit: int = _MAX_REQUEST_BYTES) -> bytes:
     """Open once, refuse special streams, and bound allocation during read."""
-    with path.open("rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError("request must be a regular file")
-        data = stream.read(limit + 1)
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            data = stream.read(limit + 1)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     if len(data) > limit:
         raise ValueError("request exceeds the 225 MiB CLI input limit")
     return data
