@@ -1,6 +1,6 @@
 # TASK 022 — Verification and query API/CLI v1
 
-Parent: ADR-043, proposed on 2026-09-26; founder acceptance required before implementation.
+Parent: ADR-043, accepted by the founder on 2026-09-26.
 
 Branch: `feat/verification-query-api-cli-v1`.
 
@@ -18,10 +18,8 @@ network service, or source of global current state.
 
 ## Gate
 
-1. ADR-043 remains `PROPOSED` until the founder explicitly accepts it.
-2. No contract, runtime, CLI, fixture, or test implementation begins before
-   acceptance.
-3. After acceptance, implementation proceeds contract-first in independently
+1. ADR-043 was accepted by the founder on 2026-09-26.
+2. Implementation proceeds contract-first in independently
    verifiable micro-steps:
    - closed artifact-kind and operation vocabulary;
    - stable request/result envelope and resource bounds;
@@ -96,5 +94,5 @@ Point 10 / 0.22.0 is complete only when:
 
 - dedicated branch created from `origin/main` at
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
-- ADR-043 proposed;
-- implementation intentionally not started pending founder acceptance.
+- ADR-043 accepted by the founder on 2026-09-26;
+- contract implementation is now authorised but has not yet started.

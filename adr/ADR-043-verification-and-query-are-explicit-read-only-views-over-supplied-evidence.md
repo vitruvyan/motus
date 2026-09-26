@@ -1,7 +1,8 @@
 # ADR-043 — Verification and query are explicit read-only views over supplied evidence
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-26
+- **Accepted:** 2026-09-26, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-001, ADR-020, ADR-027, ADR-034 through ADR-042.
 - **Amends on acceptance:** permits one transport-neutral public verification/query facade and one CLI over existing Motus contracts. It does not amend any existing artifact, trace, evidence-package, or dossier wire format.
