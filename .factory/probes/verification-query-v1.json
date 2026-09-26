@@ -369,5 +369,26 @@
     "from": "for item in value[:_DIAGNOSTIC_COLLECTION_LIMIT]",
     "to": "for item in value",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "AI lifecycle authority retains cross-namespace registrations",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item[\"kind\"] == \"ai_system_registration\"]",
+    "to": "if item[\"kind\"] == \"ai_system_registration\" and item[\"document\"][\"producer_namespace\"] == namespace]",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "query results retain every inspection violation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "invalid_violations.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "query results retain every inspection finding",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "invalid_findings.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_query.py"
   }
 ]

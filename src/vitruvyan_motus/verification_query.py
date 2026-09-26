@@ -576,9 +576,13 @@ def _inspect_artifact(artifact: Any, work_budget: _ZipWorkBudget) -> dict[str, A
 
 def _validated_inputs(
     artifacts: list[dict[str, Any]], work_budget: _ZipWorkBudget,
-) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]:
+) -> tuple[
+    list[tuple[dict[str, Any], dict[str, Any]]],
+    list[dict[str, str]], list[dict[str, Any]],
+]:
     valid = []
-    invalid = []
+    invalid_violations: list[dict[str, str]] = []
+    invalid_findings: list[dict[str, Any]] = []
     for artifact in artifacts:
         inspected = _inspect_artifact(artifact, work_budget)
         if inspected["outcome"] == "valid":
@@ -594,13 +598,23 @@ def _validated_inputs(
                 "the supplied artifact did not satisfy its own Motus contract: "
                 + str(detail)
             )[:8192]
-            invalid.append({
+            prefix = f"$.artifacts[{artifact['input_id']}]"
+            invalid_findings.append({
                 "path": f"$.artifacts[{artifact['input_id']}]",
                 "status": "not_verified",
                 "observed": inspected["outcome"],
                 "reason": reason,
             })
-    return valid, invalid
+            invalid_violations.extend({
+                "rule": detail["rule"],
+                "path": (prefix + detail["path"][1:])[:8192],
+                "message": detail["message"],
+            } for detail in inspected["violations"])
+            invalid_findings.extend({
+                **detail,
+                "path": (prefix + detail["path"][1:])[:8192],
+            } for detail in inspected["findings"])
+    return valid, invalid_violations, invalid_findings
 
 
 def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
@@ -750,7 +764,9 @@ def _query_result(
     work_budget: _ZipWorkBudget,
 ) -> dict[str, Any]:
     supplied_ids = [item["input_id"] for item in artifacts]
-    valid, invalid_findings = _validated_inputs(artifacts, work_budget)
+    valid, invalid_violations, invalid_findings = _validated_inputs(
+        artifacts, work_budget,
+    )
     by_id = {item["input_id"]: (item, inspected) for item, inspected in valid}
     matches: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
@@ -771,7 +787,7 @@ def _query_result(
         if projection["registry_input_id"] not in by_id:
             return {
                 "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
-                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
+                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": invalid_violations,
                 "findings": [*findings, {"path": "$.projection.registry_input_id", "status": "not_verified", "reason": "the selected supplied registry did not satisfy its structural contract"}],
                 "matches": [], "records": [],
             }
@@ -869,7 +885,7 @@ def _query_result(
         if projection["dossier_input_id"] not in by_id:
             return {
                 "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
-                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
+                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": invalid_violations,
                 "findings": [*findings, {"path": "$.projection.dossier_input_id", "status": "not_verified", "reason": "the selected supplied dossier did not satisfy its structural contract"}],
                 "matches": [], "records": [],
             }
@@ -879,8 +895,8 @@ def _query_result(
     else:
         namespace = projection["producer_namespace"]
         registration_id = projection["registration_id"]
-        registrations = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registration" and item["document"]["producer_namespace"] == namespace]
-        events = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registry_event" and item["document"]["producer_namespace"] == namespace]
+        registrations = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registration"]
+        events = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registry_event"]
         ai = importlib.import_module("vitruvyan_motus.ai_system_registry")
         projected = ai.project_supplied_ai_system_lifecycle(registration_id, registrations=registrations, events=events)
         selected_event_fingerprints = set(projected.ordered_event_fingerprints)
@@ -918,7 +934,7 @@ def _query_result(
         "interface_version": "1.0.0", "message_type": "result",
         "operation": "query", "outcome": outcome,
         "scope": _scope(supplied_ids, "query"), "subject": None,
-        "violations": [], "findings": findings, "matches": matches,
+        "violations": invalid_violations, "findings": findings, "matches": matches,
         "records": records,
     }
 

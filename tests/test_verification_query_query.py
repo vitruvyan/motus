@@ -293,6 +293,7 @@ def test_cross_kind_duplicate_predecessors_remain_ambiguous():
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
     invalid = fixture("310-system-manifest-valid.json")
     invalid["compliant"] = True
+    del invalid["schema_version"]
     result = query_artifacts(
         {"kind": "artifact_identity", "artifact_kind": "system_manifest", "fingerprint": "sha256:" + "a" * 64},
         [typed("system_manifest", invalid, "invalid-manifest")],
@@ -305,6 +306,37 @@ def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
     assert result["findings"][0]["reason"].startswith(
         "the supplied artifact did not satisfy its own Motus contract:"
     )
+    assert len(result["violations"]) == 2
+    assert all(
+        item["path"].startswith("$.artifacts[invalid-manifest]")
+        for item in result["violations"]
+    )
+
+
+def test_query_preserves_every_prefixed_inspection_diagnostic(monkeypatch):
+    artifact = typed(
+        "system_manifest", fixture("310-system-manifest-valid.json"), "manifest",
+    )
+    monkeypatch.setattr(verification_query, "_inspect_artifact", lambda *_args: {
+        "outcome": "invalid",
+        "violations": [
+            {"rule": "ONE", "path": "$.first", "message": "first"},
+            {"rule": "TWO", "path": "$.second", "message": "second"},
+        ],
+        "findings": [
+            {"path": "$.third", "status": "damaged", "reason": "third"},
+            {"path": "$.fourth", "status": "incomplete", "reason": "fourth"},
+        ],
+    })
+    result = query_artifacts({
+        "kind": "artifact_identity",
+        "artifact_kind": "system_manifest",
+        "fingerprint": "sha256:" + "a" * 64,
+    }, [artifact])
+    assert [item["rule"] for item in result["violations"]] == ["ONE", "TWO"]
+    assert {item["path"] for item in result["findings"][1:]} == {
+        "$.artifacts[manifest].third", "$.artifacts[manifest].fourth",
+    }
 
 
 def test_ai_lifecycle_matches_and_provenance_exclude_unrelated_registration():
@@ -336,6 +368,32 @@ def test_ai_lifecycle_matches_and_provenance_exclude_unrelated_registration():
         "target-registration", "target-event",
     }
     assert result["records"][0]["source_input_id"] == "target-registration"
+
+
+def test_ai_lifecycle_authority_sees_cross_namespace_cited_registration():
+    target = ai_fixture(400, "ai_system_registration")
+    event = ai_fixture(401, "ai_system_registry_event")
+    foreign = copy.deepcopy(target)
+    foreign["producer_namespace"] = "foreign-producer"
+    foreign["registry_id"] = "foreign-registry"
+    foreign["registration_id"] = "foreign-registration"
+    event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(foreign)
+    )
+    result = query_artifacts({
+        "kind": "ai_system_lifecycle",
+        "producer_namespace": target["producer_namespace"],
+        "registration_id": target["registration_id"],
+    }, [
+        typed("ai_system_registration", foreign, "foreign-registration"),
+        typed("ai_system_registry_event", event, "target-event"),
+    ])
+    assert any(
+        item["status"] == "mismatched"
+        and "another stable registry subject" in item["reason"]
+        for item in result["findings"]
+    )
+    assert [item["input_id"] for item in result["matches"]] == ["target-event"]
 
 
 def test_ai_lifecycle_does_not_match_unselected_same_registration_events():
