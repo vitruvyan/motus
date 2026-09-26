@@ -135,7 +135,7 @@ The founder accepted ADR-043 on 2026-09-26. Contract-first implementation is
 complete on its dedicated feature branch: explicit inspection, composed
 verification, seven bounded supplied-set projections and the `motus-evidence`
 CLI share one stable result envelope. The first independent code/security
-round produced ten verified findings; their classes are repaired with
+round produced eleven verified findings; their classes are repaired with
 regression tests and mutation probes. Final review/CI on the evidence head,
 merge and release qualification remain required before this point is shipped.
 
