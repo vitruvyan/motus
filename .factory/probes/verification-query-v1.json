@@ -198,8 +198,8 @@
   {
     "name": "invalid companion structural violations remain visible",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "violations.extend({",
-    "to": "tuple({",
+    "from": "            violations.extend({\n                \"rule\": detail[\"rule\"],",
+    "to": "            tuple({\n                \"rule\": detail[\"rule\"],",
     "tests": "tests/test_verification_query_verify.py"
   },
   {
