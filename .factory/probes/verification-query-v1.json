@@ -502,5 +502,12 @@
     "from": "if binding_fingerprint not in oversight_binding_cache:",
     "to": "if True:",
     "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "dossier ledgers share one evidence-package verdict cache",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "_package_verdicts=package_verdicts,",
+    "to": "_package_verdicts={},",
+    "tests": "tests/test_regulatory_dossier.py"
   }
 ]

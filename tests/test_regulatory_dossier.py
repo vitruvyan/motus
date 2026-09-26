@@ -115,6 +115,43 @@ def test_companion_index_derives_each_fingerprint_once(monkeypatch):
     assert calls == 1
 
 
+def test_dossier_ledgers_share_one_package_verdict_cache(monkeypatch):
+    package = b"not a valid evidence package"
+    package_ref = {
+        "kind": "evidence_package",
+        "fingerprint": __import__(
+            "vitruvyan_motus.evidence",
+            fromlist=["evidence_package_fingerprint"],
+        ).evidence_package_fingerprint(package),
+    }
+    incident = json.loads(
+        (ROOT / JSON_FIXTURES["incident_declaration"]).read_text("utf-8")
+    )["instance"]
+    incident["evidence"] = [package_ref]
+    ledger = {
+        "schema_version": "1.0.0",
+        "entries": [{"kind": "incident_declaration", "document": incident}],
+    }
+    assert validate.validate_incident_capa_ledger(ledger) == []
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    original = evidence.verify_package
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(evidence, "verify_package", counted)
+    dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [ledger, copy.deepcopy(ledger)]},
+        [package],
+        validate,
+    )
+
+    assert calls == 1
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()

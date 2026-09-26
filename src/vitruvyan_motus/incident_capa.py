@@ -251,6 +251,7 @@ def verify_incident_capa_ledger(
     control_applications: Iterable[dict[str, Any]] = (),
     human_oversight_receipts: Iterable[dict[str, Any]] = (),
     evidence_packages: Iterable[bytes] = (),
+    _package_verdicts: dict[str, Any] | None = None,
 ) -> IncidentCAPAVerdict:
     """Verify one ledger view against the Motus evidence supplied by the caller.
 
@@ -316,7 +317,7 @@ def verify_incident_capa_ledger(
     package_by_fingerprint: dict[str, bytes] = {}
     for fingerprint, value in zip(package_fingerprints, package_docs):
         package_by_fingerprint.setdefault(fingerprint, value)
-    package_verdicts: dict[str, Any] = {}
+    package_verdicts = {} if _package_verdicts is None else _package_verdicts
     application_binding_cache: dict[str, tuple[str, Any]] = {}
     oversight_binding_cache: dict[str, tuple[Any, ...]] = {}
 

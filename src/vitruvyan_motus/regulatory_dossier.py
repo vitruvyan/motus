@@ -372,6 +372,7 @@ def _compose_existing_verifiers(
         ))
 
     from vitruvyan_motus.incident_capa import verify_incident_capa_ledger
+    package_verdicts: dict[str, Any] = {}
     for ledger in documents.get("incident_capa_ledger", ()):
         fp = validate.incident_capa_ledger_fingerprint(ledger)
         verdict = verify_incident_capa_ledger(
@@ -382,6 +383,7 @@ def _compose_existing_verifiers(
             control_applications=documents.get("control_application", ()),
             human_oversight_receipts=documents.get("human_oversight_receipt", ()),
             evidence_packages=package_bytes,
+            _package_verdicts=package_verdicts,
         )
         findings.extend(_converted_findings(
             f"binding:incident_capa_ledger:{fp}", verdict.findings,
