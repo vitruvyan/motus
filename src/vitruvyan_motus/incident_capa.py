@@ -317,6 +317,8 @@ def verify_incident_capa_ledger(
     for fingerprint, value in zip(package_fingerprints, package_docs):
         package_by_fingerprint.setdefault(fingerprint, value)
     package_verdicts: dict[str, Any] = {}
+    application_binding_cache: dict[str, tuple[str, Any]] = {}
+    oversight_binding_cache: dict[str, tuple[Any, ...]] = {}
 
     pools = {
         "system_manifest": tuple(
@@ -449,45 +451,61 @@ def verify_incident_capa_ledger(
                         verify_control_application_bindings,
                     )
 
-                    application = _document_by_fingerprint(
-                        application_docs,
-                        reference["fingerprint"],
-                        validate.control_application_fingerprint,
-                    )
-                    registry = _document_by_fingerprint(
-                        registry_docs,
-                        application["registry_fingerprint"],
-                        validate.risk_control_registry_fingerprint,
-                    )
-                    if registry is None:
+                    binding_fingerprint = reference["fingerprint"]
+                    if binding_fingerprint not in application_binding_cache:
+                        application = _document_by_fingerprint(
+                            application_docs,
+                            binding_fingerprint,
+                            validate.control_application_fingerprint,
+                        )
+                        registry = _document_by_fingerprint(
+                            registry_docs,
+                            application["registry_fingerprint"],
+                            validate.risk_control_registry_fingerprint,
+                        )
+                        if registry is None:
+                            application_binding_cache[binding_fingerprint] = (
+                                "missing_registry",
+                                application["registry_fingerprint"],
+                            )
+                        else:
+                            manifest_fingerprint = application.get(
+                                "manifest_fingerprint"
+                            )
+                            manifest = (
+                                _document_by_fingerprint(
+                                    manifest_docs,
+                                    manifest_fingerprint,
+                                    validate.system_manifest_fingerprint,
+                                )
+                                if manifest_fingerprint is not None else None
+                            )
+                            receipt = receipt_index.get(application["execution_ref"])
+                            chain = verify_control_application_bindings(
+                                application,
+                                registry=registry,
+                                manifest=manifest,
+                                receipt=receipt,
+                            )
+                            application_binding_cache[binding_fingerprint] = (
+                                "findings", tuple(chain.findings),
+                            )
+                    cached_kind, cached_value = application_binding_cache[
+                        binding_fingerprint
+                    ]
+                    if cached_kind == "missing_registry":
                         findings.append(IncidentCAPAFinding(
                             path + ".verification:$.registry_fingerprint",
                             _MISSING,
-                            application["registry_fingerprint"],
+                            cached_value,
                             None,
                             "the exact ControlApplication is present, but its "
                             "mandatory Registry revision was not supplied",
                         ))
                     else:
-                        manifest_fingerprint = application.get("manifest_fingerprint")
-                        manifest = (
-                            _document_by_fingerprint(
-                                manifest_docs,
-                                manifest_fingerprint,
-                                validate.system_manifest_fingerprint,
-                            )
-                            if manifest_fingerprint is not None else None
-                        )
-                        receipt = receipt_index.get(application["execution_ref"])
-                        chain = verify_control_application_bindings(
-                            application,
-                            registry=registry,
-                            manifest=manifest,
-                            receipt=receipt,
-                        )
                         findings.extend(
                             _adapt_chain_finding(path + ".verification", item)
-                            for item in chain.findings
+                            for item in cached_value
                         )
 
                 elif kind == "human_oversight_receipt":
@@ -495,45 +513,50 @@ def verify_incident_capa_ledger(
                         verify_human_oversight_bindings,
                     )
 
-                    oversight = _document_by_fingerprint(
-                        oversight_docs,
-                        reference["fingerprint"],
-                        validate.human_oversight_receipt_fingerprint,
-                    )
-                    bindings = oversight.get("bindings", {})
-                    manifest = _document_by_fingerprint(
-                        manifest_docs,
-                        bindings.get("manifest_fingerprint"),
-                        validate.system_manifest_fingerprint,
-                    )
-                    registry = _document_by_fingerprint(
-                        registry_docs,
-                        bindings.get("registry_fingerprint"),
-                        validate.risk_control_registry_fingerprint,
-                    )
-                    application_fingerprint = bindings.get(
-                        "control_application_fingerprint"
-                    )
-                    if oversight["subject"]["kind"] == "control_application":
-                        application_fingerprint = oversight["subject"][
+                    binding_fingerprint = reference["fingerprint"]
+                    if binding_fingerprint not in oversight_binding_cache:
+                        oversight = _document_by_fingerprint(
+                            oversight_docs,
+                            binding_fingerprint,
+                            validate.human_oversight_receipt_fingerprint,
+                        )
+                        bindings = oversight.get("bindings", {})
+                        manifest = _document_by_fingerprint(
+                            manifest_docs,
+                            bindings.get("manifest_fingerprint"),
+                            validate.system_manifest_fingerprint,
+                        )
+                        registry = _document_by_fingerprint(
+                            registry_docs,
+                            bindings.get("registry_fingerprint"),
+                            validate.risk_control_registry_fingerprint,
+                        )
+                        application_fingerprint = bindings.get(
                             "control_application_fingerprint"
-                        ]
-                    application = _document_by_fingerprint(
-                        application_docs,
-                        application_fingerprint,
-                        validate.control_application_fingerprint,
-                    )
-                    receipt = receipt_index.get(oversight["execution_ref"])
-                    chain = verify_human_oversight_bindings(
-                        oversight,
-                        execution_receipt=receipt,
-                        manifest=manifest,
-                        registry=registry,
-                        control_application=application,
-                    )
+                        )
+                        if oversight["subject"]["kind"] == "control_application":
+                            application_fingerprint = oversight["subject"][
+                                "control_application_fingerprint"
+                            ]
+                        application = _document_by_fingerprint(
+                            application_docs,
+                            application_fingerprint,
+                            validate.control_application_fingerprint,
+                        )
+                        receipt = receipt_index.get(oversight["execution_ref"])
+                        chain = verify_human_oversight_bindings(
+                            oversight,
+                            execution_receipt=receipt,
+                            manifest=manifest,
+                            registry=registry,
+                            control_application=application,
+                        )
+                        oversight_binding_cache[binding_fingerprint] = tuple(
+                            chain.findings
+                        )
                     findings.extend(
                         _adapt_chain_finding(path + ".verification", item)
-                        for item in chain.findings
+                        for item in oversight_binding_cache[binding_fingerprint]
                     )
 
                 elif kind == "evidence_package":

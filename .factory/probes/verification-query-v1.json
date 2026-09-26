@@ -488,5 +488,19 @@
     "from": "if fingerprint not in package_verdicts:",
     "to": "if True:",
     "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "incident and CAPA control-application references reuse one verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if binding_fingerprint not in application_binding_cache:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "incident and CAPA oversight references reuse one verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if binding_fingerprint not in oversight_binding_cache:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
   }
 ]

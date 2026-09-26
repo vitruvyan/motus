@@ -299,6 +299,83 @@ def test_repeated_evidence_package_references_reuse_one_verdict(monkeypatch):
     assert calls == 1
 
 
+def test_repeated_control_application_references_reuse_one_verdict(monkeypatch):
+    registry = _fixture("320-risk-control-registry-valid.json")
+    registry.pop("system")
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    application = {
+        "schema_version": "1.0.0",
+        "registry_fingerprint": validate.risk_control_registry_fingerprint(registry),
+        "control_id": "C-001",
+        "execution_ref": receipt["execution"]["ref"],
+        "enforcement_point": "tool_dispatch",
+        "outcome": "blocked",
+        "observed_at": "2026-09-23T10:01:00Z",
+        "evidence": {"kind": "motus_execution"},
+    }
+    application_ref = {
+        "kind": "control_application",
+        "fingerprint": validate.control_application_fingerprint(application),
+    }
+    incident = _incident(evidence=[application_ref])
+    action = _action(incident, evidence=[application_ref])
+    risk_control = __import__(
+        "vitruvyan_motus.risk_control",
+        fromlist=["verify_control_application_bindings"],
+    )
+    original = risk_control.verify_control_application_bindings
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(risk_control, "verify_control_application_bindings", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        registries=[registry],
+        control_applications=[application],
+    )
+
+    assert calls == 1
+
+
+def test_repeated_oversight_references_reuse_one_verdict(monkeypatch):
+    oversight = _fixture("340-human-oversight-receipt-valid.json")
+    oversight_ref = {
+        "kind": "human_oversight_receipt",
+        "fingerprint": validate.human_oversight_receipt_fingerprint(oversight),
+    }
+    incident = _incident(evidence=[oversight_ref])
+    action = _action(incident, evidence=[oversight_ref])
+    human_oversight = __import__(
+        "vitruvyan_motus.human_oversight",
+        fromlist=["verify_human_oversight_bindings"],
+    )
+    original = human_oversight.verify_human_oversight_bindings
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(human_oversight, "verify_human_oversight_bindings", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        human_oversight_receipts=[oversight],
+    )
+
+    assert calls == 1
+
+
 def test_receipt_with_inconsistent_derived_identity_is_refused():
     receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
     receipt["execution"]["run_id"] = "tampered"
