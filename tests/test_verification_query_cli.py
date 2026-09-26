@@ -59,6 +59,23 @@ def test_human_output_escapes_terminal_controls(tmp_path):
     assert "attacker\\u001b[2JFORGED" in completed.stdout
 
 
+def test_human_output_renders_projected_records_terminal_safely():
+    rendered = cli._human({
+        "operation": "query", "outcome": "completed", "subject": None,
+        "violations": [], "findings": [], "matches": [],
+        "records": [{
+            "source_input_id": "registry",
+            "record_kind": "control",
+            "record": {"control_id": "CTRL-1\x1b[2J", "title": "review"},
+        }],
+    })
+
+    assert "records: 1" in rendered
+    assert "RECORD registry control:" in rendered
+    assert '"control_id":"CTRL-1\\u001b[2J"' in rendered
+    assert "\x1b" not in rendered
+
+
 def test_invalid_artifact_exits_one_and_invalid_request_exits_two(tmp_path):
     invalid = manifest()
     invalid["compliant"] = True

@@ -544,5 +544,19 @@
     "from": "if len(self) == _COMPOSED_FINDING_LIMIT - 1:",
     "to": "if False:",
     "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "trace GraphSpec binding failures remain semantic mismatches",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "binding_violations = validate.validate_trace(document, spec=spec)",
+    "to": "binding_violations = []",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI human output retains projected record content",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "for item in result[\"records\"]:",
+    "to": "for item in ():",
+    "tests": "tests/test_verification_query_cli.py"
   }
 ]

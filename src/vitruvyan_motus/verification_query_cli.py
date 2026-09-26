@@ -40,6 +40,15 @@ def _human(result: dict[str, Any]) -> str:
         lines.append(f"FINDING {safe(item['status'])} {safe(item['path'])}: {safe(item['reason'])}")
     lines.extend(f"MATCH {safe(item['input_id'])} {safe(item['kind'])} {safe(item['fingerprint'] or 'not derived')}" for item in result["matches"])
     lines.append(f"records: {len(result['records'])}")
+    for item in result["records"]:
+        record = json.dumps(
+            item["record"], sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        lines.append(
+            f"RECORD {safe(item['source_input_id'])} "
+            f"{safe(item['record_kind'])}: {safe(record)}"
+        )
     return "\n".join(lines)
 
 

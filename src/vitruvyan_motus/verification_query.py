@@ -1324,8 +1324,13 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         if spec is None:
             findings.append({"path": "$.companions.graphspec", "status": "not_verified", "reason": "trace binding requires one explicit GraphSpec companion"})
         else:
-            violations = [_violation(item) for item in validate.validate_trace(document, spec=spec)]
-            if not violations:
+            binding_violations = validate.validate_trace(document, spec=spec)
+            findings.extend({
+                "path": item.path,
+                "status": "mismatched",
+                "reason": f"{item.rule}: {item.message}",
+            } for item in binding_violations)
+            if not binding_violations:
                 findings.append({"path": "$.artifact", "status": "matched", "reason": "trace matched the supplied GraphSpec under existing SB rules"})
     elif kind == "execution_receipt":
         verdict = authoritative(validate.verify, document, one("trace"))

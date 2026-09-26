@@ -68,6 +68,19 @@ def test_trace_composes_existing_spec_correlated_rules():
     assert result["outcome"] == "matched"
 
 
+def test_trace_graphspec_binding_failure_is_a_mismatch_not_invalid():
+    trace = typed("trace", fixture("04-trace-happy-path.json"), "trace")
+    different_spec = typed(
+        "graphspec", fixture("01-graphspec-linear.json"), "different-spec",
+    )
+
+    result = verify_artifact(trace, [different_spec])
+
+    assert result["outcome"] == "mismatched"
+    assert result["violations"] == []
+    assert any(item["status"] == "mismatched" for item in result["findings"])
+
+
 def test_manifest_verification_preserves_an_in_flight_trace_companion():
     trace_document = fixture("04-trace-happy-path.json")
     trace_document["records"] = trace_document["records"][:-1]
