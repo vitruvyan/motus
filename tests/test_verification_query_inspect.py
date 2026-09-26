@@ -8,7 +8,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from vitruvyan_motus import inspect_artifact
+from vitruvyan_motus import inspect_artifact, query_artifacts
 from vitruvyan_motus.contract import validate
 import vitruvyan_motus.verification_query as verification_query
 
@@ -22,6 +22,23 @@ def fixture(name: str) -> dict:
 
 def typed(kind: str, document: object, input_id: str = "subject") -> dict:
     return {"input_id": input_id, "kind": kind, "media_type": "application/json", "document": document}
+
+
+def zip_bytes(entries) -> bytes:
+    target = io.BytesIO()
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
+        for name, payload in entries:
+            output.writestr(name, payload)
+    return target.getvalue()
+
+
+def binary_artifact(kind: str, data: bytes, input_id: str) -> dict:
+    return {
+        "input_id": input_id,
+        "kind": kind,
+        "media_type": "application/zip",
+        "content_base64": base64.b64encode(data).decode("ascii"),
+    }
 
 
 def test_valid_manifest_uses_the_existing_validator_and_exact_fingerprint():
@@ -86,36 +103,79 @@ def test_evidence_package_expansion_limits_run_before_domain_verification(monkey
         lambda _data: (_ for _ in ()).throw(AssertionError("domain verifier must not run")),
     )
 
-    def archive(entries):
-        target = io.BytesIO()
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
-            for name, payload in entries:
-                output.writestr(name, payload)
-        return target.getvalue()
-
     cases = [
-        archive((f"member-{index}", b"") for index in range(1_001)),
-        archive([("x" * 9_000, b"\0" * (28 * 1024 * 1024 + 1))]),
-        archive((f"large-{index}", b"\0" * (27 * 1024 * 1024)) for index in range(5)),
+        zip_bytes((f"member-{index}", b"") for index in range(1_001)),
+        zip_bytes([("x" * 9_000, b"\0" * (28 * 1024 * 1024 + 1))]),
+        zip_bytes((f"large-{index}", b"\0" * (27 * 1024 * 1024)) for index in range(5)),
     ]
     expected_reasons = (
         "member-count work limit",
         "member exceeds the expanded-byte limit",
-        "aggregate expanded-work limit",
+        "cumulative expanded-work limit",
     )
     for index, (data, reason) in enumerate(zip(cases, expected_reasons)):
-        artifact = {
-            "input_id": f"package-{index}",
-            "kind": "execution_evidence_package",
-            "media_type": "application/zip",
-            "content_base64": base64.b64encode(data).decode("ascii"),
-        }
+        artifact = binary_artifact("execution_evidence_package", data, f"package-{index}")
         result = inspect_artifact(artifact)
         assert result["outcome"] == "invalid"
         assert reason in result["findings"][0]["reason"]
         assert validate.validate_verification_query_message(result) == []
         if index == 1:
             assert len(result["findings"][0]["observed"]["member"]) <= 512
+
+
+def test_zip_member_count_is_checked_before_zipfile_directory_parsing(monkeypatch):
+    data = zip_bytes((f"member-{index}", b"") for index in range(1_001))
+    monkeypatch.setattr(
+        verification_query.zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("ZipFile must not parse an over-count directory")
+        ),
+    )
+    result = inspect_artifact(binary_artifact(
+        "execution_evidence_package", data, "over-count",
+    ))
+    assert result["outcome"] == "invalid"
+    assert "member-count" in result["findings"][0]["reason"]
+
+
+def test_zip_expansion_budget_is_cumulative_across_query_inputs(monkeypatch):
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    monkeypatch.setattr(
+        evidence,
+        "verify_package",
+        lambda _data: type("Verdict", (), {
+            "transport_ok": True, "damaged": (), "trace_violations": (), "verdict": None,
+        })(),
+    )
+    data = zip_bytes([("large", b"\0" * (27 * 1024 * 1024))])
+    artifacts = [
+        binary_artifact("execution_evidence_package", data, f"package-{index}")
+        for index in range(5)
+    ]
+    result = query_artifacts({
+        "kind": "artifact_identity",
+        "artifact_kind": "execution_evidence_package",
+        "fingerprint": "sha256:" + "0" * 64,
+    }, artifacts)
+    assert result["outcome"] == "invalid"
+    assert any("cumulative expanded-work" in item["reason"] for item in result["findings"])
+
+
+def test_nested_zip_work_is_preflighted_before_dossier_verification(monkeypatch):
+    dossier = __import__("vitruvyan_motus.regulatory_dossier", fromlist=["verify_regulatory_dossier"])
+    monkeypatch.setattr(
+        dossier,
+        "verify_regulatory_dossier",
+        lambda _data: (_ for _ in ()).throw(AssertionError("dossier verifier must not run")),
+    )
+    inner = zip_bytes([("large", b"\0" * (27 * 1024 * 1024))])
+    outer = zip_bytes((f"nested-{index}.zip", inner) for index in range(5))
+    result = inspect_artifact(binary_artifact(
+        "regulatory_evidence_dossier_export", outer, "dossier",
+    ))
+    assert result["outcome"] == "invalid"
+    assert "cumulative expanded-work" in result["findings"][0]["reason"]
 
 
 def test_inspection_takes_no_ownership_of_the_callers_document():

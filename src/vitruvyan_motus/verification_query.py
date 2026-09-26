@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import importlib
 import io
+import struct
 import zipfile
 import zlib
 from typing import Any
@@ -24,10 +25,21 @@ _RESULT_ITEM_LIMIT = 10_000
 _PACKAGE_MEMBER_LIMIT = 1_000
 _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
+_PACKAGE_DIRECTORY_TOTAL_MAX_BYTES = 16 * 1024 * 1024
+_PACKAGE_NESTING_LIMIT = 16
 
 
 def _bounded_member_name(name: str) -> str:
     return name if len(name) <= 512 else name[:509] + "..."
+
+
+class _ZipWorkBudget:
+    __slots__ = ("directory_bytes", "expanded_bytes", "members")
+
+    def __init__(self) -> None:
+        self.directory_bytes = 0
+        self.expanded_bytes = 0
+        self.members = 0
 
 _JSON_DISPATCH: dict[str, tuple[str, str | None]] = {
     "graphspec": ("validate_graphspec", "graph"),
@@ -186,61 +198,128 @@ def _json_inspection(
     }
 
 
-def _package_expansion_finding(data: bytes) -> dict[str, Any] | None:
-    """Bound ZIP work before the evidence-package verifier sees the archive."""
+def _zip_limit_finding(
+    reason: str, *, expected: Any = None, observed: Any = None,
+) -> dict[str, Any]:
+    finding = {"path": "$.members", "status": "not_verified", "reason": reason}
+    if expected is not None:
+        finding["expected"] = expected
+    if observed is not None:
+        finding["observed"] = observed
+    return finding
+
+
+def _zip_directory_claim(data: bytes) -> tuple[int, int] | None:
+    """Read the classic ZIP directory count/size without constructing ZipFile."""
+    offset = data.rfind(b"PK\x05\x06", max(0, len(data) - 65_557))
+    if offset < 0:
+        return None
+    if offset + 22 > len(data):
+        raise ValueError("truncated ZIP end-of-central-directory record")
+    (_signature, disk, directory_disk, entries_on_disk, entries, directory_size,
+     _directory_offset, comment_size) = struct.unpack_from("<4s4H2LH", data, offset)
+    if offset + 22 + comment_size != len(data):
+        raise ValueError("ZIP end-of-central-directory record is not terminal")
+    if disk != 0 or directory_disk != 0 or entries_on_disk != entries:
+        raise ValueError("multi-disk ZIP cannot be bounded by this interface")
+    if entries == 0xFFFF or directory_size == 0xFFFFFFFF:
+        raise ValueError("ZIP64 directory cannot be bounded by this interface")
+    return entries, directory_size
+
+
+def _package_expansion_finding(
+    data: bytes, budget: _ZipWorkBudget, depth: int = 0,
+) -> dict[str, Any] | None:
+    """Bound cumulative and nested ZIP work before a domain verifier runs."""
+    if depth > _PACKAGE_NESTING_LIMIT:
+        return _zip_limit_finding(
+            "nested ZIP depth exceeds the interface work limit",
+            expected=_PACKAGE_NESTING_LIMIT, observed=depth,
+        )
+    try:
+        claim = _zip_directory_claim(data)
+    except ValueError as exc:
+        return _zip_limit_finding(
+            "ZIP directory could not be bounded before parsing",
+            observed=str(exc),
+        )
+    if claim is None:
+        return None  # The authoritative verifier reports malformed transport.
+    claimed_members, directory_size = claim
+    if budget.members + claimed_members > _PACKAGE_MEMBER_LIMIT:
+        return _zip_limit_finding(
+            "request exceeds the cumulative ZIP member-count work limit",
+            expected=_PACKAGE_MEMBER_LIMIT,
+            observed=budget.members + claimed_members,
+        )
+    if budget.directory_bytes + directory_size > _PACKAGE_DIRECTORY_TOTAL_MAX_BYTES:
+        return _zip_limit_finding(
+            "request exceeds the cumulative ZIP directory-byte work limit",
+            expected=_PACKAGE_DIRECTORY_TOTAL_MAX_BYTES,
+            observed=budget.directory_bytes + directory_size,
+        )
+    budget.members += claimed_members
+    budget.directory_bytes += directory_size
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except (zipfile.BadZipFile, ValueError):
         return None  # The authoritative verifier reports malformed transport.
-    total = 0
     try:
         infos = archive.infolist()
-        if len(infos) > _PACKAGE_MEMBER_LIMIT:
-            return {
-                "path": "$.members", "status": "not_verified",
-                "expected": _PACKAGE_MEMBER_LIMIT, "observed": len(infos),
-                "reason": "evidence package exceeds the member-count work limit",
-            }
+        if len(infos) != claimed_members:
+            return _zip_limit_finding(
+                "ZIP directory count changed during bounded parsing",
+                expected=claimed_members, observed=len(infos),
+            )
         declared_total = sum(info.file_size for info in infos)
-        if declared_total > _PACKAGE_TOTAL_MAX_BYTES:
-            return {
-                "path": "$.members", "status": "not_verified",
-                "expected": _PACKAGE_TOTAL_MAX_BYTES, "observed": declared_total,
-                "reason": "evidence package exceeds the aggregate expanded-work limit",
-            }
+        if budget.expanded_bytes + declared_total > _PACKAGE_TOTAL_MAX_BYTES:
+            return _zip_limit_finding(
+                "request exceeds the cumulative expanded-work limit",
+                expected=_PACKAGE_TOTAL_MAX_BYTES,
+                observed=budget.expanded_bytes + declared_total,
+            )
         for info in infos:
             if info.file_size > _PACKAGE_MEMBER_MAX_BYTES:
-                return {
-                    "path": "$.members", "status": "not_verified",
-                    "expected": _PACKAGE_MEMBER_MAX_BYTES,
-                    "observed": {"member": _bounded_member_name(info.filename), "expanded_bytes": info.file_size},
-                    "reason": "evidence package member exceeds the expanded-byte limit",
-                }
+                return _zip_limit_finding(
+                    "ZIP member exceeds the expanded-byte limit",
+                    expected=_PACKAGE_MEMBER_MAX_BYTES,
+                    observed={"member": _bounded_member_name(info.filename), "expanded_bytes": info.file_size},
+                )
             member_total = 0
+            nested_chunks: list[bytes] | None = None
             with archive.open(info) as member:
                 while True:
                     chunk = member.read(min(
                         1024 * 1024,
                         _PACKAGE_MEMBER_MAX_BYTES - member_total + 1,
-                        _PACKAGE_TOTAL_MAX_BYTES - total + 1,
+                        _PACKAGE_TOTAL_MAX_BYTES - budget.expanded_bytes + 1,
                     ))
                     if not chunk:
                         break
+                    if member_total == 0 and chunk.startswith(b"PK"):
+                        nested_chunks = []
+                    if nested_chunks is not None:
+                        nested_chunks.append(chunk)
                     member_total += len(chunk)
-                    total += len(chunk)
+                    budget.expanded_bytes += len(chunk)
                     if member_total > _PACKAGE_MEMBER_MAX_BYTES:
-                        return {
-                            "path": "$.members", "status": "not_verified",
-                            "expected": _PACKAGE_MEMBER_MAX_BYTES,
-                            "observed": {"member": _bounded_member_name(info.filename), "expanded_bytes": member_total},
-                            "reason": "evidence package member exceeds the expanded-byte limit",
-                        }
-                    if total > _PACKAGE_TOTAL_MAX_BYTES:
-                        return {
-                            "path": "$.members", "status": "not_verified",
-                            "expected": _PACKAGE_TOTAL_MAX_BYTES, "observed": total,
-                            "reason": "evidence package exceeds the aggregate expanded-work limit",
-                        }
+                        return _zip_limit_finding(
+                            "ZIP member exceeds the expanded-byte limit",
+                            expected=_PACKAGE_MEMBER_MAX_BYTES,
+                            observed={"member": _bounded_member_name(info.filename), "expanded_bytes": member_total},
+                        )
+                    if budget.expanded_bytes > _PACKAGE_TOTAL_MAX_BYTES:
+                        return _zip_limit_finding(
+                            "request exceeds the cumulative expanded-work limit",
+                            expected=_PACKAGE_TOTAL_MAX_BYTES,
+                            observed=budget.expanded_bytes,
+                        )
+            if nested_chunks is not None:
+                nested_finding = _package_expansion_finding(
+                    b"".join(nested_chunks), budget, depth + 1,
+                )
+                if nested_finding is not None:
+                    return nested_finding
     except (NotImplementedError, RuntimeError, zipfile.LargeZipFile,
             zipfile.BadZipFile, EOFError, OSError, MemoryError, zlib.error) as exc:
         return {
@@ -253,9 +332,11 @@ def _package_expansion_finding(data: bytes) -> dict[str, Any] | None:
     return None
 
 
-def _package_inspection(input_id: str, kind: str, data: bytes) -> dict[str, Any]:
+def _package_inspection(
+    input_id: str, kind: str, data: bytes, budget: _ZipWorkBudget,
+) -> dict[str, Any]:
     evidence = importlib.import_module("vitruvyan_motus.evidence")
-    expansion_finding = _package_expansion_finding(data)
+    expansion_finding = _package_expansion_finding(data, budget)
     if expansion_finding is not None:
         return {
             "interface_version": "1.0.0", "message_type": "result",
@@ -289,8 +370,19 @@ def _package_inspection(input_id: str, kind: str, data: bytes) -> dict[str, Any]
     }
 
 
-def _dossier_export_inspection(input_id: str, kind: str, data: bytes) -> dict[str, Any]:
+def _dossier_export_inspection(
+    input_id: str, kind: str, data: bytes, budget: _ZipWorkBudget,
+) -> dict[str, Any]:
     dossier = importlib.import_module("vitruvyan_motus.regulatory_dossier")
+    expansion_finding = _package_expansion_finding(data, budget)
+    if expansion_finding is not None:
+        return {
+            "interface_version": "1.0.0", "message_type": "result",
+            "operation": "inspect", "outcome": "invalid",
+            "scope": _scope([input_id]),
+            "subject": {"input_id": input_id, "kind": kind, "fingerprint": dossier.regulatory_dossier_export_fingerprint(data)},
+            "violations": [], "findings": [expansion_finding], "matches": [], "records": [],
+        }
     verdict = dossier.verify_regulatory_dossier(data)
     findings = [
         {"path": item.path, "status": item.status, "expected": _json_value(item.expected), "observed": _json_value(item.observed), "reason": item.reason}
@@ -318,6 +410,10 @@ def inspect_artifact(artifact: Any) -> dict[str, Any]:
     Motus contract accepted the supplied artifact; it is not a binding,
     completeness, legal, safety, or compliance verdict.
     """
+    return _inspect_artifact(artifact, _ZipWorkBudget())
+
+
+def _inspect_artifact(artifact: Any, work_budget: _ZipWorkBudget) -> dict[str, Any]:
     request = {
         "interface_version": "1.0.0",
         "message_type": "request",
@@ -337,27 +433,37 @@ def inspect_artifact(artifact: Any) -> dict[str, Any]:
     else:
         data = base64.b64decode(artifact["content_base64"].encode("ascii"), validate=True)
         if kind == "execution_evidence_package":
-            result = _package_inspection(input_id, kind, data)
+            result = _package_inspection(input_id, kind, data, work_budget)
         else:
-            result = _dossier_export_inspection(input_id, kind, data)
+            result = _dossier_export_inspection(input_id, kind, data, work_budget)
     return _checked_result(result)
 
 
 def _validated_inputs(
-    artifacts: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]], work_budget: _ZipWorkBudget,
 ) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]:
     valid = []
     invalid = []
     for artifact in artifacts:
-        inspected = inspect_artifact(artifact)
+        inspected = _inspect_artifact(artifact, work_budget)
         if inspected["outcome"] == "valid":
             valid.append((artifact, inspected))
         else:
+            if inspected["findings"]:
+                detail = inspected["findings"][0]["reason"]
+            elif inspected["violations"]:
+                detail = inspected["violations"][0]["message"]
+            else:
+                detail = inspected["outcome"]
+            reason = (
+                "the supplied artifact did not satisfy its own Motus contract: "
+                + str(detail)
+            )[:8192]
             invalid.append({
                 "path": f"$.artifacts[{artifact['input_id']}]",
                 "status": "not_verified",
                 "observed": inspected["outcome"],
-                "reason": "the supplied artifact did not satisfy its own Motus contract",
+                "reason": reason,
             })
     return valid, invalid
 
@@ -387,9 +493,10 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
 
 def _query_result(
     artifacts: list[dict[str, Any]], projection: dict[str, Any],
+    work_budget: _ZipWorkBudget,
 ) -> dict[str, Any]:
     supplied_ids = [item["input_id"] for item in artifacts]
-    valid, invalid_findings = _validated_inputs(artifacts)
+    valid, invalid_findings = _validated_inputs(artifacts, work_budget)
     by_id = {item["input_id"]: (item, inspected) for item, inspected in valid}
     matches: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
@@ -545,7 +652,7 @@ def query_artifacts(
     violations = validate.validate_verification_query_message(request)
     if violations:
         return _invalid_request(violations, None, "query")
-    result = _query_result(list(artifacts), projection)
+    result = _query_result(list(artifacts), projection, _ZipWorkBudget())
     return _checked_result(result)
 
 
@@ -613,7 +720,8 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     if request_violations:
         input_id = artifact.get("input_id") if isinstance(artifact, dict) else None
         return _invalid_request(request_violations, input_id, "verify")
-    inspected = inspect_artifact(artifact)
+    work_budget = _ZipWorkBudget()
+    inspected = _inspect_artifact(artifact, work_budget)
     companions = companion_values
     scope_ids = [artifact["input_id"], *[item["input_id"] for item in companions]]
     subject = inspected["subject"]
@@ -624,7 +732,7 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     binary_pools: dict[str, list[bytes]] = {}
     companion_findings: list[dict[str, Any]] = []
     for item in companions:
-        companion_result = inspect_artifact(item)
+        companion_result = _inspect_artifact(item, work_budget)
         if companion_result["outcome"] != "valid":
             companion_findings.append({"path": f"$.companions.{item['input_id']}", "status": "not_verified", "reason": "the supplied companion did not satisfy its own Motus contract"})
             continue

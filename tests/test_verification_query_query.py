@@ -134,12 +134,12 @@ def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
     )
     assert result["outcome"] == "invalid"
     assert result["matches"] == []
-    assert result["findings"] == [{
-        "path": "$.artifacts[invalid-manifest]",
-        "status": "not_verified",
-        "observed": "invalid",
-        "reason": "the supplied artifact did not satisfy its own Motus contract",
-    }]
+    assert result["findings"][0]["path"] == "$.artifacts[invalid-manifest]"
+    assert result["findings"][0]["status"] == "not_verified"
+    assert result["findings"][0]["observed"] == "invalid"
+    assert result["findings"][0]["reason"].startswith(
+        "the supplied artifact did not satisfy its own Motus contract:"
+    )
 
 
 def test_ai_lifecycle_matches_and_provenance_exclude_unrelated_registration():

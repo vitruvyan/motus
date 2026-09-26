@@ -159,5 +159,19 @@
     "from": "_VQ_MAX_NESTING_DEPTH = 128",
     "to": "_VQ_MAX_NESTING_DEPTH = 10_000",
     "tests": "tests/test_verification_query_contract.py tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "ZIP expansion work is cumulative across query inputs",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "inspected = _inspect_artifact(artifact, work_budget)",
+    "to": "inspected = _inspect_artifact(artifact, _ZipWorkBudget())",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "nested ZIP work is included before dossier verification",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if nested_chunks is not None:\n                nested_finding = _package_expansion_finding(",
+    "to": "if False:\n                nested_finding = _package_expansion_finding(",
+    "tests": "tests/test_verification_query_inspect.py"
   }
 ]
