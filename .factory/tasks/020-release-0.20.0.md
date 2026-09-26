@@ -26,5 +26,8 @@ queries. No failed or successful measurement was retried to select a favourable
 result.
 
 Do not publish the draft GitHub Release or PyPI without separate founder
-approval. PR review, merge, post-merge verification, annotated source tag and
-post-tag roadmap closure remain.
+approval.
+
+Release closure completed on 2026-09-26: PR #196 merged as
+`6e97e222b49c6700dd86f934dffb19de2e4cba84`, Jenkins `main` build #19 passed,
+and annotated tag `v0.20.0` points at that exact merge.

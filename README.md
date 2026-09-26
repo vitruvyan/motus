@@ -14,7 +14,7 @@ The trace is not reconstructed from logs after execution.
 
 **The trace is part of the execution itself.**
 
-> **Current release candidate:** Motus 0.20.0 (`release/0.20.0`)
+> **Current release:** [Motus 0.20.0](https://github.com/vitruvyan/motus/tree/v0.20.0)
 >
 > Commitment window files written by releases through 0.13.0 use the legacy
 > envelope key `c`; releases from 0.14.0 write `commitment`.
@@ -30,7 +30,7 @@ conflicts, and subset-scoped lifecycle projection without deciding legal
 AI-system status, deployment, approval, official registration, compliance,
 global current state, or inventory completeness.
 
-The release candidate passes the unchanged per-release budget against v0.19.0
+The release passes the unchanged per-release budget against v0.19.0
 at **-3.6%, -2.3%, and -2.4%** across three independent Jenkins dispatches.
 The job ranges are -5.3% to -3.5%, -3.3% to +5.3%, and -6.7% to -0.2%; the
 paired spread is wider than every measured effect, so the honest conclusion is

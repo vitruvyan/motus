@@ -40,7 +40,7 @@ one-tag rule is restored.
 | 4 | Human Oversight Receipt | DONE | shipped in v0.17.0 |
 | 5 | Incident / CAPA Ledger | DONE | shipped in v0.18.0 |
 | 6 | Retention & Legal Hold | DONE | shipped in v0.19.0 |
-| 7 | AI System Registry | IMPLEMENTING | target v0.20.0 |
+| 7 | AI System Registry | DONE | shipped in v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | QUEUED | target v0.21.0 |
 | 10 | Verification and query API/CLI | QUEUED | target v0.22.0 |
@@ -83,22 +83,22 @@ resolution, subset-scoped blocker findings and stop conditions are governed by
 founder-accepted ADR-040 and implemented by the v0.19 retention contract and
 read-only verification surfaces. Motus never emits disposal clearance.
 
-### Point 7 / v0.20.0 — AI System Registry — implementing
+### Point 7 / v0.20.0 — AI System Registry — shipped
 
-ADR-041 proposes a neutral boundary between:
+Motus 0.20.0 defines the neutral boundary between:
 
 1. one immutable registration claim bound to one exact System Manifest;
 2. separate append-only lifecycle event claims; and
 3. bounded registry snapshots over exact supplied records.
 
-The proposed surface records producer claims and verifies their exact identities,
+The released surface records producer claims and verifies their exact identities,
 lineage and supplied bindings. It does not decide whether a subject is legally an
 AI system, in scope, deployed, current, approved, registered with an authority,
 safe, compliant or completely inventoried. A supplied chain or snapshot never
 becomes proof of global current state or completeness.
 
-The founder accepted ADR-041 on 2026-09-25. Contract-first implementation may
-begin without weakening the decision's stop conditions.
+The founder accepted ADR-041 on 2026-09-25. Contract-first implementation and
+the v0.20.0 release completed without weakening the decision's stop conditions.
 
 ### Existing Motus UI draft
 
@@ -139,12 +139,16 @@ UI state shown to the user.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-09-25. This section is a
+*Last reconciled against the repository on 2026-09-26. This section is a
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
-- **0.19.0** is the current source release (2026-09-25): the annotated tag
+- **0.20.0** is the current source release (2026-09-26): the annotated tag
+  points at verified merge commit `6e97e222b49c6700dd86f934dffb19de2e4cba84`
+  for AI System Registry v1. Its GitHub Release remains a draft and PyPI
+  publication is not authorised;
+- **0.19.0** (2026-09-25): the annotated tag
   points at verified merge commit `080f39cf9641de440bfa6dda72e1fa67383e317b`
   for Retention & Legal Hold v1. Its GitHub Release remains a draft and PyPI
   publication is not authorised;
