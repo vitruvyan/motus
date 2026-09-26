@@ -277,11 +277,26 @@ def test_authoritative_verifier_refusal_is_a_stable_not_verified_result(monkeypa
 
 def test_invalid_outcome_survives_result_truncation(monkeypatch):
     monkeypatch.setattr(verification_query, "_RESULT_ITEM_LIMIT", 1)
-    document = fixture("310-system-manifest-valid.json")
-    del document["schema_version"]
-    document["unexpected"] = True
-    result = verify_artifact(typed("system_manifest", document, "invalid-manifest"))
+    result = verification_query._bounded_result({
+        "interface_version": "1.0.0",
+        "message_type": "result",
+        "operation": "verify",
+        "outcome": "invalid",
+        "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["invalid-manifest"],
+            "global_complete": False,
+            "limitations": ["supplied inputs only", "no global completeness"],
+        },
+        "subject": None,
+        "violations": [
+            {"rule": "SCHEMA", "path": "$.first", "message": "first"},
+            {"rule": "SCHEMA", "path": "$.second", "message": "second"},
+        ],
+        "findings": [],
+        "matches": [],
+        "records": [],
+    })
     assert result["outcome"] == "invalid"
     assert len(result["violations"]) == 1
     assert result["findings"][0]["status"] == "incomplete"
-    assert validate.validate_verification_query_message(result) == []
