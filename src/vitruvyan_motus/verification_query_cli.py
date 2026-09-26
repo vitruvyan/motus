@@ -13,7 +13,8 @@ from typing import Any
 
 from vitruvyan_motus.verification_query import execute_verification_query
 
-_MAX_REQUEST_BYTES = 225 * 1024 * 1024
+_MAX_REQUEST_MIB = 352
+_MAX_REQUEST_BYTES = _MAX_REQUEST_MIB * 1024 * 1024
 _SUCCESS = frozenset({"valid", "matched", "completed"})
 
 
@@ -60,7 +61,9 @@ def _read_request_bytes(path: Path, limit: int = _MAX_REQUEST_BYTES) -> bytes:
         if descriptor >= 0:
             os.close(descriptor)
     if len(data) > limit:
-        raise ValueError("request exceeds the 225 MiB CLI input limit")
+        raise ValueError(
+            f"request exceeds the {_MAX_REQUEST_MIB} MiB CLI input limit"
+        )
     return data
 
 

@@ -108,10 +108,16 @@ def test_request_reader_bounds_the_open_stream(monkeypatch):
     monkeypatch.setattr(cli.os, "fdopen", lambda fd, mode: stream)
     monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o100644))
     monkeypatch.setattr(cli.os, "close", lambda _fd: None)
-    with pytest.raises(ValueError, match="225 MiB"):
+    with pytest.raises(ValueError, match="352 MiB"):
         cli._read_request_bytes(Path("request.json"), limit=4)
     assert stream.requested == 5
     assert opened["flags"] & getattr(cli.os, "O_NONBLOCK", 0) == getattr(cli.os, "O_NONBLOCK", 0)
+
+
+def test_cli_limit_covers_the_largest_contract_valid_combined_envelope():
+    decoded_binary_mib = 160
+    encoded_binary_mib = (decoded_binary_mib * 4 + 2) // 3
+    assert cli._MAX_REQUEST_MIB >= 128 + encoded_binary_mib + 8
 
 
 def test_request_reader_rejects_non_regular_streams(monkeypatch):

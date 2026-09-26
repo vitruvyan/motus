@@ -9,8 +9,6 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from vitruvyan_motus import execute_verification_query, query_artifacts, verify_artifact
 from vitruvyan_motus.contract import validate
 
@@ -50,10 +48,19 @@ def test_trace_composes_existing_spec_correlated_rules():
 
 
 def test_manifest_verification_preserves_an_in_flight_trace_companion():
-    manifest = typed("system_manifest", fixture("310-system-manifest-valid.json"), "manifest")
     trace_document = fixture("04-trace-happy-path.json")
     trace_document["records"] = trace_document["records"][:-1]
-    result = verify_artifact(manifest, [typed("trace", trace_document, "in-flight-trace")])
+    manifest_document = fixture("310-system-manifest-valid.json")
+    manifest_document["bindings"]["graphs"] = [
+        dict(trace_document["run"]["graph"])
+    ]
+    manifest = typed("system_manifest", manifest_document, "manifest")
+    unrelated = fixture("04-trace-happy-path.json")
+    unrelated["run"]["graph"]["name"] = "unrelated-graph"
+    result = verify_artifact(manifest, [
+        typed("trace", trace_document, "in-flight-trace"),
+        typed("trace", unrelated, "unrelated-trace"),
+    ])
     assert result["outcome"] != "invalid"
     assert [item["input_id"] for item in result["matches"]] == ["in-flight-trace"]
     assert not any(
@@ -67,17 +74,17 @@ def test_manifest_trace_join_budget_fails_closed_before_authority(monkeypatch):
         "vitruvyan_motus.system_manifest",
         fromlist=["verify_system_manifest_bindings"],
     )
-    monkeypatch.setattr(verification_query, "_MANIFEST_TRACE_JOIN_LIMIT", -1)
-    monkeypatch.setattr(
-        module, "verify_system_manifest_bindings",
-        lambda *_args, **_kwargs: pytest.fail("over-budget authority call"),
-    )
+    monkeypatch.setattr(module, "_TRACE_JOIN_LIMIT", -1)
     manifest = typed(
         "system_manifest", fixture("310-system-manifest-valid.json"), "manifest",
     )
     result = verify_artifact(manifest)
     assert result["outcome"] == "not_verified"
-    assert result["findings"][0]["path"] == "$.verification.work_budget"
+    assert any(
+        item["status"] == "not_verified"
+        and "trace join budget" in item["reason"]
+        for item in result["findings"]
+    )
 
 
 def test_control_application_without_registry_fails_closed():
@@ -210,6 +217,17 @@ def test_direct_facades_preserve_all_available_ids_on_interface_errors():
     assert verify_result["outcome"] == "invalid_request"
     assert verify_result["scope"]["input_ids"] == ["manifest", "bad-companion"]
     assert verify_result["scope"]["limitations"][0].startswith("verify covers")
+
+
+def test_invalid_request_scope_ids_are_result_bounded():
+    violation = SimpleNamespace(
+        rule="VQ1", path="$.artifacts", message="too many artifacts",
+    )
+    result = verification_query._invalid_request(
+        [violation], [f"input-{index}" for index in range(10_001)], "query",
+    )
+    assert result["outcome"] == "invalid_request"
+    assert len(result["scope"]["input_ids"]) == 10_000
 
 
 def test_duplicate_singular_companions_remain_conflict():

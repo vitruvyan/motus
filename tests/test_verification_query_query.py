@@ -432,6 +432,37 @@ def test_ai_lifecycle_excludes_unreferenced_foreign_same_id_rows():
     ]
 
 
+def test_ai_lifecycle_follows_cross_scope_lifecycle_predecessor_context():
+    target = ai_fixture(400, "ai_system_registration")
+    foreign_event = ai_fixture(401, "ai_system_registry_event")
+    foreign_event["producer_namespace"] = "foreign-producer"
+    foreign_event["registry_id"] = "foreign-registry"
+    foreign_fingerprint = validate.ai_system_registry_event_fingerprint(
+        foreign_event
+    )
+    target_event = ai_fixture(401, "ai_system_registry_event")
+    target_event["event_id"] = "target-update"
+    target_event["action"] = "updated"
+    target_event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(target)
+    )
+    target_event["predecessor_event_fingerprint"] = foreign_fingerprint
+    result = query_artifacts({
+        "kind": "ai_system_lifecycle",
+        "producer_namespace": target["producer_namespace"],
+        "registration_id": target["registration_id"],
+    }, [
+        typed("ai_system_registration", target, "target-registration"),
+        typed("ai_system_registry_event", foreign_event, "foreign-event"),
+        typed("ai_system_registry_event", target_event, "target-event"),
+    ])
+    assert any(
+        item["status"] == "conflict" and item["path"] == "lifecycle:scope"
+        for item in result["findings"]
+    )
+    assert all(item["input_id"] != "foreign-event" for item in result["matches"])
+
+
 def test_ai_lifecycle_does_not_match_unselected_same_registration_events():
     target = ai_fixture(400, "ai_system_registration")
     first = ai_fixture(401, "ai_system_registry_event")

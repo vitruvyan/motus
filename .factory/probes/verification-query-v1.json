@@ -418,5 +418,47 @@
     "from": "\"scope\": _scope(ids, operation),",
     "to": "\"scope\": _scope(ids),",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid request scope identifiers remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if len(ids) == _RESULT_ITEM_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "system manifest authority enforces the shared trace join budget",
+    "file": "src/vitruvyan_motus/system_manifest.py",
+    "from": "if trace_join_work > _TRACE_JOIN_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "profiles reuse one bounded manifest binding verdict",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "if kind == \"system_manifest\":\n                status, reason = manifest_evaluation",
+    "to": "if False:\n                status, reason = manifest_evaluation",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "manifest provenance excludes traces not passed to authority",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "trace_values = pools.get(\"trace\", [])",
+    "to": "trace_values = many(\"trace\")",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI capacity covers the contract valid combined envelope",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "_MAX_REQUEST_MIB = 352",
+    "to": "_MAX_REQUEST_MIB = 225",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "AI lifecycle context follows lifecycle predecessor references",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "item[\"document\"].get(\"predecessor_event_fingerprint\"),",
+    "to": "None,",
+    "tests": "tests/test_verification_query_query.py"
   }
 ]

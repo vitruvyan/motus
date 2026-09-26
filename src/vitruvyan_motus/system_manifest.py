@@ -29,6 +29,7 @@ __all__ = [
 _MATCHED = "matched"
 _MISMATCHED = "mismatched"
 _NOT_VERIFIED = "not verified"
+_TRACE_JOIN_LIMIT = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +199,20 @@ def verify_system_manifest_bindings(
 
     spec_by_identity = _spec_index(tuple(graph_specs), validate)
     trace_documents = _trace_snapshots(tuple(traces), validate)
+
+    trace_join_work = (
+        len(manifest_document["bindings"]["graphs"])
+        * len(trace_documents)
+    )
+    if trace_join_work > _TRACE_JOIN_LIMIT:
+        return SystemManifestBindingVerdict(
+            fingerprint, (), (SystemManifestBindingFinding(
+                "$.bindings.graphs", _NOT_VERIFIED,
+                f"at most {_TRACE_JOIN_LIMIT} manifest/trace comparisons",
+                str(trace_join_work),
+                "binding verification exceeded the bounded trace join budget",
+            ),),
+        )
 
     findings: list[SystemManifestBindingFinding] = []
     motus = manifest_document["bindings"]["motus"]

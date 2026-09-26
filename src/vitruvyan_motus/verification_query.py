@@ -213,6 +213,8 @@ def _invalid_request(
                 and any(not char.isspace() for char in value)
                 and value not in ids):
             ids.append(value)
+            if len(ids) == _RESULT_ITEM_LIMIT:
+                break
     return _checked_result({
         "interface_version": "1.0.0",
         "message_type": "result",
@@ -929,9 +931,13 @@ def _query_result(
             for _, inspected in target_events
         }
         pending = [
-            item["document"].get("supersedes")
+            predecessor
             for item, _ in target_events
-            if item["document"].get("supersedes") is not None
+            for predecessor in (
+                item["document"].get("supersedes"),
+                item["document"].get("predecessor_event_fingerprint"),
+            )
+            if predecessor is not None
         ]
         while pending:
             fingerprint = pending.pop()
@@ -941,9 +947,16 @@ def _query_result(
             if contextual is None:
                 continue
             contextual_event_ids.add(fingerprint)
-            predecessor = contextual[0]["document"].get("supersedes")
-            if predecessor is not None:
-                pending.append(predecessor)
+            pending.extend(
+                predecessor
+                for predecessor in (
+                    contextual[0]["document"].get("supersedes"),
+                    contextual[0]["document"].get(
+                        "predecessor_event_fingerprint"
+                    ),
+                )
+                if predecessor is not None
+            )
         events = [
             item["document"] for item, inspected in all_events
             if inspected["subject"]["fingerprint"] in contextual_event_ids
@@ -1186,7 +1199,7 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
         module = importlib.import_module("vitruvyan_motus.system_manifest")
         graph_values = many("graphspec")
-        trace_values = many("trace")
+        trace_values = pools.get("trace", [])
         binding_keys = {
             (
                 item["name"], item["version"], item["spec_schema_version"],
@@ -1194,15 +1207,17 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             )
             for item in document["bindings"]["graphs"]
         }
-        relevant_traces = [
-            value for value in trace_values
+        relevant_traces = []
+        for value, identity in zip(
+                trace_values, companion_subjects.get("trace", ())):
             if (
                 value.get("run", {}).get("graph", {}).get("name"),
                 value.get("run", {}).get("graph", {}).get("version"),
                 value.get("run", {}).get("graph", {}).get("spec_schema_version"),
                 value.get("run", {}).get("graph", {}).get("graph_fingerprint"),
-            ) in binding_keys
-        ]
+            ) in binding_keys:
+                relevant_traces.append(value)
+                used_companions[identity["input_id"]] = identity
         join_work = len(document["bindings"]["graphs"]) * len(relevant_traces)
         if join_work > _MANIFEST_TRACE_JOIN_LIMIT:
             findings.append({

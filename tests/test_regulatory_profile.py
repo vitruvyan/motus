@@ -272,6 +272,24 @@ def test_assessment_is_bound_to_one_profile_snapshot(monkeypatch):
     ]
 
 
+def test_repeated_manifest_expectations_reuse_one_binding_verdict(monkeypatch):
+    profile = _profile("system_manifest")
+    profile["requirements"].append({
+        "requirement_ref": "REQ-002",
+        "evidence": [{"kind": "system_manifest"}],
+    })
+    calls = []
+
+    def evaluate(kind, **_kwargs):
+        calls.append(kind)
+        return "not_verified", "bounded manifest result"
+
+    monkeypatch.setattr(regulatory_profile, "_evaluate_kind", evaluate)
+    assessment = assess_evidence_profile(profile)
+    assert calls == ["system_manifest"]
+    assert len(assessment.findings) == 2
+
+
 def test_regulatory_profile_is_reachable_from_motus_validate(tmp_path):
     profile = _profile("execution_receipt")
     path = tmp_path / "profile.json"
