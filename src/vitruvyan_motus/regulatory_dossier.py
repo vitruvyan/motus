@@ -263,15 +263,43 @@ def _converted_findings(prefix: str, values: Iterable[Any]) -> list[RegulatoryDo
     return converted
 
 
+def _document_index(
+    documents: dict[str, list[dict[str, Any]]], validate: Any,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Derive each companion fingerprint once for all composition lookups."""
+    index: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for kind, values in documents.items():
+        stem = "receipt" if kind == "execution_receipt" else kind
+        fingerprint_fn = getattr(validate, stem + "_fingerprint")
+        for value in values:
+            fingerprint = fingerprint_fn(value)
+            index.setdefault((kind, fingerprint), []).append(value)
+    return index
+
+
+def _execution_receipt_index(
+    receipts: Iterable[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Index receipt BEGIN locators once while preserving ambiguity."""
+    index: dict[str, list[dict[str, Any]]] = {}
+    for receipt in receipts:
+        for segment in receipt["segments"]:
+            commitment = segment["begin"]["commitment"]
+            execution_ref = (
+                f"{commitment['tenant']}/{commitment['writer_id']}/"
+                f"{commitment['sequence']}"
+            )
+            index.setdefault(execution_ref, []).append(receipt)
+    return index
+
+
 def _matching_document(
-    documents: dict[str, list[dict[str, Any]]], kind: str,
-    expected: str | None, validate: Any,
+    index: dict[tuple[str, str], list[dict[str, Any]]], kind: str,
+    expected: str | None,
 ) -> dict[str, Any] | None:
     if expected is None:
         return None
-    stem = "receipt" if kind == "execution_receipt" else kind
-    fingerprint_fn = getattr(validate, stem + "_fingerprint")
-    matches = [value for value in documents.get(kind, ()) if fingerprint_fn(value) == expected]
+    matches = index.get((kind, expected), ())
     return matches[0] if len(matches) == 1 else None
 
 
@@ -281,12 +309,17 @@ def _compose_existing_verifiers(
 ) -> tuple[RegulatoryDossierFinding, ...]:
     """Use existing Motus authorities; never reimplement their semantics."""
     findings: list[RegulatoryDossierFinding] = []
+    document_index = _document_index(documents, validate)
+    receipt_index = _execution_receipt_index(
+        documents.get("execution_receipt", ())
+    )
 
     from vitruvyan_motus.risk_control import verify_control_application_bindings
     for application in documents.get("control_application", ()):
         app_fp = validate.control_application_fingerprint(application)
         registry = _matching_document(
-            documents, "risk_control_registry", application["registry_fingerprint"], validate,
+            document_index, "risk_control_registry",
+            application["registry_fingerprint"],
         )
         if registry is None:
             findings.append(_finding(
@@ -296,17 +329,13 @@ def _compose_existing_verifiers(
             ))
             continue
         manifest = _matching_document(
-            documents, "system_manifest", application.get("manifest_fingerprint"), validate,
+            document_index, "system_manifest",
+            application.get("manifest_fingerprint"),
         )
-        receipt = None
-        receipts = documents.get("execution_receipt", ())
-        if receipts:
-            from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
-            matching = [value for value in receipts if receipt_segment_for_execution_ref(
-                value, application["execution_ref"]
-            ) is not None]
-            if len(matching) == 1:
-                receipt = matching[0]
+        matching_receipts = receipt_index.get(application["execution_ref"], ())
+        receipt = (
+            matching_receipts[0] if len(matching_receipts) == 1 else None
+        )
         verdict = verify_control_application_bindings(
             application, registry=registry, manifest=manifest, receipt=receipt,
         )
@@ -318,18 +347,25 @@ def _compose_existing_verifiers(
     for oversight in documents.get("human_oversight_receipt", ()):
         fp = validate.human_oversight_receipt_fingerprint(oversight)
         bindings = oversight.get("bindings", {})
-        receipt = None
-        from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
-        matches = [value for value in documents.get("execution_receipt", ())
-                   if receipt_segment_for_execution_ref(value, oversight["execution_ref"]) is not None]
-        if len(matches) == 1:
-            receipt = matches[0]
+        matching_receipts = receipt_index.get(oversight["execution_ref"], ())
+        receipt = (
+            matching_receipts[0] if len(matching_receipts) == 1 else None
+        )
         verdict = verify_human_oversight_bindings(
             oversight,
             execution_receipt=receipt,
-            manifest=_matching_document(documents, "system_manifest", bindings.get("manifest_fingerprint"), validate),
-            registry=_matching_document(documents, "risk_control_registry", bindings.get("registry_fingerprint"), validate),
-            control_application=_matching_document(documents, "control_application", bindings.get("control_application_fingerprint"), validate),
+            manifest=_matching_document(
+                document_index, "system_manifest",
+                bindings.get("manifest_fingerprint"),
+            ),
+            registry=_matching_document(
+                document_index, "risk_control_registry",
+                bindings.get("registry_fingerprint"),
+            ),
+            control_application=_matching_document(
+                document_index, "control_application",
+                bindings.get("control_application_fingerprint"),
+            ),
         )
         findings.extend(_converted_findings(
             f"binding:human_oversight_receipt:{fp}", verdict.findings,
@@ -372,8 +408,8 @@ def _compose_existing_verifiers(
         verdict = verify_retention_application_bindings(
             application,
             policy=_matching_document(
-                documents, "retention_policy_declaration",
-                application["policy_fingerprint"], validate,
+                document_index, "retention_policy_declaration",
+                application["policy_fingerprint"],
             ),
             holds=documents.get("legal_hold_declaration", ()),
             snapshots=documents.get("retention_scope_snapshot", ()),

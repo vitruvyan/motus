@@ -90,6 +90,31 @@ def dossier(*requested: str):
     return manifest, {"profile/profile.json": payload}
 
 
+def test_companion_index_derives_each_fingerprint_once(monkeypatch):
+    registry = json.loads(
+        (ROOT / JSON_FIXTURES["risk_control_registry"]).read_text("utf-8")
+    )["instance"]
+    expected = validate.risk_control_registry_fingerprint(registry)
+    original = validate.risk_control_registry_fingerprint
+    calls = 0
+
+    def counted(document):
+        nonlocal calls
+        calls += 1
+        return original(document)
+
+    monkeypatch.setattr(validate, "risk_control_registry_fingerprint", counted)
+    index = dossier_module._document_index(
+        {"risk_control_registry": [registry]}, validate,
+    )
+
+    for _ in range(500):
+        assert dossier_module._matching_document(
+            index, "risk_control_registry", expected,
+        ) == registry
+    assert calls == 1
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()

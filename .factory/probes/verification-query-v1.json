@@ -474,5 +474,12 @@
     "from": "execution_join_work > _EXECUTION_JOIN_WORK_LIMIT",
     "to": "False",
     "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "dossier composition reuses precomputed companion fingerprints",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "matches = index.get((kind, expected), ())",
+    "to": "matches = ()",
+    "tests": "tests/test_regulatory_dossier.py"
   }
 ]
