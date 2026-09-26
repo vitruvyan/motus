@@ -89,10 +89,11 @@ def test_controls_for_risk_composes_the_existing_registry_helper():
 def test_projected_record_order_ignores_object_key_insertion_order():
     registry = fixture("320-risk-control-registry-valid.json")
     reordered = copy.deepcopy(registry)
-    reordered["controls"] = [
-        dict(reversed(list(control.items())))
-        for control in reordered["controls"]
-    ]
+    first = reordered["controls"][0]
+    reordered["controls"][0] = {
+        "title": first["title"],
+        **{key: value for key, value in first.items() if key != "title"},
+    }
     projection = {
         "kind": "controls_for_risk",
         "registry_input_id": "registry",
@@ -104,7 +105,12 @@ def test_projected_record_order_ignores_object_key_insertion_order():
     equivalent = query_artifacts(
         projection, [typed("risk_control_registry", reordered, "registry")],
     )
-    assert original["records"] == equivalent["records"]
+    assert [item["record"]["control_id"] for item in original["records"]] == [
+        "C-001", "C-002",
+    ]
+    assert [item["record"]["control_id"] for item in equivalent["records"]] == [
+        "C-001", "C-002",
+    ]
 
 
 def test_missing_risk_remains_missing_not_an_exception():

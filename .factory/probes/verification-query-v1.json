@@ -65,8 +65,8 @@
   {
     "name": "missing correction predecessors remain visible",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if not candidates:\n                    if parent in context_fingerprints:",
-    "to": "if False:\n                    if parent in context_fingerprints:",
+    "from": "if not candidates:\n                    context_count = context_fingerprints.get(parent, 0)",
+    "to": "if False:\n                    context_count = context_fingerprints.get(parent, 0)",
     "tests": "tests/test_verification_query_query.py"
   },
   {
