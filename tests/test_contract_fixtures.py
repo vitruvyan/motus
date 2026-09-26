@@ -146,6 +146,7 @@ def _run_fixture(wrapper: dict):
      "human-oversight-receipt.v1.schema.json",
      "regulatory-evidence-profile.v1.schema.json",
      "regulatory-evidence-dossier.v1.schema.json",
+     "verification-query.v1.schema.json",
      "incident-declaration.v1.schema.json", "capa-action.v1.schema.json",
      "incident-capa-ledger.v1.schema.json"],
 )

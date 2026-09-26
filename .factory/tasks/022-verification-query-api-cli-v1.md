@@ -95,4 +95,10 @@ Point 10 / 0.22.0 is complete only when:
 - dedicated branch created from `origin/main` at
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
 - ADR-043 accepted by the founder on 2026-09-26;
-- contract implementation is now authorised but has not yet started.
+- contract-first interface envelope implemented with explicit typed inputs,
+  closed operations and projections, supplied-input result scope and bounded
+  resources;
+- contract, fixture and real-wheel packaging tests: `246 passed`;
+- full suite on the same working diff: `1825 passed, 6 skipped`;
+- `git diff --check`: passed;
+- runtime facade and CLI are not part of this checkpoint.

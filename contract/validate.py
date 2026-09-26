@@ -113,6 +113,7 @@ _CONTROL_APPLICATION_SCHEMA_FILE = "control-application.v1.schema.json"
 _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
 _REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schema.json"
 _REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE = "regulatory-evidence-dossier.v1.schema.json"
+_VERIFICATION_QUERY_SCHEMA_FILE = "verification-query.v1.schema.json"
 _INCIDENT_DECLARATION_SCHEMA_FILE = "incident-declaration.v1.schema.json"
 _CAPA_ACTION_SCHEMA_FILE = "capa-action.v1.schema.json"
 _INCIDENT_CAPA_LEDGER_SCHEMA_FILE = "incident-capa-ledger.v1.schema.json"
@@ -964,6 +965,11 @@ def load_regulatory_evidence_dossier_schema() -> dict:
     return _load(_REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE)
 
 
+def load_verification_query_schema() -> dict:
+    """The ADR-043 ephemeral verification/query interface schema."""
+    return _load(_VERIFICATION_QUERY_SCHEMA_FILE)
+
+
 def load_incident_declaration_schema() -> dict:
     """The IncidentDeclaration v1 schema, loaded relative to this file."""
     return _load(_INCIDENT_DECLARATION_SCHEMA_FILE)
@@ -1197,6 +1203,10 @@ def _regulatory_evidence_dossier_validator() -> Draft202012Validator:
             registry=_regulatory_dossier_schema_registry(),
         )
     return _VALIDATORS["regulatory-evidence-dossier"]
+
+
+def _verification_query_validator() -> Draft202012Validator:
+    return _validator("verification-query", load_verification_query_schema())
 
 
 def _incident_capa_schema_registry() -> Registry:
@@ -2049,6 +2059,152 @@ def validate_regulatory_evidence_profile(document: dict) -> list[Violation]:
             ))
         seen.add(ref)
 
+    return violations
+
+
+# --------------------------------------------------------------------------- #
+# Verification/query interface semantics — ADR-043 rules VQ1-VQ4             #
+# --------------------------------------------------------------------------- #
+
+_VQ_MAX_JSON_DOCUMENT_BYTES = 28 * 1024 * 1024
+_VQ_MAX_JSON_TOTAL_BYTES = 128 * 1024 * 1024
+_VQ_MAX_BINARY_TOTAL_BYTES = 160 * 1024 * 1024
+
+
+def _vq_inputs(message: dict[str, Any]) -> list[dict[str, Any]]:
+    if message.get("message_type") != "request":
+        return []
+    operation = message["operation"]
+    if operation == "inspect":
+        return [message["artifact"]]
+    if operation == "verify":
+        return [message["artifact"], *message["companions"]]
+    return list(message["artifacts"])
+
+
+def validate_verification_query_message(document: dict) -> list[Violation]:
+    """Validate one ephemeral ADR-043 request or result envelope.
+
+    A clean message is well formed and resource bounded. It is not evidence,
+    does not make its contents valid, and never establishes global completeness
+    or compliance.
+    """
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    schema = load_verification_query_schema()
+    violations += _schema_violations(
+        schema, _verification_query_validator(), document
+    )
+    if violations:
+        return violations
+
+    if document["message_type"] == "request":
+        inputs = _vq_inputs(document)
+        seen: set[str] = set()
+        json_total = 0
+        binary_total = 0
+        for index, item in enumerate(inputs):
+            input_id = item["input_id"]
+            if input_id in seen:
+                violations.append(Violation(
+                    "VQ1", f"$.inputs[{index}].input_id",
+                    "input_id values must be unique within one request",
+                ))
+            seen.add(input_id)
+
+            if item["media_type"] == "application/json":
+                size = len(canonical_json(item["document"]))
+                json_total += size
+                if size > _VQ_MAX_JSON_DOCUMENT_BYTES:
+                    violations.append(Violation(
+                        "VQ2", f"$.inputs[{index}].document",
+                        "canonical JSON document exceeds the 28 MiB per-input limit",
+                    ))
+            else:
+                try:
+                    decoded = base64.b64decode(
+                        item["content_base64"].encode("ascii"), validate=True
+                    )
+                except (UnicodeEncodeError, binascii.Error):
+                    violations.append(Violation(
+                        "VQ2", f"$.inputs[{index}].content_base64",
+                        "binary artifact is not strict padded base64",
+                    ))
+                    continue
+                binary_total += len(decoded)
+
+        if json_total > _VQ_MAX_JSON_TOTAL_BYTES:
+            violations.append(Violation(
+                "VQ2", "$", "canonical JSON inputs exceed the 128 MiB request limit",
+            ))
+        if binary_total > _VQ_MAX_BINARY_TOTAL_BYTES:
+            violations.append(Violation(
+                "VQ2", "$", "decoded binary inputs exceed the 160 MiB request limit",
+            ))
+
+        projection = document.get("projection")
+        if (
+            isinstance(projection, dict)
+            and projection.get("kind") == "execution_ref"
+            and _canonical_execution_ref_parts(projection["execution_ref"]) is None
+        ):
+            violations.append(Violation(
+                "VQ3", "$.projection.execution_ref",
+                "execution_ref must use the canonical tenant/writer/sequence coordinate",
+            ))
+        if isinstance(projection, dict):
+            by_id = {item["input_id"]: item for item in inputs}
+            reference: tuple[str, str, str] | None = None
+            if projection.get("kind") in ("controls_for_risk", "risks_for_control"):
+                reference = (
+                    "$.projection.registry_input_id",
+                    projection["registry_input_id"],
+                    "risk_control_registry",
+                )
+            elif projection.get("kind") == "dossier_membership":
+                reference = (
+                    "$.projection.dossier_input_id",
+                    projection["dossier_input_id"],
+                    "regulatory_evidence_dossier",
+                )
+            if reference is not None:
+                path, input_id, required_kind = reference
+                supplied = by_id.get(input_id)
+                if supplied is None or supplied["kind"] != required_kind:
+                    violations.append(Violation(
+                        "VQ4", path,
+                        "projection source must name a supplied input of kind "
+                        f"{required_kind!r}",
+                    ))
+        return violations
+
+    encoded_size = len(canonical_json(document))
+    if encoded_size > _VQ_MAX_JSON_TOTAL_BYTES:
+        violations.append(Violation(
+            "VQ2", "$", "canonical result exceeds the 128 MiB result limit",
+        ))
+
+    scope_ids = set(document["scope"]["input_ids"])
+    referenced: list[tuple[str, str]] = []
+    subject = document["subject"]
+    if subject is not None:
+        referenced.append(("$.subject.input_id", subject["input_id"]))
+    referenced.extend(
+        (f"$.matches[{index}].input_id", item["input_id"])
+        for index, item in enumerate(document["matches"])
+    )
+    referenced.extend(
+        (f"$.records[{index}].source_input_id", item["source_input_id"])
+        for index, item in enumerate(document["records"])
+    )
+    for path, input_id in referenced:
+        if input_id not in scope_ids:
+            violations.append(Violation(
+                "VQ4", path,
+                "result may reference only input_id values declared in its supplied scope",
+            ))
     return violations
 
 

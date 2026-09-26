@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.com/motus/contract/verification-query.v1.schema.json",
+  "title": "Vitruvyan Motus Verification and Query Interface, v1",
+  "description": "ADR-043. Ephemeral request and result envelopes for explicit read-only verification and bounded projections over exact caller-supplied Motus artifacts. These messages are not evidence and never establish compliance or global completeness.",
+  "oneOf": [
+    {"$ref": "#/$defs/Request"},
+    {"$ref": "#/$defs/Result"}
+  ],
+  "$defs": {
+    "InputId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "BoundedToken": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "\\S"},
+    "BoundedText": {"type": "string", "maxLength": 8192},
+    "Fingerprint": {"type": "string", "pattern": "^(?:[a-z][a-z0-9_-]{0,63}:)?sha256:[0-9a-f]{64}$"},
+    "ArtifactKind": {
+      "enum": [
+        "graphspec", "trace", "commitment", "checkpoint",
+        "execution_receipt", "execution_evidence_package", "system_manifest",
+        "risk_control_registry", "control_application", "human_oversight_receipt",
+        "regulatory_evidence_profile", "regulatory_evidence_dossier",
+        "regulatory_evidence_dossier_export", "incident_declaration", "capa_action",
+        "incident_capa_ledger", "retention_policy_declaration",
+        "legal_hold_declaration", "retention_scope_snapshot",
+        "retention_trigger_occurrence", "retention_application",
+        "custody_observation", "ai_system_registration",
+        "ai_system_registry_event", "ai_system_registry_snapshot"
+      ]
+    },
+    "JsonArtifactKind": {
+      "enum": [
+        "graphspec", "trace", "commitment", "checkpoint", "execution_receipt",
+        "system_manifest", "risk_control_registry", "control_application",
+        "human_oversight_receipt", "regulatory_evidence_profile",
+        "regulatory_evidence_dossier", "incident_declaration", "capa_action",
+        "incident_capa_ledger", "retention_policy_declaration",
+        "legal_hold_declaration", "retention_scope_snapshot",
+        "retention_trigger_occurrence", "retention_application",
+        "custody_observation", "ai_system_registration",
+        "ai_system_registry_event", "ai_system_registry_snapshot"
+      ]
+    },
+    "BinaryArtifactKind": {
+      "enum": ["execution_evidence_package", "regulatory_evidence_dossier_export"]
+    },
+    "JsonArtifactInput": {
+      "type": "object",
+      "required": ["input_id", "kind", "media_type", "document"],
+      "additionalProperties": false,
+      "properties": {
+        "input_id": {"$ref": "#/$defs/InputId"},
+        "kind": {"$ref": "#/$defs/JsonArtifactKind"},
+        "media_type": {"const": "application/json"},
+        "document": {}
+      }
+    },
+    "BinaryArtifactInput": {
+      "type": "object",
+      "required": ["input_id", "kind", "media_type", "content_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "input_id": {"$ref": "#/$defs/InputId"},
+        "kind": {"$ref": "#/$defs/BinaryArtifactKind"},
+        "media_type": {"const": "application/zip"},
+        "content_base64": {
+          "type": "string",
+          "maxLength": 223696216,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      }
+    },
+    "ArtifactInput": {
+      "oneOf": [
+        {"$ref": "#/$defs/JsonArtifactInput"},
+        {"$ref": "#/$defs/BinaryArtifactInput"}
+      ]
+    },
+    "Projection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "artifact_kind", "fingerprint"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "artifact_identity"},
+            "artifact_kind": {"$ref": "#/$defs/ArtifactKind"},
+            "fingerprint": {"$ref": "#/$defs/Fingerprint"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "execution_ref"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "execution_ref"},
+            "execution_ref": {"type": "string", "minLength": 5, "maxLength": 8192}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "registry_input_id", "risk_id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "controls_for_risk"},
+            "registry_input_id": {"$ref": "#/$defs/InputId"},
+            "risk_id": {"$ref": "#/$defs/BoundedToken"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "registry_input_id", "control_id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "risks_for_control"},
+            "registry_input_id": {"$ref": "#/$defs/InputId"},
+            "control_id": {"$ref": "#/$defs/BoundedToken"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "artifact_kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "correction_lineage"},
+            "artifact_kind": {
+              "enum": [
+                "regulatory_evidence_dossier", "incident_declaration", "capa_action",
+                "retention_policy_declaration", "legal_hold_declaration",
+                "retention_scope_snapshot", "retention_trigger_occurrence",
+                "retention_application", "custody_observation",
+                "ai_system_registration", "ai_system_registry_event"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dossier_input_id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "dossier_membership"},
+            "dossier_input_id": {"$ref": "#/$defs/InputId"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "producer_namespace", "ai_system_id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "ai_system_lifecycle"},
+            "producer_namespace": {"$ref": "#/$defs/BoundedToken"},
+            "ai_system_id": {"$ref": "#/$defs/BoundedToken"}
+          }
+        }
+      ]
+    },
+    "Request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["interface_version", "message_type", "operation", "artifact"],
+          "additionalProperties": false,
+          "properties": {
+            "interface_version": {"const": "1.0.0"},
+            "message_type": {"const": "request"},
+            "operation": {"const": "inspect"},
+            "artifact": {"$ref": "#/$defs/ArtifactInput"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["interface_version", "message_type", "operation", "artifact", "companions"],
+          "additionalProperties": false,
+          "properties": {
+            "interface_version": {"const": "1.0.0"},
+            "message_type": {"const": "request"},
+            "operation": {"const": "verify"},
+            "artifact": {"$ref": "#/$defs/ArtifactInput"},
+            "companions": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/ArtifactInput"}}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["interface_version", "message_type", "operation", "projection", "artifacts"],
+          "additionalProperties": false,
+          "properties": {
+            "interface_version": {"const": "1.0.0"},
+            "message_type": {"const": "request"},
+            "operation": {"const": "query"},
+            "projection": {"$ref": "#/$defs/Projection"},
+            "artifacts": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/$defs/ArtifactInput"}}
+          }
+        }
+      ]
+    },
+    "Violation": {
+      "type": "object",
+      "required": ["rule", "path", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": {"$ref": "#/$defs/BoundedToken"},
+        "path": {"$ref": "#/$defs/BoundedText"},
+        "message": {"$ref": "#/$defs/BoundedText"}
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "required": ["path", "status", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/$defs/BoundedText"},
+        "status": {"enum": ["matched", "mismatched", "missing", "not_verified", "conflict", "damaged", "incomplete"]},
+        "expected": {},
+        "observed": {},
+        "reason": {"$ref": "#/$defs/BoundedText"}
+      }
+    },
+    "ArtifactResultIdentity": {
+      "type": "object",
+      "required": ["input_id", "kind", "fingerprint"],
+      "additionalProperties": false,
+      "properties": {
+        "input_id": {"$ref": "#/$defs/InputId"},
+        "kind": {"$ref": "#/$defs/ArtifactKind"},
+        "fingerprint": {"oneOf": [{"$ref": "#/$defs/Fingerprint"}, {"type": "null"}]}
+      }
+    },
+    "QueryRecord": {
+      "type": "object",
+      "required": ["source_input_id", "record_kind", "record"],
+      "additionalProperties": false,
+      "properties": {
+        "source_input_id": {"$ref": "#/$defs/InputId"},
+        "record_kind": {"enum": ["artifact", "risk", "control", "lineage_edge", "dossier_entry", "ai_lifecycle"]},
+        "record": {}
+      }
+    },
+    "Scope": {
+      "type": "object",
+      "required": ["scope_kind", "input_ids", "global_complete", "limitations"],
+      "additionalProperties": false,
+      "properties": {
+        "scope_kind": {"const": "supplied_inputs"},
+        "input_ids": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/InputId"}},
+        "global_complete": {"const": false},
+        "limitations": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/BoundedText"}}
+      }
+    },
+    "Result": {
+      "type": "object",
+      "required": ["interface_version", "message_type", "operation", "outcome", "scope", "subject", "violations", "findings", "matches", "records"],
+      "additionalProperties": false,
+      "properties": {
+        "interface_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {"enum": ["inspect", "verify", "query"]},
+        "outcome": {"enum": ["valid", "invalid", "matched", "mismatched", "not_verified", "conflict", "completed"]},
+        "scope": {"$ref": "#/$defs/Scope"},
+        "subject": {"oneOf": [{"$ref": "#/$defs/ArtifactResultIdentity"}, {"type": "null"}]},
+        "violations": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/Violation"}},
+        "findings": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/Finding"}},
+        "matches": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/ArtifactResultIdentity"}},
+        "records": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/QueryRecord"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"operation": {"const": "inspect"}}, "required": ["operation"]},
+          "then": {
+            "properties": {
+              "outcome": {"enum": ["valid", "invalid"]},
+              "subject": {"$ref": "#/$defs/ArtifactResultIdentity"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"operation": {"const": "verify"}}, "required": ["operation"]},
+          "then": {
+            "properties": {
+              "outcome": {"enum": ["matched", "mismatched", "not_verified", "conflict", "invalid"]},
+              "subject": {"$ref": "#/$defs/ArtifactResultIdentity"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"operation": {"const": "query"}}, "required": ["operation"]},
+          "then": {
+            "properties": {
+              "outcome": {"enum": ["completed", "conflict", "invalid"]},
+              "subject": {"type": "null"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}
