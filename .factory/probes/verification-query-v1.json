@@ -579,5 +579,12 @@
     "from": "{\"Cc\", \"Cf\", \"Cs\", \"Zl\", \"Zp\"}",
     "to": "{\"Cc\", \"Cf\", \"Cs\"}",
     "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI human output retains every supplied scope input",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "for input_id in scope[\"input_ids\"]",
+    "to": "for input_id in ()",
+    "tests": "tests/test_verification_query_cli.py"
   }
 ]

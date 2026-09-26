@@ -48,6 +48,24 @@ def test_human_output_names_scope_and_does_not_claim_compliance(tmp_path):
     assert "compliant" not in completed.stdout.lower()
 
 
+def test_human_output_renders_every_supplied_scope_input():
+    rendered = cli._human({
+        "operation": "query", "outcome": "completed",
+        "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["matched", "unmatched\u2028forged"],
+            "global_complete": False,
+            "limitations": ["supplied set only"],
+        },
+        "subject": None, "violations": [], "findings": [],
+        "matches": [], "records": [],
+    })
+
+    assert "SCOPE_INPUT matched" in rendered
+    assert "SCOPE_INPUT unmatched\\u2028forged" in rendered
+    assert "\u2028" not in rendered
+
+
 def test_human_output_escapes_terminal_controls(tmp_path):
     value = request(manifest())
     value["artifact"]["input_id"] = "attacker\x1b[2JFORGED"
@@ -62,6 +80,10 @@ def test_human_output_escapes_terminal_controls(tmp_path):
 def test_human_output_renders_projected_records_terminal_safely():
     rendered = cli._human({
         "operation": "query", "outcome": "completed", "subject": None,
+        "scope": {
+            "scope_kind": "supplied_inputs", "input_ids": ["registry"],
+            "global_complete": False, "limitations": ["supplied set only"],
+        },
         "violations": [], "findings": [], "matches": [],
         "records": [{
             "source_input_id": "registry",

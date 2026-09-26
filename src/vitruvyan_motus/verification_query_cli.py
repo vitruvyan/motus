@@ -30,7 +30,16 @@ def _terminal_safe(value: Any) -> str:
 
 def _human(result: dict[str, Any]) -> str:
     safe = _terminal_safe
-    lines = [f"operation: {safe(result['operation'])}", f"outcome: {safe(result['outcome'])}", "scope: supplied_inputs", "global_complete: false"]
+    scope = result["scope"]
+    lines = [
+        f"operation: {safe(result['operation'])}",
+        f"outcome: {safe(result['outcome'])}",
+        f"scope: {safe(scope['scope_kind'])}",
+        f"global_complete: {str(bool(scope['global_complete'])).lower()}",
+    ]
+    lines.extend(
+        f"SCOPE_INPUT {safe(input_id)}" for input_id in scope["input_ids"]
+    )
     subject = result["subject"]
     if subject is not None:
         lines.extend([f"input_id: {safe(subject['input_id'])}", f"artifact_kind: {safe(subject['kind'])}", f"fingerprint: {safe(subject['fingerprint'] or 'not derived')}"])
