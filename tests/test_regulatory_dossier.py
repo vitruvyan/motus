@@ -152,6 +152,24 @@ def test_dossier_ledgers_share_one_package_verdict_cache(monkeypatch):
     assert calls == 1
 
 
+def test_dossier_ledger_composition_has_a_cumulative_work_budget(monkeypatch):
+    ledger = json.loads(
+        (ROOT / JSON_FIXTURES["incident_capa_ledger"]).read_text("utf-8")
+    )["instance"]
+    monkeypatch.setattr(dossier_module, "_LEDGER_COMPOSITION_WORK_LIMIT", -1)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [ledger]}, [], validate,
+    )
+
+    assert any(
+        item.path == "binding:incident_capa_ledger"
+        and item.status == "not_verified"
+        and "cumulative work limit" in item.reason
+        for item in findings
+    )
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()

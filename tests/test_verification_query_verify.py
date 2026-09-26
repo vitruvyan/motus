@@ -35,6 +35,27 @@ def binary(kind: str, data: bytes, input_id: str) -> dict:
     }
 
 
+def test_invalid_artifact_shells_are_refused_before_outer_schema_expansion(monkeypatch):
+    original = validate.validate_verification_query_message
+    message_types = []
+
+    def counted(document):
+        message_types.append(document.get("message_type"))
+        return original(document)
+
+    monkeypatch.setattr(validate, "validate_verification_query_message", counted)
+    result = execute_verification_query({
+        "interface_version": "1.0.0",
+        "message_type": "request",
+        "operation": "query",
+        "projection": "executions",
+        "artifacts": [{} for _ in range(10_000)],
+    })
+
+    assert result["outcome"] == "invalid_request"
+    assert message_types == ["result"]
+
+
 def test_trace_without_graphspec_is_not_verified_not_matched():
     result = verify_artifact(typed("trace", fixture("04-trace-happy-path.json"), "trace"))
     assert result["outcome"] == "not_verified"

@@ -32,6 +32,35 @@ _MISSING = "missing"
 _NOT_VERIFIED = "not_verified"
 _CONFLICT = "conflict"
 _EXECUTION_JOIN_WORK_LIMIT = 1_000_000
+_FINDING_LIMIT = 10_000
+
+
+class _BoundedFindings(list):
+    """Retain a fail-closed marker without materializing unbounded findings."""
+
+    __slots__ = ("exhausted",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.exhausted = False
+
+    def append(self, item: IncidentCAPAFinding) -> None:
+        if self.exhausted:
+            return
+        if len(self) == _FINDING_LIMIT - 1:
+            super().append(IncidentCAPAFinding(
+                "$.findings", _NOT_VERIFIED, str(_FINDING_LIMIT), None,
+                "semantic findings were truncated at the authority work limit",
+            ))
+            self.exhausted = True
+            return
+        super().append(item)
+
+    def extend(self, values: Iterable[IncidentCAPAFinding]) -> None:
+        for item in values:
+            if self.exhausted:
+                break
+            self.append(item)
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,7 +379,7 @@ def verify_incident_capa_ledger(
         if predecessor is not None:
             children.setdefault(predecessor, []).append(fingerprint)
 
-    findings: list[IncidentCAPAFinding] = []
+    findings = _BoundedFindings()
     if execution_join_over_budget:
         findings.append(IncidentCAPAFinding(
             "$.execution_receipts",
@@ -361,6 +390,8 @@ def verify_incident_capa_ledger(
             "cumulative semantic-work limit",
         ))
     for fingerprint, (index, entry) in entries.items():
+        if findings.exhausted:
+            break
         document = entry["document"]
         predecessor = document.get("supersedes")
         if predecessor is not None:
@@ -406,6 +437,8 @@ def verify_incident_capa_ledger(
                 ))
 
         for ref_index, reference in enumerate(document.get("evidence", ())):
+            if findings.exhausted:
+                break
             path = f"$.entries[{index}].document.evidence[{ref_index}]"
             if reference["kind"] == "execution":
                 expected = reference["execution_ref"]
@@ -591,6 +624,8 @@ def verify_incident_capa_ledger(
                     ))
 
     for predecessor, successors in sorted(children.items()):
+        if findings.exhausted:
+            break
         if len(successors) > 1:
             findings.append(IncidentCAPAFinding(
                 f"lineage:{predecessor}",

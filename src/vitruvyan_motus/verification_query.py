@@ -29,6 +29,62 @@ _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _PACKAGE_DIRECTORY_TOTAL_MAX_BYTES = 16 * 1024 * 1024
 _PACKAGE_NESTING_LIMIT = 16
+_REQUEST_PREFLIGHT_ENABLED = True
+
+
+class _PreflightViolation:
+    __slots__ = ("rule", "path", "message")
+
+    def __init__(self, path: str, message: str) -> None:
+        self.rule = "VQ-PREFLIGHT"
+        self.path = path
+        self.message = message
+
+
+def _request_preflight(request: Any) -> list[_PreflightViolation]:
+    """Reject malformed artifact shells before jsonschema expands branch errors."""
+    if not isinstance(request, dict):
+        return []
+    operation = request.get("operation")
+    if operation == "inspect":
+        candidates = [("$.artifact", request.get("artifact"))]
+    elif operation == "verify":
+        candidates = [("$.artifact", request.get("artifact"))]
+        companions = request.get("companions")
+        if isinstance(companions, list):
+            candidates.extend(
+                (f"$.companions[{index}]", item)
+                for index, item in enumerate(companions)
+            )
+    elif operation == "query":
+        artifacts = request.get("artifacts")
+        candidates = (
+            [(f"$.artifacts[{index}]", item) for index, item in enumerate(artifacts)]
+            if isinstance(artifacts, list) else []
+        )
+    else:
+        return []
+    for path, item in candidates:
+        if not isinstance(item, dict):
+            return [_PreflightViolation(path, "artifact input must be an object")]
+        missing = {"input_id", "kind", "media_type"} - set(item)
+        media_type = item.get("media_type")
+        if media_type == "application/json":
+            missing |= {"document"} - set(item)
+        elif media_type == "application/zip":
+            missing |= {"content_base64"} - set(item)
+        else:
+            return [_PreflightViolation(
+                path + ".media_type",
+                "artifact media_type must be application/json or application/zip",
+            )]
+        if missing:
+            return [_PreflightViolation(
+                path,
+                "artifact input is missing required fields: "
+                + ", ".join(sorted(missing)),
+            )]
+    return []
 
 
 def _bounded_member_name(name: str) -> str:
@@ -581,7 +637,10 @@ def _inspect_artifact(artifact: Any, work_budget: _ZipWorkBudget) -> dict[str, A
         "artifact": artifact,
     }
     validate = _contract()
-    request_violations = validate.validate_verification_query_message(request)
+    request_violations = (
+        (_request_preflight(request) if _REQUEST_PREFLIGHT_ENABLED else [])
+        or validate.validate_verification_query_message(request)
+    )
     if request_violations:
         input_id = artifact.get("input_id") if isinstance(artifact, dict) else None
         return _invalid_request(request_violations, input_id)
@@ -1039,7 +1098,10 @@ def query_artifacts(
     """Run one closed projection over exactly the supplied artifact inputs."""
     request = {"interface_version": "1.0.0", "message_type": "request", "operation": "query", "projection": projection, "artifacts": artifacts}
     validate = _contract()
-    violations = validate.validate_verification_query_message(request)
+    violations = (
+        (_request_preflight(request) if _REQUEST_PREFLIGHT_ENABLED else [])
+        or validate.validate_verification_query_message(request)
+    )
     if violations:
         return _invalid_request(violations, _request_input_ids(request), "query")
     result = _query_result(list(artifacts), projection, _ZipWorkBudget())
@@ -1106,7 +1168,10 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     companion_values = list(companions) if isinstance(companions, (tuple, list)) else companions
     request = {"interface_version": "1.0.0", "message_type": "request", "operation": "verify", "artifact": artifact, "companions": companion_values}
     validate = _contract()
-    request_violations = validate.validate_verification_query_message(request)
+    request_violations = (
+        (_request_preflight(request) if _REQUEST_PREFLIGHT_ENABLED else [])
+        or validate.validate_verification_query_message(request)
+    )
     if request_violations:
         return _invalid_request(
             request_violations, _request_input_ids(request), "verify",
@@ -1325,7 +1390,10 @@ def _request_input_ids(request: Any) -> list[object]:
 def execute_verification_query(request: Any) -> dict[str, Any]:
     """Execute a validated v1 request; verify dispatch is added separately."""
     validate = _contract()
-    violations = validate.validate_verification_query_message(request)
+    violations = (
+        (_request_preflight(request) if _REQUEST_PREFLIGHT_ENABLED else [])
+        or validate.validate_verification_query_message(request)
+    )
     if violations:
         operation = request.get("operation") if isinstance(request, dict) else None
         if operation not in ("inspect", "verify", "query"):

@@ -37,6 +37,7 @@ _MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _ARCHIVE_MAX_BYTES = 160 * 1024 * 1024
 _MAX_ENTRIES = 1000
+_LEDGER_COMPOSITION_WORK_LIMIT = 128 * 1024 * 1024
 _JSON_KINDS = {
     "system_manifest": "system_manifest",
     "risk_control_registry": "risk_control_registry",
@@ -373,7 +374,22 @@ def _compose_existing_verifiers(
 
     from vitruvyan_motus.incident_capa import verify_incident_capa_ledger
     package_verdicts: dict[str, Any] = {}
-    for ledger in documents.get("incident_capa_ledger", ()):
+    ledgers = documents.get("incident_capa_ledger", ())
+    companion_bytes = sum(len(value) for value in package_bytes) + sum(
+        len(validate.canonical_json(value))
+        for kind, values in documents.items()
+        if kind != "incident_capa_ledger"
+        for value in values
+    )
+    ledger_composition_work = len(ledgers) * companion_bytes
+    if ledger_composition_work > _LEDGER_COMPOSITION_WORK_LIMIT:
+        findings.append(_finding(
+            "binding:incident_capa_ledger", "not_verified",
+            _LEDGER_COMPOSITION_WORK_LIMIT, ledger_composition_work,
+            "dossier ledger composition exceeds the cumulative work limit",
+        ))
+        ledgers = ()
+    for ledger in ledgers:
         fp = validate.incident_capa_ledger_fingerprint(ledger)
         verdict = verify_incident_capa_ledger(
             ledger,

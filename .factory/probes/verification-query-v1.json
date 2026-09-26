@@ -509,5 +509,26 @@
     "from": "_package_verdicts=package_verdicts,",
     "to": "_package_verdicts={},",
     "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier ledger composition retains a cumulative work budget",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if ledger_composition_work > _LEDGER_COMPOSITION_WORK_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "incident and CAPA authorities bound findings during production",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if len(self) == _FINDING_LIMIT - 1:",
+    "to": "if False:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "verification requests preflight malformed artifact shells",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_REQUEST_PREFLIGHT_ENABLED = True",
+    "to": "_REQUEST_PREFLIGHT_ENABLED = False",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]

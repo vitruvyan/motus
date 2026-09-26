@@ -376,6 +376,25 @@ def test_repeated_oversight_references_reuse_one_verdict(monkeypatch):
     assert calls == 1
 
 
+def test_semantic_findings_are_bounded_while_the_authority_produces_them():
+    entries = []
+    for index in range(101):
+        incident = _incident(
+            incident_id=f"INC-{index:03d}",
+            evidence=[
+                {"kind": "execution", "execution_ref": f"tenant/writer/{index * 100 + ref}"}
+                for ref in range(100)
+            ],
+        )
+        entries.append(("incident_declaration", incident))
+
+    verdict = verify_incident_capa_ledger(_ledger(*entries))
+
+    assert len(verdict.findings) == 10_000
+    assert verdict.findings[-1].path == "$.findings"
+    assert verdict.findings[-1].status == "not_verified"
+
+
 def test_receipt_with_inconsistent_derived_identity_is_refused():
     receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
     receipt["execution"]["run_id"] = "tampered"
