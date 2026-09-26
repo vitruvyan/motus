@@ -143,12 +143,12 @@
         },
         {
           "type": "object",
-          "required": ["kind", "producer_namespace", "ai_system_id"],
+          "required": ["kind", "producer_namespace", "registration_id"],
           "additionalProperties": false,
           "properties": {
             "kind": {"const": "ai_system_lifecycle"},
             "producer_namespace": {"$ref": "#/$defs/BoundedToken"},
-            "ai_system_id": {"$ref": "#/$defs/BoundedToken"}
+            "registration_id": {"$ref": "#/$defs/BoundedToken"}
           }
         }
       ]

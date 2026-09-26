@@ -99,7 +99,9 @@ from vitruvyan_motus.ai_system_registry import (
     verify_ai_system_registration_binding, project_supplied_ai_system_lifecycle,
     verify_ai_system_registry_snapshot,
 )
-from vitruvyan_motus.verification_query import inspect_artifact
+from vitruvyan_motus.verification_query import (
+    execute_verification_query, inspect_artifact, query_artifacts, verify_artifact,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -148,7 +150,8 @@ __all__ = [
     "AISystemRegistrySnapshotVerdict", "verify_ai_system_registry_lineage",
     "verify_ai_system_registration_binding", "project_supplied_ai_system_lifecycle",
     "verify_ai_system_registry_snapshot",
-    "inspect_artifact",
+    "execute_verification_query", "inspect_artifact", "query_artifacts",
+    "verify_artifact",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]

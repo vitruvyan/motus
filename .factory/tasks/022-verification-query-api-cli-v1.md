@@ -105,5 +105,8 @@ Point 10 / 0.22.0 is complete only when:
   micro-step, with lazy validator import and explicit per-kind dispatch;
 - integrated inspect/import/contract/packaging bank: `262 passed`;
 - full suite after the public-README correction: `1834 passed, 6 skipped`;
-- composite verification, query execution and CLI are not part of this
-  checkpoint.
+- composite verification, all seven closed query projections, the stable
+  request dispatcher and distinct `motus-evidence` CLI implemented;
+- integrated facade/CLI/packaging bank: `56 passed`;
+- full suite on the complete functional surface: `1852 passed, 6 skipped`;
+- permanent ADR-043 mutation probe defined; execution follows the clean commit.

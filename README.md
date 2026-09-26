@@ -979,7 +979,8 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - evidence packaging: `pack`, `verify_package`, `evidence_package_fingerprint`,
   `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
-- verification/query inspection: `inspect_artifact`;
+- verification/query facade: `execute_verification_query`, `inspect_artifact`,
+  `query_artifacts`, `verify_artifact`;
 - system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
   `SystemManifestBindingFinding`;
 - risk and control: `verify_control_application_bindings`,
@@ -1171,9 +1172,10 @@ verdict. The v1 archive bounds are 1000 artifact members, 28 MiB per member,
 
 ### Verification and query inspection
 
-ADR-043 begins the transport-neutral verification/query facade with
-`inspect_artifact()`. The caller supplies one explicit input identifier,
-artifact kind, media type and document or binary content. Motus does not infer
+ADR-043 exposes the transport-neutral verification/query facade through
+`inspect_artifact()`, `verify_artifact()`, `query_artifacts()` and the request dispatcher
+`execute_verification_query()`. The caller supplies explicit input identifiers,
+artifact kinds, media types and documents or binary content. Motus does not infer
 kind from a filename or payload shape. The operation reuses the artifact's
 existing validator and derives an identity only where Motus already defines
 one; it does not manufacture a new fingerprint for traces, commitments or
@@ -1193,9 +1195,22 @@ result = inspect_artifact({
 The machine-readable result always limits itself to `supplied_inputs` and sets
 `global_complete` to false. `valid` means that the existing structural Motus
 contract accepted those exact supplied contents; it is not binding
-verification, legal sufficiency, safety, approval or compliance. Composite
-verification, collection queries and the CLI are added in later 0.22
-micro-steps rather than being implied by this inspection surface.
+verification, legal sufficiency, safety, approval or compliance. Query
+operations are closed to the projections declared in the v1 contract and work
+only over the exact supplied collection. Verification composes the
+artifact-specific Motus verifier with explicit companion inputs; a kind with no
+standalone binding verifier remains `not_verified`. The CLI remains a separate
+adapter over the same facade:
+
+```bash
+motus-evidence request.json --json
+motus-evidence request.json
+```
+
+JSON mode emits the stable result envelope. Human mode renders the same
+outcome, findings and supplied scope. Exit status is 0 only for `valid`,
+`matched` or `completed`; failed verification exits 1 and malformed usage or
+request input exits 2.
 
 ### Incident / CAPA Ledger
 

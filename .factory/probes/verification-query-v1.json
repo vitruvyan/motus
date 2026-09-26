@@ -1,0 +1,51 @@
+[
+  {
+    "name": "result scope cannot claim global completeness",
+    "file": "contract/verification-query.v1.schema.json",
+    "from": "\"global_complete\": {\"const\": false}",
+    "to": "\"global_complete\": {\"type\": \"boolean\"}",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "request input identifiers remain unique",
+    "file": "contract/validate.py",
+    "from": "if input_id in seen:\n                violations.append(Violation(\n                    \"VQ1\"",
+    "to": "if False:\n                violations.append(Violation(\n                    \"VQ1\"",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "execution projections require canonical references",
+    "file": "contract/validate.py",
+    "from": "and _canonical_execution_ref_parts(projection[\"execution_ref\"]) is None",
+    "to": "and False",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "invalid artifacts derive no semantic identity",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "fingerprint = None if violations else _json_fingerprint(validate, kind, document)",
+    "to": "fingerprint = _json_fingerprint(validate, kind, document)",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "correction forks remain visible conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if count > 1:\n                findings.append({\"path\": f\"lineage:{parent}\"",
+    "to": "if count > 999:\n                findings.append({\"path\": f\"lineage:{parent}\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "absence of binding findings is not verification",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "or not findings:\n        return \"not_verified\"",
+    "to": "or False:\n        return \"not_verified\"",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI invalid artifact remains nonzero",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "_SUCCESS = frozenset({\"valid\", \"matched\", \"completed\"})",
+    "to": "_SUCCESS = frozenset({\"valid\", \"invalid\", \"matched\", \"completed\"})",
+    "tests": "tests/test_verification_query_cli.py"
+  }
+]

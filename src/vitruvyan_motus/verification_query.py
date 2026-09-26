@@ -10,7 +10,7 @@ import base64
 import importlib
 from typing import Any
 
-__all__ = ["inspect_artifact"]
+__all__ = ["execute_verification_query", "inspect_artifact", "query_artifacts", "verify_artifact"]
 
 _LIMITATIONS = [
     "inspection covers only the explicitly supplied artifact",
@@ -62,12 +62,15 @@ def _json_value(value: Any) -> Any:
     return value
 
 
-def _scope(input_ids: list[str]) -> dict[str, Any]:
+def _scope(input_ids: list[str], operation: str = "inspection") -> dict[str, Any]:
     return {
         "scope_kind": "supplied_inputs",
         "input_ids": input_ids,
         "global_complete": False,
-        "limitations": list(_LIMITATIONS),
+        "limitations": [
+            f"{operation} covers only the explicitly supplied artifacts",
+            _LIMITATIONS[1],
+        ],
     }
 
 
@@ -82,12 +85,14 @@ def _checked_result(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _invalid_request(violations: list[Any], input_id: object) -> dict[str, Any]:
+def _invalid_request(
+    violations: list[Any], input_id: object, operation: str = "inspect",
+) -> dict[str, Any]:
     ids = [input_id] if isinstance(input_id, str) and input_id else []
     return _checked_result({
         "interface_version": "1.0.0",
         "message_type": "result",
-        "operation": "inspect",
+        "operation": operation,
         "outcome": "invalid_request",
         "scope": _scope(ids),
         "subject": None,
@@ -206,3 +211,321 @@ def inspect_artifact(artifact: Any) -> dict[str, Any]:
         else:
             result = _dossier_export_inspection(input_id, kind, data)
     return _checked_result(result)
+
+
+def _validated_inputs(artifacts: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    valid = []
+    for artifact in artifacts:
+        inspected = inspect_artifact(artifact)
+        if inspected["outcome"] == "valid":
+            valid.append((artifact, inspected))
+    return valid
+
+
+def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
+    if kind in ("control_application", "human_oversight_receipt"):
+        return {document["execution_ref"]}
+    if kind == "execution_receipt":
+        refs = set()
+        for segment in document["segments"]:
+            for endpoint in ("begin", "end"):
+                entry = segment.get(endpoint)
+                if isinstance(entry, dict):
+                    commitment = entry["commitment"]
+                    refs.add(f"{commitment['tenant']}/{commitment['writer_id']}/{commitment['sequence']}")
+        return refs
+    if kind in ("incident_declaration", "capa_action"):
+        return {
+            item["execution_ref"] for item in document.get("evidence", ())
+            if item.get("kind") == "execution_ref"
+        }
+    if kind == "retention_policy_declaration":
+        selector = document.get("scope")
+        if isinstance(selector, dict) and selector.get("kind") == "execution_refs":
+            return set(selector["execution_refs"])
+    return set()
+
+
+def _query_result(
+    artifacts: list[dict[str, Any]], projection: dict[str, Any],
+) -> dict[str, Any]:
+    supplied_ids = [item["input_id"] for item in artifacts]
+    valid = _validated_inputs(artifacts)
+    by_id = {item["input_id"]: (item, inspected) for item, inspected in valid}
+    matches: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
+    kind = projection["kind"]
+
+    if kind == "artifact_identity":
+        for artifact, inspected in valid:
+            subject = inspected["subject"]
+            if (artifact["kind"] == projection["artifact_kind"]
+                    and subject["fingerprint"] == projection["fingerprint"]):
+                matches.append(subject)
+    elif kind == "execution_ref":
+        for artifact, inspected in valid:
+            if artifact["media_type"] == "application/json" and projection["execution_ref"] in _execution_refs(artifact["kind"], artifact["document"]):
+                matches.append(inspected["subject"])
+    elif kind in ("controls_for_risk", "risks_for_control"):
+        if projection["registry_input_id"] not in by_id:
+            return {
+                "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
+                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
+                "findings": [{"path": "$.projection.registry_input_id", "status": "not_verified", "reason": "the selected supplied registry did not satisfy its structural contract"}],
+                "matches": [], "records": [],
+            }
+        source, inspected = by_id[projection["registry_input_id"]]
+        risk_control = importlib.import_module("vitruvyan_motus.risk_control")
+        try:
+            if kind == "controls_for_risk":
+                values = risk_control.controls_for_risk(source["document"], projection["risk_id"])
+                record_kind = "control"
+            else:
+                values = risk_control.risks_for_control(source["document"], projection["control_id"])
+                record_kind = "risk"
+        except KeyError as exc:
+            values = ()
+            record_kind = "control" if kind == "controls_for_risk" else "risk"
+            findings.append({"path": "$.projection", "status": "missing", "expected": str(exc.args[0]), "reason": "the selected identifier is absent from the supplied registry"})
+        matches.append(inspected["subject"])
+        records.extend({"source_input_id": source["input_id"], "record_kind": record_kind, "record": value} for value in values)
+    elif kind == "correction_lineage":
+        wanted = projection["artifact_kind"]
+        rows = []
+        for artifact, inspected in valid:
+            if artifact["kind"] == wanted:
+                document = artifact["document"]
+                rows.append((inspected["subject"]["fingerprint"], artifact, document))
+                matches.append(inspected["subject"])
+        for fingerprint, artifact, document in sorted(rows, key=lambda row: row[0]):
+            records.append({
+                "source_input_id": artifact["input_id"],
+                "record_kind": "lineage_edge",
+                "record": {"fingerprint": fingerprint, "supersedes": document.get("supersedes")},
+            })
+        parents: dict[Any, int] = {}
+        for _fingerprint, _artifact, document in rows:
+            parent = document.get("supersedes")
+            if parent is not None:
+                parents[parent] = parents.get(parent, 0) + 1
+        for parent, count in sorted(parents.items()):
+            if count > 1:
+                findings.append({"path": f"lineage:{parent}", "status": "conflict", "expected": parent, "observed": count, "reason": "multiple supplied revisions name the same predecessor; no winner was selected"})
+    elif kind == "dossier_membership":
+        if projection["dossier_input_id"] not in by_id:
+            return {
+                "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
+                "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
+                "findings": [{"path": "$.projection.dossier_input_id", "status": "not_verified", "reason": "the selected supplied dossier did not satisfy its structural contract"}],
+                "matches": [], "records": [],
+            }
+        source, inspected = by_id[projection["dossier_input_id"]]
+        matches.append(inspected["subject"])
+        records.extend({"source_input_id": source["input_id"], "record_kind": "dossier_entry", "record": entry} for entry in source["document"]["entries"])
+    else:
+        namespace = projection["producer_namespace"]
+        registration_id = projection["registration_id"]
+        registrations = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registration" and item["document"]["producer_namespace"] == namespace]
+        events = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registry_event" and item["document"]["producer_namespace"] == namespace]
+        ai = importlib.import_module("vitruvyan_motus.ai_system_registry")
+        projected = ai.project_supplied_ai_system_lifecycle(registration_id, registrations=registrations, events=events)
+        source_ids = [item["input_id"] for item, _ in valid if item["kind"] in ("ai_system_registration", "ai_system_registry_event") and item["document"]["producer_namespace"] == namespace]
+        for artifact, inspected in valid:
+            if artifact["input_id"] in source_ids:
+                matches.append(inspected["subject"])
+        source_id = source_ids[0] if source_ids else supplied_ids[0]
+        records.append({"source_input_id": source_id, "record_kind": "ai_lifecycle", "record": {"producer_namespace": namespace, "registration_id": registration_id, "ordered_event_fingerprints": list(projected.ordered_event_fingerprints), "terminal_action": projected.terminal_action}})
+        findings.extend({"path": item.path, "status": item.status.replace(" ", "_"), "expected": _json_value(item.expected), "observed": _json_value(item.observed), "reason": item.reason} for item in projected.findings)
+
+    matches.sort(key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""))
+    records.sort(key=lambda item: (item["record_kind"], item["source_input_id"], str(item["record"])))
+    outcome = "conflict" if any(item["status"] == "conflict" for item in findings) else "completed"
+    return {
+        "interface_version": "1.0.0", "message_type": "result",
+        "operation": "query", "outcome": outcome,
+        "scope": _scope(supplied_ids, "query"), "subject": None,
+        "violations": [], "findings": findings, "matches": matches,
+        "records": records,
+    }
+
+
+def query_artifacts(
+    projection: Any, artifacts: Any,
+) -> dict[str, Any]:
+    """Run one closed projection over exactly the supplied artifact inputs."""
+    request = {"interface_version": "1.0.0", "message_type": "request", "operation": "query", "projection": projection, "artifacts": artifacts}
+    validate = _contract()
+    violations = validate.validate_verification_query_message(request)
+    if violations:
+        return _invalid_request(violations, None, "query")
+    result = _query_result(list(artifacts), projection)
+    return _checked_result(result)
+
+
+def _status(value: str) -> str:
+    token = value.lower().replace(" ", "_")
+    return {"verified": "matched", "not_established": "not_verified", "refused": "not_verified", "failed": "mismatched"}.get(token, token)
+
+
+def _finding_value(item: Any, index: int) -> dict[str, Any]:
+    path = getattr(item, "path", None) or getattr(item, "level", None) or f"$.findings[{index}]"
+    result = {"path": str(path), "status": _status(str(item.status)), "reason": str(item.reason)}
+    if hasattr(item, "expected"):
+        result["expected"] = _json_value(item.expected)
+    if hasattr(item, "observed"):
+        result["observed"] = _json_value(item.observed)
+    return result
+
+
+def _flatten_violations(value: Any) -> list[dict[str, str]]:
+    if hasattr(value, "rule") and hasattr(value, "path") and hasattr(value, "message"):
+        return [_violation(value)]
+    if isinstance(value, (tuple, list)):
+        out = []
+        for item in value:
+            out.extend(_flatten_violations(item))
+        return out
+    return []
+
+
+def _verdict_parts(verdict: Any) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    violations = []
+    for name in dir(verdict):
+        if name.endswith("violations"):
+            violations.extend(_flatten_violations(getattr(verdict, name)))
+    findings = [_finding_value(item, index) for index, item in enumerate(getattr(verdict, "findings", ()))]
+    return violations, findings
+
+
+def _verification_outcome(violations: list[Any], findings: list[dict[str, Any]]) -> str:
+    if violations:
+        return "invalid"
+    statuses = {item["status"] for item in findings}
+    if "conflict" in statuses:
+        return "conflict"
+    if statuses & {"mismatched", "damaged"}:
+        return "mismatched"
+    if statuses & {"missing", "not_verified", "incomplete"} or not findings:
+        return "not_verified"
+    return "matched"
+
+
+def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
+    """Compose the authoritative verifier for one artifact with explicit companions."""
+    companion_values = list(companions) if isinstance(companions, (tuple, list)) else companions
+    request = {"interface_version": "1.0.0", "message_type": "request", "operation": "verify", "artifact": artifact, "companions": companion_values}
+    validate = _contract()
+    request_violations = validate.validate_verification_query_message(request)
+    if request_violations:
+        input_id = artifact.get("input_id") if isinstance(artifact, dict) else None
+        return _invalid_request(request_violations, input_id, "verify")
+    inspected = inspect_artifact(artifact)
+    companions = companion_values
+    scope_ids = [artifact["input_id"], *[item["input_id"] for item in companions]]
+    subject = inspected["subject"]
+    if inspected["outcome"] != "valid":
+        return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": "invalid", "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": inspected["violations"], "findings": inspected["findings"], "matches": [], "records": []})
+
+    pools: dict[str, list[Any]] = {}
+    binary_pools: dict[str, list[bytes]] = {}
+    companion_findings: list[dict[str, Any]] = []
+    for item in companions:
+        companion_result = inspect_artifact(item)
+        if companion_result["outcome"] != "valid":
+            companion_findings.append({"path": f"$.companions.{item['input_id']}", "status": "not_verified", "reason": "the supplied companion did not satisfy its own Motus contract"})
+            continue
+        if item["media_type"] == "application/json":
+            pools.setdefault(item["kind"], []).append(item["document"])
+        else:
+            binary_pools.setdefault(item["kind"], []).append(base64.b64decode(item["content_base64"], validate=True))
+    kind = artifact["kind"]
+    document = artifact.get("document")
+    violations: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = companion_findings
+
+    def one(name: str) -> Any:
+        values = pools.get(name, [])
+        if len(values) > 1:
+            findings.append({"path": f"$.companions.{name}", "status": "conflict", "observed": len(values), "reason": "multiple supplied companions are ambiguous"})
+            return None
+        return values[0] if values else None
+
+    verdict = None
+    if kind == "trace":
+        spec = one("graphspec")
+        if spec is None:
+            findings.append({"path": "$.companions.graphspec", "status": "not_verified", "reason": "trace binding requires one explicit GraphSpec companion"})
+        else:
+            violations = [_violation(item) for item in validate.validate_trace(document, spec=spec)]
+            if not violations:
+                findings.append({"path": "$.artifact", "status": "matched", "reason": "trace matched the supplied GraphSpec under existing SB rules"})
+    elif kind == "execution_receipt":
+        verdict = validate.verify(document, one("trace"))
+    elif kind == "system_manifest":
+        graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
+        trace = importlib.import_module("vitruvyan_motus.trace").Trace
+        module = importlib.import_module("vitruvyan_motus.system_manifest")
+        verdict = module.verify_system_manifest_bindings(document, graph_specs=[graph.from_dict(value) for value in pools.get("graphspec", ())], traces=[trace.from_dict(value) for value in pools.get("trace", ())])
+    elif kind == "control_application":
+        registry = one("risk_control_registry")
+        if registry is None:
+            findings.append({"path": "$.companions.risk_control_registry", "status": "not_verified", "reason": "ControlApplication binding requires one explicit Registry companion"})
+        else:
+            verdict = importlib.import_module("vitruvyan_motus.risk_control").verify_control_application_bindings(document, registry=registry, manifest=one("system_manifest"), receipt=one("execution_receipt"))
+    elif kind == "human_oversight_receipt":
+        verdict = importlib.import_module("vitruvyan_motus.human_oversight").verify_human_oversight_bindings(document, execution_receipt=one("execution_receipt"), manifest=one("system_manifest"), registry=one("risk_control_registry"), control_application=one("control_application"))
+    elif kind == "regulatory_evidence_profile":
+        graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
+        trace = importlib.import_module("vitruvyan_motus.trace").Trace
+        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt"), system_manifest=one("system_manifest"), risk_control_registry=one("risk_control_registry"), control_application=one("control_application"), human_oversight_receipt=one("human_oversight_receipt"), graph_specs=[graph.from_dict(value) for value in pools.get("graphspec", ())], traces=[trace.from_dict(value) for value in pools.get("trace", ())])
+    elif kind == "incident_capa_ledger":
+        verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=pools.get("execution_receipt", ()), manifests=pools.get("system_manifest", ()), registries=pools.get("risk_control_registry", ()), control_applications=pools.get("control_application", ()), human_oversight_receipts=pools.get("human_oversight_receipt", ()), evidence_packages=binary_pools.get("execution_evidence_package", ()))
+    elif kind == "retention_application":
+        verdict = importlib.import_module("vitruvyan_motus.retention").verify_retention_application_bindings(document, policy=one("retention_policy_declaration"), holds=pools.get("legal_hold_declaration", ()), snapshots=pools.get("retention_scope_snapshot", ()))
+    elif kind == "ai_system_registration":
+        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registration_binding(document, manifests=pools.get("system_manifest", ()))
+    elif kind == "ai_system_registry_snapshot":
+        verdict = importlib.import_module("vitruvyan_motus.ai_system_registry").verify_ai_system_registry_snapshot(document, registrations=pools.get("ai_system_registration", ()), events=pools.get("ai_system_registry_event", ()))
+    elif kind == "execution_evidence_package":
+        package = importlib.import_module("vitruvyan_motus.evidence").verify_package(base64.b64decode(artifact["content_base64"], validate=True))
+        if package.verdict is None:
+            findings.append({"path": "$.artifact", "status": "not_verified", "reason": "package carries no receipt verdict"})
+        else:
+            verdict = package.verdict
+        findings.extend({"path": "$.members", "status": "damaged", "observed": item, "reason": "package member failed transport integrity"} for item in package.damaged)
+        findings.extend({"path": "$.trace", "status": "mismatched", "observed": item, "reason": "embedded trace failed its Motus contract"} for item in package.trace_violations)
+        if not package.transport_ok and not package.damaged:
+            findings.append({"path": "$.transport", "status": "mismatched", "reason": "package transport verification failed"})
+    elif kind == "regulatory_evidence_dossier_export":
+        verdict = importlib.import_module("vitruvyan_motus.regulatory_dossier").verify_regulatory_dossier(base64.b64decode(artifact["content_base64"], validate=True))
+    else:
+        findings.append({"path": "$.artifact", "status": "not_verified", "reason": "this artifact kind has structural inspection but no standalone binding verifier"})
+
+    if verdict is not None:
+        found_violations, found_findings = _verdict_parts(verdict)
+        violations.extend(found_violations)
+        findings.extend(found_findings)
+        if kind == "regulatory_evidence_dossier_export":
+            findings.extend(_finding_value(item, index) for index, item in enumerate(verdict.binding_findings))
+            findings.extend({"path": f"$.entries[{item.entry_id}]", "status": item.status, "observed": list(item.violations), "reason": "dossier member did not verify as declared"} for item in verdict.entries if item.status != "matched")
+            if verdict.profile_assessment is not None:
+                findings.extend({"path": f"requirement:{item.requirement_ref}:{item.kind}", "status": item.status, "reason": item.reason} for item in verdict.profile_assessment.findings)
+    outcome = _verification_outcome(violations, findings)
+    return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": outcome, "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": violations, "findings": findings, "matches": [], "records": []})
+
+
+def execute_verification_query(request: Any) -> dict[str, Any]:
+    """Execute a validated v1 request; verify dispatch is added separately."""
+    validate = _contract()
+    violations = validate.validate_verification_query_message(request)
+    if violations:
+        operation = request.get("operation") if isinstance(request, dict) else None
+        if operation not in ("inspect", "verify", "query"):
+            raise ValueError("request has no executable v1 operation")
+        return _invalid_request(violations, None, operation)
+    if request["operation"] == "inspect":
+        return inspect_artifact(request["artifact"])
+    if request["operation"] == "query":
+        return query_artifacts(request["projection"], request["artifacts"])
+    return verify_artifact(request["artifact"], request["companions"])
