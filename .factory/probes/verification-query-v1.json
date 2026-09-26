@@ -614,5 +614,19 @@
     "from": "and value not in seen_ids):",
     "to": "and value not in ids):",
     "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "artifact preflight rejects non-string object keys",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if any(not isinstance(key, str) for key in item):",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier AI lifecycle composition has a cumulative work budget",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if lifecycle_composition_work > _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
   }
 ]

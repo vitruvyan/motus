@@ -38,6 +38,7 @@ _TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _ARCHIVE_MAX_BYTES = 160 * 1024 * 1024
 _MAX_ENTRIES = 1000
 _LEDGER_COMPOSITION_WORK_LIMIT = 128 * 1024 * 1024
+_AI_LIFECYCLE_COMPOSITION_WORK_LIMIT = 100_000
 _COMPOSED_FINDING_LIMIT = 10_000
 _JSON_KINDS = {
     "system_manifest": "system_manifest",
@@ -551,17 +552,27 @@ def _compose_existing_verifiers(
         value["registration_id"]
         for value in documents.get("ai_system_registration", ())
     })
-    for registration_id in registration_ids:
-        if findings.exhausted:
-            break
-        projection = project_supplied_ai_system_lifecycle(
-            registration_id,
-            registrations=documents.get("ai_system_registration", ()),
-            events=documents.get("ai_system_registry_event", ()),
-        )
-        findings.extend(_converted_findings(
-            f"projection:ai_system_registry:{registration_id}", projection.findings,
+    registrations = documents.get("ai_system_registration", ())
+    events = documents.get("ai_system_registry_event", ())
+    lifecycle_composition_work = len(registration_ids) * (
+        len(registrations) + len(events)
+    )
+    if lifecycle_composition_work > _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT:
+        findings.append(_finding(
+            "projection:ai_system_registry", "not_verified",
+            _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT, lifecycle_composition_work,
+            "dossier AI lifecycle composition exceeds the cumulative work limit",
         ))
+    else:
+        for registration_id in registration_ids:
+            if findings.exhausted:
+                break
+            projection = project_supplied_ai_system_lifecycle(
+                registration_id, registrations=registrations, events=events,
+            )
+            findings.extend(_converted_findings(
+                f"projection:ai_system_registry:{registration_id}", projection.findings,
+            ))
     for snapshot in documents.get("ai_system_registry_snapshot", ()):
         if findings.exhausted:
             break

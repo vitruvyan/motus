@@ -202,6 +202,42 @@ def test_dossier_ledger_composition_has_a_cumulative_work_budget(monkeypatch):
     )
 
 
+def test_dossier_ai_lifecycle_projection_has_a_cumulative_work_budget(monkeypatch):
+    registration_wrapper = json.loads(
+        (ROOT / JSON_FIXTURES["ai_system_registration"]).read_text("utf-8")
+    )
+    registration = registration_wrapper.get("instance", registration_wrapper)
+    registry_module = __import__(
+        "vitruvyan_motus.ai_system_registry",
+        fromlist=["project_supplied_ai_system_lifecycle"],
+    )
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Projection", (), {"findings": ()})()
+
+    monkeypatch.setattr(
+        registry_module, "project_supplied_ai_system_lifecycle", counted,
+    )
+    monkeypatch.setattr(
+        dossier_module, "_AI_LIFECYCLE_COMPOSITION_WORK_LIMIT", -1,
+    )
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"ai_system_registration": [registration]}, [], validate,
+    )
+
+    assert calls == 0
+    assert any(
+        item.path == "projection:ai_system_registry"
+        and item.status == "not_verified"
+        and "cumulative work limit" in item.reason
+        for item in findings
+    )
+
+
 def test_dossier_ledger_findings_share_one_cumulative_cap(monkeypatch):
     ledger = json.loads(
         (ROOT / JSON_FIXTURES["incident_capa_ledger"]).read_text("utf-8")

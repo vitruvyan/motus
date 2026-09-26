@@ -75,6 +75,10 @@ def _request_preflight(request: Any) -> list[_PreflightViolation]:
     for path, item in candidates:
         if not isinstance(item, dict):
             return [_PreflightViolation(path, "artifact input must be an object")]
+        if any(not isinstance(key, str) for key in item):
+            return [_PreflightViolation(
+                path, "artifact input object keys must be strings",
+            )]
         missing = {"input_id", "kind", "media_type"} - set(item)
         if missing:
             return [_PreflightViolation(

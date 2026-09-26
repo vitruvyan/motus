@@ -109,6 +109,20 @@ def test_artifact_shell_preflight_mirrors_closed_json_branch(change, path):
     assert path in violations[0].path or path in violations[0].message
 
 
+@pytest.mark.parametrize("key", [1, ("mixed",)])
+def test_artifact_shell_preflight_handles_non_string_keys(key):
+    item = typed("system_manifest", {}, "manifest")
+    item[key] = "not-json"
+
+    violations = verification_query._request_preflight({
+        "operation": "inspect", "artifact": item,
+    })
+
+    assert len(violations) == 1
+    assert violations[0].path == "$.artifact"
+    assert violations[0].message == "artifact input object keys must be strings"
+
+
 def test_exact_identity_query_matches_only_exact_kind_and_fingerprint():
     manifest = fixture("310-system-manifest-valid.json")
     registry = fixture("320-risk-control-registry-valid.json")
