@@ -119,6 +119,25 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
     Truncation is explicit and fail-closed rather than an internal exception.
     """
     bounded = dict(result)
+    bounded["violations"] = [
+        {
+            **item,
+            "rule": str(item["rule"])[:1024],
+            "path": str(item["path"])[:8192],
+            "message": str(item["message"])[:8192],
+        }
+        for item in bounded["violations"]
+    ]
+    bounded["findings"] = [
+        {
+            **item,
+            "path": str(item["path"])[:8192],
+            "reason": str(item["reason"])[:8192],
+            **({"expected": _bounded_json_strings(item["expected"])} if "expected" in item else {}),
+            **({"observed": _bounded_json_strings(item["observed"])} if "observed" in item else {}),
+        }
+        for item in bounded["findings"]
+    ]
     markers: list[dict[str, Any]] = []
     for field in ("violations", "matches", "records"):
         values = list(bounded[field])
@@ -152,10 +171,32 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
     return bounded
 
 
+def _bounded_json_strings(value: Any) -> Any:
+    """Bound imported diagnostic strings without changing result structure."""
+    if isinstance(value, str):
+        return value[:8192]
+    if isinstance(value, tuple):
+        return [_bounded_json_strings(item) for item in value]
+    if isinstance(value, list):
+        return [_bounded_json_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key)[:8192]: _bounded_json_strings(item)
+            for key, item in value.items()
+        }
+    return value
+
+
 def _invalid_request(
-    violations: list[Any], input_id: object, operation: str = "inspect",
+    violations: list[Any], input_ids: object, operation: str = "inspect",
 ) -> dict[str, Any]:
-    ids = [input_id] if isinstance(input_id, str) and input_id else []
+    candidates = input_ids if isinstance(input_ids, (list, tuple)) else [input_ids]
+    ids: list[str] = []
+    for value in candidates:
+        if (isinstance(value, str) and 1 <= len(value) <= 128
+                and any(not char.isspace() for char in value)
+                and value not in ids):
+            ids.append(value)
     return _checked_result({
         "interface_version": "1.0.0",
         "message_type": "result",
@@ -196,6 +237,21 @@ def _json_inspection(
         "findings": [],
         "matches": [],
         "records": [],
+    }
+
+
+def _manifest_trace_companion_inspection(
+    validate: Any, input_id: str, document: Any,
+) -> dict[str, Any]:
+    """Inspect a trace under the incomplete-trace semantics manifest binding owns."""
+    violations = list(validate.validate_trace(document, expect_complete=False))
+    return {
+        "interface_version": "1.0.0", "message_type": "result",
+        "operation": "inspect", "outcome": "invalid" if violations else "valid",
+        "scope": _scope([input_id]),
+        "subject": {"input_id": input_id, "kind": "trace", "fingerprint": None},
+        "violations": [_violation(item) for item in violations],
+        "findings": [], "matches": [], "records": [],
     }
 
 
@@ -826,13 +882,21 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     if inspected["outcome"] != "valid":
         return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": "invalid", "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": inspected["violations"], "findings": inspected["findings"], "matches": [], "records": []})
 
+    kind = artifact["kind"]
+    document = artifact.get("document")
     pools: dict[str, list[Any]] = {}
     binary_pools: dict[str, list[bytes]] = {}
     companion_subjects: dict[str, list[dict[str, Any]]] = {}
     companion_findings: list[dict[str, Any]] = []
     violations: list[dict[str, str]] = []
     for item in companions:
-        companion_result = _inspect_artifact(item, work_budget)
+        if (item["kind"] == "trace"
+                and kind in {"system_manifest", "regulatory_evidence_profile"}):
+            companion_result = _manifest_trace_companion_inspection(
+                validate, item["input_id"], item["document"],
+            )
+        else:
+            companion_result = _inspect_artifact(item, work_budget)
         if companion_result["outcome"] != "valid":
             prefix = f"$.companions[{item['input_id']}]"
             violations.extend({
@@ -857,8 +921,6 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             pools.setdefault(item["kind"], []).append(item["document"])
         else:
             binary_pools.setdefault(item["kind"], []).append(base64.b64decode(item["content_base64"], validate=True))
-    kind = artifact["kind"]
-    document = artifact.get("document")
     findings: list[dict[str, Any]] = companion_findings
     used_companions: dict[str, dict[str, Any]] = {}
 
@@ -866,7 +928,9 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         for identity in companion_subjects.get(name, ()):
             used_companions[identity["input_id"]] = identity
 
-    def one(name: str) -> Any:
+    def one(name: str, *, use: bool = True) -> Any:
+        if not use:
+            return None
         values = pools.get(name, [])
         if len(values) > 1:
             findings.append({"path": f"$.companions.{name}", "status": "conflict", "observed": len(values), "reason": "multiple supplied companions are ambiguous"})
@@ -876,11 +940,15 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
             return values[0]
         return None
 
-    def many(name: str) -> list[Any]:
+    def many(name: str, *, use: bool = True) -> list[Any]:
+        if not use:
+            return []
         mark_used(name)
         return pools.get(name, [])
 
-    def many_binary(name: str) -> list[bytes]:
+    def many_binary(name: str, *, use: bool = True) -> list[bytes]:
+        if not use:
+            return []
         mark_used(name)
         return binary_pools.get(name, [])
 
@@ -911,7 +979,13 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     elif kind == "regulatory_evidence_profile":
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
-        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt"), system_manifest=one("system_manifest"), risk_control_registry=one("risk_control_registry"), control_application=one("control_application"), human_oversight_receipt=one("human_oversight_receipt"), graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
+        requested = {
+            expectation["kind"]
+            for requirement in document["requirements"]
+            for expectation in requirement["evidence"]
+        }
+        uses_manifest = "system_manifest" in requested
+        verdict = importlib.import_module("vitruvyan_motus.regulatory_profile").assess_evidence_profile(document, execution_receipt=one("execution_receipt", use="execution_receipt" in requested), system_manifest=one("system_manifest", use=uses_manifest), risk_control_registry=one("risk_control_registry", use="risk_control_registry" in requested), control_application=one("control_application", use="control_application" in requested), human_oversight_receipt=one("human_oversight_receipt", use="human_oversight_receipt" in requested), graph_specs=[graph.from_dict(value) for value in many("graphspec", use=uses_manifest)], traces=[trace.from_dict(value) for value in many("trace", use=uses_manifest)])
     elif kind == "incident_capa_ledger":
         verdict = importlib.import_module("vitruvyan_motus.incident_capa").verify_incident_capa_ledger(document, execution_receipts=many("execution_receipt"), manifests=many("system_manifest"), registries=many("risk_control_registry"), control_applications=many("control_application"), human_oversight_receipts=many("human_oversight_receipt"), evidence_packages=many_binary("execution_evidence_package"))
     elif kind == "retention_application":
@@ -952,6 +1026,22 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
     return _checked_result({"interface_version": "1.0.0", "message_type": "result", "operation": "verify", "outcome": outcome, "scope": _scope(scope_ids, "verification"), "subject": subject, "violations": violations, "findings": findings, "matches": matches, "records": []})
 
 
+def _request_input_ids(request: Any) -> list[object]:
+    if not isinstance(request, dict):
+        return []
+    values: list[Any] = []
+    artifact = request.get("artifact")
+    if isinstance(artifact, dict):
+        values.append(artifact)
+    companions = request.get("companions")
+    if isinstance(companions, list):
+        values.extend(item for item in companions if isinstance(item, dict))
+    artifacts = request.get("artifacts")
+    if isinstance(artifacts, list):
+        values.extend(item for item in artifacts if isinstance(item, dict))
+    return [item.get("input_id") for item in values]
+
+
 def execute_verification_query(request: Any) -> dict[str, Any]:
     """Execute a validated v1 request; verify dispatch is added separately."""
     validate = _contract()
@@ -960,7 +1050,7 @@ def execute_verification_query(request: Any) -> dict[str, Any]:
         operation = request.get("operation") if isinstance(request, dict) else None
         if operation not in ("inspect", "verify", "query"):
             raise ValueError("request has no executable v1 operation")
-        return _invalid_request(violations, None, operation)
+        return _invalid_request(violations, _request_input_ids(request), operation)
     if request["operation"] == "inspect":
         return inspect_artifact(request["artifact"])
     if request["operation"] == "query":

@@ -44,6 +44,19 @@ def test_trace_composes_existing_spec_correlated_rules():
     assert result["outcome"] == "matched"
 
 
+def test_manifest_verification_preserves_an_in_flight_trace_companion():
+    manifest = typed("system_manifest", fixture("310-system-manifest-valid.json"), "manifest")
+    trace_document = fixture("04-trace-happy-path.json")
+    trace_document["records"] = trace_document["records"][:-1]
+    result = verify_artifact(manifest, [typed("trace", trace_document, "in-flight-trace")])
+    assert result["outcome"] != "invalid"
+    assert [item["input_id"] for item in result["matches"]] == ["in-flight-trace"]
+    assert not any(
+        item["path"].startswith("$.companions[in-flight-trace]")
+        for item in result["violations"]
+    )
+
+
 def test_control_application_without_registry_fails_closed():
     result = verify_artifact(typed("control_application", fixture("330-control-application-valid.json"), "application"))
     assert result["outcome"] == "not_verified"
@@ -65,6 +78,18 @@ def test_verify_identifies_only_the_companions_actually_used():
     result = verify_artifact(application, [unrelated, registry])
     assert [item["input_id"] for item in result["matches"]] == ["registry"]
     assert result["scope"]["input_ids"] == ["application", "unrelated", "registry"]
+
+
+def test_profile_does_not_claim_companions_for_unrequested_evidence_kinds():
+    profile_document = fixture("350-regulatory-evidence-profile-valid.json")
+    profile_document["requirements"][0]["evidence"] = [
+        {"kind": "risk_control_registry"},
+    ]
+    profile = typed("regulatory_evidence_profile", profile_document, "profile")
+    unrelated = typed("graphspec", fixture("01-graphspec-linear.json"), "unrelated-spec")
+    result = verify_artifact(profile, [unrelated])
+    assert result["matches"] == []
+    assert result["scope"]["input_ids"] == ["profile", "unrelated-spec"]
 
 
 def test_invalid_companion_preserves_its_structural_violations():
@@ -106,6 +131,23 @@ def test_request_dispatcher_executes_verify_and_preserves_supplied_scope():
     result = execute_verification_query(request)
     assert result["operation"] == "verify"
     assert result["scope"]["input_ids"] == ["application"]
+
+
+def test_request_dispatcher_preserves_available_ids_on_interface_errors():
+    request = {
+        "interface_version": "1.0.0",
+        "message_type": "request",
+        "operation": "inspect",
+        "artifact": {
+            "input_id": "named-input",
+            "kind": "unsupported-kind",
+            "media_type": "application/json",
+            "document": {},
+        },
+    }
+    result = execute_verification_query(request)
+    assert result["outcome"] == "invalid_request"
+    assert result["scope"]["input_ids"] == ["named-input"]
 
 
 def test_duplicate_singular_companions_remain_conflict():

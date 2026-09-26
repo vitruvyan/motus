@@ -7,6 +7,7 @@ import io
 import json
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from vitruvyan_motus import inspect_artifact, query_artifacts
 from vitruvyan_motus.contract import validate
@@ -57,6 +58,20 @@ def test_invalid_artifact_has_no_derived_identity_and_is_not_a_usage_error():
     assert result["outcome"] == "invalid"
     assert result["subject"]["fingerprint"] is None
     assert {item["rule"] for item in result["violations"]} == {"SCHEMA"}
+
+
+def test_imported_violation_strings_are_bounded_before_result_validation():
+    document = fixture("310-system-manifest-valid.json")
+    document["x" * 9_000] = True
+    result = inspect_artifact(typed("system_manifest", document))
+    assert result["outcome"] == "invalid"
+    assert result["violations"]
+    assert all(
+        len(item[field]) <= (1024 if field == "rule" else 8192)
+        for item in result["violations"]
+        for field in ("rule", "path", "message")
+    )
+    assert validate.validate_verification_query_message(result) == []
 
 
 def test_unknown_kind_is_an_invalid_request_not_guessed_from_content():
@@ -226,6 +241,35 @@ def test_dossier_metadata_does_not_consume_the_thousand_entry_work_limit():
     assert result["outcome"] == "invalid"
     assert not any("member-count work limit" in item["reason"] for item in result["findings"])
     assert result["violations"]
+
+
+def test_imported_dossier_finding_strings_are_bounded(monkeypatch):
+    dossier = __import__("vitruvyan_motus.regulatory_dossier", fromlist=["verify_regulatory_dossier"])
+    oversized = "x" * 9_000
+    data = zip_bytes([("dossier.json", b"{}")])
+    monkeypatch.setattr(
+        dossier,
+        "verify_regulatory_dossier",
+        lambda payload: SimpleNamespace(
+            export_fingerprint=dossier.regulatory_dossier_export_fingerprint(payload),
+            transport_ok=False,
+            manifest_violations=(),
+            findings=(SimpleNamespace(
+                path=oversized, status="mismatched", expected=oversized,
+                observed=oversized, reason=oversized,
+            ),),
+            entries=(),
+        ),
+    )
+    result = inspect_artifact(binary_artifact(
+        "regulatory_evidence_dossier_export", data, "dossier",
+    ))
+    finding = result["findings"][0]
+    assert len(finding["path"]) == 8192
+    assert len(finding["reason"]) == 8192
+    assert len(finding["expected"]) == 8192
+    assert len(finding["observed"]) == 8192
+    assert validate.validate_verification_query_message(result) == []
 
 
 def test_inspection_takes_no_ownership_of_the_callers_document():

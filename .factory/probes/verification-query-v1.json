@@ -215,5 +215,40 @@
     "from": "if values:\n            mark_used(name)\n            return values[0]",
     "to": "if values:\n            return values[0]",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "manifest verification accepts in-flight trace companions",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "validate.validate_trace(document, expect_complete=False)",
+    "to": "validate.validate_trace(document, expect_complete=True)",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "profile provenance excludes unrequested companion kinds",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "uses_manifest = \"system_manifest\" in requested",
+    "to": "uses_manifest = True",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "imported violation messages remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"message\": str(item[\"message\"])[:8192]",
+    "to": "\"message\": str(item[\"message\"])",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "imported finding strings remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return value[:8192]",
+    "to": "return value",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "dispatcher errors retain available supplied input ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_invalid_request(violations, _request_input_ids(request), operation)",
+    "to": "_invalid_request(violations, None, operation)",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]
