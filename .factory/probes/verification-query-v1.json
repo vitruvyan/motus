@@ -65,8 +65,8 @@
   {
     "name": "missing correction predecessors remain visible",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if not candidates:\n                    findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
-    "to": "if False:\n                    findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
+    "from": "if not candidates:\n                    if parent in context_fingerprints:",
+    "to": "if False:\n                    if parent in context_fingerprints:",
     "tests": "tests/test_verification_query_query.py"
   },
   {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import json
 import zipfile
@@ -10,7 +11,8 @@ from types import SimpleNamespace
 
 from vitruvyan_motus import execute_verification_query, query_artifacts, verify_artifact
 from vitruvyan_motus.contract import validate
-import vitruvyan_motus.verification_query as verification_query
+
+verification_query = importlib.import_module("vitruvyan_motus.verification_query")
 
 ROOT = Path(__file__).resolve().parent.parent
 
