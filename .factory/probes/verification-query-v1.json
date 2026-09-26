@@ -422,8 +422,8 @@
   {
     "name": "system manifest authority enforces the shared trace join budget",
     "file": "src/vitruvyan_motus/system_manifest.py",
-    "from": "if trace_join_work > _TRACE_JOIN_LIMIT:",
-    "to": "if False:",
+    "from": "trace_join_over_budget = trace_join_work > _TRACE_JOIN_LIMIT",
+    "to": "trace_join_over_budget = False",
     "tests": "tests/test_verification_query_verify.py"
   },
   {
