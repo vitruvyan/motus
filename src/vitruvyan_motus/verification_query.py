@@ -615,6 +615,24 @@ def _authoritative_lineage_findings(
     kind: str, documents: list[dict[str, Any]],
 ) -> list[dict[str, Any]] | None:
     """Compose an existing lineage authority when Motus defines one."""
+    if kind in {"incident_declaration", "capa_action"}:
+        validate = _contract()
+        ledger = {
+            "schema_version": "1.0.0",
+            "entries": [
+                {"kind": kind, "document": document}
+                for document in documents
+            ],
+        }
+        findings = []
+        for issue in validate.validate_incident_capa_ledger(ledger):
+            if issue.rule == "LEDGER2" and "same record kind" in issue.message:
+                findings.append({
+                    "path": issue.path,
+                    "status": "mismatched",
+                    "reason": f"{issue.rule}: {issue.message}",
+                })
+        return findings
     if kind == "regulatory_evidence_dossier":
         verdict = importlib.import_module(
             "vitruvyan_motus.regulatory_dossier"
@@ -703,7 +721,7 @@ def _query_result(
         )
         if authoritative is not None:
             findings.extend(authoritative)
-        else:
+        if authoritative is None or wanted in {"incident_declaration", "capa_action"}:
             by_fingerprint: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
             parents: dict[str, int] = {}
             predecessor_of: dict[str, str] = {}

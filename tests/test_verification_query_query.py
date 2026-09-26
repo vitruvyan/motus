@@ -143,6 +143,24 @@ def test_correction_lineage_uses_authoritative_stable_identity_checks():
     assert any("stable identifier" in item["reason"] for item in result["findings"])
 
 
+def test_incident_and_capa_lineage_reject_cross_identity_corrections():
+    cases = (
+        ("incident_declaration", "360-incident-declaration-valid.json", "incident_id", validate.incident_declaration_fingerprint),
+        ("capa_action", "361-capa-action-valid.json", "action_id", validate.capa_action_fingerprint),
+    )
+    for kind, fixture_name, stable_field, fingerprint in cases:
+        parent = fixture(fixture_name)
+        child = copy.deepcopy(parent)
+        child[stable_field] = "different-stable-id"
+        child["supersedes"] = fingerprint(parent)
+        result = query_artifacts(
+            {"kind": "correction_lineage", "artifact_kind": kind},
+            [typed(kind, parent, "parent"), typed(kind, child, "child")],
+        )
+        assert any(item["status"] == "mismatched" for item in result["findings"])
+        assert any("LEDGER2" in item["reason"] for item in result["findings"])
+
+
 def test_invalid_supplied_artifact_is_visible_and_fails_query_closed():
     invalid = fixture("310-system-manifest-valid.json")
     invalid["compliant"] = True

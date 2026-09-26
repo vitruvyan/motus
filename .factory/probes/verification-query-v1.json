@@ -250,5 +250,12 @@
     "from": "_invalid_request(violations, _request_input_ids(request), operation)",
     "to": "_invalid_request(violations, None, operation)",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "incident and CAPA corrections retain authoritative stable identity checks",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for issue in validate.validate_incident_capa_ledger(ledger):",
+    "to": "for issue in ():",
+    "tests": "tests/test_verification_query_query.py"
   }
 ]
