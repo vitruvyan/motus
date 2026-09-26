@@ -1,0 +1,632 @@
+[
+  {
+    "name": "result scope cannot claim global completeness",
+    "file": "contract/verification-query.v1.schema.json",
+    "from": "\"global_complete\": {\"const\": false}",
+    "to": "\"global_complete\": {\"type\": \"boolean\"}",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "request input identifiers remain unique",
+    "file": "contract/validate.py",
+    "from": "if input_id in seen:\n                violations.append(Violation(\n                    \"VQ1\"",
+    "to": "if False:\n                violations.append(Violation(\n                    \"VQ1\"",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "execution projections require canonical references",
+    "file": "contract/validate.py",
+    "from": "and _canonical_execution_ref_parts(projection[\"execution_ref\"]) is None",
+    "to": "and False",
+    "tests": "tests/test_verification_query_contract.py"
+  },
+  {
+    "name": "invalid artifacts derive no semantic identity",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "fingerprint = None if violations else _json_fingerprint(validate, kind, document)",
+    "to": "fingerprint = _json_fingerprint(validate, kind, document)",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "correction forks remain visible conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if count > 1:\n                    findings.append({\"path\": f\"lineage:{parent}\"",
+    "to": "if count > 999:\n                    findings.append({\"path\": f\"lineage:{parent}\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "structural-only artifacts are not promoted to verified",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "{\"path\": \"$.artifact\", \"status\": \"not_verified\", \"reason\": \"this artifact kind has structural inspection but no standalone binding verifier\"}",
+    "to": "{\"path\": \"$.artifact\", \"status\": \"matched\", \"reason\": \"this artifact kind has structural inspection but no standalone binding verifier\"}",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI invalid artifact remains nonzero",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "_SUCCESS = frozenset({\"valid\", \"matched\", \"completed\"})",
+    "to": "_SUCCESS = frozenset({\"valid\", \"invalid\", \"matched\", \"completed\"})",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "invalid supplied query artifacts remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if inspected[\"outcome\"] == \"valid\":\n            valid.append((artifact, inspected))",
+    "to": "if True:\n            valid.append((artifact, inspected))",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "execution receipt references name BEGIN positions only",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "entry = segment.get(\"begin\")",
+    "to": "entry = segment.get(\"end\")",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "missing correction predecessors remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if not candidates:\n                    context_count = context_fingerprints.get(parent, 0)",
+    "to": "if False:\n                    context_count = context_fingerprints.get(parent, 0)",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "duplicate correction identities remain conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if len(duplicates) > 1:\n                    findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "to": "if False:\n                    findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "correction lineage cycles remain conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if cycle_members:\n                findings.append({\"path\": \"lineage:cycle\"",
+    "to": "if False:\n                findings.append({\"path\": \"lineage:cycle\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "AI lifecycle registration matches stay on the requested id",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item[\"kind\"] == \"ai_system_registration\"\n            and item[\"document\"][\"producer_namespace\"] == namespace\n            and item[\"document\"][\"registration_id\"] == registration_id",
+    "to": "if item[\"kind\"] == \"ai_system_registration\"\n            and item[\"document\"][\"producer_namespace\"] == namespace",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "AI lifecycle event matches stay on the selected projection",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "and inspected[\"subject\"][\"fingerprint\"] in selected_event_fingerprints",
+    "to": "and True",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "expanded verifier results remain contract bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_RESULT_ITEM_LIMIT = 10_000",
+    "to": "_RESULT_ITEM_LIMIT = 100_000",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI parser recursion remains a usage error",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:",
+    "to": "except (OSError, UnicodeDecodeError, ValueError) as exc:",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "evidence packages retain a member-count work limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_MEMBER_LIMIT = 1_000",
+    "to": "_PACKAGE_MEMBER_LIMIT = 2_000",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "evidence packages retain a per-member expansion limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024",
+    "to": "_PACKAGE_MEMBER_MAX_BYTES = 64 * 1024 * 1024",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "evidence packages retain an aggregate expansion limit",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024",
+    "to": "_PACKAGE_TOTAL_MAX_BYTES = 256 * 1024 * 1024",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "receipt established status maps to matched",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"verified\": \"matched\", \"established\": \"matched\", \"matched\": \"matched\"",
+    "to": "\"verified\": \"matched\", \"established\": \"not_verified\", \"matched\": \"matched\"",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "receipt provisional statuses fail closed",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"not established\": \"not_verified\", \"not yet\": \"not_verified\"",
+    "to": "\"not established\": \"not_verified\", \"not yet\": \"matched\"",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "evidence package member identifiers remain bounded in results",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return name if len(name) <= 512 else name[:509] + \"...\"",
+    "to": "return name",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "public facade nesting retains the shared VQ2 bound",
+    "file": "contract/validate.py",
+    "from": "_VQ_MAX_NESTING_DEPTH = 128",
+    "to": "_VQ_MAX_NESTING_DEPTH = 10_000",
+    "tests": "tests/test_verification_query_contract.py tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "ZIP expansion work is cumulative across query inputs",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "inspected = _inspect_artifact(artifact, work_budget)",
+    "to": "inspected = _inspect_artifact(artifact, _ZipWorkBudget())",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "nested ZIP work is included before dossier verification",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if nested_chunks is not None:\n                nested_finding = _package_expansion_finding(",
+    "to": "if False:\n                nested_finding = _package_expansion_finding(",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "declared self-extracting evidence packages are preflighted",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "entry.get(\"artifact_kind\") == \"execution_evidence_package\"",
+    "to": "False",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "mandatory dossier metadata is not charged as an evidence entry",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "actual_work_members = len(infos) - (1 if len(manifest_infos) == 1 else 0)",
+    "to": "actual_work_members = len(infos)",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "retention correction queries use the authoritative lineage verifier",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"retention_policy_declaration\", \"legal_hold_declaration\",",
+    "to": "\"legal_hold_declaration\",",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid companion structural violations remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "            violations.extend({\n                \"rule\": detail[\"rule\"],",
+    "to": "            tuple({\n                \"rule\": detail[\"rule\"],",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid companion transport findings remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "companion_findings.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "verification results identify singular companions actually used",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "used_companions[identity[\"input_id\"]] = identity\n            return value",
+    "to": "return value",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "manifest verification accepts in-flight trace companions",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "validate.validate_trace(document, expect_complete=False)",
+    "to": "validate.validate_trace(document, expect_complete=True)",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "profile provenance excludes unrequested companion kinds",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "uses_manifest = \"system_manifest\" in requested",
+    "to": "uses_manifest = True",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "imported violation messages remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"message\": str(item[\"message\"])[:8192]",
+    "to": "\"message\": str(item[\"message\"])",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "imported finding strings remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return value[:8192]",
+    "to": "return value",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "dispatcher errors retain available supplied input ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_invalid_request(violations, _request_input_ids(request), operation)",
+    "to": "_invalid_request(violations, None, operation)",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "incident and CAPA corrections retain authoritative stable identity checks",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for issue in validate.validate_incident_capa_ledger(ledger):",
+    "to": "for issue in ():",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "incident and CAPA execution queries use the declared discriminator",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item.get(\"kind\") == \"execution\"",
+    "to": "if item.get(\"kind\") == \"execution_ref\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "profile verification retains transitive binding companions",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if requested & {\"control_application\", \"human_oversight_receipt\"}:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "direct query errors retain supplied artifact ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_invalid_request(violations, _request_input_ids(request), \"query\")",
+    "to": "_invalid_request(violations, None, \"query\")",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "direct verify errors retain subject and companion ids",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "request_violations, _request_input_ids(request), \"verify\"",
+    "to": "request_violations, None, \"verify\"",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI request reads are bounded on the opened stream",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "data = stream.read(limit + 1)",
+    "to": "data = stream.read()",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI refuses non-regular request streams",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "if not stat.S_ISREG(os.fstat(descriptor).st_mode):",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI opens request paths nonblocking before type validation",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "| getattr(os, \"O_NONBLOCK\", 0)",
+    "to": "| 0",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI human rendering escapes terminal controls",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "safe = _terminal_safe",
+    "to": "safe = str",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "authoritative verifier refusals remain stable public results",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "except (ValueError, RecursionError) as exc:",
+    "to": "except RecursionError as exc:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid verification outcomes survive diagnostic truncation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if markers and bounded[\"outcome\"] not in {\"invalid\", \"invalid_request\"}:",
+    "to": "if markers:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "cross-kind supplied predecessors suppress contradictory absence",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if context_count == 1:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "unrequested ledger kinds do not leak identity findings",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if ledger_entries[index][\"kind\"] != kind:\n                continue",
+    "to": "if False:\n                continue",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "projected record ordering uses canonical JSON",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "value, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=False,",
+    "to": "value, sort_keys=False, separators=(\",\", \":\"), ensure_ascii=False,",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "lineage cycle traversal marks completed paths",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "completed.update(path)",
+    "to": "completed.update(())",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "cross-kind predecessor multiplicity remains visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if context_count > 1:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "nested diagnostic collection cardinality remains bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for item in value[:_DIAGNOSTIC_COLLECTION_LIMIT]",
+    "to": "for item in value",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "AI lifecycle authority retains cross-namespace registrations",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": ") or inspected[\"subject\"][\"fingerprint\"] in cited_registrations",
+    "to": ") and False",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "query results retain every inspection violation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "invalid_violations.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "query results retain every inspection finding",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "invalid_findings.extend({",
+    "to": "tuple({",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier lineage ordering remains linear and complete",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "indegree[child] -= 1",
+    "to": "indegree[child] += 0",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "AI lifecycle candidates stay inside the requested namespace",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item[\"document\"][\"producer_namespace\"] == namespace\n            and item[\"document\"][\"registration_id\"] == registration_id\n        ]\n        cited_registrations",
+    "to": "if item[\"document\"][\"registration_id\"] == registration_id\n        ]\n        cited_registrations",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid request scope names the actual operation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"scope\": _scope(ids, operation),",
+    "to": "\"scope\": _scope(ids),",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "invalid request scope identifiers remain result bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if len(ids) == _RESULT_ITEM_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "system manifest authority enforces the shared trace join budget",
+    "file": "src/vitruvyan_motus/system_manifest.py",
+    "from": "trace_join_over_budget = trace_join_work > _TRACE_JOIN_LIMIT",
+    "to": "trace_join_over_budget = False",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "profiles cache every distinct evidence-kind evaluation",
+    "file": "src/vitruvyan_motus/regulatory_profile.py",
+    "from": "for kind in requested_kinds:",
+    "to": "for kind in ():",
+    "tests": "tests/test_regulatory_profile.py"
+  },
+  {
+    "name": "manifest provenance excludes traces not passed to authority",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "trace_values = pools.get(\"trace\", [])",
+    "to": "trace_values = many(\"trace\")",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI capacity covers the contract valid combined envelope",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "_MAX_REQUEST_MIB = 352",
+    "to": "_MAX_REQUEST_MIB = 225",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "AI lifecycle context follows lifecycle predecessor references",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "item[\"document\"].get(\"predecessor_event_fingerprint\"),",
+    "to": "None,",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "manifest schema diagnostics stop before discarded output materializes",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if len(bounded) > _RESULT_ITEM_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "manifest trace budget preserves independent GraphSpec mismatches",
+    "file": "src/vitruvyan_motus/system_manifest.py",
+    "from": "        ))\n\n    for index, graph in enumerate(manifest_document[\"bindings\"][\"graphs\"]):",
+    "to": "        ))\n        return SystemManifestBindingVerdict(fingerprint, (), tuple(findings))\n\n    for index, graph in enumerate(manifest_document[\"bindings\"][\"graphs\"]):",
+    "tests": "tests/test_system_manifest_bindings.py"
+  },
+  {
+    "name": "incident and CAPA receipt joins retain a cumulative work budget",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "execution_join_work > _EXECUTION_JOIN_WORK_LIMIT",
+    "to": "False",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "dossier composition reuses precomputed companion fingerprints",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "matches = index.get((kind, expected), ())",
+    "to": "matches = ()",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "incident and CAPA package references reuse one package verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if fingerprint not in package_verdicts:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "incident and CAPA control-application references reuse one verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if binding_fingerprint not in application_binding_cache:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "incident and CAPA oversight references reuse one verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if binding_fingerprint not in oversight_binding_cache:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "dossier ledgers share one evidence-package verdict cache",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "_package_verdicts=package_verdicts,",
+    "to": "_package_verdicts={},",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "dossier ledger composition retains a cumulative work budget",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if ledger_composition_work > _LEDGER_COMPOSITION_WORK_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "incident and CAPA authorities bound findings during production",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if len(self) == _FINDING_LIMIT - 1:",
+    "to": "if False:",
+    "tests": "tests/test_incident_capa_bindings.py"
+  },
+  {
+    "name": "verification requests preflight malformed artifact shells",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_REQUEST_PREFLIGHT_ENABLED = True",
+    "to": "_REQUEST_PREFLIGHT_ENABLED = False",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "verification preflight validates complete artifact shells",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if not isinstance(kind, str) or kind not in allowed_kinds:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier composition bounds findings across all ledgers",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if len(self) == _COMPOSED_FINDING_LIMIT - 1:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "trace GraphSpec binding failures remain semantic mismatches",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "binding_violations = validate.validate_trace(document, spec=spec)",
+    "to": "binding_violations = []",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI human output retains projected record content",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "for item in result[\"records\"]:",
+    "to": "for item in ():",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "incident correction authority runs once per query",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "for issue in validate.validate_incident_capa_ledger(ledger):",
+    "to": "for issue in sum((validate.validate_incident_capa_ledger(ledger) for _ in ledger_entries), []):",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier authorities stop after the shared finding cap",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "for snapshot in documents.get(\"ai_system_registry_snapshot\", ()):\n        if findings.exhausted:",
+    "to": "for snapshot in documents.get(\"ai_system_registry_snapshot\", ()):\n        if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "CLI human output escapes Unicode line separators",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "{\"Cc\", \"Cf\", \"Cs\", \"Zl\", \"Zp\"}",
+    "to": "{\"Cc\", \"Cf\", \"Cs\"}",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI human output retains every supplied scope input",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "for input_id in scope[\"input_ids\"]",
+    "to": "for input_id in ()",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "verification selects companions by declared exact identity",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if pair[1][\"fingerprint\"] == fingerprint",
+    "to": "if True",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "dossier duplicate exact identities remain conflicts",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "matches = document_index.get((kind, expected), ()) if expected else ()\n        if len(matches) > 1:",
+    "to": "matches = document_index.get((kind, expected), ()) if expected else ()\n        if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "lifecycle selected input membership remains linear",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return {item[\"input_id\"] for item, _ in selected}",
+    "to": "return [item[\"input_id\"] for item, _ in selected]",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid request input deduplication remains linear",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "and value not in seen_ids):",
+    "to": "and value not in ids):",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "artifact preflight rejects non-string object keys",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if any(not isinstance(key, str) for key in item):",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier AI lifecycle composition has a cumulative work budget",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if lifecycle_composition_work > _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
+  }
+]

@@ -35,6 +35,38 @@ enforcement point.
 | 12 | Retention / Hold v1 | `retention-policy-declaration.v1.schema.json`, `legal-hold-declaration.v1.schema.json`, `retention-scope-snapshot.v1.schema.json`, `retention-trigger-occurrence.v1.schema.json`, `retention-application.v1.schema.json`, `custody-observation.v1.schema.json` | An evidence consumer that needs distinct, exact producer claims for a rule, hold action, resolved scope, trigger occurrence, custodian action and bounded custody observation | The six validators apply closed schema plus RET1-RET4 for real UTC instants, typed artifact uniqueness, canonical execution coordinates and integer duration values. This first stage validates each document independently; it does not verify lineage, scope membership, external bindings or custody |
 | 13 | AI System Registry v1 | `ai-system-registration.v1.schema.json`, `ai-system-registry-event.v1.schema.json`, `ai-system-registry-snapshot.v1.schema.json` | An evidence consumer that needs immutable producer registration and lifecycle claims bound to exact System Manifest revisions | The three validators apply closed schema plus AIR1-AIR2. Read-only helpers verify supplied correction lineage, exact manifest bindings, lifecycle chains and bounded snapshot membership; they never establish legal status, deployment, global current state, completeness, authority or compliance |
 | 14 | Regulatory Evidence Dossier v1 | `regulatory-evidence-dossier.v1.schema.json` | A third party holding one bounded export who must verify which exact Motus artifacts the producer included | `validate_regulatory_evidence_dossier()` applies closed schema plus RED1-RED5. It validates manifest time, unique entry identities, one exact profile binding, safe bounded member paths and exact integer sizes; it does not establish archive integrity, evidence completeness, legal sufficiency, official submission, acceptance or compliance |
+| 15 | Verification and Query Interface v1 | `verification-query.v1.schema.json` | A bridge, operator or CLI that needs one stable read-only envelope over existing Motus validators and bounded supplied-set projections | `validate_verification_query_message()` applies closed schema plus VQ1-VQ4. It fixes artifact kinds, operations, projections, scope and resource bounds; it does not validate embedded artifacts, discover evidence, establish global completeness or turn a result into evidence |
+
+### Verification and Query Interface structural v1
+
+ADR-043 adds ephemeral request and result messages, not a new evidence type.
+Every input has a caller-owned `input_id`, an explicit closed artifact kind and
+an explicit media type. JSON artifacts carry a parsed document; only execution
+evidence packages and dossier exports carry strict padded base64 for their exact
+ZIP bytes. A verifier never guesses kind from content or filename.
+
+The operation vocabulary is `inspect`, `verify` and `query`. Query is limited to
+seven named projections: exact artifact identity, execution reference,
+controls for one declared risk, risks for one declared control, supplied
+correction lineage, dossier membership and supplied AI-system lifecycle. There
+is no predicate, expression, script, SQL, JSONPath, policy language or plugin
+escape.
+
+Every result says its scope is `supplied_inputs` and fixes
+`global_complete` to false. Matches and projected records must refer to an
+`input_id` present in that scope. Domain findings retain separate statuses;
+the interface has no compliant, certified, approved, safe or legally
+sufficient outcome.
+
+`VQ1` rejects duplicate input identifiers. `VQ2` bounds each canonical JSON
+document to 28 MiB, aggregate JSON request/result content to 128 MiB, decoded
+binary request content to 160 MiB, message nesting to 128 levels, collections
+and result lists to 10,000 items, and verifies strict base64. `VQ3` requires the canonical ADR-027
+`tenant/writer/sequence` coordinate for execution projections. `VQ4` rejects a
+projection source of the wrong kind or outside the supplied request and a
+result that cites an input outside its declared supplied scope. These rules
+validate only the interface envelope; embedded artifacts still require their
+own authoritative Motus validator and verifier.
 
 ### Regulatory Evidence Dossier structural v1
 

@@ -1,0 +1,177 @@
+"""ADR-043 CLI adapter tests."""
+from __future__ import annotations
+
+import io
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+import vitruvyan_motus.verification_query_cli as cli
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def manifest() -> dict:
+    wrapper = json.loads((ROOT / "contract" / "fixtures" / "310-system-manifest-valid.json").read_text("utf-8"))
+    return wrapper["instance"]
+
+
+def request(document: dict) -> dict:
+    return {"interface_version": "1.0.0", "message_type": "request", "operation": "inspect", "artifact": {"input_id": "manifest", "kind": "system_manifest", "media_type": "application/json", "document": document}}
+
+
+def run(path: Path, *args: str):
+    return subprocess.run([sys.executable, "-m", "vitruvyan_motus.verification_query_cli", str(path), *args], cwd=ROOT, capture_output=True, text=True, timeout=30)
+
+
+def test_json_output_is_stable_contract_result(tmp_path):
+    path = tmp_path / "request.json"
+    path.write_text(json.dumps(request(manifest())), encoding="utf-8")
+    completed = run(path, "--json")
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["outcome"] == "valid"
+    assert result["scope"]["global_complete"] is False
+
+
+def test_human_output_names_scope_and_does_not_claim_compliance(tmp_path):
+    path = tmp_path / "request.json"
+    path.write_text(json.dumps(request(manifest())), encoding="utf-8")
+    completed = run(path)
+    assert completed.returncode == 0
+    assert "outcome: valid" in completed.stdout
+    assert "global_complete: false" in completed.stdout
+    assert "compliant" not in completed.stdout.lower()
+
+
+def test_human_output_renders_every_supplied_scope_input():
+    rendered = cli._human({
+        "operation": "query", "outcome": "completed",
+        "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["matched", "unmatched\u2028forged"],
+            "global_complete": False,
+            "limitations": ["supplied set only"],
+        },
+        "subject": None, "violations": [], "findings": [],
+        "matches": [], "records": [],
+    })
+
+    assert "SCOPE_INPUT matched" in rendered
+    assert "SCOPE_INPUT unmatched\\u2028forged" in rendered
+    assert "\u2028" not in rendered
+
+
+def test_human_output_escapes_terminal_controls(tmp_path):
+    value = request(manifest())
+    value["artifact"]["input_id"] = "attacker\x1b[2JFORGED"
+    path = tmp_path / "request.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    completed = run(path)
+    assert completed.returncode == 0
+    assert "\x1b" not in completed.stdout
+    assert "attacker\\u001b[2JFORGED" in completed.stdout
+
+
+def test_human_output_renders_projected_records_terminal_safely():
+    rendered = cli._human({
+        "operation": "query", "outcome": "completed", "subject": None,
+        "scope": {
+            "scope_kind": "supplied_inputs", "input_ids": ["registry"],
+            "global_complete": False, "limitations": ["supplied set only"],
+        },
+        "violations": [], "findings": [], "matches": [],
+        "records": [{
+            "source_input_id": "registry",
+            "record_kind": "control",
+            "record": {
+                "control_id": "CTRL-1\x1b[2J",
+                "title": "review\u2028FINDING matched $.forged: approved\u2029tail",
+            },
+        }],
+    })
+
+    assert "records: 1" in rendered
+    assert "RECORD registry control:" in rendered
+    assert '"control_id":"CTRL-1\\u001b[2J"' in rendered
+    assert "\\u2028FINDING matched $.forged: approved\\u2029tail" in rendered
+    assert "\x1b" not in rendered
+    assert "\u2028" not in rendered and "\u2029" not in rendered
+
+
+def test_invalid_artifact_exits_one_and_invalid_request_exits_two(tmp_path):
+    invalid = manifest()
+    invalid["compliant"] = True
+    artifact_path = tmp_path / "invalid-artifact.json"
+    artifact_path.write_text(json.dumps(request(invalid)), encoding="utf-8")
+    assert run(artifact_path, "--json").returncode == 1
+
+    bad_request = request(manifest())
+    bad_request["operation"] = "search"
+    request_path = tmp_path / "invalid-request.json"
+    request_path.write_text(json.dumps(bad_request), encoding="utf-8")
+    assert run(request_path, "--json").returncode == 2
+
+
+def test_duplicate_keys_and_non_utf8_are_usage_errors(tmp_path):
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text('{"operation":"inspect","operation":"query"}', encoding="utf-8")
+    assert run(duplicate).returncode == 2
+    binary = tmp_path / "binary.json"
+    binary.write_bytes(b"\xff")
+    assert run(binary).returncode == 2
+
+
+def test_parser_stack_exhaustion_is_a_usage_error_not_a_traceback(tmp_path):
+    nested = tmp_path / "nested.json"
+    nested.write_text("[" * 10_000 + "0" + "]" * 10_000, encoding="utf-8")
+    completed = run(nested)
+    assert completed.returncode == 2
+    assert "Traceback" not in completed.stderr
+
+
+def test_request_reader_bounds_the_open_stream(monkeypatch):
+    class TrackingStream(io.BytesIO):
+        requested = None
+
+        def fileno(self):
+            return 123
+
+        def read(self, size=-1):
+            self.requested = size
+            return super().read(size)
+
+    stream = TrackingStream(b"x" * 72)
+
+    opened = {}
+    monkeypatch.setattr(cli.os, "open", lambda path, flags: opened.update(path=path, flags=flags) or 123)
+    monkeypatch.setattr(cli.os, "fdopen", lambda fd, mode: stream)
+    monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o100644))
+    monkeypatch.setattr(cli.os, "close", lambda _fd: None)
+    with pytest.raises(ValueError, match="352 MiB"):
+        cli._read_request_bytes(Path("request.json"), limit=4)
+    assert stream.requested == 5
+    assert opened["flags"] & getattr(cli.os, "O_NONBLOCK", 0) == getattr(cli.os, "O_NONBLOCK", 0)
+
+
+def test_cli_limit_covers_the_largest_contract_valid_combined_envelope():
+    decoded_binary_mib = 160
+    encoded_binary_mib = (decoded_binary_mib * 4 + 2) // 3
+    assert cli._MAX_REQUEST_MIB >= 128 + encoded_binary_mib + 8
+
+
+def test_request_reader_rejects_non_regular_streams(monkeypatch):
+    opened = {}
+    closed = []
+    monkeypatch.setattr(cli.os, "open", lambda path, flags: opened.update(path=path, flags=flags) or 456)
+    monkeypatch.setattr(cli.os, "fdopen", lambda *_args: pytest.fail("special file must be rejected before fdopen"))
+    monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o010644))
+    monkeypatch.setattr(cli.os, "close", closed.append)
+    with pytest.raises(ValueError, match="regular file"):
+        cli._read_request_bytes(Path("request.fifo"), limit=4)
+    assert opened["flags"] & getattr(cli.os, "O_NONBLOCK", 0) == getattr(cli.os, "O_NONBLOCK", 0)
+    assert closed == [456]

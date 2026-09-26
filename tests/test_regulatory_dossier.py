@@ -90,6 +90,229 @@ def dossier(*requested: str):
     return manifest, {"profile/profile.json": payload}
 
 
+def test_companion_index_derives_each_fingerprint_once(monkeypatch):
+    registry = json.loads(
+        (ROOT / JSON_FIXTURES["risk_control_registry"]).read_text("utf-8")
+    )["instance"]
+    expected = validate.risk_control_registry_fingerprint(registry)
+    original = validate.risk_control_registry_fingerprint
+    calls = 0
+
+    def counted(document):
+        nonlocal calls
+        calls += 1
+        return original(document)
+
+    monkeypatch.setattr(validate, "risk_control_registry_fingerprint", counted)
+    index = dossier_module._document_index(
+        {"risk_control_registry": [registry]}, validate,
+    )
+
+    for _ in range(500):
+        assert dossier_module._matching_document(
+            index, "risk_control_registry", expected,
+        ) == registry
+    assert calls == 1
+
+
+def test_duplicate_exact_dossier_companions_are_conflicts_not_missing():
+    registry = json.loads(
+        (ROOT / JSON_FIXTURES["risk_control_registry"]).read_text("utf-8")
+    )["instance"]
+    application = json.loads(
+        (ROOT / JSON_FIXTURES["control_application"]).read_text("utf-8")
+    )["instance"]
+    application["registry_fingerprint"] = (
+        validate.risk_control_registry_fingerprint(registry)
+    )
+
+    findings = dossier_module._compose_existing_verifiers(
+        {
+            "risk_control_registry": [registry, copy.deepcopy(registry)],
+            "control_application": [application],
+        },
+        [], validate,
+    )
+
+    assert any(
+        item.path.endswith(".registry_fingerprint")
+        and item.status == "conflict"
+        and item.observed == 2
+        for item in findings
+    )
+    assert not any(
+        item.path.endswith(".registry_fingerprint")
+        and item.status == "missing"
+        for item in findings
+    )
+
+
+def test_dossier_ledgers_share_one_package_verdict_cache(monkeypatch):
+    package = b"not a valid evidence package"
+    package_ref = {
+        "kind": "evidence_package",
+        "fingerprint": __import__(
+            "vitruvyan_motus.evidence",
+            fromlist=["evidence_package_fingerprint"],
+        ).evidence_package_fingerprint(package),
+    }
+    incident = json.loads(
+        (ROOT / JSON_FIXTURES["incident_declaration"]).read_text("utf-8")
+    )["instance"]
+    incident["evidence"] = [package_ref]
+    ledger = {
+        "schema_version": "1.0.0",
+        "entries": [{"kind": "incident_declaration", "document": incident}],
+    }
+    assert validate.validate_incident_capa_ledger(ledger) == []
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    original = evidence.verify_package
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(evidence, "verify_package", counted)
+    dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [ledger, copy.deepcopy(ledger)]},
+        [package],
+        validate,
+    )
+
+    assert calls == 1
+
+
+def test_dossier_ledger_composition_has_a_cumulative_work_budget(monkeypatch):
+    ledger = json.loads(
+        (ROOT / JSON_FIXTURES["incident_capa_ledger"]).read_text("utf-8")
+    )["instance"]
+    monkeypatch.setattr(dossier_module, "_LEDGER_COMPOSITION_WORK_LIMIT", -1)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [ledger]}, [], validate,
+    )
+
+    assert any(
+        item.path == "binding:incident_capa_ledger"
+        and item.status == "not_verified"
+        and "cumulative work limit" in item.reason
+        for item in findings
+    )
+
+
+def test_dossier_ai_lifecycle_projection_has_a_cumulative_work_budget(monkeypatch):
+    registration_wrapper = json.loads(
+        (ROOT / JSON_FIXTURES["ai_system_registration"]).read_text("utf-8")
+    )
+    registration = registration_wrapper.get("instance", registration_wrapper)
+    registry_module = __import__(
+        "vitruvyan_motus.ai_system_registry",
+        fromlist=["project_supplied_ai_system_lifecycle"],
+    )
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Projection", (), {"findings": ()})()
+
+    monkeypatch.setattr(
+        registry_module, "project_supplied_ai_system_lifecycle", counted,
+    )
+    monkeypatch.setattr(
+        dossier_module, "_AI_LIFECYCLE_COMPOSITION_WORK_LIMIT", -1,
+    )
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"ai_system_registration": [registration]}, [], validate,
+    )
+
+    assert calls == 0
+    assert any(
+        item.path == "projection:ai_system_registry"
+        and item.status == "not_verified"
+        and "cumulative work limit" in item.reason
+        for item in findings
+    )
+
+
+def test_dossier_ledger_findings_share_one_cumulative_cap(monkeypatch):
+    ledger = json.loads(
+        (ROOT / JSON_FIXTURES["incident_capa_ledger"]).read_text("utf-8")
+    )["instance"]
+    incident_module = __import__(
+        "vitruvyan_motus.incident_capa", fromlist=["verify_incident_capa_ledger"],
+    )
+    calls = 0
+
+    def many_findings(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Verdict", (), {"findings": tuple(
+            dossier_module._finding(
+                f"$.entries[{index}]", "missing", "evidence", None, "missing",
+            )
+            for index in range(100)
+        )})()
+
+    monkeypatch.setattr(incident_module, "verify_incident_capa_ledger", many_findings)
+    monkeypatch.setattr(dossier_module, "_COMPOSED_FINDING_LIMIT", 10)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [copy.deepcopy(ledger) for _ in range(1000)]},
+        [], validate,
+    )
+
+    assert calls == 1
+    assert len(findings) == 10
+    assert any(
+        item.path == "binding:findings"
+        and item.status == "not_verified"
+        and "dossier-wide work limit" in item.reason
+        for item in findings
+    )
+
+
+def test_dossier_stops_later_authorities_after_finding_cap(monkeypatch):
+    snapshot_wrapper = json.loads(
+        (ROOT / JSON_FIXTURES["ai_system_registry_snapshot"]).read_text("utf-8")
+    )
+    snapshot = snapshot_wrapper.get("instance", snapshot_wrapper)
+    registry_module = __import__(
+        "vitruvyan_motus.ai_system_registry",
+        fromlist=["verify_ai_system_registry_snapshot"],
+    )
+    calls = 0
+
+    def many_findings(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Verdict", (), {"findings": tuple(
+            dossier_module._finding(
+                f"$.members[{index}]", "missing", "member", None, "missing",
+            )
+            for index in range(100)
+        )})()
+
+    monkeypatch.setattr(
+        registry_module, "verify_ai_system_registry_snapshot", many_findings,
+    )
+    monkeypatch.setattr(dossier_module, "_COMPOSED_FINDING_LIMIT", 10)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"ai_system_registry_snapshot": [
+            copy.deepcopy(snapshot), copy.deepcopy(snapshot),
+        ]},
+        [], validate,
+    )
+
+    assert calls == 1
+    assert len(findings) == 10
+    assert any(item.path == "binding:findings" for item in findings)
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()
@@ -337,6 +560,43 @@ def test_lineage_orders_corrections_and_exposes_forks_missing_and_duplicate_root
     verdict = verify_regulatory_dossier_lineage([noncanonical])
     assert verdict.findings[0].status == "not_verified"
     assert "canonical lineage identity" in verdict.findings[0].reason
+
+
+def test_lineage_orders_a_maximum_chain_in_one_graph_pass(monkeypatch):
+    class FakeValidate:
+        @staticmethod
+        def validate_regulatory_evidence_dossier(_document):
+            return ()
+
+        @staticmethod
+        def regulatory_evidence_dossier_fingerprint(document):
+            return document["fingerprint"]
+
+        @staticmethod
+        def canonical_json(document):
+            return json.dumps(
+                document, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+
+    monkeypatch.setattr(dossier_module, "_validate_module", lambda: FakeValidate)
+    documents = []
+    previous = None
+    for index in range(10_000):
+        fingerprint = f"sha256:{index:064x}"
+        document = {
+            "fingerprint": fingerprint,
+            "producer_namespace": "producer",
+            "dossier_id": "maximum-chain",
+        }
+        if previous is not None:
+            document["supersedes"] = previous
+        documents.append(document)
+        previous = fingerprint
+    verdict = verify_regulatory_dossier_lineage(reversed(documents))
+    assert verdict.findings == ()
+    assert verdict.ordered_fingerprints == tuple(
+        f"sha256:{index:064x}" for index in range(10_000)
+    )
 
 
 def test_manifest_and_export_fingerprints_are_independent():

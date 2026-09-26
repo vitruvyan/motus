@@ -451,6 +451,7 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         "vitruvyan_motus/contract/system-manifest.v1.schema.json",
         "vitruvyan_motus/contract/trace.v1.schema.json",
         "vitruvyan_motus/contract/validate.py",
+        "vitruvyan_motus/contract/verification-query.v1.schema.json",
     ], shipped_from_contract
 
     assert not any("fixtures" in n for n in names), (

@@ -106,6 +106,7 @@ vitruvyan_motus = ["py.typed"]
 
 [project.scripts]
 motus-validate = "vitruvyan_motus.contract.validate:main"
+motus-evidence = "vitruvyan_motus.verification_query_cli:main"
 motus-mcp = "vitruvyan_motus.mcp.server:main"
 
 [tool.setuptools.dynamic]

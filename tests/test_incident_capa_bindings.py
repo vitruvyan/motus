@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import vitruvyan_motus.incident_capa as incident_capa
 from vitruvyan_motus import (
     evidence_package_fingerprint,
     order_incident_capa_entries,
@@ -154,6 +155,32 @@ def test_execution_and_exact_artifact_references_are_derived_from_supplied_docs(
     assert verdict.bindings_complete is True
 
 
+def test_execution_receipt_join_has_a_cumulative_semantic_work_budget(monkeypatch):
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    incident = _incident(evidence=[{
+        "kind": "execution",
+        "execution_ref": receipt["execution"]["ref"],
+    }])
+    monkeypatch.setattr(incident_capa, "_EXECUTION_JOIN_WORK_LIMIT", -1)
+
+    verdict = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        execution_receipts=[receipt],
+    )
+
+    assert verdict.bindings_complete is False
+    assert any(
+        item.path == "$.execution_receipts"
+        and item.status == "not_verified"
+        and "semantic-work limit" in item.reason
+        for item in verdict.findings
+    )
+    execution = next(
+        item for item in verdict.findings if item.path.endswith("execution_ref")
+    )
+    assert execution.status == "not_verified"
+
+
 def test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified():
     incident = _incident(evidence=[{
         "kind": "system_manifest",
@@ -241,6 +268,131 @@ def test_receipt_and_evidence_package_reference_kinds_are_admitted():
     assert supplied_by_path[
         "$.entries[0].document.evidence[1].verification"
     ].status == "not_verified"
+
+
+def test_repeated_evidence_package_references_reuse_one_verdict(monkeypatch):
+    package = b"not a valid evidence package"
+    package_ref = {
+        "kind": "evidence_package",
+        "fingerprint": evidence_package_fingerprint(package),
+    }
+    incident = _incident(evidence=[package_ref])
+    action = _action(incident, evidence=[package_ref])
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    original = evidence.verify_package
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(evidence, "verify_package", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        evidence_packages=[package],
+    )
+
+    assert calls == 1
+
+
+def test_repeated_control_application_references_reuse_one_verdict(monkeypatch):
+    registry = _fixture("320-risk-control-registry-valid.json")
+    registry.pop("system")
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    application = {
+        "schema_version": "1.0.0",
+        "registry_fingerprint": validate.risk_control_registry_fingerprint(registry),
+        "control_id": "C-001",
+        "execution_ref": receipt["execution"]["ref"],
+        "enforcement_point": "tool_dispatch",
+        "outcome": "blocked",
+        "observed_at": "2026-09-23T10:01:00Z",
+        "evidence": {"kind": "motus_execution"},
+    }
+    application_ref = {
+        "kind": "control_application",
+        "fingerprint": validate.control_application_fingerprint(application),
+    }
+    incident = _incident(evidence=[application_ref])
+    action = _action(incident, evidence=[application_ref])
+    risk_control = __import__(
+        "vitruvyan_motus.risk_control",
+        fromlist=["verify_control_application_bindings"],
+    )
+    original = risk_control.verify_control_application_bindings
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(risk_control, "verify_control_application_bindings", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        registries=[registry],
+        control_applications=[application],
+    )
+
+    assert calls == 1
+
+
+def test_repeated_oversight_references_reuse_one_verdict(monkeypatch):
+    oversight = _fixture("340-human-oversight-receipt-valid.json")
+    oversight_ref = {
+        "kind": "human_oversight_receipt",
+        "fingerprint": validate.human_oversight_receipt_fingerprint(oversight),
+    }
+    incident = _incident(evidence=[oversight_ref])
+    action = _action(incident, evidence=[oversight_ref])
+    human_oversight = __import__(
+        "vitruvyan_motus.human_oversight",
+        fromlist=["verify_human_oversight_bindings"],
+    )
+    original = human_oversight.verify_human_oversight_bindings
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(human_oversight, "verify_human_oversight_bindings", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        human_oversight_receipts=[oversight],
+    )
+
+    assert calls == 1
+
+
+def test_semantic_findings_are_bounded_while_the_authority_produces_them():
+    entries = []
+    for index in range(101):
+        incident = _incident(
+            incident_id=f"INC-{index:03d}",
+            evidence=[
+                {"kind": "execution", "execution_ref": f"tenant/writer/{index * 100 + ref}"}
+                for ref in range(100)
+            ],
+        )
+        entries.append(("incident_declaration", incident))
+
+    verdict = verify_incident_capa_ledger(_ledger(*entries))
+
+    assert len(verdict.findings) == 10_000
+    assert verdict.findings[-1].path == "$.findings"
+    assert verdict.findings[-1].status == "not_verified"
 
 
 def test_receipt_with_inconsistent_derived_identity_is_refused():

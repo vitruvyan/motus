@@ -7,6 +7,7 @@ Verification is local and caller-supplied; no result is a compliance verdict.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import importlib
 import io
 import json
@@ -36,6 +37,9 @@ _MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _ARCHIVE_MAX_BYTES = 160 * 1024 * 1024
 _MAX_ENTRIES = 1000
+_LEDGER_COMPOSITION_WORK_LIMIT = 128 * 1024 * 1024
+_AI_LIFECYCLE_COMPOSITION_WORK_LIMIT = 100_000
+_COMPOSED_FINDING_LIMIT = 10_000
 _JSON_KINDS = {
     "system_manifest": "system_manifest",
     "risk_control_registry": "risk_control_registry",
@@ -214,6 +218,35 @@ def _finding(path: str, status: Status, expected: Any, observed: Any, reason: st
     return RegulatoryDossierFinding(path, status, expected, observed, reason)
 
 
+class _BoundedCompositionFindings(list[RegulatoryDossierFinding]):
+    """Bound verifier composition across the whole dossier, not per authority."""
+
+    __slots__ = ("exhausted",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.exhausted = False
+
+    def append(self, item: RegulatoryDossierFinding) -> None:
+        if self.exhausted:
+            return
+        if len(self) == _COMPOSED_FINDING_LIMIT - 1:
+            super().append(_finding(
+                "binding:findings", "not_verified", _COMPOSED_FINDING_LIMIT,
+                None,
+                "composed findings were truncated at the dossier-wide work limit",
+            ))
+            self.exhausted = True
+            return
+        super().append(item)
+
+    def extend(self, values: Iterable[RegulatoryDossierFinding]) -> None:
+        for item in values:
+            if self.exhausted:
+                break
+            self.append(item)
+
+
 def _empty_verdict(data: bytes, finding: RegulatoryDossierFinding) -> RegulatoryDossierVerdict:
     return RegulatoryDossierVerdict(
         None, regulatory_dossier_export_fingerprint(data), (), (finding,), (), (), None,
@@ -262,15 +295,43 @@ def _converted_findings(prefix: str, values: Iterable[Any]) -> list[RegulatoryDo
     return converted
 
 
+def _document_index(
+    documents: dict[str, list[dict[str, Any]]], validate: Any,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Derive each companion fingerprint once for all composition lookups."""
+    index: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for kind, values in documents.items():
+        stem = "receipt" if kind == "execution_receipt" else kind
+        fingerprint_fn = getattr(validate, stem + "_fingerprint")
+        for value in values:
+            fingerprint = fingerprint_fn(value)
+            index.setdefault((kind, fingerprint), []).append(value)
+    return index
+
+
+def _execution_receipt_index(
+    receipts: Iterable[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Index receipt BEGIN locators once while preserving ambiguity."""
+    index: dict[str, list[dict[str, Any]]] = {}
+    for receipt in receipts:
+        for segment in receipt["segments"]:
+            commitment = segment["begin"]["commitment"]
+            execution_ref = (
+                f"{commitment['tenant']}/{commitment['writer_id']}/"
+                f"{commitment['sequence']}"
+            )
+            index.setdefault(execution_ref, []).append(receipt)
+    return index
+
+
 def _matching_document(
-    documents: dict[str, list[dict[str, Any]]], kind: str,
-    expected: str | None, validate: Any,
+    index: dict[tuple[str, str], list[dict[str, Any]]], kind: str,
+    expected: str | None,
 ) -> dict[str, Any] | None:
     if expected is None:
         return None
-    stem = "receipt" if kind == "execution_receipt" else kind
-    fingerprint_fn = getattr(validate, stem + "_fingerprint")
-    matches = [value for value in documents.get(kind, ()) if fingerprint_fn(value) == expected]
+    matches = index.get((kind, expected), ())
     return matches[0] if len(matches) == 1 else None
 
 
@@ -279,33 +340,68 @@ def _compose_existing_verifiers(
     package_bytes: list[bytes], validate: Any,
 ) -> tuple[RegulatoryDossierFinding, ...]:
     """Use existing Motus authorities; never reimplement their semantics."""
-    findings: list[RegulatoryDossierFinding] = []
+    findings = _BoundedCompositionFindings()
+    document_index = _document_index(documents, validate)
+    receipt_index = _execution_receipt_index(
+        documents.get("execution_receipt", ())
+    )
+
+    def exact_document(
+        kind: str, expected: str | None, path: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        matches = document_index.get((kind, expected), ()) if expected else ()
+        if len(matches) > 1:
+            findings.append(_finding(
+                path, "conflict", "one exact supplied identity", len(matches),
+                "multiple supplied documents have the required exact identity",
+            ))
+            return None, True
+        return (matches[0] if matches else None), False
+
+    def execution_receipt(
+        execution_ref: str, path: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        matches = receipt_index.get(execution_ref, ())
+        if len(matches) > 1:
+            findings.append(_finding(
+                path, "conflict", "one receipt for the execution reference",
+                len(matches),
+                "multiple supplied receipts claim the required execution reference",
+            ))
+            return None, True
+        return (matches[0] if matches else None), False
 
     from vitruvyan_motus.risk_control import verify_control_application_bindings
     for application in documents.get("control_application", ()):
+        if findings.exhausted:
+            break
         app_fp = validate.control_application_fingerprint(application)
-        registry = _matching_document(
-            documents, "risk_control_registry", application["registry_fingerprint"], validate,
+        registry_path = (
+            f"binding:control_application:{app_fp}.registry_fingerprint"
         )
+        registry, registry_conflict = exact_document(
+            "risk_control_registry", application["registry_fingerprint"],
+            registry_path,
+        )
+        if registry_conflict:
+            continue
         if registry is None:
             findings.append(_finding(
-                f"binding:control_application:{app_fp}.registry_fingerprint",
+                registry_path,
                 "missing", application["registry_fingerprint"], None,
-                "the exact Registry required by the existing binding verifier is absent or ambiguous",
+                "the exact Registry required by the existing binding verifier is absent",
             ))
             continue
-        manifest = _matching_document(
-            documents, "system_manifest", application.get("manifest_fingerprint"), validate,
+        manifest, manifest_conflict = exact_document(
+            "system_manifest", application.get("manifest_fingerprint"),
+            f"binding:control_application:{app_fp}.manifest_fingerprint",
         )
-        receipt = None
-        receipts = documents.get("execution_receipt", ())
-        if receipts:
-            from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
-            matching = [value for value in receipts if receipt_segment_for_execution_ref(
-                value, application["execution_ref"]
-            ) is not None]
-            if len(matching) == 1:
-                receipt = matching[0]
+        receipt, receipt_conflict = execution_receipt(
+            application["execution_ref"],
+            f"binding:control_application:{app_fp}.execution_ref",
+        )
+        if manifest_conflict or receipt_conflict:
+            continue
         verdict = verify_control_application_bindings(
             application, registry=registry, manifest=manifest, receipt=receipt,
         )
@@ -315,27 +411,60 @@ def _compose_existing_verifiers(
 
     from vitruvyan_motus.human_oversight import verify_human_oversight_bindings
     for oversight in documents.get("human_oversight_receipt", ()):
+        if findings.exhausted:
+            break
         fp = validate.human_oversight_receipt_fingerprint(oversight)
         bindings = oversight.get("bindings", {})
-        receipt = None
-        from vitruvyan_motus._execution_ref import receipt_segment_for_execution_ref
-        matches = [value for value in documents.get("execution_receipt", ())
-                   if receipt_segment_for_execution_ref(value, oversight["execution_ref"]) is not None]
-        if len(matches) == 1:
-            receipt = matches[0]
+        prefix = f"binding:human_oversight_receipt:{fp}"
+        receipt, receipt_conflict = execution_receipt(
+            oversight["execution_ref"], prefix + ".execution_ref",
+        )
+        manifest, manifest_conflict = exact_document(
+            "system_manifest", bindings.get("manifest_fingerprint"),
+            prefix + ".manifest_fingerprint",
+        )
+        registry, registry_conflict = exact_document(
+            "risk_control_registry", bindings.get("registry_fingerprint"),
+            prefix + ".registry_fingerprint",
+        )
+        control_application, application_conflict = exact_document(
+            "control_application", bindings.get("control_application_fingerprint"),
+            prefix + ".control_application_fingerprint",
+        )
+        if any((receipt_conflict, manifest_conflict, registry_conflict,
+                application_conflict)):
+            continue
         verdict = verify_human_oversight_bindings(
             oversight,
             execution_receipt=receipt,
-            manifest=_matching_document(documents, "system_manifest", bindings.get("manifest_fingerprint"), validate),
-            registry=_matching_document(documents, "risk_control_registry", bindings.get("registry_fingerprint"), validate),
-            control_application=_matching_document(documents, "control_application", bindings.get("control_application_fingerprint"), validate),
+            manifest=manifest,
+            registry=registry,
+            control_application=control_application,
         )
         findings.extend(_converted_findings(
             f"binding:human_oversight_receipt:{fp}", verdict.findings,
         ))
 
     from vitruvyan_motus.incident_capa import verify_incident_capa_ledger
-    for ledger in documents.get("incident_capa_ledger", ()):
+    package_verdicts: dict[str, Any] = {}
+    ledgers = documents.get("incident_capa_ledger", ())
+    companion_bytes = sum(len(value) for value in package_bytes) + sum(
+        len(validate.canonical_json(value))
+        for kind, values in documents.items()
+        if kind != "incident_capa_ledger"
+        for value in values
+    )
+    ledger_composition_work = len(ledgers) * companion_bytes
+    if ledger_composition_work > _LEDGER_COMPOSITION_WORK_LIMIT:
+        findings.append(_finding(
+            "binding:incident_capa_ledger", "not_verified",
+            _LEDGER_COMPOSITION_WORK_LIMIT, ledger_composition_work,
+            "dossier ledger composition exceeds the cumulative work limit",
+        ))
+        ledgers = ()
+    for ledger in ledgers:
+        if findings.exhausted:
+            break
         fp = validate.incident_capa_ledger_fingerprint(ledger)
         verdict = verify_incident_capa_ledger(
             ledger,
@@ -345,10 +474,15 @@ def _compose_existing_verifiers(
             control_applications=documents.get("control_application", ()),
             human_oversight_receipts=documents.get("human_oversight_receipt", ()),
             evidence_packages=package_bytes,
+            _package_verdicts=package_verdicts,
         )
         findings.extend(_converted_findings(
             f"binding:incident_capa_ledger:{fp}", verdict.findings,
         ))
+    if findings.exhausted:
+        return tuple(sorted(findings, key=lambda item: (
+            item.path, item.status, str(item.expected), str(item.observed), item.reason,
+        )))
 
     from vitruvyan_motus.retention import (
         verify_retention_application_bindings, verify_retention_lineage,
@@ -359,6 +493,8 @@ def _compose_existing_verifiers(
         "retention-application", "custody-observation",
     )
     for hyphen_kind in retention_kinds:
+        if findings.exhausted:
+            break
         underscore_kind = hyphen_kind.replace("-", "_")
         values = documents.get(underscore_kind, ())
         if values:
@@ -367,13 +503,18 @@ def _compose_existing_verifiers(
                 f"lineage:{underscore_kind}", verdict.findings,
             ))
     for application in documents.get("retention_application", ()):
+        if findings.exhausted:
+            break
         fp = validate.retention_application_fingerprint(application)
+        policy, policy_conflict = exact_document(
+            "retention_policy_declaration", application["policy_fingerprint"],
+            f"binding:retention_application:{fp}.policy_fingerprint",
+        )
+        if policy_conflict:
+            continue
         verdict = verify_retention_application_bindings(
             application,
-            policy=_matching_document(
-                documents, "retention_policy_declaration",
-                application["policy_fingerprint"], validate,
-            ),
+            policy=policy,
             holds=documents.get("legal_hold_declaration", ()),
             snapshots=documents.get("retention_scope_snapshot", ()),
         )
@@ -389,6 +530,8 @@ def _compose_existing_verifiers(
     for underscore_kind in (
         "ai_system_registration", "ai_system_registry_event", "ai_system_registry_snapshot",
     ):
+        if findings.exhausted:
+            break
         values = documents.get(underscore_kind, ())
         if values:
             verdict = verify_ai_system_registry_lineage(underscore_kind.replace("_", "-"), values)
@@ -396,6 +539,8 @@ def _compose_existing_verifiers(
                 f"lineage:{underscore_kind}", verdict.findings,
             ))
     for registration in documents.get("ai_system_registration", ()):
+        if findings.exhausted:
+            break
         fp = validate.ai_system_registration_fingerprint(registration)
         verdict = verify_ai_system_registration_binding(
             registration, manifests=documents.get("system_manifest", ()),
@@ -407,16 +552,30 @@ def _compose_existing_verifiers(
         value["registration_id"]
         for value in documents.get("ai_system_registration", ())
     })
-    for registration_id in registration_ids:
-        projection = project_supplied_ai_system_lifecycle(
-            registration_id,
-            registrations=documents.get("ai_system_registration", ()),
-            events=documents.get("ai_system_registry_event", ()),
-        )
-        findings.extend(_converted_findings(
-            f"projection:ai_system_registry:{registration_id}", projection.findings,
+    registrations = documents.get("ai_system_registration", ())
+    events = documents.get("ai_system_registry_event", ())
+    lifecycle_composition_work = len(registration_ids) * (
+        len(registrations) + len(events)
+    )
+    if lifecycle_composition_work > _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT:
+        findings.append(_finding(
+            "projection:ai_system_registry", "not_verified",
+            _AI_LIFECYCLE_COMPOSITION_WORK_LIMIT, lifecycle_composition_work,
+            "dossier AI lifecycle composition exceeds the cumulative work limit",
         ))
+    else:
+        for registration_id in registration_ids:
+            if findings.exhausted:
+                break
+            projection = project_supplied_ai_system_lifecycle(
+                registration_id, registrations=registrations, events=events,
+            )
+            findings.extend(_converted_findings(
+                f"projection:ai_system_registry:{registration_id}", projection.findings,
+            ))
     for snapshot in documents.get("ai_system_registry_snapshot", ()):
+        if findings.exhausted:
+            break
         fp = validate.ai_system_registry_snapshot_fingerprint(snapshot)
         verdict = verify_ai_system_registry_snapshot(
             snapshot,
@@ -658,22 +817,27 @@ def verify_regulatory_dossier_lineage(
     for parent, children in sorted(successors.items()):
         if len(children) > 1:
             findings.append(_finding(f"lineage:{parent}", "conflict", "one successor", tuple(sorted(children)), "correction lineage forks"))
-    for start in sorted(valid):
-        seen: set[str] = set()
-        cursor = start
-        while cursor in predecessors and predecessors[cursor] in valid:
-            if cursor in seen:
-                findings.append(_finding(f"lineage:{start}", "conflict", "acyclic lineage", cursor, "correction lineage contains a cycle"))
-                break
-            seen.add(cursor)
-            cursor = predecessors[cursor]
+    children: dict[str, list[str]] = {fp: [] for fp in valid}
+    indegree = dict.fromkeys(valid, 0)
+    for child, parent in predecessors.items():
+        if parent in valid:
+            children[parent].append(child)
+            indegree[child] += 1
+    ready = [fp for fp, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
     ordered: list[str] = []
-    remaining = set(valid)
-    while remaining:
-        ready = sorted(fp for fp in remaining if predecessors.get(fp) not in remaining)
-        if not ready:
-            ready = [min(remaining)]
-        for fp in ready:
-            ordered.append(fp)
-            remaining.remove(fp)
+    while ready:
+        current = heapq.heappop(ready)
+        ordered.append(current)
+        for child in sorted(children[current]):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                heapq.heappush(ready, child)
+    cyclic_or_downstream = sorted(set(valid).difference(ordered))
+    for start in cyclic_or_downstream:
+        findings.append(_finding(
+            f"lineage:{start}", "conflict", "acyclic lineage", start,
+            "correction lineage contains a cycle",
+        ))
+    ordered.extend(cyclic_or_downstream)
     return RegulatoryDossierLineageVerdict(tuple(ordered), tuple(violations), tuple(findings))

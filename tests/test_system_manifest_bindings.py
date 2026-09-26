@@ -7,10 +7,13 @@ suite catches it.
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 from pathlib import Path
 
 import pytest
+
+system_manifest_module = importlib.import_module("vitruvyan_motus.system_manifest")
 
 from vitruvyan_motus import (
     TRACE_SCHEMA_VERSION,
@@ -79,6 +82,32 @@ def _manifest_for(pairs):
         "created_at": "2026-09-20T18:00:00Z",
         "supersedes": None,
     }
+
+
+def test_trace_budget_preserves_independent_runtime_mismatches(monkeypatch):
+    spec = _spec("budgeted")
+    trace = _trace(spec, "budgeted-run")
+    manifest = _manifest_for([(spec, trace)])
+    manifest["bindings"]["motus"]["runtime_version"] = "0.0.0"
+    manifest["bindings"]["graphs"][0]["graph_fingerprint"] = (
+        "graph:sha256:" + "0" * 64
+    )
+    monkeypatch.setattr(system_manifest_module, "_TRACE_JOIN_LIMIT", -1)
+    verdict = verify_system_manifest_bindings(manifest, graph_specs=[spec])
+    assert any(
+        item.path == "$.bindings.motus.runtime_version"
+        and item.status == "mismatched"
+        for item in verdict.findings
+    )
+    assert any(
+        item.status == "not verified" and "join budget" in item.reason
+        for item in verdict.findings
+    )
+    assert any(
+        item.path.endswith(".graph_fingerprint")
+        and item.status == "mismatched"
+        for item in verdict.findings
+    )
 
 
 def _by_path(verdict):

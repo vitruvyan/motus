@@ -238,20 +238,28 @@ def assess_evidence_profile(
     spec_values = tuple(graph_specs)
     trace_values = tuple(traces)
     findings: list[RegulatoryEvidenceFinding] = []
+    requested_kinds = {
+        expectation["kind"]
+        for requirement in profile_document["requirements"]
+        for expectation in requirement["evidence"]
+    }
+    evaluation_cache: dict[str, tuple[str, str]] = {}
+    for kind in requested_kinds:
+        evaluation_cache[kind] = _evaluate_kind(
+            kind,
+            execution_receipt=execution_receipt,
+            system_manifest=system_manifest,
+            risk_control_registry=risk_control_registry,
+            control_application=control_application,
+            human_oversight_receipt=human_oversight_receipt,
+            graph_specs=spec_values,
+            traces=trace_values,
+        )
     for requirement in profile_document["requirements"]:
         requirement_ref = requirement["requirement_ref"]
         for expectation in requirement["evidence"]:
             kind = expectation["kind"]
-            status, reason = _evaluate_kind(
-                kind,
-                execution_receipt=execution_receipt,
-                system_manifest=system_manifest,
-                risk_control_registry=risk_control_registry,
-                control_application=control_application,
-                human_oversight_receipt=human_oversight_receipt,
-                graph_specs=spec_values,
-                traces=trace_values,
-            )
+            status, reason = evaluation_cache[kind]
             findings.append(RegulatoryEvidenceFinding(
                 requirement_ref=requirement_ref,
                 kind=kind,

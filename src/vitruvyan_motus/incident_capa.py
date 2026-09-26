@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from vitruvyan_motus._execution_ref import (
     receipt_execution_issue,
-    receipt_segment_for_execution_ref,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +31,36 @@ _MISMATCHED = "mismatched"
 _MISSING = "missing"
 _NOT_VERIFIED = "not_verified"
 _CONFLICT = "conflict"
+_EXECUTION_JOIN_WORK_LIMIT = 1_000_000
+_FINDING_LIMIT = 10_000
+
+
+class _BoundedFindings(list):
+    """Retain a fail-closed marker without materializing unbounded findings."""
+
+    __slots__ = ("exhausted",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.exhausted = False
+
+    def append(self, item: IncidentCAPAFinding) -> None:
+        if self.exhausted:
+            return
+        if len(self) == _FINDING_LIMIT - 1:
+            super().append(IncidentCAPAFinding(
+                "$.findings", _NOT_VERIFIED, str(_FINDING_LIMIT), None,
+                "semantic findings were truncated at the authority work limit",
+            ))
+            self.exhausted = True
+            return
+        super().append(item)
+
+    def extend(self, values: Iterable[IncidentCAPAFinding]) -> None:
+        for item in values:
+            if self.exhausted:
+                break
+            self.append(item)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,13 +244,30 @@ def _document_by_fingerprint(documents, fingerprint, derive):
     )
 
 
-def _receipt_for_execution(receipts, execution_ref):
-    return next(
-        (
-            receipt for receipt in receipts
-            if receipt_segment_for_execution_ref(receipt, execution_ref) is not None
-        ),
-        None,
+def _receipt_index(
+    receipts: tuple[dict[str, Any], ...],
+) -> dict[str, dict[str, Any]]:
+    """Index every contract-valid receipt BEGIN once, preserving first-match order."""
+    index: dict[str, dict[str, Any]] = {}
+    for receipt in receipts:
+        for segment in receipt["segments"]:
+            commitment = segment["begin"]["commitment"]
+            execution_ref = (
+                f"{commitment['tenant']}/{commitment['writer_id']}/"
+                f"{commitment['sequence']}"
+            )
+            index.setdefault(execution_ref, receipt)
+    return index
+
+
+def _receipt_binding_reference_count(snapshot: dict[str, Any]) -> int:
+    """Count ledger references that can cause a receipt binding lookup."""
+    kinds = {"execution", "control_application", "human_oversight_receipt"}
+    return sum(
+        1
+        for entry in snapshot["entries"]
+        for reference in entry["document"].get("evidence", ())
+        if reference["kind"] in kinds
     )
 
 
@@ -234,6 +280,7 @@ def verify_incident_capa_ledger(
     control_applications: Iterable[dict[str, Any]] = (),
     human_oversight_receipts: Iterable[dict[str, Any]] = (),
     evidence_packages: Iterable[bytes] = (),
+    _package_verdicts: dict[str, Any] | None = None,
 ) -> IncidentCAPAVerdict:
     """Verify one ledger view against the Motus evidence supplied by the caller.
 
@@ -260,6 +307,17 @@ def verify_incident_capa_ledger(
                 "execution_receipts contains a receipt with inconsistent "
                 "derived execution identity: " + issue
             )
+    execution_join_work = (
+        sum(len(receipt["segments"]) for receipt in receipts)
+        + (_receipt_binding_reference_count(snapshot) if receipts else 0)
+    )
+    execution_join_over_budget = (
+        execution_join_work > _EXECUTION_JOIN_WORK_LIMIT
+    )
+    receipt_index = (
+        {} if not receipts or execution_join_over_budget
+        else _receipt_index(receipts)
+    )
     manifest_docs = _documents(
         validate, manifests, name="manifests",
         validator=validate.validate_system_manifest,
@@ -285,6 +343,12 @@ def verify_incident_capa_ledger(
         )
     else:
         package_fingerprints = ()
+    package_by_fingerprint: dict[str, bytes] = {}
+    for fingerprint, value in zip(package_fingerprints, package_docs):
+        package_by_fingerprint.setdefault(fingerprint, value)
+    package_verdicts = {} if _package_verdicts is None else _package_verdicts
+    application_binding_cache: dict[str, tuple[str, Any]] = {}
+    oversight_binding_cache: dict[str, tuple[Any, ...]] = {}
 
     pools = {
         "system_manifest": tuple(
@@ -315,8 +379,19 @@ def verify_incident_capa_ledger(
         if predecessor is not None:
             children.setdefault(predecessor, []).append(fingerprint)
 
-    findings: list[IncidentCAPAFinding] = []
+    findings = _BoundedFindings()
+    if execution_join_over_budget:
+        findings.append(IncidentCAPAFinding(
+            "$.execution_receipts",
+            _NOT_VERIFIED,
+            str(_EXECUTION_JOIN_WORK_LIMIT),
+            str(execution_join_work),
+            "receipt BEGIN indexing and ledger reference matching exceed the "
+            "cumulative semantic-work limit",
+        ))
     for fingerprint, (index, entry) in entries.items():
+        if findings.exhausted:
+            break
         document = entry["document"]
         predecessor = document.get("supersedes")
         if predecessor is not None:
@@ -362,6 +437,8 @@ def verify_incident_capa_ledger(
                 ))
 
         for ref_index, reference in enumerate(document.get("evidence", ())):
+            if findings.exhausted:
+                break
             path = f"$.entries[{index}].document.evidence[{ref_index}]"
             if reference["kind"] == "execution":
                 expected = reference["execution_ref"]
@@ -370,11 +447,17 @@ def verify_incident_capa_ledger(
                         path + ".execution_ref", _MISSING, expected, None,
                         "no execution receipt was supplied that can bind this locator",
                     ))
+                elif execution_join_over_budget:
+                    findings.append(IncidentCAPAFinding(
+                        path + ".execution_ref",
+                        _NOT_VERIFIED,
+                        expected,
+                        None,
+                        "receipt binding was not attempted because the cumulative "
+                        "semantic-work limit was exceeded",
+                    ))
                 else:
-                    matched = any(
-                        receipt_segment_for_execution_ref(receipt, expected) is not None
-                        for receipt in receipts
-                    )
+                    matched = expected in receipt_index
                     findings.append(IncidentCAPAFinding(
                         path + ".execution_ref",
                         _MATCHED if matched else _MISMATCHED,
@@ -402,47 +485,61 @@ def verify_incident_capa_ledger(
                         verify_control_application_bindings,
                     )
 
-                    application = _document_by_fingerprint(
-                        application_docs,
-                        reference["fingerprint"],
-                        validate.control_application_fingerprint,
-                    )
-                    registry = _document_by_fingerprint(
-                        registry_docs,
-                        application["registry_fingerprint"],
-                        validate.risk_control_registry_fingerprint,
-                    )
-                    if registry is None:
+                    binding_fingerprint = reference["fingerprint"]
+                    if binding_fingerprint not in application_binding_cache:
+                        application = _document_by_fingerprint(
+                            application_docs,
+                            binding_fingerprint,
+                            validate.control_application_fingerprint,
+                        )
+                        registry = _document_by_fingerprint(
+                            registry_docs,
+                            application["registry_fingerprint"],
+                            validate.risk_control_registry_fingerprint,
+                        )
+                        if registry is None:
+                            application_binding_cache[binding_fingerprint] = (
+                                "missing_registry",
+                                application["registry_fingerprint"],
+                            )
+                        else:
+                            manifest_fingerprint = application.get(
+                                "manifest_fingerprint"
+                            )
+                            manifest = (
+                                _document_by_fingerprint(
+                                    manifest_docs,
+                                    manifest_fingerprint,
+                                    validate.system_manifest_fingerprint,
+                                )
+                                if manifest_fingerprint is not None else None
+                            )
+                            receipt = receipt_index.get(application["execution_ref"])
+                            chain = verify_control_application_bindings(
+                                application,
+                                registry=registry,
+                                manifest=manifest,
+                                receipt=receipt,
+                            )
+                            application_binding_cache[binding_fingerprint] = (
+                                "findings", tuple(chain.findings),
+                            )
+                    cached_kind, cached_value = application_binding_cache[
+                        binding_fingerprint
+                    ]
+                    if cached_kind == "missing_registry":
                         findings.append(IncidentCAPAFinding(
                             path + ".verification:$.registry_fingerprint",
                             _MISSING,
-                            application["registry_fingerprint"],
+                            cached_value,
                             None,
                             "the exact ControlApplication is present, but its "
                             "mandatory Registry revision was not supplied",
                         ))
                     else:
-                        manifest_fingerprint = application.get("manifest_fingerprint")
-                        manifest = (
-                            _document_by_fingerprint(
-                                manifest_docs,
-                                manifest_fingerprint,
-                                validate.system_manifest_fingerprint,
-                            )
-                            if manifest_fingerprint is not None else None
-                        )
-                        receipt = _receipt_for_execution(
-                            receipts, application["execution_ref"]
-                        )
-                        chain = verify_control_application_bindings(
-                            application,
-                            registry=registry,
-                            manifest=manifest,
-                            receipt=receipt,
-                        )
                         findings.extend(
                             _adapt_chain_finding(path + ".verification", item)
-                            for item in chain.findings
+                            for item in cached_value
                         )
 
                 elif kind == "human_oversight_receipt":
@@ -450,61 +547,61 @@ def verify_incident_capa_ledger(
                         verify_human_oversight_bindings,
                     )
 
-                    oversight = _document_by_fingerprint(
-                        oversight_docs,
-                        reference["fingerprint"],
-                        validate.human_oversight_receipt_fingerprint,
-                    )
-                    bindings = oversight.get("bindings", {})
-                    manifest = _document_by_fingerprint(
-                        manifest_docs,
-                        bindings.get("manifest_fingerprint"),
-                        validate.system_manifest_fingerprint,
-                    )
-                    registry = _document_by_fingerprint(
-                        registry_docs,
-                        bindings.get("registry_fingerprint"),
-                        validate.risk_control_registry_fingerprint,
-                    )
-                    application_fingerprint = bindings.get(
-                        "control_application_fingerprint"
-                    )
-                    if oversight["subject"]["kind"] == "control_application":
-                        application_fingerprint = oversight["subject"][
+                    binding_fingerprint = reference["fingerprint"]
+                    if binding_fingerprint not in oversight_binding_cache:
+                        oversight = _document_by_fingerprint(
+                            oversight_docs,
+                            binding_fingerprint,
+                            validate.human_oversight_receipt_fingerprint,
+                        )
+                        bindings = oversight.get("bindings", {})
+                        manifest = _document_by_fingerprint(
+                            manifest_docs,
+                            bindings.get("manifest_fingerprint"),
+                            validate.system_manifest_fingerprint,
+                        )
+                        registry = _document_by_fingerprint(
+                            registry_docs,
+                            bindings.get("registry_fingerprint"),
+                            validate.risk_control_registry_fingerprint,
+                        )
+                        application_fingerprint = bindings.get(
                             "control_application_fingerprint"
-                        ]
-                    application = _document_by_fingerprint(
-                        application_docs,
-                        application_fingerprint,
-                        validate.control_application_fingerprint,
-                    )
-                    receipt = _receipt_for_execution(
-                        receipts, oversight["execution_ref"]
-                    )
-                    chain = verify_human_oversight_bindings(
-                        oversight,
-                        execution_receipt=receipt,
-                        manifest=manifest,
-                        registry=registry,
-                        control_application=application,
-                    )
+                        )
+                        if oversight["subject"]["kind"] == "control_application":
+                            application_fingerprint = oversight["subject"][
+                                "control_application_fingerprint"
+                            ]
+                        application = _document_by_fingerprint(
+                            application_docs,
+                            application_fingerprint,
+                            validate.control_application_fingerprint,
+                        )
+                        receipt = receipt_index.get(oversight["execution_ref"])
+                        chain = verify_human_oversight_bindings(
+                            oversight,
+                            execution_receipt=receipt,
+                            manifest=manifest,
+                            registry=registry,
+                            control_application=application,
+                        )
+                        oversight_binding_cache[binding_fingerprint] = tuple(
+                            chain.findings
+                        )
                     findings.extend(
                         _adapt_chain_finding(path + ".verification", item)
-                        for item in chain.findings
+                        for item in oversight_binding_cache[binding_fingerprint]
                     )
 
                 elif kind == "evidence_package":
-                    from vitruvyan_motus.evidence import (
-                        evidence_package_fingerprint,
-                        verify_package,
-                    )
+                    from vitruvyan_motus.evidence import verify_package
 
-                    package = next(
-                        value for value in package_docs
-                        if evidence_package_fingerprint(value)
-                        == reference["fingerprint"]
-                    )
-                    package_verdict = verify_package(package)
+                    fingerprint = reference["fingerprint"]
+                    if fingerprint not in package_verdicts:
+                        package_verdicts[fingerprint] = verify_package(
+                            package_by_fingerprint[fingerprint]
+                        )
+                    package_verdict = package_verdicts[fingerprint]
                     if package_verdict.verdict is None:
                         status = _NOT_VERIFIED
                     elif (
@@ -527,6 +624,8 @@ def verify_incident_capa_ledger(
                     ))
 
     for predecessor, successors in sorted(children.items()):
+        if findings.exhausted:
+            break
         if len(successors) > 1:
             findings.append(IncidentCAPAFinding(
                 f"lineage:{predecessor}",
