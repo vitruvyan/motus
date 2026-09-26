@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import vitruvyan_motus.incident_capa as incident_capa
 from vitruvyan_motus import (
     evidence_package_fingerprint,
     order_incident_capa_entries,
@@ -152,6 +153,32 @@ def test_execution_and_exact_artifact_references_are_derived_from_supplied_docs(
 
     assert {item.status for item in verdict.findings} == {"matched"}
     assert verdict.bindings_complete is True
+
+
+def test_execution_receipt_join_has_a_cumulative_semantic_work_budget(monkeypatch):
+    receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
+    incident = _incident(evidence=[{
+        "kind": "execution",
+        "execution_ref": receipt["execution"]["ref"],
+    }])
+    monkeypatch.setattr(incident_capa, "_EXECUTION_JOIN_WORK_LIMIT", -1)
+
+    verdict = verify_incident_capa_ledger(
+        _ledger(("incident_declaration", incident)),
+        execution_receipts=[receipt],
+    )
+
+    assert verdict.bindings_complete is False
+    assert any(
+        item.path == "$.execution_receipts"
+        and item.status == "not_verified"
+        and "semantic-work limit" in item.reason
+        for item in verdict.findings
+    )
+    execution = next(
+        item for item in verdict.findings if item.path.endswith("execution_ref")
+    )
+    assert execution.status == "not_verified"
 
 
 def test_wrong_exact_artifact_is_mismatched_and_absence_is_not_verified():

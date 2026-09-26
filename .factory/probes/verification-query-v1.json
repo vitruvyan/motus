@@ -467,5 +467,12 @@
     "from": "        ))\n\n    for index, graph in enumerate(manifest_document[\"bindings\"][\"graphs\"]):",
     "to": "        ))\n        return SystemManifestBindingVerdict(fingerprint, (), tuple(findings))\n\n    for index, graph in enumerate(manifest_document[\"bindings\"][\"graphs\"]):",
     "tests": "tests/test_system_manifest_bindings.py"
+  },
+  {
+    "name": "incident and CAPA receipt joins retain a cumulative work budget",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "execution_join_work > _EXECUTION_JOIN_WORK_LIMIT",
+    "to": "False",
+    "tests": "tests/test_incident_capa_bindings.py"
   }
 ]

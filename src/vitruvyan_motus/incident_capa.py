@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from vitruvyan_motus._execution_ref import (
     receipt_execution_issue,
-    receipt_segment_for_execution_ref,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +31,7 @@ _MISMATCHED = "mismatched"
 _MISSING = "missing"
 _NOT_VERIFIED = "not_verified"
 _CONFLICT = "conflict"
+_EXECUTION_JOIN_WORK_LIMIT = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,13 +215,30 @@ def _document_by_fingerprint(documents, fingerprint, derive):
     )
 
 
-def _receipt_for_execution(receipts, execution_ref):
-    return next(
-        (
-            receipt for receipt in receipts
-            if receipt_segment_for_execution_ref(receipt, execution_ref) is not None
-        ),
-        None,
+def _receipt_index(
+    receipts: tuple[dict[str, Any], ...],
+) -> dict[str, dict[str, Any]]:
+    """Index every contract-valid receipt BEGIN once, preserving first-match order."""
+    index: dict[str, dict[str, Any]] = {}
+    for receipt in receipts:
+        for segment in receipt["segments"]:
+            commitment = segment["begin"]["commitment"]
+            execution_ref = (
+                f"{commitment['tenant']}/{commitment['writer_id']}/"
+                f"{commitment['sequence']}"
+            )
+            index.setdefault(execution_ref, receipt)
+    return index
+
+
+def _receipt_binding_reference_count(snapshot: dict[str, Any]) -> int:
+    """Count ledger references that can cause a receipt binding lookup."""
+    kinds = {"execution", "control_application", "human_oversight_receipt"}
+    return sum(
+        1
+        for entry in snapshot["entries"]
+        for reference in entry["document"].get("evidence", ())
+        if reference["kind"] in kinds
     )
 
 
@@ -260,6 +277,17 @@ def verify_incident_capa_ledger(
                 "execution_receipts contains a receipt with inconsistent "
                 "derived execution identity: " + issue
             )
+    execution_join_work = (
+        sum(len(receipt["segments"]) for receipt in receipts)
+        + (_receipt_binding_reference_count(snapshot) if receipts else 0)
+    )
+    execution_join_over_budget = (
+        execution_join_work > _EXECUTION_JOIN_WORK_LIMIT
+    )
+    receipt_index = (
+        {} if not receipts or execution_join_over_budget
+        else _receipt_index(receipts)
+    )
     manifest_docs = _documents(
         validate, manifests, name="manifests",
         validator=validate.validate_system_manifest,
@@ -316,6 +344,15 @@ def verify_incident_capa_ledger(
             children.setdefault(predecessor, []).append(fingerprint)
 
     findings: list[IncidentCAPAFinding] = []
+    if execution_join_over_budget:
+        findings.append(IncidentCAPAFinding(
+            "$.execution_receipts",
+            _NOT_VERIFIED,
+            str(_EXECUTION_JOIN_WORK_LIMIT),
+            str(execution_join_work),
+            "receipt BEGIN indexing and ledger reference matching exceed the "
+            "cumulative semantic-work limit",
+        ))
     for fingerprint, (index, entry) in entries.items():
         document = entry["document"]
         predecessor = document.get("supersedes")
@@ -370,11 +407,17 @@ def verify_incident_capa_ledger(
                         path + ".execution_ref", _MISSING, expected, None,
                         "no execution receipt was supplied that can bind this locator",
                     ))
+                elif execution_join_over_budget:
+                    findings.append(IncidentCAPAFinding(
+                        path + ".execution_ref",
+                        _NOT_VERIFIED,
+                        expected,
+                        None,
+                        "receipt binding was not attempted because the cumulative "
+                        "semantic-work limit was exceeded",
+                    ))
                 else:
-                    matched = any(
-                        receipt_segment_for_execution_ref(receipt, expected) is not None
-                        for receipt in receipts
-                    )
+                    matched = expected in receipt_index
                     findings.append(IncidentCAPAFinding(
                         path + ".execution_ref",
                         _MATCHED if matched else _MISMATCHED,
@@ -431,9 +474,7 @@ def verify_incident_capa_ledger(
                             )
                             if manifest_fingerprint is not None else None
                         )
-                        receipt = _receipt_for_execution(
-                            receipts, application["execution_ref"]
-                        )
+                        receipt = receipt_index.get(application["execution_ref"])
                         chain = verify_control_application_bindings(
                             application,
                             registry=registry,
@@ -478,9 +519,7 @@ def verify_incident_capa_ledger(
                         application_fingerprint,
                         validate.control_application_fingerprint,
                     )
-                    receipt = _receipt_for_execution(
-                        receipts, oversight["execution_ref"]
-                    )
+                    receipt = receipt_index.get(oversight["execution_ref"])
                     chain = verify_human_oversight_bindings(
                         oversight,
                         execution_receipt=receipt,
