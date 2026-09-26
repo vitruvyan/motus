@@ -107,6 +107,11 @@ def test_result_outcome_and_subject_are_constrained_by_operation():
     query["subject"] = None
     assert validate.validate_verification_query_message(query) == []
 
+    usage_error = result()
+    usage_error["outcome"] = "invalid_request"
+    usage_error["subject"] = None
+    assert validate.validate_verification_query_message(usage_error) == []
+
 
 def test_kind_prefixed_existing_fingerprints_are_supported():
     request = {"interface_version": "1.0.0", "message_type": "request", "operation": "query", "projection": {"kind": "artifact_identity", "artifact_kind": "graphspec", "fingerprint": "graph:sha256:" + "d" * 64}, "artifacts": [artifact()]}

@@ -253,7 +253,7 @@
         "interface_version": {"const": "1.0.0"},
         "message_type": {"const": "result"},
         "operation": {"enum": ["inspect", "verify", "query"]},
-        "outcome": {"enum": ["valid", "invalid", "matched", "mismatched", "not_verified", "conflict", "completed"]},
+        "outcome": {"enum": ["valid", "invalid", "invalid_request", "matched", "mismatched", "not_verified", "conflict", "completed"]},
         "scope": {"$ref": "#/$defs/Scope"},
         "subject": {"oneOf": [{"$ref": "#/$defs/ArtifactResultIdentity"}, {"type": "null"}]},
         "violations": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/Violation"}},
@@ -266,8 +266,7 @@
           "if": {"properties": {"operation": {"const": "inspect"}}, "required": ["operation"]},
           "then": {
             "properties": {
-              "outcome": {"enum": ["valid", "invalid"]},
-              "subject": {"$ref": "#/$defs/ArtifactResultIdentity"}
+              "outcome": {"enum": ["valid", "invalid", "invalid_request"]}
             }
           }
         },
@@ -275,8 +274,7 @@
           "if": {"properties": {"operation": {"const": "verify"}}, "required": ["operation"]},
           "then": {
             "properties": {
-              "outcome": {"enum": ["matched", "mismatched", "not_verified", "conflict", "invalid"]},
-              "subject": {"$ref": "#/$defs/ArtifactResultIdentity"}
+              "outcome": {"enum": ["matched", "mismatched", "not_verified", "conflict", "invalid", "invalid_request"]}
             }
           }
         },
@@ -284,9 +282,17 @@
           "if": {"properties": {"operation": {"const": "query"}}, "required": ["operation"]},
           "then": {
             "properties": {
-              "outcome": {"enum": ["completed", "conflict", "invalid"]},
+              "outcome": {"enum": ["completed", "conflict", "invalid", "invalid_request"]},
               "subject": {"type": "null"}
             }
+          }
+        },
+        {
+          "if": {"properties": {"outcome": {"const": "invalid_request"}}, "required": ["outcome"]},
+          "then": {"properties": {"subject": {"type": "null"}}},
+          "else": {
+            "if": {"properties": {"operation": {"enum": ["inspect", "verify"]}}, "required": ["operation"]},
+            "then": {"properties": {"subject": {"$ref": "#/$defs/ArtifactResultIdentity"}}}
           }
         }
       ]

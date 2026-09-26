@@ -979,6 +979,7 @@ The public API is explicitly listed in `vitruvyan_motus.__all__`:
 - evidence packaging: `pack`, `verify_package`, `evidence_package_fingerprint`,
   `PackageVerdict`;
 - evidence access: `EvidenceAPI`, `EvidenceSource`, `LiveEvidenceSource`;
+- verification/query inspection: `inspect_artifact`;
 - system manifest: `verify_system_manifest_bindings`, `SystemManifestBindingVerdict`,
   `SystemManifestBindingFinding`;
 - risk and control: `verify_control_application_bindings`,
@@ -1167,6 +1168,34 @@ it performs no discovery and chooses no winner. None of these helpers emits a
 compliance, completeness, legal-sufficiency, official-submission or acceptance
 verdict. The v1 archive bounds are 1000 artifact members, 28 MiB per member,
 128 MiB aggregate declared member bytes and 160 MiB compressed transport bytes.
+
+### Verification and query inspection
+
+ADR-043 begins the transport-neutral verification/query facade with
+`inspect_artifact()`. The caller supplies one explicit input identifier,
+artifact kind, media type and document or binary content. Motus does not infer
+kind from a filename or payload shape. The operation reuses the artifact's
+existing validator and derives an identity only where Motus already defines
+one; it does not manufacture a new fingerprint for traces, commitments or
+checkpoints.
+
+```python
+from vitruvyan_motus import inspect_artifact
+
+result = inspect_artifact({
+    "input_id": "manifest-1",
+    "kind": "system_manifest",
+    "media_type": "application/json",
+    "document": manifest,
+})
+```
+
+The machine-readable result always limits itself to `supplied_inputs` and sets
+`global_complete` to false. `valid` means that the existing structural Motus
+contract accepted those exact supplied contents; it is not binding
+verification, legal sufficiency, safety, approval or compliance. Composite
+verification, collection queries and the CLI are added in later 0.22
+micro-steps rather than being implied by this inspection surface.
 
 ### Incident / CAPA Ledger
 

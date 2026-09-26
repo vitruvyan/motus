@@ -101,4 +101,9 @@ Point 10 / 0.22.0 is complete only when:
 - contract, fixture and real-wheel packaging tests: `246 passed`;
 - full suite on the same working diff: `1825 passed, 6 skipped`;
 - `git diff --check`: passed;
-- runtime facade and CLI are not part of this checkpoint.
+- public read-only `inspect_artifact()` facade implemented as the next
+  micro-step, with lazy validator import and explicit per-kind dispatch;
+- integrated inspect/import/contract/packaging bank: `262 passed`;
+- full suite after the public-README correction: `1834 passed, 6 skipped`;
+- composite verification, query execution and CLI are not part of this
+  checkpoint.
