@@ -1,10 +1,16 @@
 """ADR-043 CLI adapter tests."""
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+import vitruvyan_motus.verification_query_cli as cli
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -42,6 +48,17 @@ def test_human_output_names_scope_and_does_not_claim_compliance(tmp_path):
     assert "compliant" not in completed.stdout.lower()
 
 
+def test_human_output_escapes_terminal_controls(tmp_path):
+    value = request(manifest())
+    value["artifact"]["input_id"] = "attacker\x1b[2JFORGED"
+    path = tmp_path / "request.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    completed = run(path)
+    assert completed.returncode == 0
+    assert "\x1b" not in completed.stdout
+    assert "attacker\\u001b[2JFORGED" in completed.stdout
+
+
 def test_invalid_artifact_exits_one_and_invalid_request_exits_two(tmp_path):
     invalid = manifest()
     invalid["compliant"] = True
@@ -71,3 +88,43 @@ def test_parser_stack_exhaustion_is_a_usage_error_not_a_traceback(tmp_path):
     completed = run(nested)
     assert completed.returncode == 2
     assert "Traceback" not in completed.stderr
+
+
+def test_request_reader_bounds_the_open_stream(monkeypatch):
+    class TrackingStream(io.BytesIO):
+        requested = None
+
+        def fileno(self):
+            return 123
+
+        def read(self, size=-1):
+            self.requested = size
+            return super().read(size)
+
+    stream = TrackingStream(b"x" * 72)
+
+    class FakePath:
+        def open(self, _mode):
+            return stream
+
+    monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o100644))
+    with pytest.raises(ValueError, match="225 MiB"):
+        cli._read_request_bytes(FakePath(), limit=4)
+    assert stream.requested == 5
+
+
+def test_request_reader_rejects_non_regular_streams(monkeypatch):
+    stream = TrackingStreamForSpecial(b"x" * 72)
+
+    class FakePath:
+        def open(self, _mode):
+            return stream
+
+    monkeypatch.setattr(cli.os, "fstat", lambda _fd: SimpleNamespace(st_mode=0o010644))
+    with pytest.raises(ValueError, match="regular file"):
+        cli._read_request_bytes(FakePath(), limit=4)
+
+
+class TrackingStreamForSpecial(io.BytesIO):
+    def fileno(self):
+        return 456

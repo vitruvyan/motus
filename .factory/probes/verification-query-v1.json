@@ -285,5 +285,26 @@
     "from": "request_violations, _request_input_ids(request), \"verify\"",
     "to": "request_violations, None, \"verify\"",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI request reads are bounded on the opened stream",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "data = stream.read(limit + 1)",
+    "to": "data = stream.read()",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI refuses non-regular request streams",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "CLI human rendering escapes terminal controls",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "safe = _terminal_safe",
+    "to": "safe = str",
+    "tests": "tests/test_verification_query_cli.py"
   }
 ]
