@@ -290,6 +290,24 @@ def test_repeated_manifest_expectations_reuse_one_binding_verdict(monkeypatch):
     assert len(assessment.findings) == 2
 
 
+def test_repeated_non_manifest_expectations_reuse_one_evaluation(monkeypatch):
+    profile = _profile("risk_control_registry")
+    profile["requirements"].append({
+        "requirement_ref": "REQ-002",
+        "evidence": [{"kind": "risk_control_registry"}],
+    })
+    calls = []
+
+    def evaluate(kind, **_kwargs):
+        calls.append(kind)
+        return "not_verified", "cached evidence result"
+
+    monkeypatch.setattr(regulatory_profile, "_evaluate_kind", evaluate)
+    assessment = assess_evidence_profile(profile)
+    assert calls == ["risk_control_registry"]
+    assert len(assessment.findings) == 2
+
+
 def test_regulatory_profile_is_reachable_from_motus_validate(tmp_path):
     profile = _profile("execution_receipt")
     path = tmp_path / "profile.json"

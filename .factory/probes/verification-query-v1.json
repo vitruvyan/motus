@@ -427,10 +427,10 @@
     "tests": "tests/test_verification_query_verify.py"
   },
   {
-    "name": "profiles reuse one bounded manifest binding verdict",
+    "name": "profiles cache every distinct evidence-kind evaluation",
     "file": "src/vitruvyan_motus/regulatory_profile.py",
-    "from": "if kind == \"system_manifest\":\n                status, reason = manifest_evaluation",
-    "to": "if False:\n                status, reason = manifest_evaluation",
+    "from": "for kind in requested_kinds:",
+    "to": "for kind in ():",
     "tests": "tests/test_regulatory_profile.py"
   },
   {
@@ -481,5 +481,12 @@
     "from": "matches = index.get((kind, expected), ())",
     "to": "matches = ()",
     "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "incident and CAPA package references reuse one package verdict",
+    "file": "src/vitruvyan_motus/incident_capa.py",
+    "from": "if fingerprint not in package_verdicts:",
+    "to": "if True:",
+    "tests": "tests/test_incident_capa_bindings.py"
   }
 ]

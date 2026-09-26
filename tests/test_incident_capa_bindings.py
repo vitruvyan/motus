@@ -270,6 +270,35 @@ def test_receipt_and_evidence_package_reference_kinds_are_admitted():
     ].status == "not_verified"
 
 
+def test_repeated_evidence_package_references_reuse_one_verdict(monkeypatch):
+    package = b"not a valid evidence package"
+    package_ref = {
+        "kind": "evidence_package",
+        "fingerprint": evidence_package_fingerprint(package),
+    }
+    incident = _incident(evidence=[package_ref])
+    action = _action(incident, evidence=[package_ref])
+    evidence = __import__("vitruvyan_motus.evidence", fromlist=["verify_package"])
+    original = evidence.verify_package
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(evidence, "verify_package", counted)
+    verify_incident_capa_ledger(
+        _ledger(
+            ("incident_declaration", incident),
+            ("capa_action", action),
+        ),
+        evidence_packages=[package],
+    )
+
+    assert calls == 1
+
+
 def test_receipt_with_inconsistent_derived_identity_is_refused():
     receipt = _fixture("311-receipt-attestation-rfc3161-claimed.json")
     receipt["execution"]["run_id"] = "tampered"

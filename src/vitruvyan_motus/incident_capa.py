@@ -313,6 +313,10 @@ def verify_incident_capa_ledger(
         )
     else:
         package_fingerprints = ()
+    package_by_fingerprint: dict[str, bytes] = {}
+    for fingerprint, value in zip(package_fingerprints, package_docs):
+        package_by_fingerprint.setdefault(fingerprint, value)
+    package_verdicts: dict[str, Any] = {}
 
     pools = {
         "system_manifest": tuple(
@@ -533,17 +537,14 @@ def verify_incident_capa_ledger(
                     )
 
                 elif kind == "evidence_package":
-                    from vitruvyan_motus.evidence import (
-                        evidence_package_fingerprint,
-                        verify_package,
-                    )
+                    from vitruvyan_motus.evidence import verify_package
 
-                    package = next(
-                        value for value in package_docs
-                        if evidence_package_fingerprint(value)
-                        == reference["fingerprint"]
-                    )
-                    package_verdict = verify_package(package)
+                    fingerprint = reference["fingerprint"]
+                    if fingerprint not in package_verdicts:
+                        package_verdicts[fingerprint] = verify_package(
+                            package_by_fingerprint[fingerprint]
+                        )
+                    package_verdict = package_verdicts[fingerprint]
                     if package_verdict.verdict is None:
                         status = _NOT_VERIFIED
                     elif (
