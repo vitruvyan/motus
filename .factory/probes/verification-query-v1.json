@@ -373,8 +373,8 @@
   {
     "name": "AI lifecycle authority retains cross-namespace registrations",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "if item[\"kind\"] == \"ai_system_registration\"]",
-    "to": "if item[\"kind\"] == \"ai_system_registration\" and item[\"document\"][\"producer_namespace\"] == namespace]",
+    "from": ") or inspected[\"subject\"][\"fingerprint\"] in cited_registrations",
+    "to": ") and False",
     "tests": "tests/test_verification_query_query.py"
   },
   {
