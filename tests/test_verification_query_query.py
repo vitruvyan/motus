@@ -94,6 +94,9 @@ def test_projected_record_order_ignores_object_key_insertion_order():
         "title": first["title"],
         **{key: value for key, value in first.items() if key != "title"},
     }
+    assert verification_query._canonical_json_sort_key(first) == (
+        verification_query._canonical_json_sort_key(reordered["controls"][0])
+    )
     projection = {
         "kind": "controls_for_risk",
         "registry_input_id": "registry",

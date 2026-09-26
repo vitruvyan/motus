@@ -345,8 +345,8 @@
   {
     "name": "projected record ordering uses canonical JSON",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "item[\"record\"], sort_keys=True, separators=(\",\", \":\"),",
-    "to": "item[\"record\"], sort_keys=False, separators=(\",\", \":\"),",
+    "from": "value, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=False,",
+    "to": "value, sort_keys=False, separators=(\",\", \":\"), ensure_ascii=False,",
     "tests": "tests/test_verification_query_query.py"
   },
   {

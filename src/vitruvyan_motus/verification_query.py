@@ -654,6 +654,12 @@ def _lineage_cycle_members(
     return cycle_members
 
 
+def _canonical_json_sort_key(value: Any) -> str:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+
+
 def _authoritative_lineage_findings(
     kind: str, documents: list[dict[str, Any]],
     related_documents: list[tuple[str, dict[str, Any]]] | None = None,
@@ -905,10 +911,7 @@ def _query_result(
     matches.sort(key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""))
     records.sort(key=lambda item: (
         item["record_kind"], item["source_input_id"],
-        json.dumps(
-            item["record"], sort_keys=True, separators=(",", ":"),
-            ensure_ascii=False,
-        ),
+        _canonical_json_sort_key(item["record"]),
     ))
     outcome = "invalid" if invalid_findings else ("conflict" if any(item["status"] == "conflict" for item in findings) else "completed")
     return {
