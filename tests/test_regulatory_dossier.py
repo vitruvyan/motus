@@ -188,6 +188,15 @@ def test_verify_refuses_non_zip_duplicate_unsafe_and_symlink_members():
     assert verify_regulatory_dossier(out.getvalue()).findings[0].status == "conflict"
 
 
+def test_member_count_is_bounded_before_member_processing():
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as archive:
+        for index in range(1002):
+            archive.writestr(f"member-{index}.json", b"")
+    verdict = verify_regulatory_dossier(out.getvalue())
+    assert verdict.findings[0].reason == "too many ZIP members"
+
+
 def test_semantic_fingerprint_mismatch_is_separate_from_raw_digest():
     manifest, members = dossier()
     manifest["entries"][0]["artifact_fingerprint"] = "sha256:" + "f" * 64
@@ -323,6 +332,11 @@ def test_lineage_orders_corrections_and_exposes_forks_missing_and_duplicate_root
     assert any(item.reason == "multiple roots claim one stable identity" for item in verdict.findings)
     with pytest.raises(TypeError, match="iterable"):
         verify_regulatory_dossier_lineage(first)
+    noncanonical = copy.deepcopy(first)
+    noncanonical[1] = "non-string key"
+    verdict = verify_regulatory_dossier_lineage([noncanonical])
+    assert verdict.findings[0].status == "not_verified"
+    assert "canonical lineage identity" in verdict.findings[0].reason
 
 
 def test_manifest_and_export_fingerprints_are_independent():
@@ -360,3 +374,32 @@ def test_nested_execution_package_uses_existing_verifier_and_transport_bound(mon
     monkeypatch.setattr(dossier_module, "_ARCHIVE_MAX_BYTES", len(blob) - 1)
     bounded = verify_regulatory_dossier(blob)
     assert bounded.findings[0].reason == "archive exceeds the compressed transport size limit"
+
+
+def test_artifact_aggregate_excludes_manifest_but_enforces_exact_limit(monkeypatch):
+    manifest, members = dossier("execution_receipt")
+    blob = pack_regulatory_dossier(manifest, members)
+    artifact_bytes = sum(len(value) for value in members.values())
+    monkeypatch.setattr(dossier_module, "_TOTAL_MAX_BYTES", artifact_bytes - 1)
+    verdict = verify_regulatory_dossier(blob)
+    assert verdict.findings[0].reason == "artifact members exceed uncompressed total limit"
+
+
+def test_invalid_manifest_keeps_empty_tuple_result_dimensions():
+    manifest, members = dossier("execution_receipt")
+    blob = pack_regulatory_dossier(manifest, members)
+    with zipfile.ZipFile(io.BytesIO(blob)) as source:
+        invalid = json.loads(source.read("dossier.json"))
+    invalid["compliant"] = True
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(blob)) as source, zipfile.ZipFile(out, "w") as target:
+        for info in source.infolist():
+            payload = (
+                json.dumps(invalid).encode("utf-8")
+                if info.filename == "dossier.json" else source.read(info)
+            )
+            target.writestr(info.filename, payload)
+    verdict = verify_regulatory_dossier(out.getvalue())
+    assert verdict.manifest_violations
+    assert verdict.binding_findings == ()
+    assert verdict.profile_assessment is None

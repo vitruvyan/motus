@@ -13,6 +13,7 @@ import json
 import stat
 import zipfile
 import zlib
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping
 
@@ -448,8 +449,10 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
     entry_verdicts: list[RegulatoryDossierEntryVerdict] = []
     try:
         infos = archive.infolist()
+        if len(infos) > _MAX_ENTRIES + 1:
+            return _empty_verdict(data, _finding("$", "mismatched", _MAX_ENTRIES + 1, len(infos), "too many ZIP members"))
         names = [info.filename for info in infos]
-        duplicate = sorted({name for name in names if names.count(name) > 1})
+        duplicate = sorted(name for name, count in Counter(names).items() if count > 1)
         if duplicate:
             return _empty_verdict(data, _finding("$", "conflict", "unique member names", duplicate, "duplicate physical ZIP member names"))
         unsafe = sorted(name for name in names if name != _MANIFEST_MEMBER and not _safe_path(name))
@@ -457,8 +460,6 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
             return _empty_verdict(data, _finding("$", "mismatched", "safe relative POSIX paths", unsafe, "unsafe ZIP member name"))
         if _MANIFEST_MEMBER not in names:
             return _empty_verdict(data, _finding("$", "missing", _MANIFEST_MEMBER, None, "dossier manifest is missing"))
-        if len(infos) > _MAX_ENTRIES + 1:
-            return _empty_verdict(data, _finding("$", "mismatched", _MAX_ENTRIES + 1, len(infos), "too many ZIP members"))
         if any(info.is_dir() for info in infos):
             return _empty_verdict(data, _finding("$", "mismatched", "file members", "directory", "directory entries are not permitted"))
         if any(info.flag_bits & 0x1 for info in infos):
@@ -469,9 +470,11 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
             return _empty_verdict(data, _finding("$", "mismatched", "regular files", "symbolic link", "symbolic links are not permitted"))
         if any(info.file_size > _MEMBER_MAX_BYTES for info in infos):
             return _empty_verdict(data, _finding("$", "mismatched", _MEMBER_MAX_BYTES, "oversize member", "member exceeds decompressed size limit"))
-        total = sum(info.file_size for info in infos)
-        if total > _TOTAL_MAX_BYTES + _MEMBER_MAX_BYTES:
-            return _empty_verdict(data, _finding("$", "mismatched", _TOTAL_MAX_BYTES, total, "archive exceeds uncompressed total limit"))
+        artifact_total = sum(
+            info.file_size for info in infos if info.filename != _MANIFEST_MEMBER
+        )
+        if artifact_total > _TOTAL_MAX_BYTES:
+            return _empty_verdict(data, _finding("$", "mismatched", _TOTAL_MAX_BYTES, artifact_total, "artifact members exceed uncompressed total limit"))
         info_by_name = {info.filename: info for info in infos}
         try:
             manifest_bytes = _read_bounded(archive, info_by_name[_MANIFEST_MEMBER], _MEMBER_MAX_BYTES)
@@ -483,7 +486,9 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
             return _empty_verdict(data, _finding("$.dossier", "mismatched", "object", type(manifest).__name__, "dossier manifest is not an object"))
         manifest_violations = tuple(validate.validate_regulatory_evidence_dossier(manifest))
         if manifest_violations:
-            return RegulatoryDossierVerdict(None, export_fp, manifest_violations, (), (), None)
+            return RegulatoryDossierVerdict(
+                None, export_fp, manifest_violations, (), (), (), None,
+            )
         snapshot = _canonical_snapshot(manifest)
         dossier_fp = validate.regulatory_evidence_dossier_fingerprint(snapshot)
         declared = {entry["path"]: entry for entry in snapshot["entries"]}
@@ -594,10 +599,26 @@ def verify_regulatory_dossier_lineage(
             findings.append(_finding(f"$[{index}]", "not_verified", "object", type(document).__name__, "lineage item is not an object"))
             continue
         try:
-            fp = validate.regulatory_evidence_dossier_fingerprint(document)
-        except (TypeError, ValueError, RecursionError):
+            item_violations = tuple(
+                validate.validate_regulatory_evidence_dossier(document)
+            )
+        except (TypeError, ValueError, RecursionError) as exc:
+            findings.append(_finding(
+                f"$[{index}]", "not_verified", "canonical dossier object",
+                type(exc).__name__,
+                "the supplied dossier could not be structurally evaluated",
+            ))
             continue
-        item_violations = tuple(validate.validate_regulatory_evidence_dossier(document))
+        try:
+            fp = validate.regulatory_evidence_dossier_fingerprint(document)
+        except (TypeError, ValueError, RecursionError) as exc:
+            violations.extend(item_violations)
+            findings.append(_finding(
+                f"$[{index}]", "not_verified", "canonical dossier object",
+                type(exc).__name__,
+                "the supplied dossier has no canonical lineage identity",
+            ))
+            continue
         if item_violations:
             violations.extend(item_violations)
             invalid_fps.add(fp)
