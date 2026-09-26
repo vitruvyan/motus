@@ -170,6 +170,43 @@ def test_dossier_ledger_composition_has_a_cumulative_work_budget(monkeypatch):
     )
 
 
+def test_dossier_ledger_findings_share_one_cumulative_cap(monkeypatch):
+    ledger = json.loads(
+        (ROOT / JSON_FIXTURES["incident_capa_ledger"]).read_text("utf-8")
+    )["instance"]
+    incident_module = __import__(
+        "vitruvyan_motus.incident_capa", fromlist=["verify_incident_capa_ledger"],
+    )
+    calls = 0
+
+    def many_findings(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return type("Verdict", (), {"findings": tuple(
+            dossier_module._finding(
+                f"$.entries[{index}]", "missing", "evidence", None, "missing",
+            )
+            for index in range(100)
+        )})()
+
+    monkeypatch.setattr(incident_module, "verify_incident_capa_ledger", many_findings)
+    monkeypatch.setattr(dossier_module, "_COMPOSED_FINDING_LIMIT", 10)
+
+    findings = dossier_module._compose_existing_verifiers(
+        {"incident_capa_ledger": [copy.deepcopy(ledger) for _ in range(1000)]},
+        [], validate,
+    )
+
+    assert calls == 1
+    assert len(findings) == 10
+    assert any(
+        item.path == "binding:findings"
+        and item.status == "not_verified"
+        and "dossier-wide work limit" in item.reason
+        for item in findings
+    )
+
+
 def rewrite_member(blob: bytes, name: str, payload: bytes, *, extra=None) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(blob))
     out = io.BytesIO()

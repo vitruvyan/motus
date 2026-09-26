@@ -6,6 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
+import pytest
+
 from vitruvyan_motus import query_artifacts
 from vitruvyan_motus.contract import validate
 
@@ -27,6 +29,54 @@ def ai_fixture(number: int, kind: str) -> dict:
 
 def typed(kind: str, document: dict, input_id: str) -> dict:
     return {"input_id": input_id, "kind": kind, "media_type": "application/json", "document": document}
+
+
+def test_complete_invalid_artifact_shells_are_rejected_before_jsonschema(monkeypatch):
+    calls = []
+    original = validate.validate_verification_query_message
+
+    def counted(document):
+        calls.append(document["message_type"])
+        return original(document)
+
+    monkeypatch.setattr(validate, "validate_verification_query_message", counted)
+    invalid = {
+        "input_id": "artifact", "kind": "legal_opinion",
+        "media_type": "application/json", "document": {},
+    }
+    request = {
+        "interface_version": "1.0.0", "message_type": "request",
+        "operation": "query",
+        "projection": {
+            "kind": "artifact_identity", "artifact_kind": "system_manifest",
+            "fingerprint": "sha256:" + "a" * 64,
+        },
+        "artifacts": [dict(invalid, input_id=f"artifact-{index}") for index in range(10_000)],
+    }
+
+    result = verification_query.execute_verification_query(request)
+
+    assert result["outcome"] == "invalid_request"
+    assert result["violations"][0]["rule"] == "SCHEMA"
+    assert calls == ["result"]
+
+
+@pytest.mark.parametrize(
+    "change,path",
+    [
+        ({"input_id": "   "}, ".input_id"),
+        ({"unexpected": True}, "artifact"),
+        ({"kind": "execution_evidence_package"}, ".kind"),
+    ],
+)
+def test_artifact_shell_preflight_mirrors_closed_json_branch(change, path):
+    item = typed("system_manifest", {}, "manifest")
+    item.update(change)
+    violations = verification_query._request_preflight({
+        "operation": "inspect", "artifact": item,
+    })
+    assert len(violations) == 1
+    assert path in violations[0].path or path in violations[0].message
 
 
 def test_exact_identity_query_matches_only_exact_kind_and_fingerprint():

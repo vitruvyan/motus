@@ -10,6 +10,7 @@ import base64
 import importlib
 import io
 import json
+import re
 import struct
 import zipfile
 import zlib
@@ -30,13 +31,20 @@ _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _PACKAGE_DIRECTORY_TOTAL_MAX_BYTES = 16 * 1024 * 1024
 _PACKAGE_NESTING_LIMIT = 16
 _REQUEST_PREFLIGHT_ENABLED = True
+_BINARY_ARTIFACT_KINDS = frozenset((
+    "execution_evidence_package", "regulatory_evidence_dossier_export",
+))
+_STRICT_BASE64 = re.compile(
+    r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?"
+)
 
 
 class _PreflightViolation:
     __slots__ = ("rule", "path", "message")
 
     def __init__(self, path: str, message: str) -> None:
-        self.rule = "VQ-PREFLIGHT"
+        # This is the schema's fast path; preserve its public diagnostic code.
+        self.rule = "SCHEMA"
         self.path = path
         self.message = message
 
@@ -68,22 +76,62 @@ def _request_preflight(request: Any) -> list[_PreflightViolation]:
         if not isinstance(item, dict):
             return [_PreflightViolation(path, "artifact input must be an object")]
         missing = {"input_id", "kind", "media_type"} - set(item)
-        media_type = item.get("media_type")
-        if media_type == "application/json":
-            missing |= {"document"} - set(item)
-        elif media_type == "application/zip":
-            missing |= {"content_base64"} - set(item)
-        else:
-            return [_PreflightViolation(
-                path + ".media_type",
-                "artifact media_type must be application/json or application/zip",
-            )]
         if missing:
             return [_PreflightViolation(
                 path,
                 "artifact input is missing required fields: "
                 + ", ".join(sorted(missing)),
             )]
+        media_type = item.get("media_type")
+        if media_type == "application/json":
+            required = {"input_id", "kind", "media_type", "document"}
+            allowed_kinds = _JSON_DISPATCH
+        elif media_type == "application/zip":
+            required = {"input_id", "kind", "media_type", "content_base64"}
+            allowed_kinds = _BINARY_ARTIFACT_KINDS
+        else:
+            return [_PreflightViolation(
+                path + ".media_type",
+                "artifact media_type must be application/json or application/zip",
+            )]
+        missing = required - set(item)
+        if missing:
+            return [_PreflightViolation(
+                path,
+                "artifact input is missing required fields: "
+                + ", ".join(sorted(missing)),
+            )]
+        extra = set(item) - required
+        if extra:
+            return [_PreflightViolation(
+                path,
+                "artifact input has unknown fields: " + ", ".join(sorted(extra)),
+            )]
+        input_id = item["input_id"]
+        if (
+            not isinstance(input_id, str)
+            or not 1 <= len(input_id) <= 128
+            or not any(not char.isspace() for char in input_id)
+        ):
+            return [_PreflightViolation(
+                path + ".input_id", "artifact input_id must be a bounded non-blank string",
+            )]
+        kind = item["kind"]
+        if not isinstance(kind, str) or kind not in allowed_kinds:
+            return [_PreflightViolation(
+                path + ".kind", "artifact kind is not valid for its media_type",
+            )]
+        if media_type == "application/zip":
+            content = item["content_base64"]
+            if (
+                not isinstance(content, str)
+                or len(content) > 223_696_216
+                or _STRICT_BASE64.fullmatch(content) is None
+            ):
+                return [_PreflightViolation(
+                    path + ".content_base64",
+                    "binary artifact content must be bounded strict padded base64",
+                )]
     return []
 
 

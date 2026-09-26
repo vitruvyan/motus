@@ -38,6 +38,7 @@ _TOTAL_MAX_BYTES = 128 * 1024 * 1024
 _ARCHIVE_MAX_BYTES = 160 * 1024 * 1024
 _MAX_ENTRIES = 1000
 _LEDGER_COMPOSITION_WORK_LIMIT = 128 * 1024 * 1024
+_COMPOSED_FINDING_LIMIT = 10_000
 _JSON_KINDS = {
     "system_manifest": "system_manifest",
     "risk_control_registry": "risk_control_registry",
@@ -216,6 +217,35 @@ def _finding(path: str, status: Status, expected: Any, observed: Any, reason: st
     return RegulatoryDossierFinding(path, status, expected, observed, reason)
 
 
+class _BoundedCompositionFindings(list[RegulatoryDossierFinding]):
+    """Bound verifier composition across the whole dossier, not per authority."""
+
+    __slots__ = ("exhausted",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.exhausted = False
+
+    def append(self, item: RegulatoryDossierFinding) -> None:
+        if self.exhausted:
+            return
+        if len(self) == _COMPOSED_FINDING_LIMIT - 1:
+            super().append(_finding(
+                "binding:findings", "not_verified", _COMPOSED_FINDING_LIMIT,
+                None,
+                "composed findings were truncated at the dossier-wide work limit",
+            ))
+            self.exhausted = True
+            return
+        super().append(item)
+
+    def extend(self, values: Iterable[RegulatoryDossierFinding]) -> None:
+        for item in values:
+            if self.exhausted:
+                break
+            self.append(item)
+
+
 def _empty_verdict(data: bytes, finding: RegulatoryDossierFinding) -> RegulatoryDossierVerdict:
     return RegulatoryDossierVerdict(
         None, regulatory_dossier_export_fingerprint(data), (), (finding,), (), (), None,
@@ -309,7 +339,7 @@ def _compose_existing_verifiers(
     package_bytes: list[bytes], validate: Any,
 ) -> tuple[RegulatoryDossierFinding, ...]:
     """Use existing Motus authorities; never reimplement their semantics."""
-    findings: list[RegulatoryDossierFinding] = []
+    findings = _BoundedCompositionFindings()
     document_index = _document_index(documents, validate)
     receipt_index = _execution_receipt_index(
         documents.get("execution_receipt", ())
@@ -390,6 +420,8 @@ def _compose_existing_verifiers(
         ))
         ledgers = ()
     for ledger in ledgers:
+        if findings.exhausted:
+            break
         fp = validate.incident_capa_ledger_fingerprint(ledger)
         verdict = verify_incident_capa_ledger(
             ledger,
@@ -404,6 +436,10 @@ def _compose_existing_verifiers(
         findings.extend(_converted_findings(
             f"binding:incident_capa_ledger:{fp}", verdict.findings,
         ))
+    if findings.exhausted:
+        return tuple(sorted(findings, key=lambda item: (
+            item.path, item.status, str(item.expected), str(item.observed), item.reason,
+        )))
 
     from vitruvyan_motus.retention import (
         verify_retention_application_bindings, verify_retention_lineage,

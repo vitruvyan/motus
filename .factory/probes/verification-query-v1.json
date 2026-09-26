@@ -530,5 +530,19 @@
     "from": "_REQUEST_PREFLIGHT_ENABLED = True",
     "to": "_REQUEST_PREFLIGHT_ENABLED = False",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "verification preflight validates complete artifact shells",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if not isinstance(kind, str) or kind not in allowed_kinds:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier composition bounds findings across all ledgers",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "if len(self) == _COMPOSED_FINDING_LIMIT - 1:",
+    "to": "if False:",
+    "tests": "tests/test_regulatory_dossier.py"
   }
 ]
