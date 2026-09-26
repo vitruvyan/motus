@@ -108,7 +108,7 @@ Point 10 / 0.22.0 is complete only when:
 - composite verification, all seven closed query projections, the stable
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
-- independent code and security review found forty-eight defects across supplied-input
+- independent code and security review found forty-nine defects across supplied-input
   visibility, receipt coordinates, authoritative lineage composition, lifecycle
   provenance, result and parser bounds, companion-detail and companion-use
   provenance, ZIP expansion, receipt status normalization, bounded finding paths,
@@ -128,13 +128,15 @@ Point 10 / 0.22.0 is complete only when:
   invalid-request operation scope, bounded invalid scope IDs, shared composite
   Manifest/Trace work limits, exact filtered-trace provenance, a contract-sized
   CLI envelope, lifecycle-predecessor context, diagnostic bounds enforced before
-  materialization and independent mismatch preservation when the trace join
-  budget is exhausted; all forty-eight classes have regression tests;
-- focused ADR-043 bank after review remediation: `87 passed`;
-- full suite after review remediation: `1903 passed, 6 skipped` with the two
+  materialization, independent mismatch preservation when the trace join
+  budget is exhausted, and linear budgeted Incident/CAPA receipt-reference
+  joins; all forty-nine classes have regression tests;
+- focused ADR-043 and authority regression bank after review remediation:
+  `99 passed`;
+- full suite after review remediation: `1904 passed, 6 skipped` with the two
   pre-existing duplicate-ZIP-name warnings;
-- permanent ADR-043 mutation probe: `67/67 killed` on clean commit
-  `ad46258e4725bb2d64604ad365aeabc27491138c`;
+- permanent ADR-043 mutation probe: `68/68 killed` on clean commit
+  `d62e9a85a75e9929f80d7f681f27cdddc2935175`;
 - frozen-path guard: passed against base
   `3e40983ad4379b208854e371f2eff5145d1c828b`;
 - Jenkins PR-head build #5 passed on intermediate reviewed head `f051c24`;
