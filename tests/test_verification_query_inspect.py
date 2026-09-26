@@ -170,12 +170,62 @@ def test_nested_zip_work_is_preflighted_before_dossier_verification(monkeypatch)
         lambda _data: (_ for _ in ()).throw(AssertionError("dossier verifier must not run")),
     )
     inner = zip_bytes([("large", b"\0" * (27 * 1024 * 1024))])
-    outer = zip_bytes((f"nested-{index}.zip", inner) for index in range(5))
+    paths = [f"nested-{index}.zip" for index in range(5)]
+    manifest = json.dumps({
+        "entries": [
+            {"path": path, "artifact_kind": "execution_evidence_package"}
+            for path in paths
+        ],
+    }).encode("utf-8")
+    outer = zip_bytes([
+        ("dossier.json", manifest),
+        *((path, inner) for path in paths),
+    ])
     result = inspect_artifact(binary_artifact(
         "regulatory_evidence_dossier_export", outer, "dossier",
     ))
     assert result["outcome"] == "invalid"
     assert "cumulative expanded-work" in result["findings"][0]["reason"]
+
+
+def test_declared_self_extracting_evidence_package_is_preflighted(monkeypatch):
+    dossier = __import__("vitruvyan_motus.regulatory_dossier", fromlist=["verify_regulatory_dossier"])
+    monkeypatch.setattr(
+        dossier,
+        "verify_regulatory_dossier",
+        lambda _data: (_ for _ in ()).throw(AssertionError("dossier verifier must not run")),
+    )
+    inner = b"self-extracting-prefix" + zip_bytes([
+        ("oversize", b"\0" * (28 * 1024 * 1024 + 1)),
+    ])
+    manifest = json.dumps({
+        "entries": [{
+            "path": "nested.pkg",
+            "artifact_kind": "execution_evidence_package",
+        }],
+    }).encode("utf-8")
+    outer = zip_bytes([
+        ("dossier.json", manifest),
+        ("nested.pkg", inner),
+    ])
+    result = inspect_artifact(binary_artifact(
+        "regulatory_evidence_dossier_export", outer, "dossier",
+    ))
+    assert result["outcome"] == "invalid"
+    assert "member exceeds the expanded-byte limit" in result["findings"][0]["reason"]
+
+
+def test_dossier_metadata_does_not_consume_the_thousand_entry_work_limit():
+    data = zip_bytes([
+        ("dossier.json", b"{}"),
+        *((f"member-{index}", b"") for index in range(1_000)),
+    ])
+    result = inspect_artifact(binary_artifact(
+        "regulatory_evidence_dossier_export", data, "dossier",
+    ))
+    assert result["outcome"] == "invalid"
+    assert not any("member-count work limit" in item["reason"] for item in result["findings"])
+    assert result["violations"]
 
 
 def test_inspection_takes_no_ownership_of_the_callers_document():

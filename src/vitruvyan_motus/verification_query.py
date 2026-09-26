@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import importlib
 import io
+import json
 import struct
 import zipfile
 import zlib
@@ -229,6 +230,7 @@ def _zip_directory_claim(data: bytes) -> tuple[int, int] | None:
 
 def _package_expansion_finding(
     data: bytes, budget: _ZipWorkBudget, depth: int = 0,
+    *, dossier_export: bool = False,
 ) -> dict[str, Any] | None:
     """Bound cumulative and nested ZIP work before a domain verifier runs."""
     if depth > _PACKAGE_NESTING_LIMIT:
@@ -246,11 +248,15 @@ def _package_expansion_finding(
     if claim is None:
         return None  # The authoritative verifier reports malformed transport.
     claimed_members, directory_size = claim
-    if budget.members + claimed_members > _PACKAGE_MEMBER_LIMIT:
+    # A dossier may contain the contract's 1,000 evidence entries plus its
+    # mandatory dossier.json metadata member.  That metadata is bounded and
+    # read below, but is not charged as an evidence-package work item.
+    claimed_work_members = max(0, claimed_members - (1 if dossier_export else 0))
+    if budget.members + claimed_work_members > _PACKAGE_MEMBER_LIMIT:
         return _zip_limit_finding(
             "request exceeds the cumulative ZIP member-count work limit",
             expected=_PACKAGE_MEMBER_LIMIT,
-            observed=budget.members + claimed_members,
+            observed=budget.members + claimed_work_members,
         )
     if budget.directory_bytes + directory_size > _PACKAGE_DIRECTORY_TOTAL_MAX_BYTES:
         return _zip_limit_finding(
@@ -258,7 +264,6 @@ def _package_expansion_finding(
             expected=_PACKAGE_DIRECTORY_TOTAL_MAX_BYTES,
             observed=budget.directory_bytes + directory_size,
         )
-    budget.members += claimed_members
     budget.directory_bytes += directory_size
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
@@ -271,6 +276,17 @@ def _package_expansion_finding(
                 "ZIP directory count changed during bounded parsing",
                 expected=claimed_members, observed=len(infos),
             )
+        manifest_infos = [
+            info for info in infos if info.filename == "dossier.json"
+        ] if dossier_export else []
+        actual_work_members = len(infos) - (1 if len(manifest_infos) == 1 else 0)
+        if budget.members + actual_work_members > _PACKAGE_MEMBER_LIMIT:
+            return _zip_limit_finding(
+                "request exceeds the cumulative ZIP member-count work limit",
+                expected=_PACKAGE_MEMBER_LIMIT,
+                observed=budget.members + actual_work_members,
+            )
+        budget.members += actual_work_members
         declared_total = sum(info.file_size for info in infos)
         if budget.expanded_bytes + declared_total > _PACKAGE_TOTAL_MAX_BYTES:
             return _zip_limit_finding(
@@ -278,7 +294,53 @@ def _package_expansion_finding(
                 expected=_PACKAGE_TOTAL_MAX_BYTES,
                 observed=budget.expanded_bytes + declared_total,
             )
+
+        nested_member_names: set[str] = set()
+        manifest_info = manifest_infos[0] if len(manifest_infos) == 1 else None
+        if manifest_info is not None:
+            manifest_chunks: list[bytes] = []
+            manifest_total = 0
+            with archive.open(manifest_info) as member:
+                while True:
+                    chunk = member.read(min(
+                        1024 * 1024,
+                        _PACKAGE_MEMBER_MAX_BYTES - manifest_total + 1,
+                        _PACKAGE_TOTAL_MAX_BYTES - budget.expanded_bytes + 1,
+                    ))
+                    if not chunk:
+                        break
+                    manifest_chunks.append(chunk)
+                    manifest_total += len(chunk)
+                    budget.expanded_bytes += len(chunk)
+                    if manifest_total > _PACKAGE_MEMBER_MAX_BYTES:
+                        return _zip_limit_finding(
+                            "ZIP member exceeds the expanded-byte limit",
+                            expected=_PACKAGE_MEMBER_MAX_BYTES,
+                            observed={"member": "dossier.json", "expanded_bytes": manifest_total},
+                        )
+                    if budget.expanded_bytes > _PACKAGE_TOTAL_MAX_BYTES:
+                        return _zip_limit_finding(
+                            "request exceeds the cumulative expanded-work limit",
+                            expected=_PACKAGE_TOTAL_MAX_BYTES,
+                            observed=budget.expanded_bytes,
+                        )
+            try:
+                manifest = json.loads(b"".join(manifest_chunks).decode("utf-8"))
+                entries = manifest.get("entries", []) if isinstance(manifest, dict) else []
+                nested_member_names = {
+                    entry["path"] for entry in entries
+                    if isinstance(entry, dict)
+                    and entry.get("artifact_kind") == "execution_evidence_package"
+                    and isinstance(entry.get("path"), str)
+                }
+            except (UnicodeDecodeError, ValueError, RecursionError):
+                # The authoritative dossier verifier reports malformed JSON.
+                # It cannot reach a nested package when the manifest is unreadable.
+                nested_member_names = set()
+
         for info in infos:
+            if info is manifest_info:
+                continue
             if info.file_size > _PACKAGE_MEMBER_MAX_BYTES:
                 return _zip_limit_finding(
                     "ZIP member exceeds the expanded-byte limit",
@@ -286,7 +348,9 @@ def _package_expansion_finding(
                     observed={"member": _bounded_member_name(info.filename), "expanded_bytes": info.file_size},
                 )
             member_total = 0
-            nested_chunks: list[bytes] | None = None
+            nested_chunks: list[bytes] | None = (
+                [] if info.filename in nested_member_names else None
+            )
             with archive.open(info) as member:
                 while True:
                     chunk = member.read(min(
@@ -296,8 +360,6 @@ def _package_expansion_finding(
                     ))
                     if not chunk:
                         break
-                    if member_total == 0 and chunk.startswith(b"PK"):
-                        nested_chunks = []
                     if nested_chunks is not None:
                         nested_chunks.append(chunk)
                     member_total += len(chunk)
@@ -374,7 +436,9 @@ def _dossier_export_inspection(
     input_id: str, kind: str, data: bytes, budget: _ZipWorkBudget,
 ) -> dict[str, Any]:
     dossier = importlib.import_module("vitruvyan_motus.regulatory_dossier")
-    expansion_finding = _package_expansion_finding(data, budget)
+    expansion_finding = _package_expansion_finding(
+        data, budget, dossier_export=True,
+    )
     if expansion_finding is not None:
         return {
             "interface_version": "1.0.0", "message_type": "result",

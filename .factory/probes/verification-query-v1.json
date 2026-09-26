@@ -173,5 +173,19 @@
     "from": "if nested_chunks is not None:\n                nested_finding = _package_expansion_finding(",
     "to": "if False:\n                nested_finding = _package_expansion_finding(",
     "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "declared self-extracting evidence packages are preflighted",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "entry.get(\"artifact_kind\") == \"execution_evidence_package\"",
+    "to": "False",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "mandatory dossier metadata is not charged as an evidence entry",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "actual_work_members = len(infos) - (1 if len(manifest_infos) == 1 else 0)",
+    "to": "actual_work_members = len(infos)",
+    "tests": "tests/test_verification_query_inspect.py"
   }
 ]
