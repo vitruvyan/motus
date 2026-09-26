@@ -35,10 +35,10 @@
     "tests": "tests/test_verification_query_query.py"
   },
   {
-    "name": "absence of binding findings is not verification",
+    "name": "structural-only artifacts are not promoted to verified",
     "file": "src/vitruvyan_motus/verification_query.py",
-    "from": "or not findings:\n        return \"not_verified\"",
-    "to": "or False:\n        return \"not_verified\"",
+    "from": "{\"path\": \"$.artifact\", \"status\": \"not_verified\", \"reason\": \"this artifact kind has structural inspection but no standalone binding verifier\"}",
+    "to": "{\"path\": \"$.artifact\", \"status\": \"matched\", \"reason\": \"this artifact kind has structural inspection but no standalone binding verifier\"}",
     "tests": "tests/test_verification_query_verify.py"
   },
   {
