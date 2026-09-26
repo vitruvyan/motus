@@ -108,7 +108,14 @@ Point 10 / 0.22.0 is complete only when:
 - composite verification, all seven closed query projections, the stable
   request dispatcher and distinct `motus-evidence` CLI implemented;
 - integrated facade/CLI/packaging bank: `56 passed`;
-- full suite on the complete functional surface: `1852 passed, 6 skipped`;
-- permanent ADR-043 mutation probe: `7/7 killed` on clean commit `a1d6cc4`;
-- implementation is ready for independent/adversarial review and CI; release
-  work remains gated on those results.
+- independent code and security review found ten defects across supplied-input
+  visibility, receipt coordinates, lineage, lifecycle provenance, result and
+  parser bounds, ZIP expansion, receipt status normalization, bounded finding
+  paths and shared facade nesting; all ten classes have regression tests;
+- full suite after review remediation: `1863 passed, 6 skipped`;
+- permanent ADR-043 mutation probe: `23/23 killed` on clean commit `563e916`;
+- frozen-path guard: passed against base
+  `3e40983ad4379b208854e371f2eff5145d1c828b`;
+- Jenkins PR-head build #3 passed on intermediate reviewed head `171e80a`;
+  final review and Jenkins rerun remain required on the evidence commit before
+  merge and release qualification.
