@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from vitruvyan_motus import execute_verification_query, query_artifacts, verify_artifact
 from vitruvyan_motus.contract import validate
 
@@ -58,6 +60,24 @@ def test_manifest_verification_preserves_an_in_flight_trace_companion():
         item["path"].startswith("$.companions[in-flight-trace]")
         for item in result["violations"]
     )
+
+
+def test_manifest_trace_join_budget_fails_closed_before_authority(monkeypatch):
+    module = __import__(
+        "vitruvyan_motus.system_manifest",
+        fromlist=["verify_system_manifest_bindings"],
+    )
+    monkeypatch.setattr(verification_query, "_MANIFEST_TRACE_JOIN_LIMIT", -1)
+    monkeypatch.setattr(
+        module, "verify_system_manifest_bindings",
+        lambda *_args, **_kwargs: pytest.fail("over-budget authority call"),
+    )
+    manifest = typed(
+        "system_manifest", fixture("310-system-manifest-valid.json"), "manifest",
+    )
+    result = verify_artifact(manifest)
+    assert result["outcome"] == "not_verified"
+    assert result["findings"][0]["path"] == "$.verification.work_budget"
 
 
 def test_control_application_without_registry_fails_closed():
@@ -178,6 +198,7 @@ def test_direct_facades_preserve_all_available_ids_on_interface_errors():
     query_result = query_artifacts({"kind": "unsupported-projection"}, [manifest])
     assert query_result["outcome"] == "invalid_request"
     assert query_result["scope"]["input_ids"] == ["manifest"]
+    assert query_result["scope"]["limitations"][0].startswith("query covers")
 
     invalid_companion = {
         "input_id": "bad-companion",
@@ -188,6 +209,7 @@ def test_direct_facades_preserve_all_available_ids_on_interface_errors():
     verify_result = verify_artifact(manifest, [invalid_companion])
     assert verify_result["outcome"] == "invalid_request"
     assert verify_result["scope"]["input_ids"] == ["manifest", "bad-companion"]
+    assert verify_result["scope"]["limitations"][0].startswith("verify covers")
 
 
 def test_duplicate_singular_companions_remain_conflict():

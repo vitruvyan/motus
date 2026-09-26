@@ -24,6 +24,7 @@ _LIMITATIONS = [
 
 _RESULT_ITEM_LIMIT = 10_000
 _DIAGNOSTIC_COLLECTION_LIMIT = 32
+_MANIFEST_TRACE_JOIN_LIMIT = 1_000_000
 _PACKAGE_MEMBER_LIMIT = 1_000
 _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
@@ -217,7 +218,7 @@ def _invalid_request(
         "message_type": "result",
         "operation": operation,
         "outcome": "invalid_request",
-        "scope": _scope(ids),
+        "scope": _scope(ids, operation),
         "subject": None,
         "violations": [_violation(item) for item in violations],
         "findings": [],
@@ -895,11 +896,69 @@ def _query_result(
     else:
         namespace = projection["producer_namespace"]
         registration_id = projection["registration_id"]
-        registrations = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registration"]
-        events = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registry_event"]
+        all_registrations = [
+            (item, inspected) for item, inspected in valid
+            if item["kind"] == "ai_system_registration"
+        ]
+        all_events = [
+            (item, inspected) for item, inspected in valid
+            if item["kind"] == "ai_system_registry_event"
+        ]
+        target_events = [
+            (item, inspected) for item, inspected in all_events
+            if item["document"]["producer_namespace"] == namespace
+            and item["document"]["registration_id"] == registration_id
+        ]
+        cited_registrations = {
+            item["document"]["registration_fingerprint"]
+            for item, _ in target_events
+        }
+        registrations = [
+            item["document"] for item, inspected in all_registrations
+            if (
+                item["document"]["producer_namespace"] == namespace
+                and item["document"]["registration_id"] == registration_id
+            ) or inspected["subject"]["fingerprint"] in cited_registrations
+        ]
+        event_by_fingerprint = {
+            inspected["subject"]["fingerprint"]: (item, inspected)
+            for item, inspected in all_events
+        }
+        contextual_event_ids = {
+            inspected["subject"]["fingerprint"]
+            for _, inspected in target_events
+        }
+        pending = [
+            item["document"].get("supersedes")
+            for item, _ in target_events
+            if item["document"].get("supersedes") is not None
+        ]
+        while pending:
+            fingerprint = pending.pop()
+            if fingerprint in contextual_event_ids:
+                continue
+            contextual = event_by_fingerprint.get(fingerprint)
+            if contextual is None:
+                continue
+            contextual_event_ids.add(fingerprint)
+            predecessor = contextual[0]["document"].get("supersedes")
+            if predecessor is not None:
+                pending.append(predecessor)
+        events = [
+            item["document"] for item, inspected in all_events
+            if inspected["subject"]["fingerprint"] in contextual_event_ids
+        ]
         ai = importlib.import_module("vitruvyan_motus.ai_system_registry")
         projected = ai.project_supplied_ai_system_lifecycle(registration_id, registrations=registrations, events=events)
-        selected_event_fingerprints = set(projected.ordered_event_fingerprints)
+        target_event_fingerprints = {
+            inspected["subject"]["fingerprint"]
+            for _, inspected in target_events
+        }
+        ordered_event_fingerprints = tuple(
+            fingerprint for fingerprint in projected.ordered_event_fingerprints
+            if fingerprint in target_event_fingerprints
+        )
+        selected_event_fingerprints = set(ordered_event_fingerprints)
         selected_registrations = [
             (item, inspected) for item, inspected in valid
             if item["kind"] == "ai_system_registration"
@@ -921,7 +980,7 @@ def _query_result(
         if source_ids:
             registration_source_ids = sorted(item["input_id"] for item, _ in selected_registrations)
             source_id = registration_source_ids[0] if registration_source_ids else sorted(source_ids)[0]
-            records.append({"source_input_id": source_id, "record_kind": "ai_lifecycle", "record": {"producer_namespace": namespace, "registration_id": registration_id, "ordered_event_fingerprints": list(projected.ordered_event_fingerprints), "terminal_action": projected.terminal_action}})
+            records.append({"source_input_id": source_id, "record_kind": "ai_lifecycle", "record": {"producer_namespace": namespace, "registration_id": registration_id, "ordered_event_fingerprints": list(ordered_event_fingerprints), "terminal_action": projected.terminal_action}})
         findings.extend({"path": item.path, "status": item.status.replace(" ", "_"), "expected": _json_value(item.expected), "observed": _json_value(item.observed), "reason": item.reason} for item in projected.findings)
 
     matches.sort(key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""))
@@ -1126,7 +1185,35 @@ def verify_artifact(artifact: Any, companions: Any = ()) -> dict[str, Any]:
         graph = importlib.import_module("vitruvyan_motus.graph").GraphSpec
         trace = importlib.import_module("vitruvyan_motus.trace").Trace
         module = importlib.import_module("vitruvyan_motus.system_manifest")
-        verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in many("graphspec")], traces=[trace.from_dict(value) for value in many("trace")])
+        graph_values = many("graphspec")
+        trace_values = many("trace")
+        binding_keys = {
+            (
+                item["name"], item["version"], item["spec_schema_version"],
+                item["graph_fingerprint"],
+            )
+            for item in document["bindings"]["graphs"]
+        }
+        relevant_traces = [
+            value for value in trace_values
+            if (
+                value.get("run", {}).get("graph", {}).get("name"),
+                value.get("run", {}).get("graph", {}).get("version"),
+                value.get("run", {}).get("graph", {}).get("spec_schema_version"),
+                value.get("run", {}).get("graph", {}).get("graph_fingerprint"),
+            ) in binding_keys
+        ]
+        join_work = len(document["bindings"]["graphs"]) * len(relevant_traces)
+        if join_work > _MANIFEST_TRACE_JOIN_LIMIT:
+            findings.append({
+                "path": "$.verification.work_budget",
+                "status": "not_verified",
+                "expected": f"at most {_MANIFEST_TRACE_JOIN_LIMIT} manifest/trace comparisons",
+                "observed": join_work,
+                "reason": "system manifest binding verification exceeded the bounded semantic join budget",
+            })
+        else:
+            verdict = authoritative(module.verify_system_manifest_bindings, document, graph_specs=[graph.from_dict(value) for value in graph_values], traces=[trace.from_dict(value) for value in relevant_traces])
     elif kind == "control_application":
         registry = one("risk_control_registry")
         if registry is None:

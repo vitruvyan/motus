@@ -396,6 +396,42 @@ def test_ai_lifecycle_authority_sees_cross_namespace_cited_registration():
     assert [item["input_id"] for item in result["matches"]] == ["target-event"]
 
 
+def test_ai_lifecycle_excludes_unreferenced_foreign_same_id_rows():
+    target = ai_fixture(400, "ai_system_registration")
+    event = ai_fixture(401, "ai_system_registry_event")
+    event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(target)
+    )
+    foreign = copy.deepcopy(target)
+    foreign["producer_namespace"] = "foreign-producer"
+    foreign["registry_id"] = "foreign-registry"
+    foreign_event = copy.deepcopy(event)
+    foreign_event["producer_namespace"] = foreign["producer_namespace"]
+    foreign_event["registry_id"] = foreign["registry_id"]
+    foreign_event["event_id"] = "foreign-event"
+    foreign_event["registration_fingerprint"] = (
+        validate.ai_system_registration_fingerprint(foreign)
+    )
+    result = query_artifacts({
+        "kind": "ai_system_lifecycle",
+        "producer_namespace": target["producer_namespace"],
+        "registration_id": target["registration_id"],
+    }, [
+        typed("ai_system_registration", target, "target-registration"),
+        typed("ai_system_registry_event", event, "target-event"),
+        typed("ai_system_registration", foreign, "foreign-registration"),
+        typed("ai_system_registry_event", foreign_event, "foreign-event"),
+    ])
+    target_event_fingerprint = validate.ai_system_registry_event_fingerprint(event)
+    assert result["outcome"] == "completed"
+    assert {item["input_id"] for item in result["matches"]} == {
+        "target-registration", "target-event",
+    }
+    assert result["records"][0]["record"]["ordered_event_fingerprints"] == [
+        target_event_fingerprint,
+    ]
+
+
 def test_ai_lifecycle_does_not_match_unselected_same_registration_events():
     target = ai_fixture(400, "ai_system_registration")
     first = ai_fixture(401, "ai_system_registry_event")

@@ -339,6 +339,43 @@ def test_lineage_orders_corrections_and_exposes_forks_missing_and_duplicate_root
     assert "canonical lineage identity" in verdict.findings[0].reason
 
 
+def test_lineage_orders_a_maximum_chain_in_one_graph_pass(monkeypatch):
+    class FakeValidate:
+        @staticmethod
+        def validate_regulatory_evidence_dossier(_document):
+            return ()
+
+        @staticmethod
+        def regulatory_evidence_dossier_fingerprint(document):
+            return document["fingerprint"]
+
+        @staticmethod
+        def canonical_json(document):
+            return json.dumps(
+                document, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+
+    monkeypatch.setattr(dossier_module, "_validate_module", lambda: FakeValidate)
+    documents = []
+    previous = None
+    for index in range(10_000):
+        fingerprint = f"sha256:{index:064x}"
+        document = {
+            "fingerprint": fingerprint,
+            "producer_namespace": "producer",
+            "dossier_id": "maximum-chain",
+        }
+        if previous is not None:
+            document["supersedes"] = previous
+        documents.append(document)
+        previous = fingerprint
+    verdict = verify_regulatory_dossier_lineage(reversed(documents))
+    assert verdict.findings == ()
+    assert verdict.ordered_fingerprints == tuple(
+        f"sha256:{index:064x}" for index in range(10_000)
+    )
+
+
 def test_manifest_and_export_fingerprints_are_independent():
     manifest, members = dossier()
     first = pack_regulatory_dossier(manifest, members)

@@ -7,6 +7,7 @@ Verification is local and caller-supplied; no result is a compliance verdict.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import importlib
 import io
 import json
@@ -658,22 +659,27 @@ def verify_regulatory_dossier_lineage(
     for parent, children in sorted(successors.items()):
         if len(children) > 1:
             findings.append(_finding(f"lineage:{parent}", "conflict", "one successor", tuple(sorted(children)), "correction lineage forks"))
-    for start in sorted(valid):
-        seen: set[str] = set()
-        cursor = start
-        while cursor in predecessors and predecessors[cursor] in valid:
-            if cursor in seen:
-                findings.append(_finding(f"lineage:{start}", "conflict", "acyclic lineage", cursor, "correction lineage contains a cycle"))
-                break
-            seen.add(cursor)
-            cursor = predecessors[cursor]
+    children: dict[str, list[str]] = {fp: [] for fp in valid}
+    indegree = dict.fromkeys(valid, 0)
+    for child, parent in predecessors.items():
+        if parent in valid:
+            children[parent].append(child)
+            indegree[child] += 1
+    ready = [fp for fp, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
     ordered: list[str] = []
-    remaining = set(valid)
-    while remaining:
-        ready = sorted(fp for fp in remaining if predecessors.get(fp) not in remaining)
-        if not ready:
-            ready = [min(remaining)]
-        for fp in ready:
-            ordered.append(fp)
-            remaining.remove(fp)
+    while ready:
+        current = heapq.heappop(ready)
+        ordered.append(current)
+        for child in sorted(children[current]):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                heapq.heappush(ready, child)
+    cyclic_or_downstream = sorted(set(valid).difference(ordered))
+    for start in cyclic_or_downstream:
+        findings.append(_finding(
+            f"lineage:{start}", "conflict", "acyclic lineage", start,
+            "correction lineage contains a cycle",
+        ))
+    ordered.extend(cyclic_or_downstream)
     return RegulatoryDossierLineageVerdict(tuple(ordered), tuple(violations), tuple(findings))

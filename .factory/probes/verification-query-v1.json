@@ -390,5 +390,33 @@
     "from": "invalid_findings.extend({",
     "to": "tuple({",
     "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "dossier lineage ordering remains linear and complete",
+    "file": "src/vitruvyan_motus/regulatory_dossier.py",
+    "from": "indegree[child] -= 1",
+    "to": "indegree[child] += 0",
+    "tests": "tests/test_regulatory_dossier.py"
+  },
+  {
+    "name": "manifest trace joins fail closed before excessive authority work",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if join_work > _MANIFEST_TRACE_JOIN_LIMIT:",
+    "to": "if False:",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "AI lifecycle candidates stay inside the requested namespace",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item[\"document\"][\"producer_namespace\"] == namespace\n            and item[\"document\"][\"registration_id\"] == registration_id\n        ]\n        cited_registrations",
+    "to": "if item[\"document\"][\"registration_id\"] == registration_id\n        ]\n        cited_registrations",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "invalid request scope names the actual operation",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "\"scope\": _scope(ids, operation),",
+    "to": "\"scope\": _scope(ids),",
+    "tests": "tests/test_verification_query_verify.py"
   }
 ]
