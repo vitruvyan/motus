@@ -21,11 +21,11 @@ jobs:
           PYTHONPATH: src
         run: >-
           python benchmarks/collect_motus_baseline.py 5
-          > benchmarks/candidate-v0.20.0-epyc-py310.json
+          > benchmarks/candidate-v0.21.0-epyc-py310.json
       - name: Upload raw characterization evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: motus-v0.20.0-epyc-py310
-          path: benchmarks/candidate-v0.20.0-epyc-py310.json
+          name: motus-v0.21.0-epyc-py310
+          path: benchmarks/candidate-v0.21.0-epyc-py310.json
           if-no-files-found: error
           retention-days: 30
