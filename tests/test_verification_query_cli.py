@@ -63,3 +63,11 @@ def test_duplicate_keys_and_non_utf8_are_usage_errors(tmp_path):
     binary = tmp_path / "binary.json"
     binary.write_bytes(b"\xff")
     assert run(binary).returncode == 2
+
+
+def test_parser_stack_exhaustion_is_a_usage_error_not_a_traceback(tmp_path):
+    nested = tmp_path / "nested.json"
+    nested.write_text("[" * 10_000 + "0" + "]" * 10_000, encoding="utf-8")
+    completed = run(nested)
+    assert completed.returncode == 2
+    assert "Traceback" not in completed.stderr

@@ -47,5 +47,68 @@
     "from": "_SUCCESS = frozenset({\"valid\", \"matched\", \"completed\"})",
     "to": "_SUCCESS = frozenset({\"valid\", \"invalid\", \"matched\", \"completed\"})",
     "tests": "tests/test_verification_query_cli.py"
+  },
+  {
+    "name": "invalid supplied query artifacts remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if inspected[\"outcome\"] == \"valid\":\n            valid.append((artifact, inspected))",
+    "to": "if True:\n            valid.append((artifact, inspected))",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "execution receipt references name BEGIN positions only",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "entry = segment.get(\"begin\")",
+    "to": "entry = segment.get(\"end\")",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "missing correction predecessors remain visible",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if not candidates:\n                findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
+    "to": "if False:\n                findings.append({\"path\": f\"lineage:{fingerprint}.supersedes\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "duplicate correction identities remain conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if len(duplicates) > 1:\n                findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "to": "if False:\n                findings.append({\"path\": f\"lineage:{fingerprint}\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "correction lineage cycles remain conflicts",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if cycle_members:\n            findings.append({\"path\": \"lineage:cycle\"",
+    "to": "if False:\n            findings.append({\"path\": \"lineage:cycle\"",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "AI lifecycle registration matches stay on the requested id",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "if item[\"kind\"] == \"ai_system_registration\"\n            and item[\"document\"][\"producer_namespace\"] == namespace\n            and item[\"document\"][\"registration_id\"] == registration_id",
+    "to": "if item[\"kind\"] == \"ai_system_registration\"\n            and item[\"document\"][\"producer_namespace\"] == namespace",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "AI lifecycle event matches stay on the selected projection",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "and inspected[\"subject\"][\"fingerprint\"] in selected_event_fingerprints",
+    "to": "and True",
+    "tests": "tests/test_verification_query_query.py"
+  },
+  {
+    "name": "expanded verifier results remain contract bounded",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "_RESULT_ITEM_LIMIT = 10_000",
+    "to": "_RESULT_ITEM_LIMIT = 100_000",
+    "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "CLI parser recursion remains a usage error",
+    "file": "src/vitruvyan_motus/verification_query_cli.py",
+    "from": "except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:",
+    "to": "except (OSError, UnicodeDecodeError, ValueError) as exc:",
+    "tests": "tests/test_verification_query_cli.py"
   }
 ]

@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         raw = path.read_bytes().decode("utf-8")
         validate = importlib.import_module("vitruvyan_motus.contract.validate")
         request = validate._loads_strict(raw, governed_as="verification-query")
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         print(f"error: cannot load request: {exc}", file=sys.stderr)
         return 2
     try:

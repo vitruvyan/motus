@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from vitruvyan_motus import execute_verification_query, verify_artifact
 from vitruvyan_motus.contract import validate
@@ -65,3 +66,28 @@ def test_duplicate_singular_companions_remain_conflict():
     duplicate = dict(registry, input_id="registry-2")
     result = verify_artifact(artifact, [registry, duplicate])
     assert result["outcome"] == "conflict"
+
+
+def test_verifier_expansion_is_bounded_and_fails_closed(monkeypatch):
+    module = __import__("vitruvyan_motus.system_manifest", fromlist=["verify_system_manifest_bindings"])
+    findings = tuple(
+        SimpleNamespace(
+            path=f"$.bindings.graphs[{index}]",
+            status="missing",
+            expected=None,
+            observed=None,
+            reason="no supplied graph matched",
+        )
+        for index in range(10_001)
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_system_manifest_bindings",
+        lambda *_args, **_kwargs: SimpleNamespace(findings=findings),
+    )
+    artifact = typed("system_manifest", fixture("310-system-manifest-valid.json"), "manifest")
+    result = verify_artifact(artifact)
+    assert result["outcome"] == "not_verified"
+    assert len(result["findings"]) == 10_000
+    assert result["findings"][-1]["status"] == "incomplete"
+    assert validate.validate_verification_query_message(result) == []

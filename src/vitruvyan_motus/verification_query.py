@@ -17,6 +17,8 @@ _LIMITATIONS = [
     "structural validity does not establish compliance or global completeness",
 ]
 
+_RESULT_ITEM_LIMIT = 10_000
+
 _JSON_DISPATCH: dict[str, tuple[str, str | None]] = {
     "graphspec": ("validate_graphspec", "graph"),
     "trace": ("validate_trace", None),
@@ -75,6 +77,7 @@ def _scope(input_ids: list[str], operation: str = "inspection") -> dict[str, Any
 
 
 def _checked_result(result: dict[str, Any]) -> dict[str, Any]:
+    result = _bounded_result(result)
     validate = _contract()
     violations = validate.validate_verification_query_message(result)
     if violations:
@@ -83,6 +86,47 @@ def _checked_result(result: dict[str, Any]) -> dict[str, Any]:
         )
         raise RuntimeError("internal verification/query result violated its contract: " + detail)
     return result
+
+
+def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep every public result inside the v1 envelope's cardinality bounds.
+
+    Domain verifiers are allowed to report one or more findings per supplied
+    record, so a bounded request can still expand beyond the result schema.
+    Truncation is explicit and fail-closed rather than an internal exception.
+    """
+    bounded = dict(result)
+    markers: list[dict[str, Any]] = []
+    for field in ("violations", "matches", "records"):
+        values = list(bounded[field])
+        if len(values) > _RESULT_ITEM_LIMIT:
+            bounded[field] = values[:_RESULT_ITEM_LIMIT]
+            markers.append({
+                "path": f"$.{field}",
+                "status": "incomplete",
+                "expected": f"at most {_RESULT_ITEM_LIMIT} result items",
+                "observed": len(values),
+                "reason": f"{field} were deterministically truncated to the v1 result bound",
+            })
+
+    findings = list(bounded["findings"])
+    if len(findings) + len(markers) > _RESULT_ITEM_LIMIT:
+        keep = max(0, _RESULT_ITEM_LIMIT - len(markers) - 1)
+        observed = len(findings)
+        findings = findings[:keep]
+        markers.append({
+            "path": "$.findings",
+            "status": "incomplete",
+            "expected": f"at most {_RESULT_ITEM_LIMIT} result items",
+            "observed": observed,
+            "reason": "findings were deterministically truncated to the v1 result bound",
+        })
+    bounded["findings"] = findings + markers
+    if markers:
+        bounded["outcome"] = {
+            "inspect": "invalid", "verify": "not_verified", "query": "invalid",
+        }[bounded["operation"]]
+    return bounded
 
 
 def _invalid_request(
@@ -213,13 +257,23 @@ def inspect_artifact(artifact: Any) -> dict[str, Any]:
     return _checked_result(result)
 
 
-def _validated_inputs(artifacts: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+def _validated_inputs(
+    artifacts: list[dict[str, Any]],
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]:
     valid = []
+    invalid = []
     for artifact in artifacts:
         inspected = inspect_artifact(artifact)
         if inspected["outcome"] == "valid":
             valid.append((artifact, inspected))
-    return valid
+        else:
+            invalid.append({
+                "path": f"$.artifacts[{artifact['input_id']}]",
+                "status": "not_verified",
+                "observed": inspected["outcome"],
+                "reason": "the supplied artifact did not satisfy its own Motus contract",
+            })
+    return valid, invalid
 
 
 def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
@@ -228,11 +282,10 @@ def _execution_refs(kind: str, document: dict[str, Any]) -> set[str]:
     if kind == "execution_receipt":
         refs = set()
         for segment in document["segments"]:
-            for endpoint in ("begin", "end"):
-                entry = segment.get(endpoint)
-                if isinstance(entry, dict):
-                    commitment = entry["commitment"]
-                    refs.add(f"{commitment['tenant']}/{commitment['writer_id']}/{commitment['sequence']}")
+            entry = segment.get("begin")
+            if isinstance(entry, dict):
+                commitment = entry["commitment"]
+                refs.add(f"{commitment['tenant']}/{commitment['writer_id']}/{commitment['sequence']}")
         return refs
     if kind in ("incident_declaration", "capa_action"):
         return {
@@ -250,11 +303,11 @@ def _query_result(
     artifacts: list[dict[str, Any]], projection: dict[str, Any],
 ) -> dict[str, Any]:
     supplied_ids = [item["input_id"] for item in artifacts]
-    valid = _validated_inputs(artifacts)
+    valid, invalid_findings = _validated_inputs(artifacts)
     by_id = {item["input_id"]: (item, inspected) for item, inspected in valid}
     matches: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
-    findings: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = list(invalid_findings)
     kind = projection["kind"]
 
     if kind == "artifact_identity":
@@ -272,7 +325,7 @@ def _query_result(
             return {
                 "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
                 "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
-                "findings": [{"path": "$.projection.registry_input_id", "status": "not_verified", "reason": "the selected supplied registry did not satisfy its structural contract"}],
+                "findings": [*findings, {"path": "$.projection.registry_input_id", "status": "not_verified", "reason": "the selected supplied registry did not satisfy its structural contract"}],
                 "matches": [], "records": [],
             }
         source, inspected = by_id[projection["registry_input_id"]]
@@ -304,20 +357,50 @@ def _query_result(
                 "record_kind": "lineage_edge",
                 "record": {"fingerprint": fingerprint, "supersedes": document.get("supersedes")},
             })
-        parents: dict[Any, int] = {}
-        for _fingerprint, _artifact, document in rows:
+        by_fingerprint: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+        parents: dict[str, int] = {}
+        predecessor_of: dict[str, str] = {}
+        for fingerprint, artifact, document in rows:
+            by_fingerprint.setdefault(fingerprint, []).append((artifact, document))
             parent = document.get("supersedes")
             if parent is not None:
                 parents[parent] = parents.get(parent, 0) + 1
+                predecessor_of[fingerprint] = parent
+        for fingerprint, duplicates in sorted(by_fingerprint.items()):
+            if len(duplicates) > 1:
+                findings.append({"path": f"lineage:{fingerprint}", "status": "conflict", "expected": "one supplied artifact per fingerprint", "observed": len(duplicates), "reason": "multiple supplied artifacts have the same correction identity"})
+        for fingerprint, parent in sorted(predecessor_of.items()):
+            candidates = by_fingerprint.get(parent, ())
+            if not candidates:
+                findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "incomplete", "expected": parent, "reason": "the immediate predecessor is absent from this supplied view"})
+            elif len(candidates) > 1:
+                findings.append({"path": f"lineage:{fingerprint}.supersedes", "status": "conflict", "expected": parent, "observed": len(candidates), "reason": "the predecessor identity is ambiguous in the supplied view"})
         for parent, count in sorted(parents.items()):
             if count > 1:
                 findings.append({"path": f"lineage:{parent}", "status": "conflict", "expected": parent, "observed": count, "reason": "multiple supplied revisions name the same predecessor; no winner was selected"})
+        cycle_members: set[str] = set()
+        for start in sorted(predecessor_of):
+            cursor = start
+            path: list[str] = []
+            positions: dict[str, int] = {}
+            while cursor in predecessor_of and len(by_fingerprint.get(cursor, ())) == 1:
+                if cursor in positions:
+                    cycle_members.update(path[positions[cursor]:])
+                    break
+                positions[cursor] = len(path)
+                path.append(cursor)
+                parent = predecessor_of[cursor]
+                if len(by_fingerprint.get(parent, ())) != 1:
+                    break
+                cursor = parent
+        if cycle_members:
+            findings.append({"path": "lineage:cycle", "status": "conflict", "observed": sorted(cycle_members), "reason": "the supplied correction lineage contains a cycle; no winner was selected"})
     elif kind == "dossier_membership":
         if projection["dossier_input_id"] not in by_id:
             return {
                 "interface_version": "1.0.0", "message_type": "result", "operation": "query", "outcome": "invalid",
                 "scope": _scope(supplied_ids, "query"), "subject": None, "violations": [],
-                "findings": [{"path": "$.projection.dossier_input_id", "status": "not_verified", "reason": "the selected supplied dossier did not satisfy its structural contract"}],
+                "findings": [*findings, {"path": "$.projection.dossier_input_id", "status": "not_verified", "reason": "the selected supplied dossier did not satisfy its structural contract"}],
                 "matches": [], "records": [],
             }
         source, inspected = by_id[projection["dossier_input_id"]]
@@ -330,17 +413,34 @@ def _query_result(
         events = [item["document"] for item, _ in valid if item["kind"] == "ai_system_registry_event" and item["document"]["producer_namespace"] == namespace]
         ai = importlib.import_module("vitruvyan_motus.ai_system_registry")
         projected = ai.project_supplied_ai_system_lifecycle(registration_id, registrations=registrations, events=events)
-        source_ids = [item["input_id"] for item, _ in valid if item["kind"] in ("ai_system_registration", "ai_system_registry_event") and item["document"]["producer_namespace"] == namespace]
+        selected_event_fingerprints = set(projected.ordered_event_fingerprints)
+        selected_registrations = [
+            (item, inspected) for item, inspected in valid
+            if item["kind"] == "ai_system_registration"
+            and item["document"]["producer_namespace"] == namespace
+            and item["document"]["registration_id"] == registration_id
+        ]
+        selected_events = [
+            (item, inspected) for item, inspected in valid
+            if item["kind"] == "ai_system_registry_event"
+            and item["document"]["producer_namespace"] == namespace
+            and item["document"]["registration_id"] == registration_id
+            and inspected["subject"]["fingerprint"] in selected_event_fingerprints
+        ]
+        selected = selected_registrations + selected_events
+        source_ids = [item["input_id"] for item, _ in selected]
         for artifact, inspected in valid:
             if artifact["input_id"] in source_ids:
                 matches.append(inspected["subject"])
-        source_id = source_ids[0] if source_ids else supplied_ids[0]
-        records.append({"source_input_id": source_id, "record_kind": "ai_lifecycle", "record": {"producer_namespace": namespace, "registration_id": registration_id, "ordered_event_fingerprints": list(projected.ordered_event_fingerprints), "terminal_action": projected.terminal_action}})
+        if source_ids:
+            registration_source_ids = sorted(item["input_id"] for item, _ in selected_registrations)
+            source_id = registration_source_ids[0] if registration_source_ids else sorted(source_ids)[0]
+            records.append({"source_input_id": source_id, "record_kind": "ai_lifecycle", "record": {"producer_namespace": namespace, "registration_id": registration_id, "ordered_event_fingerprints": list(projected.ordered_event_fingerprints), "terminal_action": projected.terminal_action}})
         findings.extend({"path": item.path, "status": item.status.replace(" ", "_"), "expected": _json_value(item.expected), "observed": _json_value(item.observed), "reason": item.reason} for item in projected.findings)
 
     matches.sort(key=lambda item: (item["kind"], item["input_id"], item["fingerprint"] or ""))
     records.sort(key=lambda item: (item["record_kind"], item["source_input_id"], str(item["record"])))
-    outcome = "conflict" if any(item["status"] == "conflict" for item in findings) else "completed"
+    outcome = "invalid" if invalid_findings else ("conflict" if any(item["status"] == "conflict" for item in findings) else "completed")
     return {
         "interface_version": "1.0.0", "message_type": "result",
         "operation": "query", "outcome": outcome,
