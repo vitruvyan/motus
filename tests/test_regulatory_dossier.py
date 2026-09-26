@@ -132,6 +132,8 @@ def test_pack_refuses_missing_extra_non_bytes_size_and_digest():
         pack_regulatory_dossier(manifest, {**members, "extra.json": b"{}"})
     with pytest.raises(TypeError, match="bytes"):
         pack_regulatory_dossier(manifest, {"profile/profile.json": "no"})
+    with pytest.raises(TypeError, match="paths"):
+        pack_regulatory_dossier(manifest, {1: b"no"})
     changed = copy.deepcopy(manifest)
     changed["entries"][0]["size_bytes"] += 1
     with pytest.raises(ValueError, match="size"):
@@ -222,6 +224,33 @@ def test_multiple_candidates_are_visible_profile_assessment_conflict():
     assert verdict.findings[0].status == "conflict"
 
 
+def test_unrequested_multiple_candidates_do_not_block_exact_profile_assessment():
+    prof = profile("execution_receipt")
+    profile_bytes = validate.canonical_json(prof)
+    registry = json.loads((ROOT / JSON_FIXTURES["risk_control_registry"]).read_text("utf-8"))["instance"]
+    items = [(
+        "regulatory_evidence_profile", "z-profile.json", profile_bytes,
+        validate.regulatory_evidence_profile_fingerprint(prof),
+    )]
+    for number in (1, 2):
+        candidate = copy.deepcopy(registry)
+        candidate["registry"]["version"] = f"2026.09.21-{number}"
+        payload = validate.canonical_json(candidate)
+        items.append((
+            "risk_control_registry", f"a-registry-{number}.json", payload,
+            validate.risk_control_registry_fingerprint(candidate),
+        ))
+    manifest = manifest_for(items)
+    members = {path: payload for _, path, payload, _ in items}
+    verdict = verify_regulatory_dossier(pack_regulatory_dossier(manifest, members))
+    assert [item.entry_id for item in verdict.entries] == [
+        entry["entry_id"] for entry in manifest["entries"]
+    ]
+    assert verdict.profile_assessment is not None
+    assert verdict.profile_assessment.findings[0].status == "missing"
+    assert not any(item.path == "$.profile_assessment" for item in verdict.findings)
+
+
 @pytest.mark.parametrize("kind", JSON_FIXTURES)
 def test_every_declared_json_kind_dispatches_to_its_existing_validator(kind):
     raw = json.loads((ROOT / JSON_FIXTURES[kind]).read_text("utf-8"))
@@ -292,6 +321,8 @@ def test_lineage_orders_corrections_and_exposes_forks_missing_and_duplicate_root
     competing_root["observed_at"] = "2026-09-26T14:00:00Z"
     verdict = verify_regulatory_dossier_lineage([first, competing_root])
     assert any(item.reason == "multiple roots claim one stable identity" for item in verdict.findings)
+    with pytest.raises(TypeError, match="iterable"):
+        verify_regulatory_dossier_lineage(first)
 
 
 def test_manifest_and_export_fingerprints_are_independent():

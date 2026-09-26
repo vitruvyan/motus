@@ -146,6 +146,8 @@ def pack_regulatory_dossier(
         raise TypeError("manifest must be a dict")
     if not isinstance(members, Mapping):
         raise TypeError("members must be a mapping")
+    if any(not isinstance(path, str) for path in members):
+        raise TypeError("dossier member paths must be strings")
     validate = _validate_module()
     violations = validate.validate_regulatory_evidence_dossier(manifest)
     if violations:
@@ -379,6 +381,7 @@ def _compose_existing_verifiers(
         ))
 
     from vitruvyan_motus.ai_system_registry import (
+        project_supplied_ai_system_lifecycle,
         verify_ai_system_registration_binding, verify_ai_system_registry_lineage,
         verify_ai_system_registry_snapshot,
     )
@@ -398,6 +401,19 @@ def _compose_existing_verifiers(
         )
         findings.extend(_converted_findings(
             f"binding:ai_system_registration:{fp}", verdict.findings,
+        ))
+    registration_ids = sorted({
+        value["registration_id"]
+        for value in documents.get("ai_system_registration", ())
+    })
+    for registration_id in registration_ids:
+        projection = project_supplied_ai_system_lifecycle(
+            registration_id,
+            registrations=documents.get("ai_system_registration", ()),
+            events=documents.get("ai_system_registry_event", ()),
+        )
+        findings.extend(_converted_findings(
+            f"projection:ai_system_registry:{registration_id}", projection.findings,
         ))
     for snapshot in documents.get("ai_system_registry_snapshot", ()):
         fp = validate.ai_system_registry_snapshot_fingerprint(snapshot)
@@ -479,8 +495,10 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
 
         documents: dict[str, list[dict[str, Any]]] = {}
         package_bytes: list[bytes] = []
-        for path in sorted(set(declared) & actual):
-            entry = declared[path]
+        for entry in snapshot["entries"]:
+            path = entry["path"]
+            if path not in actual:
+                continue
             kind = entry["artifact_kind"]
             try:
                 payload = _read_bounded(archive, info_by_name[path], _MEMBER_MAX_BYTES)
@@ -534,7 +552,15 @@ def verify_regulatory_dossier(data: bytes) -> RegulatoryDossierVerdict:
 
         assessment = None
         profile_docs = documents.get("regulatory_evidence_profile", [])
-        ambiguous = [kind for kind in _PROFILE_KINDS if len(documents.get(kind, [])) > 1]
+        requested_kinds = {
+            expectation["kind"]
+            for requirement in profile_docs[0]["requirements"]
+            for expectation in requirement["evidence"]
+        } if len(profile_docs) == 1 else set()
+        ambiguous = [
+            kind for kind in _PROFILE_KINDS
+            if kind in requested_kinds and len(documents.get(kind, [])) > 1
+        ]
         if ambiguous:
             findings.append(_finding("$.profile_assessment", "conflict", "at most one candidate per profiled kind", ambiguous, "profile expectations cannot select among multiple candidates"))
         elif len(profile_docs) == 1:
@@ -554,6 +580,8 @@ def verify_regulatory_dossier_lineage(
     dossiers: Iterable[dict[str, Any]],
 ) -> RegulatoryDossierLineageVerdict:
     """Verify caller-supplied correction lineage without resolving hidden state."""
+    if isinstance(dossiers, (str, bytes, dict)):
+        raise TypeError("dossiers must be an iterable of dicts")
     validate = _validate_module()
     supplied = tuple(dossiers)
     valid: dict[str, dict[str, Any]] = {}
