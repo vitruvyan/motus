@@ -145,5 +145,19 @@
     "from": "\"not established\": \"not_verified\", \"not yet\": \"not_verified\"",
     "to": "\"not established\": \"not_verified\", \"not yet\": \"matched\"",
     "tests": "tests/test_verification_query_verify.py"
+  },
+  {
+    "name": "evidence package member identifiers remain bounded in results",
+    "file": "src/vitruvyan_motus/verification_query.py",
+    "from": "return name if len(name) <= 512 else name[:509] + \"...\"",
+    "to": "return name",
+    "tests": "tests/test_verification_query_inspect.py"
+  },
+  {
+    "name": "public facade nesting retains the shared VQ2 bound",
+    "file": "contract/validate.py",
+    "from": "_VQ_MAX_NESTING_DEPTH = 128",
+    "to": "_VQ_MAX_NESTING_DEPTH = 10_000",
+    "tests": "tests/test_verification_query_contract.py tests/test_verification_query_inspect.py"
   }
 ]

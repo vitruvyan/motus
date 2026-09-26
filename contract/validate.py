@@ -2069,6 +2069,26 @@ def validate_regulatory_evidence_profile(document: dict) -> list[Violation]:
 _VQ_MAX_JSON_DOCUMENT_BYTES = 28 * 1024 * 1024
 _VQ_MAX_JSON_TOTAL_BYTES = 128 * 1024 * 1024
 _VQ_MAX_BINARY_TOTAL_BYTES = 160 * 1024 * 1024
+_VQ_MAX_NESTING_DEPTH = 128
+
+
+def _vq_nesting_exceeds(value: Any) -> bool:
+    """Whether an already-parsed interface value exceeds the VQ2 depth bound."""
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    deepest_seen: dict[int, int] = {}
+    while stack:
+        current, depth = stack.pop()
+        if not isinstance(current, (dict, list, tuple)):
+            continue
+        if depth > _VQ_MAX_NESTING_DEPTH:
+            return True
+        identity = id(current)
+        if deepest_seen.get(identity, -1) >= depth:
+            continue
+        deepest_seen[identity] = depth
+        children = current.values() if isinstance(current, dict) else current
+        stack.extend((item, depth + 1) for item in children)
+    return False
 
 
 def _vq_inputs(message: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2089,6 +2109,12 @@ def validate_verification_query_message(document: dict) -> list[Violation]:
     does not make its contents valid, and never establishes global completeness
     or compliance.
     """
+    if _vq_nesting_exceeds(document):
+        return [Violation(
+            "VQ2", "$",
+            "verification/query message exceeds the 128-level nesting limit",
+        )]
+
     violations, structural = _j1_violations(document)
     if structural:
         return violations

@@ -60,8 +60,8 @@ sufficient outcome.
 
 `VQ1` rejects duplicate input identifiers. `VQ2` bounds each canonical JSON
 document to 28 MiB, aggregate JSON request/result content to 128 MiB, decoded
-binary request content to 160 MiB, collections and result lists to 10,000
-items, and verifies strict base64. `VQ3` requires the canonical ADR-027
+binary request content to 160 MiB, message nesting to 128 levels, collections
+and result lists to 10,000 items, and verifies strict base64. `VQ3` requires the canonical ADR-027
 `tenant/writer/sequence` coordinate for execution projections. `VQ4` rejects a
 projection source of the wrong kind or outside the supplied request and a
 result that cites an input outside its declared supplied scope. These rules

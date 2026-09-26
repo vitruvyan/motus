@@ -25,6 +25,10 @@ _PACKAGE_MEMBER_LIMIT = 1_000
 _PACKAGE_MEMBER_MAX_BYTES = 28 * 1024 * 1024
 _PACKAGE_TOTAL_MAX_BYTES = 128 * 1024 * 1024
 
+
+def _bounded_member_name(name: str) -> str:
+    return name if len(name) <= 512 else name[:509] + "..."
+
 _JSON_DISPATCH: dict[str, tuple[str, str | None]] = {
     "graphspec": ("validate_graphspec", "graph"),
     "trace": ("validate_trace", None),
@@ -207,8 +211,9 @@ def _package_expansion_finding(data: bytes) -> dict[str, Any] | None:
         for info in infos:
             if info.file_size > _PACKAGE_MEMBER_MAX_BYTES:
                 return {
-                    "path": f"$.members[{info.filename}]", "status": "not_verified",
-                    "expected": _PACKAGE_MEMBER_MAX_BYTES, "observed": info.file_size,
+                    "path": "$.members", "status": "not_verified",
+                    "expected": _PACKAGE_MEMBER_MAX_BYTES,
+                    "observed": {"member": _bounded_member_name(info.filename), "expanded_bytes": info.file_size},
                     "reason": "evidence package member exceeds the expanded-byte limit",
                 }
             member_total = 0
@@ -225,8 +230,9 @@ def _package_expansion_finding(data: bytes) -> dict[str, Any] | None:
                     total += len(chunk)
                     if member_total > _PACKAGE_MEMBER_MAX_BYTES:
                         return {
-                            "path": f"$.members[{info.filename}]", "status": "not_verified",
-                            "expected": _PACKAGE_MEMBER_MAX_BYTES, "observed": member_total,
+                            "path": "$.members", "status": "not_verified",
+                            "expected": _PACKAGE_MEMBER_MAX_BYTES,
+                            "observed": {"member": _bounded_member_name(info.filename), "expanded_bytes": member_total},
                             "reason": "evidence package member exceeds the expanded-byte limit",
                         }
                     if total > _PACKAGE_TOTAL_MAX_BYTES:

@@ -75,6 +75,17 @@ def test_binary_base64_and_resource_bounds_fail_closed(monkeypatch):
     assert rules(document) == {"VQ2"}
 
 
+def test_already_parsed_request_nesting_is_bounded_before_canonicalization():
+    nested: object = None
+    for _ in range(129):
+        nested = [nested]
+    document = inspect_request()
+    document["artifact"]["document"] = nested
+    violations = validate.validate_verification_query_message(document)
+    assert {item.rule for item in violations} == {"VQ2"}
+    assert "128-level nesting limit" in violations[0].message
+
+
 def test_execution_ref_projection_requires_the_canonical_coordinate():
     request = {"interface_version": "1.0.0", "message_type": "request", "operation": "query", "projection": {"kind": "execution_ref", "execution_ref": "not/a/ref/0"}, "artifacts": [artifact()]}
     assert rules(request) == {"VQ3"}

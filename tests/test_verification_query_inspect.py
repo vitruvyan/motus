@@ -95,7 +95,7 @@ def test_evidence_package_expansion_limits_run_before_domain_verification(monkey
 
     cases = [
         archive((f"member-{index}", b"") for index in range(1_001)),
-        archive([("oversize", b"\0" * (28 * 1024 * 1024 + 1))]),
+        archive([("x" * 9_000, b"\0" * (28 * 1024 * 1024 + 1))]),
         archive((f"large-{index}", b"\0" * (27 * 1024 * 1024)) for index in range(5)),
     ]
     expected_reasons = (
@@ -113,6 +113,9 @@ def test_evidence_package_expansion_limits_run_before_domain_verification(monkey
         result = inspect_artifact(artifact)
         assert result["outcome"] == "invalid"
         assert reason in result["findings"][0]["reason"]
+        assert validate.validate_verification_query_message(result) == []
+        if index == 1:
+            assert len(result["findings"][0]["observed"]["member"]) <= 512
 
 
 def test_inspection_takes_no_ownership_of_the_callers_document():
@@ -126,3 +129,12 @@ def test_non_json_python_values_are_invalid_request_not_exceptions():
     result = inspect_artifact(typed("system_manifest", {"bad": object()}))
     assert result["outcome"] == "invalid_request"
     assert {item["rule"] for item in result["violations"]} == {"J1"}
+
+
+def test_deep_already_parsed_input_is_a_bounded_invalid_request():
+    nested: object = None
+    for _ in range(129):
+        nested = [nested]
+    result = inspect_artifact(typed("system_manifest", nested))
+    assert result["outcome"] == "invalid_request"
+    assert {item["rule"] for item in result["violations"]} == {"VQ2"}
