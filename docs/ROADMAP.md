@@ -134,10 +134,13 @@ a compliance verdict.
 The founder accepted ADR-043 on 2026-09-26. Contract-first implementation,
 independent review, adversarial remediation, release qualification and tagging
 completed without weakening the decision's stop conditions. The annotated
-`v0.22.0` tag points at the Jenkins-verified release merge and its authenticated
-distribution bytes remain on a draft GitHub Release. ADR-032 keeps the release
-open until the founder publishes that draft and the coupled PyPI/index/hash
-verification succeeds; that publication is not currently authorised.
+`v0.22.0` tag points at the Jenkins-verified release merge. The completed
+workflow-run artifact is the authenticated distribution authority; separate
+editable copies remain on a draft GitHub Release and become authenticated only
+after the publication workflow compares them byte-for-byte with that artifact.
+ADR-032 keeps the release open until the founder publishes the draft and the
+coupled PyPI/index/hash verification succeeds; that publication is not
+currently authorised.
 
 ### Existing Motus UI draft
 
