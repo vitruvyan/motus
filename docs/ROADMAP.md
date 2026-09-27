@@ -168,7 +168,7 @@ run in parallel only after the relevant Motus public contract is stable.
 |---|---|---|
 | Orbis ↔ Motus receipt/evidence bridge | QUALIFIED | Orbis retrieves and exposes Motus-owned evidence; live qualification against Motus v0.22.0 passed on 2026-09-27 without recreating verifier semantics |
 | Limen ↔ Motus evidence bridge | PLANNED | Limen consumes the same canonical evidence boundary without a private format |
-| SDK / adapters for third-party stacks | IN PROGRESS; TARGET v0.23.0 | ADR-044 accepted; adapters translate transport and storage only, while Motus remains semantic authority |
+| SDK / adapters for third-party stacks | SOURCE-RELEASE CANDIDATE v0.23.0 | ADR-044 implemented and qualified; adapters translate transport and storage only, while Motus remains semantic authority |
 | Orbis evidence UI | IMPLEMENTED; LIVE UI QUALIFICATION PENDING | source, proxy and component tests exist; the authenticated browser flow still needs separate live qualification |
 | Motus UI wiring | PARTIALLY WIRED; REGULATORY INTEGRATION READY TO START | extends the existing continuity paths with real regulatory evidence retrieval and verification |
 
@@ -200,7 +200,7 @@ This qualifies the backend bridge only. It does not qualify the authenticated
 browser flow, the Orbis UI state shown to a user, Limen, a third-party adapter,
 or Motus's own UI draft.
 
-### Third-party adapter profile / v0.23.0 — in progress
+### Third-party adapter profile / v0.23.0 — source-release candidate
 
 The founder accepted ADR-044 and assigned the adapter profile and conformance
 kit to Motus v0.23.0 on 2026-09-27. This is an integration release: it adds a
@@ -221,6 +221,14 @@ separate later release target, and public documentation in `vitruvyan-docs`
 must be updated only after the adapter implementation and release evidence are
 stable.
 
+The implementation, neutral corpus, reference adapter, packaging guards,
+independent review and adversarial remediation are complete. Relative Jenkins
+builds #37-#39 pass the unchanged per-release budget; absolute build #40 passes
+the SLO baseline; and real-workload replay #19 records five valid
+integrity-chained traces with a conservative Motus share of 0.185%. The
+cumulative v0.6.1 arm remains explicitly red under ADR-018. PyPI publication
+is not authorised.
+
 ---
 
 ## Where we are, in facts
@@ -230,7 +238,11 @@ statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
-- **0.22.0** is the newest tagged source-release candidate (2026-09-27): the
+- **0.23.0** is the qualified, not-yet-public source-release candidate
+  (2026-09-27): ADR-044's third-party adapter profile and conformance kit are
+  implemented and the release branch carries relative, absolute and fresh
+  real-workload evidence. PyPI publication is not authorised;
+- **0.22.0** is a tagged source-release candidate (2026-09-27): the
   annotated tag points at verified merge commit
   `dbe2543fab22a30f473b0b7929de5cba2dd6a5e2` for Verification and Query
   API/CLI v1. Workflow `36293906043` built and verified the distributions once,

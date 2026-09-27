@@ -1,0 +1,236 @@
+candidate_sha=85b775f512b289222da10c500cc6461a7dc28399
+candidate_label=release/0.23.0
+Python 3.10.12
+Linux 6.8.0-139-generic
+load_average=5.22,5.56,6.23
+cpu=AMD EPYC Processor (with IBPB)
+========================================================================
+QUERY : Dovrei procedere con la revisione del contratto ALPHA?
+ESITO : completed
+========================================================================
+
+IL GIRO CHE HA FATTO (dalla traccia, non dal codice):
+
+   -> accept_query
+        registra  query_chars = 54
+        registra  user_id = motus_e2e_test
+        registra  language_requested = it
+        instrada  -> call_pipeline  (static)
+   -> call_pipeline
+        registra  http_status = 200
+        registra  latency_us = 21123803
+        registra  route_taken = None
+        registra  orthodoxy_status = None
+        registra  babel_status = None
+        registra  language_detected = None
+        registra  answer_chars = 1027
+        registra  correlation_id = None
+        instrada  -> assess_health  (static)
+   -> assess_health
+        registra  check_babel = False
+        registra  check_language = False
+        registra  check_answered = True
+        DECIDE    pipeline_health = degraded
+        instrada  -> flag_degradation  (matched)
+   -> flag_degradation
+        registra  degradation_reason = babel=None language chiesta=it rilevata=None answer_chars=1027
+        instrada  -> END  (static)
+
+COSA DICE IL VALIDATORE DEL CONTRATTO SULLA TRACCIA:
+    nessuna violazione
+
+EVIDENZA:
+    record scritti      : 14
+    schema traccia      : 3.2.0
+    catena di integrita': presente
+    radice della catena : sha256:a311e54ad98b318715b52deb0 ...
+    replay dichiarato   : none
+
+QUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):
+    richiesta intera    :   21136.8 ms
+    di cui la pipeline  :   21123.8 ms
+    di cui Motus        :      13.0 ms   = 0.062% del totale
+========================================================================
+QUERY : Quali controlli devo verificare prima di approvare questa modifica?
+ESITO : completed
+========================================================================
+
+IL GIRO CHE HA FATTO (dalla traccia, non dal codice):
+
+   -> accept_query
+        registra  query_chars = 67
+        registra  user_id = motus_e2e_test
+        registra  language_requested = it
+        instrada  -> call_pipeline  (static)
+   -> call_pipeline
+        registra  http_status = 200
+        registra  latency_us = 23470847
+        registra  route_taken = None
+        registra  orthodoxy_status = None
+        registra  babel_status = None
+        registra  language_detected = None
+        registra  answer_chars = 985
+        registra  correlation_id = None
+        instrada  -> assess_health  (static)
+   -> assess_health
+        registra  check_babel = False
+        registra  check_language = False
+        registra  check_answered = True
+        DECIDE    pipeline_health = degraded
+        instrada  -> flag_degradation  (matched)
+   -> flag_degradation
+        registra  degradation_reason = babel=None language chiesta=it rilevata=None answer_chars=985
+        instrada  -> END  (static)
+
+COSA DICE IL VALIDATORE DEL CONTRATTO SULLA TRACCIA:
+    nessuna violazione
+
+EVIDENZA:
+    record scritti      : 14
+    schema traccia      : 3.2.0
+    catena di integrita': presente
+    radice della catena : sha256:efa5dd7c2552806f9c649916c ...
+    replay dichiarato   : none
+
+QUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):
+    richiesta intera    :   23480.7 ms
+    di cui la pipeline  :   23470.8 ms
+    di cui Motus        :       9.9 ms   = 0.042% del totale
+========================================================================
+QUERY : Riassumi i rischi principali di questa decisione operativa.
+ESITO : completed
+========================================================================
+
+IL GIRO CHE HA FATTO (dalla traccia, non dal codice):
+
+   -> accept_query
+        registra  query_chars = 59
+        registra  user_id = motus_e2e_test
+        registra  language_requested = it
+        instrada  -> call_pipeline  (static)
+   -> call_pipeline
+        registra  http_status = 200
+        registra  latency_us = 8089483
+        registra  route_taken = None
+        registra  orthodoxy_status = None
+        registra  babel_status = None
+        registra  language_detected = None
+        registra  answer_chars = 71
+        registra  correlation_id = None
+        instrada  -> assess_health  (static)
+   -> assess_health
+        registra  check_babel = False
+        registra  check_language = False
+        registra  check_answered = True
+        DECIDE    pipeline_health = degraded
+        instrada  -> flag_degradation  (matched)
+   -> flag_degradation
+        registra  degradation_reason = babel=None language chiesta=it rilevata=None answer_chars=71
+        instrada  -> END  (static)
+
+COSA DICE IL VALIDATORE DEL CONTRATTO SULLA TRACCIA:
+    nessuna violazione
+
+EVIDENZA:
+    record scritti      : 14
+    schema traccia      : 3.2.0
+    catena di integrita': presente
+    radice della catena : sha256:b5c447f9e27ede385925035e0 ...
+    replay dichiarato   : none
+
+QUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):
+    richiesta intera    :    8104.4 ms
+    di cui la pipeline  :    8089.5 ms
+    di cui Motus        :      15.0 ms   = 0.185% del totale
+========================================================================
+QUERY : La configurazione attuale rispetta i vincoli dichiarati?
+ESITO : completed
+========================================================================
+
+IL GIRO CHE HA FATTO (dalla traccia, non dal codice):
+
+   -> accept_query
+        registra  query_chars = 56
+        registra  user_id = motus_e2e_test
+        registra  language_requested = it
+        instrada  -> call_pipeline  (static)
+   -> call_pipeline
+        registra  http_status = 200
+        registra  latency_us = 16935363
+        registra  route_taken = None
+        registra  orthodoxy_status = None
+        registra  babel_status = None
+        registra  language_detected = None
+        registra  answer_chars = 607
+        registra  correlation_id = None
+        instrada  -> assess_health  (static)
+   -> assess_health
+        registra  check_babel = False
+        registra  check_language = False
+        registra  check_answered = True
+        DECIDE    pipeline_health = degraded
+        instrada  -> flag_degradation  (matched)
+   -> flag_degradation
+        registra  degradation_reason = babel=None language chiesta=it rilevata=None answer_chars=607
+        instrada  -> END  (static)
+
+COSA DICE IL VALIDATORE DEL CONTRATTO SULLA TRACCIA:
+    nessuna violazione
+
+EVIDENZA:
+    record scritti      : 14
+    schema traccia      : 3.2.0
+    catena di integrita': presente
+    radice della catena : sha256:8f7b87e612453d721bbb2677a ...
+    replay dichiarato   : none
+
+QUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):
+    richiesta intera    :   16938.5 ms
+    di cui la pipeline  :   16935.4 ms
+    di cui Motus        :       3.1 ms   = 0.018% del totale
+========================================================================
+QUERY : Quali evidenze mancano prima di autorizzare il rilascio?
+ESITO : completed
+========================================================================
+
+IL GIRO CHE HA FATTO (dalla traccia, non dal codice):
+
+   -> accept_query
+        registra  query_chars = 56
+        registra  user_id = motus_e2e_test
+        registra  language_requested = it
+        instrada  -> call_pipeline  (static)
+   -> call_pipeline
+        registra  http_status = 200
+        registra  latency_us = 15866433
+        registra  route_taken = None
+        registra  orthodoxy_status = None
+        registra  babel_status = None
+        registra  language_detected = None
+        registra  answer_chars = 805
+        registra  correlation_id = None
+        instrada  -> assess_health  (static)
+   -> assess_health
+        registra  check_babel = False
+        registra  check_language = False
+        registra  check_answered = True
+        DECIDE    pipeline_health = degraded
+        instrada  -> flag_degradation  (matched)
+   -> flag_degradation
+        registra  degradation_reason = babel=None language chiesta=it rilevata=None answer_chars=805
+        instrada  -> END  (static)
+
+COSA DICE IL VALIDATORE DEL CONTRATTO SULLA TRACCIA:
+    nessuna violazione
+
+EVIDENZA:
+    record scritti      : 14
+    schema traccia      : 3.2.0
+    catena di integrita': presente
+    radice della catena : sha256:4a6feb12f794908b40bd7ee3f ...
+    replay dichiarato   : none
+
+QUANTO PESA MOTUS IN UNA RICHIESTA VERA (ipotesi H1, issue #38):
+    richiesta intera    :   15873.8 ms
+    di cui la pipeline  :   15866.4 ms
+    di cui Motus        :       7.4 ms   = 0.047% del totale
