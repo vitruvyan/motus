@@ -69,6 +69,10 @@ class AdapterProfileFailure(Exception):
             raise ValueError(f"host failure kind is not permitted: {kind!r}")
         if not isinstance(detail, str) or not detail or len(detail) > 4096:
             raise ValueError("host failure detail must be 1..4096 characters")
+        try:
+            detail.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError("host failure detail must be Unicode scalar text") from None
         super().__init__(detail)
         self.kind = kind
         self.detail = detail
@@ -274,6 +278,8 @@ def run_adapter_conformance(
     part of an adapter profile message.
     """
     selected = load_adapter_conformance_cases() if cases is None else copy.deepcopy(cases)
+    if not isinstance(selected, tuple) or not selected or len(selected) > 1000:
+        raise ValueError("adapter conformance run requires a tuple of 1..1000 cases")
     failures: list[ConformanceFailure] = []
     passed = 0
     for index, case in enumerate(selected):

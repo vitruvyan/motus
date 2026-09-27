@@ -83,11 +83,11 @@ def test_operations_versions_members_and_shortcut_verdicts_are_closed():
 def test_execution_reference_is_canonical_and_never_a_run_id_or_end_label():
     malformed = request()
     malformed["execution_ref"] = "run-123"
-    assert rules(malformed) == {"SCHEMA"}
+    assert rules(malformed) == {"AP1"}
 
     leading_zero = request()
     leading_zero["execution_ref"] = "tenant/writer/01"
-    assert rules(leading_zero) == {"SCHEMA"}
+    assert rules(leading_zero) == {"AP1"}
 
     # Shape validation cannot decide whether sequence 7 is BEGIN or END. The
     # retrieval source must bind it, and the profile names that duty explicitly.
@@ -98,8 +98,16 @@ def test_execution_reference_is_canonical_and_never_a_run_id_or_end_label():
 
 def test_package_base64_is_strict_and_resource_bounded(monkeypatch):
     malformed = request("package.verify")
-    malformed["package_base64"] = "not base64!!!!"
+    malformed["package_base64"] = "bm90LWEtemlw\n"
     assert "AP2" in rules(malformed)
+
+    noncanonical_pad_bits = request("package.verify")
+    noncanonical_pad_bits["package_base64"] = "Zh=="
+    assert rules(noncanonical_pad_bits) == {"AP2"}
+
+    canonical = request("package.verify")
+    canonical["package_base64"] = "Zg=="
+    assert validate.validate_adapter_profile_message(canonical) == []
 
     bounded = request("package.verify")
     monkeypatch.setattr(validate, "_VQ_MAX_BINARY_TOTAL_BYTES", 4)

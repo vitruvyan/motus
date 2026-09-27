@@ -7,8 +7,7 @@
     "ExecutionRef": {
       "type": "string",
       "minLength": 5,
-      "maxLength": 423,
-      "pattern": "^[^/\\s]{1,200}/[^/\\s]{1,200}/(0|[1-9][0-9]*)$"
+      "maxLength": 423
     },
     "Operation": {
       "enum": ["receipt.retrieve", "package.retrieve", "package.verify", "evidence.execute"]

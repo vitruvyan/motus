@@ -2080,6 +2080,30 @@ _VQ_MAX_JSON_DOCUMENT_BYTES = 28 * 1024 * 1024
 _VQ_MAX_JSON_TOTAL_BYTES = 128 * 1024 * 1024
 _VQ_MAX_BINARY_TOTAL_BYTES = 160 * 1024 * 1024
 _VQ_MAX_NESTING_DEPTH = 128
+_BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+
+def _strict_padded_base64_size(value: object) -> int | None:
+    """Decoded size for canonical padded base64 without materialising bytes."""
+    if not isinstance(value, str) or not value or len(value) % 4:
+        return None
+    if not value.isascii():
+        return None
+    padding = len(value) - len(value.rstrip("="))
+    if padding > 2:
+        return None
+    body = value[:-padding] if padding else value
+    if not body or "=" in body or any(char not in _BASE64_ALPHABET for char in body):
+        return None
+    # Canonical RFC 4648 text has zero unused pad bits. Without this check,
+    # `Zh==` and `Zg==` are two texts for the same byte and exact-byte
+    # transport starts from an ambiguous input.
+    last = _BASE64_ALPHABET.index(body[-1])
+    if padding == 2 and last & 0x0F:
+        return None
+    if padding == 1 and last & 0x03:
+        return None
+    return (len(value) // 4) * 3 - padding
 
 
 def _vq_nesting_exceeds(value: Any) -> bool:
@@ -2279,18 +2303,16 @@ def validate_adapter_profile_message(document: dict) -> list[Violation]:
 
     package_base64 = document.get("package_base64")
     if package_base64 is not None:
-        try:
-            package = base64.b64decode(package_base64.encode("ascii"), validate=True)
-        except (UnicodeEncodeError, binascii.Error):
+        decoded_size = _strict_padded_base64_size(package_base64)
+        if decoded_size is None:
             violations.append(Violation(
                 "AP2", "$.package_base64", "package bytes are not strict padded base64",
             ))
-        else:
-            if len(package) > _VQ_MAX_BINARY_TOTAL_BYTES:
-                violations.append(Violation(
-                    "AP2", "$.package_base64",
-                    "decoded package exceeds the 160 MiB profile limit",
-                ))
+        elif decoded_size > _VQ_MAX_BINARY_TOTAL_BYTES:
+            violations.append(Violation(
+                "AP2", "$.package_base64",
+                "decoded package exceeds the 160 MiB profile limit",
+            ))
 
     embedded_key = (
         "evidence_request" if "evidence_request" in document

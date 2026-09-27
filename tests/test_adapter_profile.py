@@ -148,6 +148,9 @@ def test_expected_host_failure_is_transport_data_but_bug_propagates():
     with pytest.raises(RuntimeError, match="programmer bug"):
         InProcessAdapter(Buggy({}), execute_evidence=lambda request: {}).invoke(request)
 
+    with pytest.raises(ValueError, match="Unicode scalar"):
+        AdapterProfileFailure("not_found", "bad\ud800text")
+
 
 def test_malformed_and_unsupported_requests_fail_before_an_operation_runs():
     class MustNotRun(FakeEvidence):
@@ -179,9 +182,18 @@ def test_corpus_loader_returns_independent_copies():
 def test_conformance_runner_detects_mismatch_mutation_and_exception():
     one = load_adapter_conformance_cases()[:1]
 
-    mismatch = run_adapter_conformance(lambda request, setup: {}, cases=one)
+    def valid_but_different(request, setup):
+        return {
+            "profile_version": "1.0.0",
+            "message_type": "result",
+            "operation": "receipt.retrieve",
+            "outcome": "failed",
+            "failure": {"kind": "unavailable", "detail": "different result"},
+        }
+
+    mismatch = run_adapter_conformance(valid_but_different, cases=one)
     assert not mismatch.conformant
-    assert "invalid" in mismatch.failures[0].reason
+    assert "differs" in mismatch.failures[0].reason
 
     def mutate(request, setup):
         request["execution_ref"] = "changed/writer/0"
@@ -195,3 +207,10 @@ def test_conformance_runner_detects_mismatch_mutation_and_exception():
 
     exception = run_adapter_conformance(explode, cases=one)
     assert "OSError" in exception.failures[0].reason
+
+
+def test_conformance_runner_bounds_caller_supplied_case_collections():
+    with pytest.raises(ValueError, match="1..1000"):
+        run_adapter_conformance(_invoke_case, cases=())
+    with pytest.raises(ValueError, match="1..1000"):
+        run_adapter_conformance(_invoke_case, cases=tuple({} for _ in range(1001)))
