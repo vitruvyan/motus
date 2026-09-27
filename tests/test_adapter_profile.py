@@ -363,6 +363,18 @@ def test_evidence_correlation_covers_verify_companions_and_query_inputs():
     assert "operation differs" in adapter_profile._correlation_failure(
         inspect_request, wrong_operation
     )
+    wrong_subject = {
+        "outcome": "completed",
+        "evidence_result": {
+            "interface_version": "1.0.0",
+            "operation": "inspect",
+            "scope": {"input_ids": ["manifest"]},
+            "subject": {"input_id": "manifest", "kind": "risk_control_registry"},
+        },
+    }
+    assert "subject differs" in adapter_profile._correlation_failure(
+        inspect_request, wrong_subject
+    )
 
     verify_request = {
         "operation": "evidence.execute",
