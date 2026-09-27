@@ -330,7 +330,16 @@ def test_evidence_result_scope_and_subject_must_correlate_with_inputs():
     adapter = InProcessAdapter(
         FakeEvidence({}), execute_evidence=lambda request: copy.deepcopy(swapped_subject)
     )
-    with pytest.raises(RuntimeError, match="subject differs"):
+    with pytest.raises(RuntimeError, match="authoritative ADR-043"):
+        adapter.invoke(copy.deepcopy(case["request"]))
+
+    forged_fingerprint = copy.deepcopy(case["setup"]["evidence_result"])
+    forged_fingerprint["subject"]["fingerprint"] = "sha256:" + "0" * 64
+    adapter = InProcessAdapter(
+        FakeEvidence({}),
+        execute_evidence=lambda request: copy.deepcopy(forged_fingerprint),
+    )
+    with pytest.raises(RuntimeError, match="authoritative ADR-043"):
         adapter.invoke(copy.deepcopy(case["request"]))
 
 def test_evidence_correlation_covers_verify_companions_and_query_inputs():
@@ -400,6 +409,19 @@ def test_evidence_correlation_covers_verify_companions_and_query_inputs():
     assert "scope differs" in adapter_profile._correlation_failure(
         query_request, query_result
     )
+
+
+def test_exceptional_hook_mutation_distinguishes_negative_zero():
+    case = copy.deepcopy(load_adapter_conformance_cases()[0])
+    case["setup"]["probe"] = -0.0
+
+    def mutate_then_explode(request, setup):
+        setup["probe"] = 0.0
+        raise RuntimeError("after mutation")
+
+    report = run_adapter_conformance(mutate_then_explode, cases=(case,))
+    assert not report.conformant
+    assert "mutated" in report.failures[0].reason
 
 
 def test_conformance_runner_bounds_caller_supplied_case_collections():

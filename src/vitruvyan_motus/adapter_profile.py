@@ -211,6 +211,8 @@ def _same_json_value(left: object, right: object) -> bool:
         return len(left) == len(right) and all(
             _same_json_value(a, b) for a, b in zip(left, right)
         )
+    if isinstance(left, float):
+        return left.hex() == right.hex()
     return left == right
 
 
@@ -228,9 +230,11 @@ class InProcessAdapter:
         execute_evidence: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> None:
         self._evidence = evidence
-        if execute_evidence is None:
-            from vitruvyan_motus.verification_query import execute_verification_query
+        from vitruvyan_motus.verification_query import execute_verification_query
 
+        self._authoritative_execute_evidence = execute_verification_query
+        self._custom_execute_evidence = execute_evidence is not None
+        if execute_evidence is None:
             execute_evidence = execute_verification_query
         self._execute_evidence = execute_evidence
 
@@ -314,9 +318,16 @@ class InProcessAdapter:
                     "package_verdict": _json_value(verdict),
                 }
             else:
-                evidence_result = self._execute_evidence(
-                    copy.deepcopy(request["evidence_request"])
-                )
+                evidence_request = copy.deepcopy(request["evidence_request"])
+                evidence_result = self._execute_evidence(copy.deepcopy(evidence_request))
+                if self._custom_execute_evidence:
+                    authoritative_result = self._authoritative_execute_evidence(
+                        copy.deepcopy(evidence_request)
+                    )
+                    if not _same_json_value(evidence_result, authoritative_result):
+                        raise RuntimeError(
+                            "custom evidence executor result differs from the authoritative ADR-043 executor"
+                        )
                 result = {
                     "profile_version": PROFILE_VERSION,
                     "message_type": "result",

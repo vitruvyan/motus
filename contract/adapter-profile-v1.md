@@ -84,6 +84,10 @@ profile and MUST NOT change the embedded Motus values.
   operation. Its scope input identifiers MUST equal the request inputs; an
   `inspect` or `verify` subject MUST identify the primary request artifact,
   while a `query` result MUST have no subject.
+- The Python reference adapter checks any caller-supplied evidence executor
+  against the authoritative ADR-043 executor for the complete result. A custom
+  hook cannot substitute a result from different artifact content while
+  retaining the same aliases.
 - Validation and conformance execution are read-only and MUST NOT mutate the
   supplied messages, stored receipt, package bytes or Motus result.
 

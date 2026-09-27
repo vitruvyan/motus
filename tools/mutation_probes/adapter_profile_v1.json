@@ -105,6 +105,20 @@
     "tests": "tests/test_adapter_profile.py"
   },
   {
+    "name": "JSON mutation comparison distinguishes negative zero",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "return left.hex() == right.hex()",
+    "to": "return left == right",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "custom evidence executors cannot substitute another authoritative result",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if not _same_json_value(evidence_result, authoritative_result):",
+    "to": "if False:",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
     "name": "hostile upstream result cases require an operational exception",
     "file": "src/vitruvyan_motus/adapter_profile.py",
     "from": "if expected_hook_error == \"operational_exception\":",
