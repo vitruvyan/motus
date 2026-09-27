@@ -47,7 +47,7 @@ execute one exact ADR-043 request. The host owns authentication, tenant
 authorization, storage and transport; Motus remains the semantic authority.
 
 `AP1` requires the canonical `tenant/writer_id/BEGIN-sequence` execution
-coordinate. `AP2` enforces 128-level nesting, 128 MiB JSON, strict padded
+coordinate. `AP2` enforces 128-level nesting, 224 MiB JSON, strict padded
 base64 and the existing 160 MiB decoded-package ceiling. `AP3` requires the
 embedded ADR-043 message to be a valid request or result of the appropriate
 direction. `AP4` requires a completed receipt-retrieval result to carry a valid

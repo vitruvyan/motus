@@ -298,6 +298,29 @@ def test_conformance_runner_detects_mismatch_mutation_and_exception():
     assert "mutated" in exceptional_mutation.failures[0].reason
 
 
+def test_conformance_result_comparison_distinguishes_boolean_from_integer():
+    case = copy.deepcopy(next(
+        item for item in load_adapter_conformance_cases()
+        if item["case_id"] == "evidence-inspect-result-is-preserved"
+    ))
+    finding = {
+        "path": "TYPE",
+        "status": "not_verified",
+        "reason": "type preservation probe",
+        "expected": 0,
+    }
+    case["expected_result"]["evidence_result"]["findings"] = [finding]
+
+    def boolean_substitution(request, setup):
+        actual = copy.deepcopy(case["expected_result"])
+        actual["evidence_result"]["findings"][0]["expected"] = False
+        return actual
+
+    report = run_adapter_conformance(boolean_substitution, cases=(case,))
+    assert not report.conformant
+    assert "differs" in report.failures[0].reason
+
+
 def test_evidence_result_must_correlate_with_the_request_operation():
     cases = load_adapter_conformance_cases()
     hostile = tuple(

@@ -149,8 +149,8 @@
   {
     "name": "conformance runner compares exact valid results",
     "file": "src/vitruvyan_motus/adapter_profile.py",
-    "from": "if actual != expected:",
-    "to": "if False and actual != expected:",
+    "from": "if not _same_json_value(actual, expected):",
+    "to": "if False:",
     "tests": "tests/test_adapter_profile.py"
   },
   {

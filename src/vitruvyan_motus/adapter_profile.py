@@ -474,7 +474,7 @@ def run_adapter_conformance(
         if actual_correlation is not None:
             failures.append(ConformanceFailure(case_id, actual_correlation))
             continue
-        if actual != expected:
+        if not _same_json_value(actual, expected):
             failures.append(ConformanceFailure(case_id, "adapter result differs from corpus"))
             continue
         passed += 1
