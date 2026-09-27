@@ -143,10 +143,13 @@ def test_package_base64_is_strict_and_resource_bounded(monkeypatch):
     assert rules(bounded) == {"AP2"}
 
 
-def test_adapter_json_bound_leaves_room_for_complete_base64_expansion():
+def test_adapter_json_bound_leaves_room_for_complete_base64_expansion(monkeypatch):
     assert validate._AP_MAX_JSON_TOTAL_BYTES > (
         (validate._VQ_MAX_BINARY_TOTAL_BYTES + 2) // 3 * 4 + 8192
     )
+    monkeypatch.setattr(validate, "_AP_MAX_JSON_TOTAL_BYTES", 1024)
+    monkeypatch.setattr(validate, "_VQ_MAX_JSON_TOTAL_BYTES", 10)
+    assert validate.validate_adapter_profile_message(request()) == []
 
 
 def test_embedded_adr043_direction_and_contract_are_enforced():

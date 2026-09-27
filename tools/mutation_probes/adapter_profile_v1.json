@@ -44,9 +44,58 @@
   {
     "name": "unsupported profile versions fail before dispatch",
     "file": "src/vitruvyan_motus/adapter_profile.py",
-    "from": "if request.get(\"profile_version\") != PROFILE_VERSION:",
-    "to": "if False and request.get(\"profile_version\") != PROFILE_VERSION:",
+    "from": "if profile_version != PROFILE_VERSION:",
+    "to": "if False and profile_version != PROFILE_VERSION:",
     "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "malformed operation types fail as profile data rather than exceptions",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if \"operation\" in request and not isinstance(request[\"operation\"], str):",
+    "to": "if False and \"operation\" in request and not isinstance(request[\"operation\"], str):",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "declared adapter resource bounds retain their failure category",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "kind = \"resource_exhausted\" if _resource_bound_was_exceeded(issues) else \"invalid_request\"",
+    "to": "kind = \"invalid_request\"",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "retrieved package size is checked before base64 expansion",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if len(package) > MAX_PACKAGE_BYTES:",
+    "to": "if False and len(package) > MAX_PACKAGE_BYTES:",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "ADR-043 results remain correlated to their request operation",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if embedded_result.get(\"operation\") != embedded_request.get(\"operation\"):",
+    "to": "if False and embedded_result.get(\"operation\") != embedded_request.get(\"operation\"):",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "hostile upstream result cases require an operational exception",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if expected_hook_error == \"operational_exception\":",
+    "to": "if False and expected_hook_error == \"operational_exception\":",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "adapter accepts the complete pre-existing execution reference bound",
+    "file": "contract/adapter-profile.v1.schema.json",
+    "from": "\"maxLength\": 8192",
+    "to": "\"maxLength\": 423",
+    "tests": "tests/test_adapter_profile_contract.py"
+  },
+  {
+    "name": "adapter JSON bound accounts for base64 expansion",
+    "file": "contract/validate.py",
+    "from": "if len(canonical_json(document)) > _AP_MAX_JSON_TOTAL_BYTES:",
+    "to": "if len(canonical_json(document)) > _VQ_MAX_JSON_TOTAL_BYTES:",
+    "tests": "tests/test_adapter_profile_contract.py"
   },
   {
     "name": "conformance runner detects hook mutation",
