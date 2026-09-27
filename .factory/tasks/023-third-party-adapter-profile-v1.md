@@ -4,9 +4,9 @@ Parent: ADR-044, accepted by the founder on 2026-09-27.
 
 Branch: `feat/third-party-adapter-profile-v1`.
 
-Target release: pending an explicit founder decision. The recommended version
-is **0.23.0** because this milestone adds a new public, versioned integration
-contract; it does not silently claim or consume a core-roadmap release number.
+Target release: **0.23.0**, confirmed by the founder on 2026-09-27. This
+integration release adds a new public, versioned integration contract. It does
+not complete or consume regulatory-core point 11 (Motus UI).
 
 ## Gate
 

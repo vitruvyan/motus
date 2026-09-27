@@ -168,7 +168,7 @@ run in parallel only after the relevant Motus public contract is stable.
 |---|---|---|
 | Orbis ↔ Motus receipt/evidence bridge | QUALIFIED | Orbis retrieves and exposes Motus-owned evidence; live qualification against Motus v0.22.0 passed on 2026-09-27 without recreating verifier semantics |
 | Limen ↔ Motus evidence bridge | PLANNED | Limen consumes the same canonical evidence boundary without a private format |
-| SDK / adapters for third-party stacks | PLANNED | adapters translate transport and storage only; Motus remains semantic authority |
+| SDK / adapters for third-party stacks | IN PROGRESS; TARGET v0.23.0 | ADR-044 accepted; adapters translate transport and storage only, while Motus remains semantic authority |
 | Orbis evidence UI | IMPLEMENTED; LIVE UI QUALIFICATION PENDING | source, proxy and component tests exist; the authenticated browser flow still needs separate live qualification |
 | Motus UI wiring | PARTIALLY WIRED; REGULATORY INTEGRATION READY TO START | extends the existing continuity paths with real regulatory evidence retrieval and verification |
 
@@ -199,6 +199,27 @@ verification. The detailed, credential-free evidence is recorded in
 This qualifies the backend bridge only. It does not qualify the authenticated
 browser flow, the Orbis UI state shown to a user, Limen, a third-party adapter,
 or Motus's own UI draft.
+
+### Third-party adapter profile / v0.23.0 — in progress
+
+The founder accepted ADR-044 and assigned the adapter profile and conformance
+kit to Motus v0.23.0 on 2026-09-27. This is an integration release: it adds a
+versioned transport-neutral profile, neutral conformance corpus, standard-library
+runner and in-process reference example over the existing Evidence API and
+ADR-043 interface. It does not add another verifier, network server,
+authentication model, storage schema, generated language client or runtime
+dependency.
+
+The Python distribution remains the Python SDK. Non-Python and network hosts
+must preserve exact Motus bytes and structured results while owning their own
+authorization, tenancy, retrieval and deployment concerns. Passing the adapter
+corpus proves preservation of this boundary only; it is not deployment,
+security, retention or compliance certification.
+
+Version 0.23.0 does not complete regulatory-core point 11. Motus UI remains a
+separate later release target, and public documentation in `vitruvyan-docs`
+must be updated only after the adapter implementation and release evidence are
+stable.
 
 ---
 

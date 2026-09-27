@@ -13,7 +13,7 @@ direction), the Axis Vision 2026 independent review, and the Phase-A Terraveler
 audit. Where this draft makes a choice those documents left open, the choice is
 marked `OPEN:` and listed in ADR-001 for explicit approval.
 
-## The fourteen surfaces
+## The sixteen surfaces
 
 A contract is binding exactly where a gate checks it; everywhere else it is
 documentation that lies. Each surface therefore names its counterparty and its
@@ -36,6 +36,27 @@ enforcement point.
 | 13 | AI System Registry v1 | `ai-system-registration.v1.schema.json`, `ai-system-registry-event.v1.schema.json`, `ai-system-registry-snapshot.v1.schema.json` | An evidence consumer that needs immutable producer registration and lifecycle claims bound to exact System Manifest revisions | The three validators apply closed schema plus AIR1-AIR2. Read-only helpers verify supplied correction lineage, exact manifest bindings, lifecycle chains and bounded snapshot membership; they never establish legal status, deployment, global current state, completeness, authority or compliance |
 | 14 | Regulatory Evidence Dossier v1 | `regulatory-evidence-dossier.v1.schema.json` | A third party holding one bounded export who must verify which exact Motus artifacts the producer included | `validate_regulatory_evidence_dossier()` applies closed schema plus RED1-RED5. It validates manifest time, unique entry identities, one exact profile binding, safe bounded member paths and exact integer sizes; it does not establish archive integrity, evidence completeness, legal sufficiency, official submission, acceptance or compliance |
 | 15 | Verification and Query Interface v1 | `verification-query.v1.schema.json` | A bridge, operator or CLI that needs one stable read-only envelope over existing Motus validators and bounded supplied-set projections | `validate_verification_query_message()` applies closed schema plus VQ1-VQ4. It fixes artifact kinds, operations, projections, scope and resource bounds; it does not validate embedded artifacts, discover evidence, establish global completeness or turn a result into evidence |
+| 16 | Third-party Adapter Profile v1 | `adapter-profile.v1.schema.json`, `adapter-profile-v1.md`, `adapter-profile-conformance.v1.json` | A host that must transport Motus evidence and verification results without implementing another verifier | `validate_adapter_profile_message()` applies closed schema plus AP1-AP4. The conformance runner checks exact supplied cases and mutation; passing it does not certify authorization, tenancy, storage, deployment security, retention or compliance |
+
+### Third-party Adapter Profile structural v1
+
+ADR-044 adds an ephemeral adapter envelope, not a new evidence artifact or
+network service. Its four operations retrieve a receipt, retrieve exact package
+bytes, verify exact package bytes for one ADR-027 execution reference, or
+execute one exact ADR-043 request. The host owns authentication, tenant
+authorization, storage and transport; Motus remains the semantic authority.
+
+`AP1` requires the canonical `tenant/writer_id/BEGIN-sequence` execution
+coordinate. `AP2` enforces 128-level nesting, 128 MiB JSON, strict padded
+base64 and the existing 160 MiB decoded-package ceiling. `AP3` requires the
+embedded ADR-043 message to be a valid request or result of the appropriate
+direction. `AP4` requires a completed receipt-retrieval result to carry a valid
+Motus receipt rather than arbitrary JSON.
+
+An adapter failure is operational. A verifier result such as `not_verified`,
+`mismatched`, refused, damaged, incomplete or conflict is a completed adapter
+operation and remains visible unchanged. The profile has no `verified`,
+`compliant`, `approved`, `safe` or legally sufficient shortcut.
 
 ### Verification and Query Interface structural v1
 

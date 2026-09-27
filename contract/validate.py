@@ -114,6 +114,7 @@ _HUMAN_OVERSIGHT_RECEIPT_SCHEMA_FILE = "human-oversight-receipt.v1.schema.json"
 _REGULATORY_EVIDENCE_PROFILE_SCHEMA_FILE = "regulatory-evidence-profile.v1.schema.json"
 _REGULATORY_EVIDENCE_DOSSIER_SCHEMA_FILE = "regulatory-evidence-dossier.v1.schema.json"
 _VERIFICATION_QUERY_SCHEMA_FILE = "verification-query.v1.schema.json"
+_ADAPTER_PROFILE_SCHEMA_FILE = "adapter-profile.v1.schema.json"
 _INCIDENT_DECLARATION_SCHEMA_FILE = "incident-declaration.v1.schema.json"
 _CAPA_ACTION_SCHEMA_FILE = "capa-action.v1.schema.json"
 _INCIDENT_CAPA_LEDGER_SCHEMA_FILE = "incident-capa-ledger.v1.schema.json"
@@ -970,6 +971,11 @@ def load_verification_query_schema() -> dict:
     return _load(_VERIFICATION_QUERY_SCHEMA_FILE)
 
 
+def load_adapter_profile_schema() -> dict:
+    """The ADR-044 ephemeral third-party adapter profile schema."""
+    return _load(_ADAPTER_PROFILE_SCHEMA_FILE)
+
+
 def load_incident_declaration_schema() -> dict:
     """The IncidentDeclaration v1 schema, loaded relative to this file."""
     return _load(_INCIDENT_DECLARATION_SCHEMA_FILE)
@@ -1207,6 +1213,10 @@ def _regulatory_evidence_dossier_validator() -> Draft202012Validator:
 
 def _verification_query_validator() -> Draft202012Validator:
     return _validator("verification-query", load_verification_query_schema())
+
+
+def _adapter_profile_validator() -> Draft202012Validator:
+    return _validator("adapter-profile", load_adapter_profile_schema())
 
 
 def _incident_capa_schema_registry() -> Registry:
@@ -2231,6 +2241,87 @@ def validate_verification_query_message(document: dict) -> list[Violation]:
                 "VQ4", path,
                 "result may reference only input_id values declared in its supplied scope",
             ))
+    return violations
+
+
+def validate_adapter_profile_message(document: dict) -> list[Violation]:
+    """Validate one ephemeral ADR-044 adapter request or result.
+
+    This validates preservation at the adapter boundary. It does not establish
+    authorization, storage durability, deployment security or compliance.
+    """
+    if _vq_nesting_exceeds(document):
+        return [Violation(
+            "AP2", "$", "adapter profile message exceeds the 128-level nesting limit",
+        )]
+
+    violations, structural = _j1_violations(document)
+    if structural:
+        return violations
+
+    violations += _schema_violations(
+        load_adapter_profile_schema(), _adapter_profile_validator(), document
+    )
+    if violations:
+        return violations
+
+    if len(canonical_json(document)) > _VQ_MAX_JSON_TOTAL_BYTES:
+        violations.append(Violation(
+            "AP2", "$", "adapter profile message exceeds the 128 MiB JSON limit",
+        ))
+
+    execution_ref = document.get("execution_ref")
+    if execution_ref is not None and _canonical_execution_ref_parts(execution_ref) is None:
+        violations.append(Violation(
+            "AP1", "$.execution_ref",
+            "execution_ref must be the canonical tenant/writer_id/BEGIN-sequence coordinate",
+        ))
+
+    package_base64 = document.get("package_base64")
+    if package_base64 is not None:
+        try:
+            package = base64.b64decode(package_base64.encode("ascii"), validate=True)
+        except (UnicodeEncodeError, binascii.Error):
+            violations.append(Violation(
+                "AP2", "$.package_base64", "package bytes are not strict padded base64",
+            ))
+        else:
+            if len(package) > _VQ_MAX_BINARY_TOTAL_BYTES:
+                violations.append(Violation(
+                    "AP2", "$.package_base64",
+                    "decoded package exceeds the 160 MiB profile limit",
+                ))
+
+    embedded_key = (
+        "evidence_request" if "evidence_request" in document
+        else "evidence_result" if "evidence_result" in document
+        else None
+    )
+    if embedded_key is not None:
+        embedded = document[embedded_key]
+        wanted_type = "request" if embedded_key == "evidence_request" else "result"
+        if embedded.get("message_type") != wanted_type:
+            violations.append(Violation(
+                "AP3", f"$.{embedded_key}.message_type",
+                f"{embedded_key} must carry an ADR-043 {wanted_type} message",
+            ))
+        for issue in validate_verification_query_message(embedded):
+            violations.append(Violation(
+                "AP3", f"$.{embedded_key}{issue.path[1:]}",
+                f"embedded ADR-043 message failed {issue.rule}: {issue.message}",
+            ))
+
+    if (
+        document.get("message_type") == "result"
+        and document.get("operation") == "receipt.retrieve"
+        and document.get("outcome") == "completed"
+    ):
+        for issue in validate_receipt(document["receipt"]):
+            violations.append(Violation(
+                "AP4", f"$.receipt{issue.path[1:]}",
+                f"retrieved receipt failed {issue.rule}: {issue.message}",
+            ))
+
     return violations
 
 
