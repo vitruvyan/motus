@@ -52,7 +52,7 @@ A failed adapter operation has `outcome: failed` and exactly one `failure`:
 | Kind | Meaning |
 |---|---|
 | `invalid_request` | the profile message is malformed or an embedded ADR-043 request/result is invalid |
-| `unsupported_version` | the profile major is not supported; no operation ran |
+| `unsupported_version` | the profile or embedded Motus interface major is not supported; no operation ran |
 | `unauthorized` | no authenticated principal was established |
 | `forbidden` | the established principal is not allowed to access the requested evidence |
 | `not_found` | the authorized retrieval boundary found no requested artifact |
@@ -71,6 +71,9 @@ profile and MUST NOT change the embedded Motus values.
 ## Bounds and validation
 
 - Profile JSON is limited to 128 levels of nesting.
+- An adapter envelope is limited to 224 MiB of canonical JSON so a complete
+  160 MiB package can survive base64 expansion without contradicting the
+  binary limit.
 - A decoded evidence package is limited to 160 MiB, matching ADR-043's binary
   request ceiling.
 - Failure detail is limited to 4096 characters and is diagnostic text, never
@@ -86,6 +89,12 @@ profile and MUST NOT change the embedded Motus values.
 expected-result cases. The shipped runner calls a caller-supplied hook with a
 deep copy of each request and setup, validates both sides, checks exact equality
 and reports mutation separately.
+
+Negative cases deliberately carry malformed or unsupported requests and a
+contract-valid failed result. A hostile upstream-result case instead carries
+`expected_hook_error: operational_exception`: returning a profile result for
+that case is non-conformant, because an unrelated or malformed Motus result
+must not be dressed as successful adapter output.
 
 Passing the corpus establishes only that these values survived the adapter
 boundary for the supplied cases. It does not establish authentication quality,

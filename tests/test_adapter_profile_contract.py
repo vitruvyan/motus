@@ -8,6 +8,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 from vitruvyan_motus.contract import validate
+from vitruvyan_motus.verification_query import execute_verification_query
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "contract" / "adapter-profile.v1.schema.json"
@@ -51,9 +52,30 @@ def test_schema_is_valid_and_every_corpus_message_satisfies_the_profile():
     assert corpus["corpus_version"] == "1.0.0"
     assert corpus["profile_version"] == "1.0.0"
     assert len(corpus["cases"]) >= 6
+    intentionally_invalid = {
+        "unsupported-profile-version-fails-before-dispatch",
+        "unsupported-evidence-interface-fails-before-dispatch",
+        "non-string-operation-is-invalid-not-an-exception",
+        "noncanonical-execution-ref-is-invalid",
+    }
     for case in corpus["cases"]:
-        assert validate.validate_adapter_profile_message(case["request"]) == [], case["case_id"]
-        assert validate.validate_adapter_profile_message(case["expected_result"]) == [], case["case_id"]
+        request_issues = validate.validate_adapter_profile_message(case["request"])
+        assert bool(request_issues) == (case["case_id"] in intentionally_invalid), case["case_id"]
+        if "expected_result" in case:
+            assert validate.validate_adapter_profile_message(case["expected_result"]) == [], case["case_id"]
+        else:
+            assert case["expected_hook_error"] == "operational_exception"
+
+
+def test_evidence_fixture_is_the_exact_result_of_the_real_adr043_executor():
+    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+    case = next(
+        item for item in corpus["cases"]
+        if item["case_id"] == "evidence-inspect-result-is-preserved"
+    )
+    actual = execute_verification_query(case["request"]["evidence_request"])
+    assert actual == case["setup"]["evidence_result"]
+    assert actual == case["expected_result"]["evidence_result"]
 
 
 def test_operations_versions_members_and_shortcut_verdicts_are_closed():
@@ -95,6 +117,13 @@ def test_execution_reference_is_canonical_and_never_a_run_id_or_end_label():
     shaped["execution_ref"] = "tenant/writer/7"
     assert validate.validate_adapter_profile_message(shaped) == []
 
+    long_but_publicly_valid = request()
+    long_but_publicly_valid["execution_ref"] = (
+        f"{'t' * 100}/{'w' * 100}/1{'0' * 300}"
+    )
+    assert len(long_but_publicly_valid["execution_ref"]) > 423
+    assert validate.validate_adapter_profile_message(long_but_publicly_valid) == []
+
 
 def test_package_base64_is_strict_and_resource_bounded(monkeypatch):
     malformed = request("package.verify")
@@ -112,6 +141,12 @@ def test_package_base64_is_strict_and_resource_bounded(monkeypatch):
     bounded = request("package.verify")
     monkeypatch.setattr(validate, "_VQ_MAX_BINARY_TOTAL_BYTES", 4)
     assert rules(bounded) == {"AP2"}
+
+
+def test_adapter_json_bound_leaves_room_for_complete_base64_expansion():
+    assert validate._AP_MAX_JSON_TOTAL_BYTES > (
+        (validate._VQ_MAX_BINARY_TOTAL_BYTES + 2) // 3 * 4 + 8192
+    )
 
 
 def test_embedded_adr043_direction_and_contract_are_enforced():

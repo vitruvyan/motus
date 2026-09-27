@@ -7,7 +7,7 @@
     "ExecutionRef": {
       "type": "string",
       "minLength": 5,
-      "maxLength": 423
+      "maxLength": 8192
     },
     "Operation": {
       "enum": ["receipt.retrieve", "package.retrieve", "package.verify", "evidence.execute"]

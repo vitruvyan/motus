@@ -2080,6 +2080,7 @@ _VQ_MAX_JSON_DOCUMENT_BYTES = 28 * 1024 * 1024
 _VQ_MAX_JSON_TOTAL_BYTES = 128 * 1024 * 1024
 _VQ_MAX_BINARY_TOTAL_BYTES = 160 * 1024 * 1024
 _VQ_MAX_NESTING_DEPTH = 128
+_AP_MAX_JSON_TOTAL_BYTES = 224 * 1024 * 1024
 _BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 
@@ -2289,9 +2290,9 @@ def validate_adapter_profile_message(document: dict) -> list[Violation]:
     if violations:
         return violations
 
-    if len(canonical_json(document)) > _VQ_MAX_JSON_TOTAL_BYTES:
+    if len(canonical_json(document)) > _AP_MAX_JSON_TOTAL_BYTES:
         violations.append(Violation(
-            "AP2", "$", "adapter profile message exceeds the 128 MiB JSON limit",
+            "AP2", "$", "adapter profile message exceeds the 224 MiB JSON limit",
         ))
 
     execution_ref = document.get("execution_ref")

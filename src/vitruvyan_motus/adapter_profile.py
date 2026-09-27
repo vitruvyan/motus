@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 PROFILE_VERSION = "1.0.0"
 CONFORMANCE_CORPUS_VERSION = "1.0.0"
+EVIDENCE_INTERFACE_VERSION = "1.0.0"
 OPERATIONS = frozenset({
     "receipt.retrieve",
     "package.retrieve",
@@ -31,6 +32,7 @@ FAILURE_KINDS = frozenset({
     "resource_exhausted",
     "unavailable",
 })
+MAX_PACKAGE_BYTES = 160 * 1024 * 1024
 
 __all__ = [
     "PROFILE_VERSION",
@@ -99,7 +101,7 @@ def _known_operation(message: object) -> str | None:
     if not isinstance(message, dict):
         return None
     operation = message.get("operation")
-    return operation if operation in OPERATIONS else None
+    return operation if isinstance(operation, str) and operation in OPERATIONS else None
 
 
 def _failure(operation: str | None, kind: str, detail: str) -> dict[str, Any]:
@@ -131,6 +133,32 @@ def _validate(message: object) -> list[Any]:
     return validate_adapter_profile_message(message)
 
 
+def _resource_bound_was_exceeded(issues: list[Any]) -> bool:
+    return any(
+        issue.rule == "AP2" and "exceeds" in issue.message
+        for issue in issues
+    )
+
+
+def _correlation_failure(request: object, result: object) -> str | None:
+    """Return why an ADR-043 result cannot answer its adapter request."""
+    if not isinstance(request, dict) or not isinstance(result, dict):
+        return None
+    if request.get("operation") != "evidence.execute":
+        return None
+    if result.get("outcome") != "completed":
+        return None
+    embedded_request = request.get("evidence_request")
+    embedded_result = result.get("evidence_result")
+    if not isinstance(embedded_request, dict) or not isinstance(embedded_result, dict):
+        return None
+    if embedded_result.get("interface_version") != embedded_request.get("interface_version"):
+        return "embedded ADR-043 result interface_version differs from its request"
+    if embedded_result.get("operation") != embedded_request.get("operation"):
+        return "embedded ADR-043 result operation differs from its request"
+    return None
+
+
 class InProcessAdapter:
     """Reference in-process mapping over existing Motus public interfaces.
 
@@ -152,19 +180,37 @@ class InProcessAdapter:
         self._execute_evidence = execute_evidence
 
     def invoke(self, request: object) -> dict[str, Any]:
-        operation = _known_operation(request)
         if not isinstance(request, dict):
             return _failure(None, "invalid_request", "adapter request must be an object")
-        if request.get("profile_version") != PROFILE_VERSION:
+        operation = _known_operation(request)
+        profile_version = request.get("profile_version")
+        if not isinstance(profile_version, str):
+            return _failure(operation, "invalid_request", "profile_version must be a string")
+        if profile_version != PROFILE_VERSION:
             return _failure(
                 operation,
                 "unsupported_version",
-                f"adapter profile {request.get('profile_version')!r} is not supported",
+                "adapter profile version is not supported",
             )
+        if "operation" in request and not isinstance(request["operation"], str):
+            return _failure(None, "invalid_request", "operation must be a string")
+        if operation == "evidence.execute":
+            embedded = request.get("evidence_request")
+            if (
+                isinstance(embedded, dict)
+                and isinstance(embedded.get("interface_version"), str)
+                and embedded["interface_version"] != EVIDENCE_INTERFACE_VERSION
+            ):
+                return _failure(
+                    operation,
+                    "unsupported_version",
+                    "Motus evidence interface version is not supported",
+                )
 
         issues = _validate(request)
         if issues:
-            return _failure(operation, "invalid_request", _validation_detail(issues))
+            kind = "resource_exhausted" if _resource_bound_was_exceeded(issues) else "invalid_request"
+            return _failure(operation, kind, _validation_detail(issues))
 
         stable_request = copy.deepcopy(request)
         try:
@@ -182,6 +228,11 @@ class InProcessAdapter:
                 package = self._evidence.package_for(request["execution_ref"])
                 if not isinstance(package, bytes):
                     raise TypeError("EvidenceAPI package_for must return bytes")
+                if len(package) > MAX_PACKAGE_BYTES:
+                    raise AdapterProfileFailure(
+                        "resource_exhausted",
+                        "retrieved package exceeds the 160 MiB profile limit",
+                    )
                 result = {
                     "profile_version": PROFILE_VERSION,
                     "message_type": "result",
@@ -229,6 +280,9 @@ class InProcessAdapter:
                 "reference adapter produced an invalid result: "
                 + _validation_detail(result_issues)
             )
+        correlation_failure = _correlation_failure(request, result)
+        if correlation_failure is not None:
+            raise RuntimeError(correlation_failure)
         return result
 
 
@@ -287,30 +341,53 @@ def run_adapter_conformance(
         if not isinstance(case_id, str) or not case_id:
             failures.append(ConformanceFailure(f"case-{index}", "case_id is missing"))
             continue
+        expected_hook_error = case.get("expected_hook_error")
+        has_expected_result = "expected_result" in case
+        if has_expected_result == (expected_hook_error is not None):
+            failures.append(ConformanceFailure(
+                case_id, "case must contain exactly one expected_result or expected_hook_error"
+            ))
+            continue
+        if expected_hook_error not in (None, "operational_exception"):
+            failures.append(ConformanceFailure(case_id, "expected_hook_error is invalid"))
+            continue
         try:
             request = copy.deepcopy(case["request"])
             setup = copy.deepcopy(case["setup"])
-            expected = copy.deepcopy(case["expected_result"])
         except (KeyError, TypeError):
             failures.append(ConformanceFailure(case_id, "case shape is invalid"))
             continue
+        expected = copy.deepcopy(case.get("expected_result"))
 
         request_before = copy.deepcopy(request)
         setup_before = copy.deepcopy(setup)
-        request_issues = _validate(request)
-        expected_issues = _validate(expected)
-        if request_issues or expected_issues:
-            issues = request_issues + expected_issues
+        expected_issues = [] if expected_hook_error else _validate(expected)
+        if expected_issues:
             failures.append(ConformanceFailure(
-                case_id, "corpus message is invalid: " + _validation_detail(issues)
+                case_id, "corpus expected result is invalid: " + _validation_detail(expected_issues)
             ))
+            continue
+        expected_correlation = _correlation_failure(request, expected)
+        if expected_correlation is not None:
+            failures.append(ConformanceFailure(case_id, "corpus mismatch: " + expected_correlation))
             continue
 
         try:
             actual = invoke(request, setup)
         except Exception as exc:  # the report records the host failure verbatim by type
+            if request != request_before or setup != setup_before:
+                failures.append(ConformanceFailure(case_id, "hook mutated request or setup"))
+                continue
+            if expected_hook_error == "operational_exception":
+                passed += 1
+                continue
             failures.append(ConformanceFailure(
                 case_id, f"hook raised {type(exc).__name__}: {str(exc)[:512]}"
+            ))
+            continue
+        if expected_hook_error is not None:
+            failures.append(ConformanceFailure(
+                case_id, "hook returned a result instead of raising an operational exception"
             ))
             continue
         if request != request_before or setup != setup_before:
@@ -321,6 +398,10 @@ def run_adapter_conformance(
             failures.append(ConformanceFailure(
                 case_id, "adapter result is invalid: " + _validation_detail(actual_issues)
             ))
+            continue
+        actual_correlation = _correlation_failure(request, actual)
+        if actual_correlation is not None:
+            failures.append(ConformanceFailure(case_id, actual_correlation))
             continue
         if actual != expected:
             failures.append(ConformanceFailure(case_id, "adapter result differs from corpus"))

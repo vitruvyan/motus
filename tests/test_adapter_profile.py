@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
+import vitruvyan_motus.adapter_profile as adapter_profile
 from vitruvyan_motus.adapter_profile import (
     AdapterProfileFailure,
     InProcessAdapter,
@@ -171,6 +172,78 @@ def test_malformed_and_unsupported_requests_fail_before_an_operation_runs():
     assert future["operation"] == "receipt.retrieve"
     assert future["failure"]["kind"] == "unsupported_version"
 
+    malformed_operation = adapter.invoke({
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": [],
+    })
+    assert malformed_operation["operation"] is None
+    assert malformed_operation["failure"] == {
+        "kind": "invalid_request", "detail": "operation must be a string"
+    }
+
+    malformed_version = adapter.invoke({
+        "profile_version": [],
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "tenant/writer/0",
+    })
+    assert malformed_version["failure"] == {
+        "kind": "invalid_request", "detail": "profile_version must be a string"
+    }
+
+
+def test_interface_version_and_resource_bounds_have_distinct_failures(monkeypatch):
+    adapter = InProcessAdapter(FakeEvidence({}), execute_evidence=lambda request: {})
+    unsupported_interface = adapter.invoke({
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+            "interface_version": "2.0.0",
+            "message_type": "request",
+            "operation": "inspect",
+            "artifact": {
+                "input_id": "manifest",
+                "kind": "system_manifest",
+                "media_type": "application/json",
+                "document": {"schema_version": "1.0.0"},
+            },
+        },
+    })
+    assert unsupported_interface["failure"]["kind"] == "unsupported_version"
+
+    from vitruvyan_motus.contract import validate
+
+    monkeypatch.setattr(validate, "_VQ_MAX_BINARY_TOTAL_BYTES", 4)
+    oversized_request = adapter.invoke({
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.verify",
+        "execution_ref": "tenant/writer/0",
+        "package_base64": "bm90LWEtemlw",
+    })
+    assert oversized_request["failure"]["kind"] == "resource_exhausted"
+
+
+def test_retrieved_package_bound_is_checked_before_base64_encoding(monkeypatch):
+    class OversizedEvidence(FakeEvidence):
+        def package_for(self, execution_ref):
+            return b"12345"
+
+    monkeypatch.setattr(adapter_profile, "MAX_PACKAGE_BYTES", 4)
+    adapter = InProcessAdapter(OversizedEvidence({}), execute_evidence=lambda request: {})
+    result = adapter.invoke({
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.retrieve",
+        "execution_ref": "tenant/writer/0",
+    })
+    assert result["failure"] == {
+        "kind": "resource_exhausted",
+        "detail": "retrieved package exceeds the 160 MiB profile limit",
+    }
+
 
 def test_corpus_loader_returns_independent_copies():
     first = load_adapter_conformance_cases()
@@ -207,6 +280,28 @@ def test_conformance_runner_detects_mismatch_mutation_and_exception():
 
     exception = run_adapter_conformance(explode, cases=one)
     assert "OSError" in exception.failures[0].reason
+
+
+def test_evidence_result_must_correlate_with_the_request_operation():
+    cases = load_adapter_conformance_cases()
+    hostile = tuple(
+        case for case in cases
+        if case["case_id"] == "unrelated-evidence-result-remains-an-operational-error"
+    )
+    assert run_adapter_conformance(_invoke_case, cases=hostile).conformant
+
+    def return_unrelated(request, setup):
+        return {
+            "profile_version": "1.0.0",
+            "message_type": "result",
+            "operation": "evidence.execute",
+            "outcome": "completed",
+            "evidence_result": copy.deepcopy(setup["evidence_result"]),
+        }
+
+    report = run_adapter_conformance(return_unrelated, cases=hostile)
+    assert not report.conformant
+    assert "instead of raising" in report.failures[0].reason
 
 
 def test_conformance_runner_bounds_caller_supplied_case_collections():

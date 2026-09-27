@@ -201,29 +201,34 @@
       }
     },
     {
-      "case_id": "evidence-not-verified-result-is-preserved",
+      "case_id": "evidence-inspect-result-is-preserved",
       "setup": {
         "evidence_result": {
           "interface_version": "1.0.0",
           "message_type": "result",
-          "operation": "verify",
-          "outcome": "not_verified",
+          "operation": "inspect",
+          "outcome": "invalid",
           "scope": {
             "scope_kind": "supplied_inputs",
-            "input_ids": ["package"],
+            "input_ids": ["manifest"],
             "global_complete": false,
-            "limitations": ["verification covers only the explicitly supplied artifacts"]
+            "limitations": [
+              "inspection covers only the explicitly supplied artifacts",
+              "structural validity does not establish compliance or global completeness"
+            ]
           },
           "subject": {
-            "input_id": "package",
-            "kind": "execution_evidence_package",
-            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "fingerprint": null
           },
-          "violations": [],
-          "findings": [
-            {"path": "INTEGRITY", "status": "matched", "reason": "the supplied chain matched"},
-            {"path": "IDENTITY", "status": "not_verified", "reason": "no identity binding was supplied"}
+          "violations": [
+            {"rule": "SCHEMA", "path": "$", "message": "'system' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'bindings' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'declarations' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'created_at' is a required property"}
           ],
+          "findings": [],
           "matches": [],
           "records": []
         }
@@ -252,24 +257,29 @@
         "evidence_result": {
           "interface_version": "1.0.0",
           "message_type": "result",
-          "operation": "verify",
-          "outcome": "not_verified",
+          "operation": "inspect",
+          "outcome": "invalid",
           "scope": {
             "scope_kind": "supplied_inputs",
-            "input_ids": ["package"],
+            "input_ids": ["manifest"],
             "global_complete": false,
-            "limitations": ["verification covers only the explicitly supplied artifacts"]
+            "limitations": [
+              "inspection covers only the explicitly supplied artifacts",
+              "structural validity does not establish compliance or global completeness"
+            ]
           },
           "subject": {
-            "input_id": "package",
-            "kind": "execution_evidence_package",
-            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "fingerprint": null
           },
-          "violations": [],
-          "findings": [
-            {"path": "INTEGRITY", "status": "matched", "reason": "the supplied chain matched"},
-            {"path": "IDENTITY", "status": "not_verified", "reason": "no identity binding was supplied"}
+          "violations": [
+            {"rule": "SCHEMA", "path": "$", "message": "'system' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'bindings' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'declarations' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'created_at' is a required property"}
           ],
+          "findings": [],
           "matches": [],
           "records": []
         }
@@ -308,6 +318,148 @@
         "outcome": "failed",
         "failure": {"kind": "forbidden", "detail": "principal cannot access this writer"}
       }
+    },
+    {
+      "case_id": "unsupported-profile-version-fails-before-dispatch",
+      "setup": {},
+      "request": {
+        "profile_version": "2.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "unsupported_version", "detail": "adapter profile version is not supported"}
+      }
+    },
+    {
+      "case_id": "unsupported-evidence-interface-fails-before-dispatch",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "2.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"schema_version": "1.0.0"}
+          }
+        }
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "evidence.execute",
+        "outcome": "failed",
+        "failure": {"kind": "unsupported_version", "detail": "Motus evidence interface version is not supported"}
+      }
+    },
+    {
+      "case_id": "non-string-operation-is-invalid-not-an-exception",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": []
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": null,
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "operation must be a string"}
+      }
+    },
+    {
+      "case_id": "noncanonical-execution-ref-is-invalid",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "run-123"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {
+          "kind": "invalid_request",
+          "detail": "AP1 $.execution_ref: execution_ref must be the canonical tenant/writer_id/BEGIN-sequence coordinate"
+        }
+      }
+    },
+    {
+      "case_id": "host-resource-bound-remains-resource-exhausted",
+      "setup": {"failure": {"kind": "resource_exhausted", "detail": "host retrieval budget exhausted"}},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "package.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "resource_exhausted", "detail": "host retrieval budget exhausted"}
+      }
+    },
+    {
+      "case_id": "unrelated-evidence-result-remains-an-operational-error",
+      "setup": {
+        "evidence_result": {
+          "interface_version": "1.0.0",
+          "message_type": "result",
+          "operation": "verify",
+          "outcome": "not_verified",
+          "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["package"],
+            "global_complete": false,
+            "limitations": ["verification covers only the explicitly supplied artifacts"]
+          },
+          "subject": {
+            "input_id": "package",
+            "kind": "execution_evidence_package",
+            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "violations": [],
+          "findings": [
+            {"path": "IDENTITY", "status": "not_verified", "reason": "no identity binding was supplied"}
+          ],
+          "matches": [],
+          "records": []
+        }
+      },
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "1.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"schema_version": "1.0.0"}
+          }
+        }
+      },
+      "expected_hook_error": "operational_exception"
     }
   ]
 }

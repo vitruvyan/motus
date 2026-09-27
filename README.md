@@ -1410,7 +1410,9 @@ conformant report proves only preservation for those cases; it does not certify
 authentication, tenancy, storage, availability, retention, security or
 compliance. The exact normative profile is
 `contract/adapter-profile-v1.md`, and `examples/07_adapter_profile.py` is the
-runnable in-process mapping.
+runnable in-process mapping. The qualified v0.22 Orbis routes are related to
+these operations explicitly in `docs/ORBIS_ADAPTER_MAPPING.md`; that document
+also names the two profile operations Orbis does not expose.
 
 ```bash
 python examples/07_adapter_profile.py
