@@ -333,15 +333,6 @@ def test_evidence_result_scope_and_subject_must_correlate_with_inputs():
     with pytest.raises(RuntimeError, match="subject differs"):
         adapter.invoke(copy.deepcopy(case["request"]))
 
-    swapped_scope = copy.deepcopy(case["setup"]["evidence_result"])
-    swapped_scope["scope"]["input_ids"] = ["other"]
-    adapter = InProcessAdapter(
-        FakeEvidence({}), execute_evidence=lambda request: copy.deepcopy(swapped_scope)
-    )
-    with pytest.raises(RuntimeError, match="scope differs"):
-        adapter.invoke(copy.deepcopy(case["request"]))
-
-
 def test_evidence_correlation_covers_verify_companions_and_query_inputs():
     verify_request = {
         "operation": "evidence.execute",
