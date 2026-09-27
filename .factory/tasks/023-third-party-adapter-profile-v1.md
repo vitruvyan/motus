@@ -1,17 +1,20 @@
 # TASK 023 — Third-party adapter profile and conformance kit v1
 
-Parent: ADR-044, proposed on 2026-09-27. The founder has not accepted it.
+Parent: ADR-044, accepted by the founder on 2026-09-27.
 
 Branch: `feat/third-party-adapter-profile-v1`.
 
-Target release: to be decided after ADR acceptance. This integration milestone
-does not automatically claim or consume a core release number.
+Target release: pending an explicit founder decision. The recommended version
+is **0.23.0** because this milestone adds a new public, versioned integration
+contract; it does not silently claim or consume a core-roadmap release number.
 
 ## Gate
 
-Stop after this proposed ADR until the founder accepts, rejects or amends
-ADR-044. Do not add a contract, fixtures, helper, public API or roadmap
-completion claim while it remains `PROPOSED`.
+ADR-044 was accepted by the founder on 2026-09-27. Contract-first
+implementation is authorised. Do not tag a release until the release number is
+explicitly recorded, the implementation and conformance corpus are complete,
+independent and adversarial review are closed, and Jenkins is green on the
+exact reviewed head.
 
 ## Goal after acceptance
 

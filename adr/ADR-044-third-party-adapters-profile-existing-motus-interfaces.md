@@ -1,7 +1,8 @@
 # ADR-044 — Third-party adapters profile existing Motus interfaces; they do not create a second verifier
 
-- **Status:** PROPOSED
+- **Status:** ACCEPTED
 - **Date:** 2026-09-27
+- **Accepted:** 2026-09-27, by the founder.
 - **Authority:** CTO proposes; the founder accepts.
 - **Depends on:** ADR-020, ADR-027, ADR-032 through ADR-034, ADR-043.
 - **Amends on acceptance:** permits one versioned, transport-neutral adapter profile and conformance kit over the existing Evidence API and verification/query interface. It does not amend any evidence artifact, receipt, package, dossier, verification-result, or query-result format.
