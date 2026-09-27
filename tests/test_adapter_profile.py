@@ -326,7 +326,7 @@ def test_evidence_result_scope_and_subject_must_correlate_with_inputs():
         if item["case_id"] == "evidence-inspect-result-is-preserved"
     )
     swapped_subject = copy.deepcopy(case["setup"]["evidence_result"])
-    swapped_subject["subject"]["input_id"] = "other"
+    swapped_subject["subject"]["kind"] = "risk_control_registry"
     adapter = InProcessAdapter(
         FakeEvidence({}), execute_evidence=lambda request: copy.deepcopy(swapped_subject)
     )

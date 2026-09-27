@@ -117,7 +117,13 @@ def _failure(operation: str | None, kind: str, detail: str) -> dict[str, Any]:
 
 def _validation_detail(issues: list[Any]) -> str:
     detail = "; ".join(
-        f"{issue.rule} {issue.path}: {issue.message}" for issue in issues[:16]
+        f"{issue.rule} {issue.path}: "
+        + (
+            "message does not satisfy the adapter profile schema"
+            if issue.rule == "SCHEMA"
+            else issue.message
+        )
+        for issue in issues[:16]
     )
     if len(issues) > 16:
         detail += f"; {len(issues) - 16} additional violations"
@@ -170,7 +176,7 @@ def _correlation_failure(request: object, result: object) -> str | None:
                 )
         subject = embedded_result.get("subject")
         if not isinstance(subject, dict):
-            return "embedded ADR-043 result subject differs from its request"
+            return "embedded ADR-043 result subject is missing"
         if (
             subject.get("input_id") != artifact.get("input_id")
             or subject.get("kind") != artifact.get("kind")

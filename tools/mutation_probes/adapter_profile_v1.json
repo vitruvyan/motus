@@ -79,8 +79,8 @@
   {
     "name": "ADR-043 inspect and verify subjects remain bound to the primary input",
     "file": "src/vitruvyan_motus/adapter_profile.py",
-    "from": "subject.get(\"input_id\") != artifact.get(\"input_id\")",
-    "to": "False",
+    "from": "return \"embedded ADR-043 result subject differs from its request\"",
+    "to": "return None",
     "tests": "tests/test_adapter_profile.py"
   },
   {
