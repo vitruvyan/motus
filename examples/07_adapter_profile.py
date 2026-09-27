@@ -2,6 +2,10 @@
 
 This is deliberately a corpus-backed example, not a server. A real host owns
 authentication, authorization and storage before calling ``adapter.invoke``.
+
+Run from the repository root:
+
+    python examples/07_adapter_profile.py
 """
 from __future__ import annotations
 

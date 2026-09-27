@@ -1412,6 +1412,10 @@ compliance. The exact normative profile is
 `contract/adapter-profile-v1.md`, and `examples/07_adapter_profile.py` is the
 runnable in-process mapping.
 
+```bash
+python examples/07_adapter_profile.py
+```
+
 `Trace.from_json` is the loader to prefer when the document's **text** is in
 reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken
 over its parsed value, so a genuine `5e+18` and a rewritten
