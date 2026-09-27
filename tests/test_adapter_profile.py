@@ -334,6 +334,27 @@ def test_evidence_result_scope_and_subject_must_correlate_with_inputs():
         adapter.invoke(copy.deepcopy(case["request"]))
 
 def test_evidence_correlation_covers_verify_companions_and_query_inputs():
+    inspect_request = {
+        "operation": "evidence.execute",
+        "evidence_request": {
+            "interface_version": "1.0.0",
+            "operation": "inspect",
+            "artifact": {"input_id": "manifest", "kind": "system_manifest"},
+        },
+    }
+    wrong_operation = {
+        "outcome": "completed",
+        "evidence_result": {
+            "interface_version": "1.0.0",
+            "operation": "verify",
+            "scope": {"input_ids": ["manifest"]},
+            "subject": {"input_id": "manifest", "kind": "system_manifest"},
+        },
+    }
+    assert "operation differs" in adapter_profile._correlation_failure(
+        inspect_request, wrong_operation
+    )
+
     verify_request = {
         "operation": "evidence.execute",
         "evidence_request": {
