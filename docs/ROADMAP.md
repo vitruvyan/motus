@@ -194,7 +194,7 @@ The same probe confirmed `401` without the service credential, `409
 other_writer` outside the serving writer, and an unchanged SHA-256 manifest of
 all 371 commitment and trace artifacts before and after retrieval and
 verification. The detailed, credential-free evidence is recorded in
-`.factory/tasks/integration-orbis-evidence-bridge-qualification.md`.
+`.factory/tasks/done/013-orbis-evidence-bridge-qualification/REPORT.md`.
 
 This qualifies the backend bridge only. It does not qualify the authenticated
 browser flow, the Orbis UI state shown to a user, Limen, a third-party adapter,
