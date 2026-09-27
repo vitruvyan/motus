@@ -166,16 +166,39 @@ run in parallel only after the relevant Motus public contract is stable.
 
 | Integration | Status | Boundary |
 |---|---|---|
-| Orbis ↔ Motus receipt/evidence bridge | TO QUALIFY | Orbis retrieves and exposes Motus-owned evidence; it does not recreate verifier semantics |
+| Orbis ↔ Motus receipt/evidence bridge | QUALIFIED | Orbis retrieves and exposes Motus-owned evidence; live qualification against Motus v0.22.0 passed on 2026-09-27 without recreating verifier semantics |
 | Limen ↔ Motus evidence bridge | PLANNED | Limen consumes the same canonical evidence boundary without a private format |
 | SDK / adapters for third-party stacks | PLANNED | adapters translate transport and storage only; Motus remains semantic authority |
-| Orbis evidence UI | PLANNED | displays actual Motus evidence and binding results through the Orbis integration |
+| Orbis evidence UI | IMPLEMENTED; LIVE UI QUALIFICATION PENDING | source, proxy and component tests exist; the authenticated browser flow still needs separate live qualification |
 | Motus UI wiring | PARTIALLY WIRED; REGULATORY INTEGRATION READY TO START | extends the existing continuity paths with real regulatory evidence retrieval and verification |
 
 An integration being reachable, visually complete, or deployed does not prove
 that it is wired to the current Motus release. Qualification must separately
 identify the Motus version, the API/bridge path, executed verification, and the
 UI state shown to the user.
+
+### Orbis bridge qualification — 2026-09-27
+
+The deployed Orbis graph service on commit
+`7d32a5e8d685e2e05320208721b46559401d3138` imports Motus `0.22.0` and exposes
+the read-only receipt and verification routes introduced by Orbis PR #249. A
+live request for `orbis/api_graph/116` retrieved a receipt bound to that exact
+BEGIN-located execution reference and passed the stored evidence package to
+Motus's ADR-043 verifier. `INTEGRITY` was `matched`; the overall outcome was
+correctly `not_verified` because no external anchor, retention guarantee,
+continuity acknowledgement, signature, legal-identity binding, or qualified
+timestamp was supplied. The bridge did not collapse that result to a boolean
+or call it compliance.
+
+The same probe confirmed `401` without the service credential, `409
+other_writer` outside the serving writer, and an unchanged SHA-256 manifest of
+all 371 commitment and trace artifacts before and after retrieval and
+verification. The detailed, credential-free evidence is recorded in
+`.factory/tasks/integration-orbis-evidence-bridge-qualification.md`.
+
+This qualifies the backend bridge only. It does not qualify the authenticated
+browser flow, the Orbis UI state shown to a user, Limen, a third-party adapter,
+or Motus's own UI draft.
 
 ---
 
