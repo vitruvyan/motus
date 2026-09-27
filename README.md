@@ -1370,6 +1370,48 @@ those proofs. A deployment using a database, object store or evidence service
 implements the same `EvidenceSource` protocol; storage layout is not part of
 the public API.
 
+### Third-party adapter profile and conformance kit
+
+ADR-044 defines the v0.23.0 integration boundary without creating a second
+verifier. The `vitruvyan-motus` distribution remains the Python SDK. An
+in-process host may wrap its `EvidenceAPI` with `InProcessAdapter`; a network or
+non-Python host implements the same versioned JSON profile and proves value
+preservation with `run_adapter_conformance()`.
+
+```python
+from vitruvyan_motus import (
+    ADAPTER_PROFILE_VERSION,
+    InProcessAdapter,
+    run_adapter_conformance,
+)
+
+adapter = InProcessAdapter(evidence_api)
+result = adapter.invoke({
+    "profile_version": ADAPTER_PROFILE_VERSION,
+    "message_type": "request",
+    "operation": "receipt.retrieve",
+    "execution_ref": "tenant/writer/42",  # the BEGIN sequence
+})
+```
+
+The four operations are `receipt.retrieve`, `package.retrieve`,
+`package.verify` and `evidence.execute`. Retrieval/storage failures use the
+closed operational failure vocabulary through `AdapterProfileFailure`.
+Unexpected exceptions propagate; the adapter never disguises a bug as bad
+evidence. A verifier result such as `not_verified`, `mismatched`, damaged,
+refused, incomplete or conflict is returned as a **completed** adapter
+operation with the exact structured Motus result, never as `verified: false`
+or a transport error.
+
+`load_adapter_conformance_cases()` returns independent copies of the shipped
+neutral corpus. `run_adapter_conformance()` returns an immutable
+`ConformanceReport` containing zero or more `ConformanceFailure` values. A
+conformant report proves only preservation for those cases; it does not certify
+authentication, tenancy, storage, availability, retention, security or
+compliance. The exact normative profile is
+`contract/adapter-profile-v1.md`, and `examples/07_adapter_profile.py` is the
+runnable in-process mapping.
+
 `Trace.from_json` is the loader to prefer when the document's **text** is in
 reach, and `NonCanonicalNumber` is what it raises. A number's digest is taken
 over its parsed value, so a genuine `5e+18` and a rewritten
