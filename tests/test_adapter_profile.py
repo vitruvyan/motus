@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 import vitruvyan_motus.adapter_profile as adapter_profile
+from vitruvyan_motus.contract import validate as contract_validate
 from vitruvyan_motus.adapter_profile import (
     AdapterProfileFailure,
     InProcessAdapter,
@@ -213,9 +214,7 @@ def test_interface_version_and_resource_bounds_have_distinct_failures(monkeypatc
     })
     assert unsupported_interface["failure"]["kind"] == "unsupported_version"
 
-    from vitruvyan_motus.contract import validate
-
-    monkeypatch.setattr(validate, "_VQ_MAX_BINARY_TOTAL_BYTES", 4)
+    monkeypatch.setattr(contract_validate, "_VQ_MAX_BINARY_TOTAL_BYTES", 4)
     oversized_request = adapter.invoke({
         "profile_version": "1.0.0",
         "message_type": "request",
@@ -243,6 +242,16 @@ def test_retrieved_package_bound_is_checked_before_base64_encoding(monkeypatch):
         "kind": "resource_exhausted",
         "detail": "retrieved package exceeds the 160 MiB profile limit",
     }
+
+
+def test_oversized_structured_result_is_resource_exhausted(monkeypatch):
+    cases = load_adapter_conformance_cases()
+    receipt_case = next(case for case in cases if case["case_id"].startswith("receipt-retrieve"))
+    request_size = len(str(receipt_case["request"]))
+    monkeypatch.setattr(contract_validate, "_AP_MAX_JSON_TOTAL_BYTES", request_size + 50)
+    adapter = InProcessAdapter(FakeEvidence(receipt_case["setup"]), execute_evidence=lambda request: {})
+    result = adapter.invoke(copy.deepcopy(receipt_case["request"]))
+    assert result["failure"]["kind"] == "resource_exhausted"
 
 
 def test_corpus_loader_returns_independent_copies():
@@ -282,7 +291,7 @@ def test_conformance_runner_detects_mismatch_mutation_and_exception():
     assert "OSError" in exception.failures[0].reason
 
     def mutate_then_explode(request, setup):
-        setup["changed"] = True
+        setup["receipt"]["segments"][0]["begin"]["commitment"]["sequence"] = True
         raise OSError("offline after mutation")
 
     exceptional_mutation = run_adapter_conformance(mutate_then_explode, cases=one)
@@ -309,6 +318,76 @@ def test_evidence_result_must_correlate_with_the_request_operation():
     report = run_adapter_conformance(return_unrelated, cases=hostile)
     assert not report.conformant
     assert "instead of raising" in report.failures[0].reason
+
+
+def test_evidence_result_scope_and_subject_must_correlate_with_inputs():
+    case = next(
+        item for item in load_adapter_conformance_cases()
+        if item["case_id"] == "evidence-inspect-result-is-preserved"
+    )
+    swapped_subject = copy.deepcopy(case["setup"]["evidence_result"])
+    swapped_subject["subject"]["input_id"] = "other"
+    adapter = InProcessAdapter(
+        FakeEvidence({}), execute_evidence=lambda request: copy.deepcopy(swapped_subject)
+    )
+    with pytest.raises(RuntimeError, match="subject differs"):
+        adapter.invoke(copy.deepcopy(case["request"]))
+
+    swapped_scope = copy.deepcopy(case["setup"]["evidence_result"])
+    swapped_scope["scope"]["input_ids"] = ["other"]
+    adapter = InProcessAdapter(
+        FakeEvidence({}), execute_evidence=lambda request: copy.deepcopy(swapped_scope)
+    )
+    with pytest.raises(RuntimeError, match="scope differs"):
+        adapter.invoke(copy.deepcopy(case["request"]))
+
+
+def test_evidence_correlation_covers_verify_companions_and_query_inputs():
+    verify_request = {
+        "operation": "evidence.execute",
+        "evidence_request": {
+            "interface_version": "1.0.0",
+            "operation": "verify",
+            "artifact": {"input_id": "package", "kind": "execution_evidence_package"},
+            "companions": [{"input_id": "anchor", "kind": "anchor_receipt"}],
+        },
+    }
+    verify_result = {
+        "outcome": "completed",
+        "evidence_result": {
+            "interface_version": "1.0.0",
+            "operation": "verify",
+            "scope": {"input_ids": ["package"]},
+            "subject": {"input_id": "package", "kind": "execution_evidence_package"},
+        },
+    }
+    assert "scope differs" in adapter_profile._correlation_failure(
+        verify_request, verify_result
+    )
+
+    query_request = {
+        "operation": "evidence.execute",
+        "evidence_request": {
+            "interface_version": "1.0.0",
+            "operation": "query",
+            "artifacts": [
+                {"input_id": "a", "kind": "system_manifest"},
+                {"input_id": "b", "kind": "risk_control_registry"},
+            ],
+        },
+    }
+    query_result = {
+        "outcome": "completed",
+        "evidence_result": {
+            "interface_version": "1.0.0",
+            "operation": "query",
+            "scope": {"input_ids": ["b", "a"]},
+            "subject": None,
+        },
+    }
+    assert "scope differs" in adapter_profile._correlation_failure(
+        query_request, query_result
+    )
 
 
 def test_conformance_runner_bounds_caller_supplied_case_collections():

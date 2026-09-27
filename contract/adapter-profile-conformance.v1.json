@@ -380,6 +380,40 @@
       }
     },
     {
+      "case_id": "unknown-string-operation-is-refused",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.search"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": null,
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "SCHEMA $: document is not valid under any schema"}
+      }
+    },
+    {
+      "case_id": "unknown-member-is-refused",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/1",
+        "run_id": "not-an-execution-reference"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "SCHEMA $: document is not valid under any schema"}
+      }
+    },
+    {
       "case_id": "noncanonical-execution-ref-is-invalid",
       "setup": {},
       "request": {
@@ -414,6 +448,36 @@
         "operation": "package.retrieve",
         "outcome": "failed",
         "failure": {"kind": "resource_exhausted", "detail": "host retrieval budget exhausted"}
+      }
+    },
+    {
+      "case_id": "over-nested-request-is-resource-exhausted",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "1.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "nested",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+          }
+        }
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "evidence.execute",
+        "outcome": "failed",
+        "failure": {
+          "kind": "resource_exhausted",
+          "detail": "AP2 $: adapter profile message exceeds the 128-level nesting limit"
+        }
       }
     },
     {

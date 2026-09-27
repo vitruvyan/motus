@@ -51,12 +51,21 @@ def test_schema_is_valid_and_every_corpus_message_satisfies_the_profile():
     corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
     assert corpus["corpus_version"] == "1.0.0"
     assert corpus["profile_version"] == "1.0.0"
-    assert len(corpus["cases"]) >= 6
+    assert len(corpus["cases"]) >= 15
+    assert {
+        "unknown-string-operation-is-refused",
+        "unknown-member-is-refused",
+        "over-nested-request-is-resource-exhausted",
+        "unrelated-evidence-result-remains-an-operational-error",
+    } <= {case["case_id"] for case in corpus["cases"]}
     intentionally_invalid = {
         "unsupported-profile-version-fails-before-dispatch",
         "unsupported-evidence-interface-fails-before-dispatch",
         "non-string-operation-is-invalid-not-an-exception",
+        "unknown-string-operation-is-refused",
+        "unknown-member-is-refused",
         "noncanonical-execution-ref-is-invalid",
+        "over-nested-request-is-resource-exhausted",
     }
     for case in corpus["cases"]:
         request_issues = validate.validate_adapter_profile_message(case["request"])

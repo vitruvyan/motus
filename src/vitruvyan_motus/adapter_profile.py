@@ -156,7 +156,56 @@ def _correlation_failure(request: object, result: object) -> str | None:
         return "embedded ADR-043 result interface_version differs from its request"
     if embedded_result.get("operation") != embedded_request.get("operation"):
         return "embedded ADR-043 result operation differs from its request"
+    embedded_operation = embedded_request.get("operation")
+    if embedded_operation in ("inspect", "verify"):
+        artifact = embedded_request.get("artifact")
+        if not isinstance(artifact, dict):
+            return None
+        expected_ids = [artifact.get("input_id")]
+        if embedded_operation == "verify":
+            companions = embedded_request.get("companions")
+            if isinstance(companions, list):
+                expected_ids.extend(
+                    item.get("input_id") for item in companions if isinstance(item, dict)
+                )
+        subject = embedded_result.get("subject")
+        if not isinstance(subject, dict):
+            return "embedded ADR-043 result subject differs from its request"
+        if (
+            subject.get("input_id") != artifact.get("input_id")
+            or subject.get("kind") != artifact.get("kind")
+        ):
+            return "embedded ADR-043 result subject differs from its request"
+    elif embedded_operation == "query":
+        artifacts = embedded_request.get("artifacts")
+        if not isinstance(artifacts, list):
+            return None
+        expected_ids = [
+            item.get("input_id") for item in artifacts if isinstance(item, dict)
+        ]
+        if embedded_result.get("subject") is not None:
+            return "embedded ADR-043 query result unexpectedly carries a subject"
+    else:
+        return None
+    scope = embedded_result.get("scope")
+    if not isinstance(scope, dict) or scope.get("input_ids") != expected_ids:
+        return "embedded ADR-043 result scope differs from its request inputs"
     return None
+
+
+def _same_json_value(left: object, right: object) -> bool:
+    """Type-sensitive equality for JSON values (where False is not 0)."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _same_json_value(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_json_value(a, b) for a, b in zip(left, right)
+        )
+    return left == right
 
 
 class InProcessAdapter:
@@ -276,10 +325,15 @@ class InProcessAdapter:
             raise RuntimeError("adapter mutated its request")
         result_issues = _validate(result)
         if result_issues:
-            raise RuntimeError(
-                "reference adapter produced an invalid result: "
-                + _validation_detail(result_issues)
-            )
+            if _resource_bound_was_exceeded(result_issues):
+                result = _failure(
+                    operation, "resource_exhausted", _validation_detail(result_issues)
+                )
+            else:
+                raise RuntimeError(
+                    "reference adapter produced an invalid result: "
+                    + _validation_detail(result_issues)
+                )
         correlation_failure = _correlation_failure(request, result)
         if correlation_failure is not None:
             raise RuntimeError(correlation_failure)
@@ -375,7 +429,7 @@ def run_adapter_conformance(
         try:
             actual = invoke(request, setup)
         except Exception as exc:  # the report records the host failure verbatim by type
-            if request != request_before or setup != setup_before:
+            if not _same_json_value(request, request_before) or not _same_json_value(setup, setup_before):
                 failures.append(ConformanceFailure(case_id, "hook mutated request or setup"))
                 continue
             if expected_hook_error == "operational_exception":
@@ -390,7 +444,7 @@ def run_adapter_conformance(
                 case_id, "hook returned a result instead of raising an operational exception"
             ))
             continue
-        if request != request_before or setup != setup_before:
+        if not _same_json_value(request, request_before) or not _same_json_value(setup, setup_before):
             failures.append(ConformanceFailure(case_id, "hook mutated request or setup"))
             continue
         actual_issues = _validate(actual)

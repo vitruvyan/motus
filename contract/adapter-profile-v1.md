@@ -80,6 +80,10 @@ profile and MUST NOT change the embedded Motus values.
   evidence.
 - Embedded `evidence_request` and `evidence_result` values MUST satisfy the
   ADR-043 `verification-query.v1` contract independently.
+- An embedded ADR-043 result MUST preserve the request interface version and
+  operation. Its scope input identifiers MUST equal the request inputs; an
+  `inspect` or `verify` subject MUST identify the primary request artifact,
+  while a `query` result MUST have no subject.
 - Validation and conformance execution are read-only and MUST NOT mutate the
   supplied messages, stored receipt, package bytes or Motus result.
 

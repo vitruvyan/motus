@@ -77,6 +77,34 @@
     "tests": "tests/test_adapter_profile.py"
   },
   {
+    "name": "ADR-043 inspect and verify subjects remain bound to the primary input",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "subject.get(\"input_id\") != artifact.get(\"input_id\")",
+    "to": "False",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "ADR-043 result scopes remain bound to every request input",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if not isinstance(scope, dict) or scope.get(\"input_ids\") != expected_ids:",
+    "to": "if False:",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "structured output bounds become resource failures",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if _resource_bound_was_exceeded(result_issues):",
+    "to": "if False and _resource_bound_was_exceeded(result_issues):",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
+    "name": "JSON mutation comparison distinguishes booleans from integers",
+    "file": "src/vitruvyan_motus/adapter_profile.py",
+    "from": "if type(left) is not type(right):",
+    "to": "if False and type(left) is not type(right):",
+    "tests": "tests/test_adapter_profile.py"
+  },
+  {
     "name": "hostile upstream result cases require an operational exception",
     "file": "src/vitruvyan_motus/adapter_profile.py",
     "from": "if expected_hook_error == \"operational_exception\":",
@@ -100,8 +128,8 @@
   {
     "name": "conformance runner detects hook mutation",
     "file": "src/vitruvyan_motus/adapter_profile.py",
-    "from": "if request != request_before or setup != setup_before:",
-    "to": "if False and (request != request_before or setup != setup_before):",
+    "from": "if not _same_json_value(request, request_before) or not _same_json_value(setup, setup_before):",
+    "to": "if False:",
     "tests": "tests/test_adapter_profile.py"
   },
   {
