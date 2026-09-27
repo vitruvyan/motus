@@ -281,6 +281,13 @@ def test_conformance_runner_detects_mismatch_mutation_and_exception():
     exception = run_adapter_conformance(explode, cases=one)
     assert "OSError" in exception.failures[0].reason
 
+    def mutate_then_explode(request, setup):
+        setup["changed"] = True
+        raise OSError("offline after mutation")
+
+    exceptional_mutation = run_adapter_conformance(mutate_then_explode, cases=one)
+    assert "mutated" in exceptional_mutation.failures[0].reason
+
 
 def test_evidence_result_must_correlate_with_the_request_operation():
     cases = load_adapter_conformance_cases()
