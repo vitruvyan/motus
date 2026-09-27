@@ -6,6 +6,11 @@ Candidate source: `85b775f512b289222da10c500cc6461a7dc28399` on
 `release/0.23.0`, based on the verified Point 23 merge
 `a744167153e9b5f70bcc46ae4c4f836679627fbe`.
 
+The release PR must use a two-parent merge commit that preserves the complete
+`release/0.23.0` ancestry. Squash and rebase merge are prohibited: either would
+sever the tag's ancestry from the characterised candidate and the Jenkins-green
+release head.
+
 Release evidence is complete:
 
 - Jenkins relative builds `#37`, `#38`, and `#39` use v0.22.0 as baseline,
