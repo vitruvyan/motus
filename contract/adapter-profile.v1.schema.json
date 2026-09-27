@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitruvyan.dev/motus/adapter-profile.v1.schema.json",
+  "title": "Motus adapter profile v1 message",
+  "description": "Ephemeral transport-neutral request/result envelope for ADR-044 adapters. It is not evidence and carries no compliance meaning.",
+  "$defs": {
+    "ExecutionRef": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 8192
+    },
+    "Operation": {
+      "enum": ["receipt.retrieve", "package.retrieve", "package.verify", "evidence.execute"]
+    },
+    "Base": {
+      "type": "object",
+      "required": ["profile_version", "message_type", "operation"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"enum": ["request", "result"]},
+        "operation": {"$ref": "#/$defs/Operation"}
+      }
+    },
+    "ReceiptRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "execution_ref"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "request"},
+        "operation": {"const": "receipt.retrieve"},
+        "execution_ref": {"$ref": "#/$defs/ExecutionRef"}
+      }
+    },
+    "PackageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "execution_ref"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "request"},
+        "operation": {"const": "package.retrieve"},
+        "execution_ref": {"$ref": "#/$defs/ExecutionRef"}
+      }
+    },
+    "PackageVerifyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "execution_ref", "package_base64"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "request"},
+        "operation": {"const": "package.verify"},
+        "execution_ref": {"$ref": "#/$defs/ExecutionRef"},
+        "package_base64": {"type": "string", "minLength": 4, "maxLength": 223696216}
+      }
+    },
+    "EvidenceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "evidence_request"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "request"},
+        "operation": {"const": "evidence.execute"},
+        "evidence_request": {"type": "object"}
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "status", "reason"],
+      "properties": {
+        "level": {"type": "string"},
+        "status": {"type": "string"},
+        "reason": {"type": "string"}
+      }
+    },
+    "Violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "path", "message"],
+      "properties": {
+        "rule": {"type": "string"},
+        "path": {"type": "string"},
+        "message": {"type": "string"}
+      }
+    },
+    "ReceiptVerdict": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["findings", "violations", "notes"],
+      "properties": {
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "violations": {"type": "array", "items": {"$ref": "#/$defs/Violation"}},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "PackageVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "transport_ok", "damaged", "trace_violations"],
+      "properties": {
+        "verdict": {"$ref": "#/$defs/ReceiptVerdict"},
+        "transport_ok": {"type": "boolean"},
+        "damaged": {"type": "array", "items": {"type": "string"}},
+        "trace_violations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "ReceiptResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "outcome", "receipt"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {"const": "receipt.retrieve"},
+        "outcome": {"const": "completed"},
+        "receipt": {"type": "object"}
+      }
+    },
+    "PackageResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "outcome", "package_base64"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {"const": "package.retrieve"},
+        "outcome": {"const": "completed"},
+        "package_base64": {"type": "string", "minLength": 4, "maxLength": 223696216}
+      }
+    },
+    "PackageVerifyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "outcome", "package_verdict"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {"const": "package.verify"},
+        "outcome": {"const": "completed"},
+        "package_verdict": {"$ref": "#/$defs/PackageVerdict"}
+      }
+    },
+    "EvidenceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "outcome", "evidence_result"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {"const": "evidence.execute"},
+        "outcome": {"const": "completed"},
+        "evidence_result": {"type": "object"}
+      }
+    },
+    "Failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "detail"],
+      "properties": {
+        "kind": {
+          "enum": ["invalid_request", "unsupported_version", "unauthorized", "forbidden", "not_found", "conflict", "resource_exhausted", "unavailable"]
+        },
+        "detail": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "FailureResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_version", "message_type", "operation", "outcome", "failure"],
+      "properties": {
+        "profile_version": {"const": "1.0.0"},
+        "message_type": {"const": "result"},
+        "operation": {
+          "oneOf": [
+            {"$ref": "#/$defs/Operation"},
+            {"type": "null"}
+          ]
+        },
+        "outcome": {"const": "failed"},
+        "failure": {"$ref": "#/$defs/Failure"}
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/ReceiptRequest"},
+    {"$ref": "#/$defs/PackageRequest"},
+    {"$ref": "#/$defs/PackageVerifyRequest"},
+    {"$ref": "#/$defs/EvidenceRequest"},
+    {"$ref": "#/$defs/ReceiptResult"},
+    {"$ref": "#/$defs/PackageResult"},
+    {"$ref": "#/$defs/PackageVerifyResult"},
+    {"$ref": "#/$defs/EvidenceResult"},
+    {"$ref": "#/$defs/FailureResult"}
+  ]
+}

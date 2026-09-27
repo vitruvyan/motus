@@ -102,6 +102,12 @@ from vitruvyan_motus.ai_system_registry import (
 from vitruvyan_motus.verification_query import (
     execute_verification_query, inspect_artifact, query_artifacts, verify_artifact,
 )
+from vitruvyan_motus.adapter_profile import (
+    PROFILE_VERSION as ADAPTER_PROFILE_VERSION,
+    AdapterProfileFailure, InProcessAdapter,
+    ConformanceFailure, ConformanceReport,
+    load_adapter_conformance_cases, run_adapter_conformance,
+)
 from vitruvyan_motus.state import State
 from vitruvyan_motus.trace import (
     Decision, Fact, NonCanonicalNumber, NonIntegerNumber, RedactedValue,
@@ -152,6 +158,9 @@ __all__ = [
     "verify_ai_system_registry_snapshot",
     "execute_verification_query", "inspect_artifact", "query_artifacts",
     "verify_artifact",
+    "ADAPTER_PROFILE_VERSION", "AdapterProfileFailure", "InProcessAdapter",
+    "ConformanceFailure", "ConformanceReport",
+    "load_adapter_conformance_cases", "run_adapter_conformance",
     "State", "Trace", "Fact", "Decision", "Rejection", "RedactedValue", "redact",
     "NonCanonicalNumber", "NonIntegerNumber",
 ]

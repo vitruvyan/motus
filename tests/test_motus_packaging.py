@@ -351,7 +351,11 @@ def test_installed_alone_motus_imports_and_axis_does_not(built_wheel, tmp_path):
             "'RetentionApplicationBindingVerdict', 'RetentionBlockerVerdict', "
             "'verify_retention_lineage', 'resolve_supplied_retention_scope', "
             "'verify_retention_application_bindings', "
-            "'evaluate_supplied_retention_blocker')); "
+            "'evaluate_supplied_retention_blocker', 'ADAPTER_PROFILE_VERSION', "
+            "'AdapterProfileFailure', 'InProcessAdapter', "
+            "'ConformanceFailure', 'ConformanceReport', "
+            "'load_adapter_conformance_cases', "
+            "'run_adapter_conformance')); "
             "print('motus-ok', motus.__version__)",
         ],
         capture_output=True,
@@ -418,6 +422,9 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
         # neither this list nor that one can grow alone.
         "vitruvyan_motus/contract/README.md",
         "vitruvyan_motus/contract/__init__.py",
+        "vitruvyan_motus/contract/adapter-profile-conformance.v1.json",
+        "vitruvyan_motus/contract/adapter-profile-v1.md",
+        "vitruvyan_motus/contract/adapter-profile.v1.schema.json",
         "vitruvyan_motus/contract/ai-system-registration.v1.schema.json",
         "vitruvyan_motus/contract/ai-system-registry-event.v1.schema.json",
         "vitruvyan_motus/contract/ai-system-registry-snapshot.v1.schema.json",
@@ -459,11 +466,17 @@ def test_wheel_ships_the_validator_and_its_schemas_and_nothing_else_from_contrac
     )
     prose = sorted(n for n in names
                    if n.endswith(".md") and n.startswith("vitruvyan_motus/"))
-    assert prose == sorted(
+    expected_prose = [
         "vitruvyan_motus/" + relative for relative in CITABLE
-        if relative.endswith(".md")), (
-        "prose in the wheel is exactly what the MCP cites, and ADR-022 records "
-        "it as a cost paid deliberately: " + repr(prose))
+        if relative.endswith(".md")
+    ]
+    # ADR-044's profile is the one deliberate non-MCP prose exception: it
+    # travels for SDK/adapter implementers and is enforced by its own shipped
+    # schema and conformance corpus, not by an MCP answer.
+    expected_prose.append("vitruvyan_motus/contract/adapter-profile-v1.md")
+    assert prose == sorted(expected_prose), (
+        "prose in the wheel is exactly MCP-citable material plus ADR-044's "
+        "version-matched adapter profile: " + repr(prose))
 
 
 def test_the_wheel_ships_every_source_the_mcp_would_cite(built_wheel):
@@ -532,7 +545,11 @@ def test_shipped_schemas_are_the_repository_schemas_byte_for_byte(built_wheel):
     failure the whole authority order exists to prevent.
     """
     with zipfile.ZipFile(built_wheel) as archive:
-        for schema in ("trace.v1.schema.json", "graphspec.v1.schema.json"):
+        for schema in (
+            "trace.v1.schema.json",
+            "graphspec.v1.schema.json",
+            "adapter-profile.v1.schema.json",
+        ):
             shipped = archive.read(f"vitruvyan_motus/contract/{schema}")
             on_disk = (REPO_ROOT / "contract" / schema).read_bytes()
             assert shipped == on_disk, f"{schema} drifted between tree and wheel"

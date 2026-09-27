@@ -1,0 +1,529 @@
+{
+  "corpus_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "receipt-retrieve-preserves-document",
+      "setup": {
+        "receipt": {
+          "schema_version": "1.0.0",
+          "mode": "local",
+          "segments": [
+            {
+              "begin": {
+                "commitment": {
+                  "kind": "begin",
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "sequence": 1,
+                  "run_id": "seg-2",
+                  "at": "2026-08-13T09:00:00Z",
+                  "nonce": "n2",
+                  "continues": {
+                    "run_id": "seg-1",
+                    "bundle_fingerprint": "bundle:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "writer_id": "w1",
+                    "sequence": 0
+                  }
+                },
+                "proof": [
+                  {"side": "left", "digest": "sha256:7831b42fe416161fca00bc334c91727b86142a2ac99d63d8b4c0f9533594dd3b"},
+                  {"side": "right", "digest": "sha256:28350fc87c213c8ad34942f54c323cbc71b831bd6dbd633da21273a697abaee7"}
+                ],
+                "checkpoint": {
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "index": 0,
+                  "window_root": "sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb",
+                  "count": 3,
+                  "first_sequence": 0,
+                  "last_sequence": 2,
+                  "sealed_at": "2026-08-13T09:05:00Z",
+                  "previous": null
+                }
+              },
+              "end": {
+                "commitment": {
+                  "kind": "end",
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "sequence": 2,
+                  "run_id": "seg-2",
+                  "at": "2026-08-13T09:00:00Z",
+                  "nonce": "n3",
+                  "root": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "outcome": "completed"
+                },
+                "proof": [
+                  {"side": "left", "digest": "sha256:4fadfb7032ef2995006970120682bc9c784f7251205e2dfc436feee3468db0de"}
+                ],
+                "checkpoint": {
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "index": 0,
+                  "window_root": "sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb",
+                  "count": 3,
+                  "first_sequence": 0,
+                  "last_sequence": 2,
+                  "sealed_at": "2026-08-13T09:05:00Z",
+                  "previous": null
+                }
+              }
+            }
+          ]
+        }
+      },
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "completed",
+        "receipt": {
+          "schema_version": "1.0.0",
+          "mode": "local",
+          "segments": [
+            {
+              "begin": {
+                "commitment": {
+                  "kind": "begin",
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "sequence": 1,
+                  "run_id": "seg-2",
+                  "at": "2026-08-13T09:00:00Z",
+                  "nonce": "n2",
+                  "continues": {
+                    "run_id": "seg-1",
+                    "bundle_fingerprint": "bundle:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "writer_id": "w1",
+                    "sequence": 0
+                  }
+                },
+                "proof": [
+                  {"side": "left", "digest": "sha256:7831b42fe416161fca00bc334c91727b86142a2ac99d63d8b4c0f9533594dd3b"},
+                  {"side": "right", "digest": "sha256:28350fc87c213c8ad34942f54c323cbc71b831bd6dbd633da21273a697abaee7"}
+                ],
+                "checkpoint": {
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "index": 0,
+                  "window_root": "sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb",
+                  "count": 3,
+                  "first_sequence": 0,
+                  "last_sequence": 2,
+                  "sealed_at": "2026-08-13T09:05:00Z",
+                  "previous": null
+                }
+              },
+              "end": {
+                "commitment": {
+                  "kind": "end",
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "sequence": 2,
+                  "run_id": "seg-2",
+                  "at": "2026-08-13T09:00:00Z",
+                  "nonce": "n3",
+                  "root": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "outcome": "completed"
+                },
+                "proof": [
+                  {"side": "left", "digest": "sha256:4fadfb7032ef2995006970120682bc9c784f7251205e2dfc436feee3468db0de"}
+                ],
+                "checkpoint": {
+                  "tenant": "acme",
+                  "writer_id": "w1",
+                  "index": 0,
+                  "window_root": "sha256:46a2863fcd6eb304d1f3aebebdf3a19139496866b55d5f130225019841be91cb",
+                  "count": 3,
+                  "first_sequence": 0,
+                  "last_sequence": 2,
+                  "sealed_at": "2026-08-13T09:05:00Z",
+                  "previous": null
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "package-retrieve-preserves-exact-bytes",
+      "setup": {"package_base64": "AAECA/r7/P3+/w=="},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "package.retrieve",
+        "outcome": "completed",
+        "package_base64": "AAECA/r7/P3+/w=="
+      }
+    },
+    {
+      "case_id": "package-verifier-refusal-is-completed-not-transport-failure",
+      "setup": {
+        "package_verdict": {
+          "verdict": null,
+          "transport_ok": false,
+          "damaged": ["<not a zip file>"],
+          "trace_violations": ["package cannot contain a trace"]
+        }
+      },
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.verify",
+        "execution_ref": "acme/w1/1",
+        "package_base64": "bm90LWEtemlw"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "package.verify",
+        "outcome": "completed",
+        "package_verdict": {
+          "verdict": null,
+          "transport_ok": false,
+          "damaged": ["<not a zip file>"],
+          "trace_violations": ["package cannot contain a trace"]
+        }
+      }
+    },
+    {
+      "case_id": "evidence-inspect-result-is-preserved",
+      "setup": {
+        "evidence_result": {
+          "interface_version": "1.0.0",
+          "message_type": "result",
+          "operation": "inspect",
+          "outcome": "invalid",
+          "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["manifest"],
+            "global_complete": false,
+            "limitations": [
+              "inspection covers only the explicitly supplied artifacts",
+              "structural validity does not establish compliance or global completeness"
+            ]
+          },
+          "subject": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "fingerprint": null
+          },
+          "violations": [
+            {"rule": "SCHEMA", "path": "$", "message": "'system' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'bindings' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'declarations' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'created_at' is a required property"}
+          ],
+          "findings": [],
+          "matches": [],
+          "records": []
+        }
+      },
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "1.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"schema_version": "1.0.0"}
+          }
+        }
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "evidence.execute",
+        "outcome": "completed",
+        "evidence_result": {
+          "interface_version": "1.0.0",
+          "message_type": "result",
+          "operation": "inspect",
+          "outcome": "invalid",
+          "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["manifest"],
+            "global_complete": false,
+            "limitations": [
+              "inspection covers only the explicitly supplied artifacts",
+              "structural validity does not establish compliance or global completeness"
+            ]
+          },
+          "subject": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "fingerprint": null
+          },
+          "violations": [
+            {"rule": "SCHEMA", "path": "$", "message": "'system' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'bindings' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'declarations' is a required property"},
+            {"rule": "SCHEMA", "path": "$", "message": "'created_at' is a required property"}
+          ],
+          "findings": [],
+          "matches": [],
+          "records": []
+        }
+      }
+    },
+    {
+      "case_id": "not-found-remains-retrieval-failure",
+      "setup": {"failure": {"kind": "not_found", "detail": "no receipt for the requested execution_ref"}},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/9"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "not_found", "detail": "no receipt for the requested execution_ref"}
+      }
+    },
+    {
+      "case_id": "forbidden-remains-host-authorization-failure",
+      "setup": {"failure": {"kind": "forbidden", "detail": "principal cannot access this writer"}},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.retrieve",
+        "execution_ref": "other/writer/0"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "package.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "forbidden", "detail": "principal cannot access this writer"}
+      }
+    },
+    {
+      "case_id": "unsupported-profile-version-fails-before-dispatch",
+      "setup": {},
+      "request": {
+        "profile_version": "2.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "unsupported_version", "detail": "adapter profile version is not supported"}
+      }
+    },
+    {
+      "case_id": "unsupported-evidence-interface-fails-before-dispatch",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "2.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"schema_version": "1.0.0"}
+          }
+        }
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "evidence.execute",
+        "outcome": "failed",
+        "failure": {"kind": "unsupported_version", "detail": "Motus evidence interface version is not supported"}
+      }
+    },
+    {
+      "case_id": "non-string-operation-is-invalid-not-an-exception",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": []
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": null,
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "operation must be a string"}
+      }
+    },
+    {
+      "case_id": "unknown-string-operation-is-refused",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.search"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": null,
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "SCHEMA $: message does not satisfy the adapter profile schema"}
+      }
+    },
+    {
+      "case_id": "unknown-member-is-refused",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "acme/w1/1",
+        "run_id": "not-an-execution-reference"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "invalid_request", "detail": "SCHEMA $: message does not satisfy the adapter profile schema"}
+      }
+    },
+    {
+      "case_id": "noncanonical-execution-ref-is-invalid",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "receipt.retrieve",
+        "execution_ref": "run-123"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "receipt.retrieve",
+        "outcome": "failed",
+        "failure": {
+          "kind": "invalid_request",
+          "detail": "AP1 $.execution_ref: execution_ref must be the canonical tenant/writer_id/BEGIN-sequence coordinate"
+        }
+      }
+    },
+    {
+      "case_id": "host-resource-bound-remains-resource-exhausted",
+      "setup": {"failure": {"kind": "resource_exhausted", "detail": "host retrieval budget exhausted"}},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "package.retrieve",
+        "execution_ref": "acme/w1/1"
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "package.retrieve",
+        "outcome": "failed",
+        "failure": {"kind": "resource_exhausted", "detail": "host retrieval budget exhausted"}
+      }
+    },
+    {
+      "case_id": "over-nested-request-is-resource-exhausted",
+      "setup": {},
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "1.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "nested",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{"x":{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+          }
+        }
+      },
+      "expected_result": {
+        "profile_version": "1.0.0",
+        "message_type": "result",
+        "operation": "evidence.execute",
+        "outcome": "failed",
+        "failure": {
+          "kind": "resource_exhausted",
+          "detail": "AP2 $: adapter profile message exceeds the 128-level nesting limit"
+        }
+      }
+    },
+    {
+      "case_id": "unrelated-evidence-result-remains-an-operational-error",
+      "setup": {
+        "evidence_result": {
+          "interface_version": "1.0.0",
+          "message_type": "result",
+          "operation": "verify",
+          "outcome": "not_verified",
+          "scope": {
+            "scope_kind": "supplied_inputs",
+            "input_ids": ["package"],
+            "global_complete": false,
+            "limitations": ["verification covers only the explicitly supplied artifacts"]
+          },
+          "subject": {
+            "input_id": "package",
+            "kind": "execution_evidence_package",
+            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "violations": [],
+          "findings": [
+            {"path": "IDENTITY", "status": "not_verified", "reason": "no identity binding was supplied"}
+          ],
+          "matches": [],
+          "records": []
+        }
+      },
+      "request": {
+        "profile_version": "1.0.0",
+        "message_type": "request",
+        "operation": "evidence.execute",
+        "evidence_request": {
+          "interface_version": "1.0.0",
+          "message_type": "request",
+          "operation": "inspect",
+          "artifact": {
+            "input_id": "manifest",
+            "kind": "system_manifest",
+            "media_type": "application/json",
+            "document": {"schema_version": "1.0.0"}
+          }
+        }
+      },
+      "expected_hook_error": "operational_exception"
+    }
+  ]
+}

@@ -96,7 +96,14 @@ package-dir = { "vitruvyan_motus" = "src/vitruvyan_motus", "vitruvyan_motus.cont
 
 [tool.setuptools.package-data]
 vitruvyan_motus = ["py.typed"]
-"vitruvyan_motus.contract" = ["*.schema.json", "node-protocol.md", "README.md", "guarantees.md"]
+"vitruvyan_motus.contract" = [
+    "*.schema.json",
+    "node-protocol.md",
+    "README.md",
+    "guarantees.md",
+    "adapter-profile-v1.md",
+    "adapter-profile-conformance.v1.json",
+]
 "vitruvyan_motus.adr" = ["ADR-022-the-integration-mcp.md"]
 # No package-data entry for the examples: `vitruvyan_motus.examples` is a
 # declared package, so `build_py` copies its `*.py` as modules and all six
