@@ -43,8 +43,8 @@ one-tag rule is restored.
 | 7 | AI System Registry | DONE | shipped in v0.20.0 |
 | 8 | Regulatory Evidence Profile | DONE EARLY | shipped in v0.17.0 |
 | 9 | Regulatory Evidence Dossier / export | AWAITING PUBLICATION | tagged candidate v0.21.0; draft not published |
-| 10 | Verification and query API/CLI | IMPLEMENTED; REVIEW REMEDIATED | target v0.22.0 |
-| 11 | Motus UI | DRAFT ONLY | release target decided after the v0.22 interface is stable |
+| 10 | Verification and query API/CLI | AWAITING PUBLICATION | tagged candidate v0.22.0; draft not published |
+| 11 | Motus UI | NEXT; DRAFT EXISTS | release target to be decided |
 
 The ordering remains semantic even though point 8 shipped early. Incident/CAPA,
 retention/legal hold, and the AI System Registry must not be smuggled into the
@@ -122,7 +122,7 @@ stop conditions. ADR-032 keeps the release open until the founder publishes the
 draft and the coupled PyPI/index/hash verification succeeds; that publication
 is not currently authorised.
 
-### Point 10 / v0.22.0 — Verification and query API/CLI — ADR accepted
+### Point 10 / v0.22.0 — Verification and query API/CLI — release candidate
 
 ADR-043 proposes one transport-neutral, read-only Python facade and a distinct
 CLI over the validators and domain verifiers Motus already owns. Artifact kind,
@@ -131,13 +131,16 @@ a deterministic projection over an exact caller-supplied set; it is not storage
 retrieval, hidden discovery, a global-current view, a general query language or
 a compliance verdict.
 
-The founder accepted ADR-043 on 2026-09-26. Contract-first implementation is
-complete on its dedicated feature branch: explicit inspection, composed
-verification, seven bounded supplied-set projections and the `motus-evidence`
-CLI share one stable result envelope. The first independent code/security
-round produced eleven verified findings; their classes are repaired with
-regression tests and mutation probes. Final review/CI on the evidence head,
-merge and release qualification remain required before this point is shipped.
+The founder accepted ADR-043 on 2026-09-26. Contract-first implementation,
+independent review, adversarial remediation, release qualification and tagging
+completed without weakening the decision's stop conditions. The annotated
+`v0.22.0` tag points at the Jenkins-verified release merge. The completed
+workflow-run artifact is the authenticated distribution authority; separate
+editable copies remain on a draft GitHub Release and become authenticated only
+after the publication workflow compares them byte-for-byte with that artifact.
+ADR-032 keeps the release open until the founder publishes the draft and the
+coupled PyPI/index/hash verification succeeds; that publication is not
+currently authorised.
 
 ### Existing Motus UI draft
 
@@ -167,7 +170,7 @@ run in parallel only after the relevant Motus public contract is stable.
 | Limen ↔ Motus evidence bridge | PLANNED | Limen consumes the same canonical evidence boundary without a private format |
 | SDK / adapters for third-party stacks | PLANNED | adapters translate transport and storage only; Motus remains semantic authority |
 | Orbis evidence UI | PLANNED | displays actual Motus evidence and binding results through the Orbis integration |
-| Motus UI wiring | PARTIALLY WIRED; REGULATORY SURFACES BLOCKED ON STABLE QUERY API | extends the existing continuity paths with real regulatory evidence retrieval and verification |
+| Motus UI wiring | PARTIALLY WIRED; REGULATORY INTEGRATION READY TO START | extends the existing continuity paths with real regulatory evidence retrieval and verification |
 
 An integration being reachable, visually complete, or deployed does not prove
 that it is wired to the current Motus release. Qualification must separately
@@ -178,11 +181,18 @@ UI state shown to the user.
 
 ## Where we are, in facts
 
-*Last reconciled against the repository on 2026-09-26. This section is a
+*Last reconciled against the repository on 2026-09-27. This section is a
 statement about the code, not about intentions; when it disagrees with the
 code, it is this section that is wrong — and on 2026-08-19 it was, in three
 places at once, which is why the reconciliation date is part of the section.*
 
+- **0.22.0** is the newest tagged source-release candidate (2026-09-27): the
+  annotated tag points at verified merge commit
+  `dbe2543fab22a30f473b0b7929de5cba2dd6a5e2` for Verification and Query
+  API/CLI v1. Workflow `36293906043` built and verified the distributions once,
+  preserved the authenticated artifact, and created only a draft GitHub
+  Release. The PyPI job was skipped; publication is not authorised, so ADR-032
+  treats the release as unfinished;
 - **0.21.0** is a tagged release candidate (2026-09-26): the annotated tag
   points at verified merge commit `980683beeac14813be4b86edee569c6c4fb95e40`
   for Regulatory Evidence Dossier v1. Its verified artifacts remain on a draft

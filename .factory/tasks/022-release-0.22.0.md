@@ -27,3 +27,12 @@ favourable result.
 
 Do not publish the draft GitHub Release or PyPI without separate founder
 approval.
+
+Source-release qualification reached on 2026-09-27: PR #202 merged as
+`dbe2543fab22a30f473b0b7929de5cba2dd6a5e2`, Jenkins `main` build #25 passed,
+and annotated tag `v0.22.0` points at that exact merge. Tag workflow
+`36293906043` built and verified the distribution once, preserved the
+authenticated workflow artifact, and created only the founder-reviewable draft
+Release; the PyPI publication job was skipped. Under ADR-032 the release and
+roadmap point remain open until the founder publishes the draft and the coupled
+PyPI/index/hash verification succeeds. That step is not currently authorised.
